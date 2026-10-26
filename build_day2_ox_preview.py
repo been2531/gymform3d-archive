@@ -154,6 +154,15 @@ def draw_day2_header(canvas_rgba: Image.Image, active_idx: int, is_correct: bool
     canvas_rgba.alpha_composite(ov)
 
 
+
+
+# --- v11.1 PURE SCULPTURAL GRAPHIC MASTER OVERRIDE ---
+import build_v11_sculptural_graphic as _v11
+
+def draw_day2_header(canvas_rgba, active_idx: int, is_correct: bool = True):
+    _v11.draw_v11_cinema_top(canvas_rgba, "WIDE-GRIP LAT PULLDOWN", active_idx, is_correct)
+
+
 def build_day2_scene_frame(scene_idx: int, is_correct: bool) -> np.ndarray:
     """
     Renders each of the 6 panels for Day 2: Wide-Grip Lat Pulldown (v8):

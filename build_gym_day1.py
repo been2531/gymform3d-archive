@@ -346,7 +346,7 @@ def build_audio_track(wav_path: str):
 def main():
     os.makedirs(TMP_DIR, exist_ok=True)
     print(f"Rendering {TOTAL_FRAMES} frames (15.0s @ 30fps) for v7...")
-    with ProcessPoolExecutor(max_workers=8) as ex:
+    with ProcessPoolExecutor(max_workers=4) as ex:
         list(ex.map(render_single_frame, range(TOTAL_FRAMES)))
 
     wav_path = os.path.join(OUT_DIR, "gym_day1_audio.wav")
