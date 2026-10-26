@@ -598,6 +598,42 @@ def draw_anatomical_scanner_callout(
     canvas_rgba.alpha_composite(ov)
 
 
+
+
+# --- v11.1 PURE SCULPTURAL GRAPHIC MASTER OVERRIDE ---
+import build_v11_sculptural_graphic as _v11
+
+def draw_top_header_and_step_bar(canvas_rgba, active_idx: int, is_correct: bool = True):
+    _v11.draw_v11_cinema_top(canvas_rgba, "CABLE ROPE PUSHDOWN", active_idx, is_correct)
+
+def draw_ox_status_badge(canvas_rgba, is_correct: bool = True, pulse: float = 0.5):
+    pass
+
+def draw_anatomical_scanner_callout(
+    canvas_rgba,
+    target_pt: tuple,
+    card_center: tuple,
+    is_correct: bool,
+    badge_text: str,
+    anatomy_tag: str,
+    title_text: str,
+    metric_label: str,
+    metric_pct: int,
+    prog: float = 1.0,
+):
+    _v11.draw_v11_sculptural_in_scene_graphic(
+        canvas_rgba=canvas_rgba,
+        target_pt=target_pt,
+        is_correct=is_correct,
+        badge_text=badge_text,
+        anatomy_tag=anatomy_tag,
+        title_text=title_text,
+        metric_label=metric_label,
+        metric_pct=metric_pct,
+        prog=prog,
+    )
+
+
 def build_scene_frame(scene_idx: int, is_correct: bool) -> np.ndarray:
     """
     Renders a 1080x1920 frame for the given scene (0, 1, 2) and state (Wrong=False, Correct=True)
