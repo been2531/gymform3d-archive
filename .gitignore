@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+frames_*/
+demic_bench/
+refs/
+sheet_r1/
+*.wav
+output/*_i2v.mp4
+.env
+*token*
+*secret*
