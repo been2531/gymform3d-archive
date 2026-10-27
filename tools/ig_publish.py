@@ -121,17 +121,22 @@ def main():
         raise SystemExit(f"Unexpected IG_ID: {me.get('user_id')} != {IG_ID}")
 
     caption = Path(caption_file).read_text(encoding="utf-8").strip()
-    urls = host_files(slug, {"reel.mp4": mp4_path})
-    print("Hosted video URL:", urls["reel.mp4"])
+    files_to_host = {"reel.mp4": mp4_path}
+    cover_candidate = mp4_path.replace("_master_reel.mp4", "_cover.jpg").replace(".mp4", "_cover.jpg")
+    if Path(cover_candidate).exists():
+        files_to_host["cover.jpg"] = cover_candidate
+    urls = host_files(slug, files_to_host)
+    print("Hosted URLs:", urls)
 
-    c = api_call(
-        "POST",
-        f"{IG_ID}/media",
+    media_kwargs = dict(
         media_type="REELS",
         video_url=urls["reel.mp4"],
         caption=caption,
         share_to_feed="true",
     )
+    if "cover.jpg" in urls:
+        media_kwargs["cover_url"] = urls["cover.jpg"]
+    c = api_call("POST", f"{IG_ID}/media", **media_kwargs)
     cid = c["id"]
     print("Created REELS container:", cid)
 
