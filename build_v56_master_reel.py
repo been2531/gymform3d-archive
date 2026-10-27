@@ -144,8 +144,8 @@ def main():
         pool = cfg["pool"]
         n_p = len(pool)
 
-        # Smooth cosine rep wave peaking at t_local = 2.0s..2.5s (fidx = 60..72, 210..222, 360..372, 510..522)
-        phase = (t_local / 5.0) * 1.25
+        # Complete 1-rep cycle per 5.0s step: standing (0.0s) -> deep squat peak (2.33s) -> standing lockout (4.66s..5.00s)
+        phase = min(1.0, t_local / 4.66)
         u = 0.5 - 0.5 * math.cos(phase * 2.0 * math.pi)
         pos = u * (n_p - 1)
         i0 = int(math.floor(pos))
@@ -181,7 +181,7 @@ def main():
         out_bgr = cv2.cvtColor(np.array(rgb_pil), cv2.COLOR_RGB2BGR)
         vw.write(out_bgr)
 
-        if fidx in (60, 210, 360, 510):
+        if fidx in (70, 220, 370, 520):
             peak_frames_pil[s_idx] = rgb_pil
             panels.append(cv2.resize(out_bgr, (540, 960), interpolation=cv2.INTER_AREA))
             crops.append(out_bgr[415:1310, 0:1080])
