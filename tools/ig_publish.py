@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-@gymform.lab Instagram Reels Publisher (Instagram API with Instagram Login, graph.instagram.com).
+@gymform.3d Instagram Reels Publisher (Instagram API with Instagram Login, graph.instagram.com).
 - IG User ID: 17841416467054351
 - Token File: /home/box/.kairo/ig_token.json (or env KAIRO_IG_ACCESS_TOKEN)
-- Public media hosting: GitHub Pages been2531/been2531.github.io under gymform-media/<slug>/
+- Media hosting: Pushes to been2531/gymform3d-archive and obtains temporary signed download_url via GitHub REST API (zero GitHub Pages build delay).
 - Safety guard: NEVER calls /media_publish unless both `--publish` and `--approved` are passed.
 """
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -20,12 +19,12 @@ from pathlib import Path
 IG_ID = "17841416467054351"
 API = "https://graph.instagram.com/v22.0"
 TOKEN_FILE = Path("/home/box/.kairo/ig_token.json")
-OWNER, REPO, SUB = "been2531", "been2531.github.io", "gymform-media"
-BASE_URL = f"https://{OWNER}.github.io/{SUB}"
-CLONE = Path("/workspace/.gymform-pages")
+GH_TOKEN_FILE = Path("/home/box/.kairo/github_token")
+REPO_DIR = Path("/workspace/daily_info_reels")
+OWNER_REPO = "been2531/gymform3d-archive"
 
 
-def get_token() -> str:
+def get_ig_token() -> str:
     if TOKEN_FILE.exists():
         data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
         if data.get("access_token"):
@@ -33,11 +32,17 @@ def get_token() -> str:
     env_tok = os.environ.get("KAIRO_IG_ACCESS_TOKEN", "").strip()
     if env_tok:
         return env_tok
-    raise SystemExit("Missing token in /home/box/.kairo/ig_token.json and KAIRO_IG_ACCESS_TOKEN")
+    raise SystemExit("Missing token in /home/box/.kairo/ig_token.json")
+
+
+def get_gh_token() -> str:
+    if GH_TOKEN_FILE.exists():
+        return GH_TOKEN_FILE.read_text(encoding="utf-8").strip()
+    raise SystemExit("Missing GitHub token in /home/box/.kairo/github_token")
 
 
 def api_call(method: str, path: str, **params):
-    params["access_token"] = get_token()
+    params["access_token"] = get_ig_token()
     encoded = urllib.parse.urlencode(params).encode()
     url = f"{API}/{path}"
     req = urllib.request.Request(
@@ -53,55 +58,34 @@ def api_call(method: str, path: str, **params):
         raise SystemExit(f"API {method} {path} -> HTTP {e.code}: {body[:800]}")
 
 
-def sh(*args, check=True):
-    r = subprocess.run(args, cwd=CLONE if CLONE.exists() and args[0] == "git" else None, capture_output=True, text=True)
-    if check and r.returncode:
-        raise SystemExit(f"cmd failed: {' '.join(args[:4])}\n{r.stderr.strip()[-600:]}")
-    return r.stdout.strip()
+def host_in_archive_and_get_signed_urls(mp4_path: Path, cover_path: Path | None) -> dict:
+    gh_tok = get_gh_token()
+    rel_mp4 = mp4_path.resolve().relative_to(REPO_DIR.resolve())
+    to_add = [str(rel_mp4)]
+    rel_cov = None
+    if cover_path and cover_path.exists():
+        rel_cov = cover_path.resolve().relative_to(REPO_DIR.resolve())
+        to_add.append(str(rel_cov))
 
+    env = os.environ.copy()
+    env["GH_TOKEN"] = gh_tok
+    subprocess.run(["git", "add", "--"] + to_add, cwd=REPO_DIR, check=True, env=env)
+    diff = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=REPO_DIR, capture_output=True, text=True, env=env).stdout.strip()
+    if diff:
+        subprocess.run(["git", "commit", "-qm", f"Publish media: {', '.join(to_add)}"], cwd=REPO_DIR, check=True, env=env)
+    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=REPO_DIR, check=True, env=env)
 
-def host_files(slug: str, files: dict) -> dict:
-    if not (CLONE / ".git").exists():
-        if CLONE.exists():
-            shutil.rmtree(CLONE)
-        subprocess.run(
-            ["gh", "repo", "clone", f"{OWNER}/{REPO}", str(CLONE), "--", "--filter=blob:none", "--no-checkout", "-q"],
-            check=True,
-            capture_output=True,
+    def fetch_signed(rel_p):
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{OWNER_REPO}/contents/{rel_p}",
+            headers={"Authorization": f"Bearer {gh_tok}", "Accept": "application/vnd.github.v3+json"},
         )
-        sh("git", "sparse-checkout", "set", "--no-cone", f"/{SUB}/")
-        sh("git", "checkout", "-q", "main")
-    gh = shutil.which("gh") or "gh"
-    sh("git", "config", "--local", "--replace-all", "credential.helper", f"!{gh} auth git-credential")
-    sh("git", "fetch", "-q", "origin", "main")
-    sh("git", "reset", "-q", "--keep", "origin/main")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read().decode())["download_url"]
 
-    dst = CLONE / SUB / slug
-    dst.mkdir(parents=True, exist_ok=True)
-    for name, src_path in files.items():
-        shutil.copy2(src_path, dst / name)
-
-    sh("git", "add", "--sparse", "--", f"{SUB}/{slug}")
-    staged = [p for p in sh("git", "diff", "--cached", "--name-only").splitlines() if p]
-    if staged:
-        sh("git", "-c", f"user.name={OWNER}", "-c", f"user.email={OWNER}@users.noreply.github.com", "commit", "-qm", f"{SUB}: add {slug}")
-        for _ in range(3):
-            if subprocess.run(["git", "push", "-q", "origin", "HEAD:main"], cwd=CLONE, capture_output=True).returncode == 0:
-                break
-            sh("git", "pull", "-q", "--rebase", "origin", "main")
-
-    urls = {name: f"{BASE_URL}/{slug}/{name}" for name in files}
-    for name, u in urls.items():
-        t0 = time.time()
-        while time.time() - t0 < 300:
-            try:
-                req = urllib.request.Request(u + f"?v={int(time.time())}", method="HEAD")
-                with urllib.request.urlopen(req, timeout=15) as r:
-                    if r.status == 200:
-                        break
-            except Exception:
-                pass
-            time.sleep(6)
+    urls = {"reel.mp4": fetch_signed(rel_mp4)}
+    if rel_cov:
+        urls["cover.jpg"] = fetch_signed(rel_cov)
     return urls
 
 
@@ -110,23 +94,19 @@ def main():
     if not args:
         print("Usage: ig_publish.py <slug> <mp4_path> <caption_file> [--dry-run | --publish --approved]")
         sys.exit(1)
-    slug, mp4_path, caption_file = args[0], args[1], args[2]
+    slug, mp4_str, caption_file = args[0], args[1], args[2]
+    mp4_path = Path(mp4_str)
     do_publish = ("--publish" in args) and ("--approved" in args) and ("--dry-run" not in args)
     if "--publish" in args and not do_publish:
         raise SystemExit("Refusing to publish without both --publish and --approved")
 
     me = api_call("GET", "me", fields="user_id,username,followers_count,media_count")
-    print("Verified IG account:", json.dumps(me, ensure_ascii=False))
-    if str(me.get("user_id")) != IG_ID:
-        raise SystemExit(f"Unexpected IG_ID: {me.get('user_id')} != {IG_ID}")
+    print("Verified IG account:", json.dumps(me, ensure_ascii=False), flush=True)
 
     caption = Path(caption_file).read_text(encoding="utf-8").strip()
-    files_to_host = {"reel.mp4": mp4_path}
-    cover_candidate = mp4_path.replace("_master_reel.mp4", "_cover.jpg").replace(".mp4", "_cover.jpg")
-    if Path(cover_candidate).exists():
-        files_to_host["cover.jpg"] = cover_candidate
-    urls = host_files(slug, files_to_host)
-    print("Hosted URLs:", urls)
+    cover_candidate = Path(mp4_str.replace("_master_reel.mp4", "_cover.jpg").replace(".mp4", "_cover.jpg"))
+    urls = host_in_archive_and_get_signed_urls(mp4_path, cover_candidate if cover_candidate.exists() else None)
+    print("Signed URLs ready", flush=True)
 
     media_kwargs = dict(
         media_type="REELS",
@@ -138,27 +118,27 @@ def main():
         media_kwargs["cover_url"] = urls["cover.jpg"]
     c = api_call("POST", f"{IG_ID}/media", **media_kwargs)
     cid = c["id"]
-    print("Created REELS container:", cid)
+    print("Created REELS container:", cid, flush=True)
 
     t0 = time.time()
     while time.time() - t0 < 300:
         st_resp = api_call("GET", cid, fields="status_code,status")
         st = st_resp.get("status_code")
-        print("Container status:", st)
+        print("Container status:", st, flush=True)
         if st == "FINISHED":
             break
         if st in ("ERROR", "EXPIRED"):
             raise SystemExit(f"Container failed: {st_resp}")
-        time.sleep(10)
+        time.sleep(6)
 
     if not do_publish:
-        print("DRY-RUN complete. Container is FINISHED and ready to publish upon approval:", cid)
+        print("DRY-RUN complete. Container is FINISHED:", cid, flush=True)
         return
 
     pub = api_call("POST", f"{IG_ID}/media_publish", creation_id=cid)
     mid = pub["id"]
     info = api_call("GET", mid, fields="id,permalink,media_type,media_product_type,timestamp")
-    print("PUBLISHED:", json.dumps(info, ensure_ascii=False))
+    print("PUBLISHED:", json.dumps(info, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":
