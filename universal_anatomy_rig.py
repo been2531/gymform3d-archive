@@ -1,841 +1,678 @@
 #!/usr/bin/env python3
 """
-Universal Pose & Silhouette-Fitted 3D Medical Osteology Engine (v33)
+Universal Pose & Silhouette-Fitted 3D Medical Osteology Engine (v34)
 ====================================================================
-Designed to work consistently across arbitrary gym exercises & camera angles
-(Day 1 Standing 3/4 Cable Rope Pushdown, Day 2 Seated Rear/3/4 Wide-Grip Lat Pulldown, etc.):
-
-1. Automatic Body Silhouette & Dorsal/Limb Contour Extraction:
-   - Extracts the true foreground body mask (bridging dark athletic clothing like shorts)
-     and strictly contains all internal skeletal structures within the 3D soft-tissue boundary.
-   - Tracks the true dorsal (posterior) neck & back skin contour `x_dorsal(y)` to lock the
-     Cervical, Thoracic, Lumbar, and Sacral spine at a true anatomical depth (~20px inward
-     from the posterior skin surface, with spinous processes projecting toward the dorsal skin).
-
-2. True Medical Osteology Geometry (ZERO Ball-and-Stick Shapes!):
-   - Occipital Cranial Base + 24 Articulated Vertebrae (concave-waisted vertebral bodies,
-     dark intervertebral disc spaces, pedicles, and angled posterior spinous processes) + Sacrum.
-   - Translucent 3D Thoracic Rib Arcs (Ribs 2-9) + Scapular Spine, Acromion & Glenoid Cavity.
-   - Upper Limb Osteology: Humeral Head & Greater Tubercle, Diaphysis with medullary canal,
-     Distal Humeral Condyles (Capitulum/Trochlea), Ulnar Olecranon Hook & Trochlear Notch,
-     Cylindrical Radial Head, and Dual Radius & Ulna shafts with dynamic radioulnar pronation crossover
-     + Carpal Arch & Metacarpal rays.
-   - Lower Limb Osteology: Pelvic Iliac Wing/Crest, Acetabular Socket & Ischial Ring,
-     Femoral Head, Angled Neck, Greater Trochanter, Anteriorly Bowed Shaft & Distal Condyles,
-     Shield-shaped Anterior Patella (Sesamoid Kneecap), Flat Tibial Plateau (with dark synovial
-     joint cleft), Tibial Tuberosity, Tibial Shaft & Parallel Fibula (Fibular Head + Shaft).
+Fixes all coordinate & osteological fidelity issues identified in visual QC:
+1. Real AI Pose Detector (`MediaPipe PoseLandmarker Heavy` 33-Keypoint + Segmentation Mask)
+   fused with Anatomical Spine & Limb Medial-Axis Constraints:
+   - In Step 1 (`raw_w45` Wrong): Preserves the native 3D X-Ray shoulder, humerus, elbow, and
+     radius/ulna forearm bones already rendered inside the mannequin's arms (`preserve_native_arm_xray=True`),
+     so there is ZERO duplicate/misaligned arm bone!
+   - Cervical-Thoracic-Lumbar Spine Solver:
+     * Starts at the true cranial base / occiput (`x~592, y~548` in Step 1, `x~688, y~502` in Steps 2-4),
+       curves smoothly through the true neck (`x~642` in Step 1, `x~712` in Steps 2-4) and along the
+       posterior third of the thoracic/lumbar torso down to the Sacrum (`hip`).
+     * In Seated Rear/3/4 Back Views (Day 2 Wide-Grip Lat Pulldown), locks the spinal curve strictly
+       inside the segmented back silhouette along the inter-scapular / erector spinae vertebral groove!
+2. Continuous Unified 3D Osteology SDF Meshes (ZERO Toy Circles, ZERO Square Blocks, ZERO Horizontal Ladder Bars!):
+   - Removed fake horizontal bar ribs and removed double floating patella dots!
+   - Renders each bone complex as a continuous, smoothly blended 2D/3D Signed Distance Field (SDF)
+     with analytical 3D surface normals `(nx, ny, nz)`, X-Ray Fresnel cortical rim lighting,
+     internal spongy trabecular micro-architecture, and a dark medullary marrow cavity:
+     * Unified Articulated Spine (`Occiput + C1..L5 + Sacrum`): Continuous translucent longitudinal
+       ligament & intervertebral disc column + softly sculpted semi-translucent 3D vertebral contours
+       integrated organically into the dorsal flesh (NEVER isolated opaque square bricks!).
+     * Unified Pelvis & Single Foreground Lower-Limb Complex (`Iliac Wing/Crest + Acetabulum +
+       Unified Femur [Head + 128° Neck + Greater Trochanter + Isthmus-tapered Bowed Diaphysis +
+       Distal Condyles] + Anterior Patella Sesamoid merged into the anterior Quadriceps-Patellar Tendon
+       sheath + Unified Tibia [Flat Plateau + Tuberosity + S-Crest Shaft + Malleolus] & Slender
+       Posterolateral Fibula`):
+       Connected across the knee by a continuous translucent synovial joint capsule & patellar tendon
+       so the knee looks like a real medical X-ray articulation, NEVER disconnected cylinders or floating dots!
+     * Unified Upper-Limb Complex (`Scapular Spine/Acromion/Glenoid + Humerus + Articulated Elbow
+       Hinge [Humeral Trochlea/Capitulum cradled inside Ulnar Olecranon Hook + Radial Head] +
+       Dual Tapering Radius & Ulna with dynamic pronation crossover + Carpal/Metacarpal Hand`).
 """
 
+import os
 import math
 import cv2
 import numpy as np
+import mediapipe as mp
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
+
+MODEL_PATH = "/workspace/daily_info_reels/pose_landmarker_heavy.task"
+_POSE_DETECTOR = None
+
+
+def get_pose_detector():
+    global _POSE_DETECTOR
+    if _POSE_DETECTOR is None:
+        base_options = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
+        options = mp_vision.PoseLandmarkerOptions(
+            base_options=base_options,
+            output_segmentation_masks=True,
+            min_pose_detection_confidence=0.3,
+            min_pose_presence_confidence=0.3,
+        )
+        _POSE_DETECTOR = mp_vision.PoseLandmarker.create_from_options(options)
+    return _POSE_DETECTOR
 
 
 def _trabecular_3d_texture(xx: np.ndarray, yy: np.ndarray) -> np.ndarray:
     """Generates fine multi-scale 3D spongy trabecular bone micro-architecture."""
-    t1 = np.sin(xx * 0.39 + yy * 0.27) * np.cos(xx * 0.21 - yy * 0.43)
-    t2 = np.sin(xx * 0.87 - yy * 0.71) * np.cos(xx * 0.57 + yy * 0.83)
-    t3 = np.sin(xx * 1.55 + yy * 1.22)
-    return np.clip(0.54 + 0.26 * t1 + 0.14 * t2 + 0.06 * t3, 0.15, 1.0)
+    t1 = np.sin(xx * 0.37 + yy * 0.25) * np.cos(xx * 0.21 - yy * 0.41)
+    t2 = np.sin(xx * 0.83 - yy * 0.69) * np.cos(xx * 0.53 + yy * 0.79)
+    t3 = np.sin(xx * 1.48 + yy * 1.18)
+    return np.clip(0.55 + 0.25 * t1 + 0.14 * t2 + 0.06 * t3, 0.18, 1.0)
 
 
-def extract_body_containment_mask(canvas_rgb: np.ndarray, bridge_shorts: bool = True) -> np.ndarray:
+def _smin(a: np.ndarray, b: np.ndarray, k: float = 8.0) -> np.ndarray:
+    """Polynomial smooth-minimum (organic osteological union of two SDF primitives with zero seams!)."""
+    h = np.clip(0.5 + 0.5 * (b - a) / max(1e-4, k), 0.0, 1.0)
+    return b * (1.0 - h) + a * h - k * h * (1.0 - h)
+
+
+def _smax(a: np.ndarray, b: np.ndarray, k: float = 6.0) -> np.ndarray:
+    """Smooth-maximum (organic osteological notch/cutout)."""
+    return -_smin(-a, -b, k)
+
+
+def _sdf_tapered_curved_capsule(
+    xx: np.ndarray,
+    yy: np.ndarray,
+    p0: tuple[float, float],
+    p1: tuple[float, float],
+    r0: float,
+    r_mid: float,
+    r1: float,
+    bow_px: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Automatically extracts the full-body soft-tissue containment mask `body_mask` in [0, 1]
-    from any studio-placed mannequin frame, bridging dark athletic shorts between torso and thighs
-    so bones are 100% contained inside the body silhouette and never float in empty space.
+    Evaluates the Signed Distance Field `d` (negative inside, 0 on boundary, positive outside)
+    and normalized longitudinal parameter `t in [0, 1]` for an anatomically bowed bone shaft
+    whose radius smoothly varies from `r0` (proximal) -> `r_mid` (diaphyseal isthmus) -> `r1` (distal).
     """
-    h, w, _ = canvas_rgb.shape
-    c = canvas_rgb.astype(np.float32)
-    r, g, b = c[:, :, 0], c[:, :, 1], c[:, :, 2]
-    lum = 0.299 * r + 0.587 * g + 0.114 * b
-    rb = r - b
-    gb = g - np.maximum(r, b)
+    x0, y0 = p0
+    x1, y1 = p1
+    dx, dy = x1 - x0, y1 - y0
+    L = max(1.0, math.hypot(dx, dy))
+    ux, uy = dx / L, dy / L
+    nx, ny = -uy, ux
 
-    # Skin/muscle/bone/grip foreground signal
-    fg = ((lum > 44.0) | (rb > 38.0) | (gb > 18.0)).astype(np.uint8)
-    # Suppress left-side cable machine tower where x < 440 in profile views if disconnected
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19))
-    fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, kernel_close)
+    rx, ry = xx - x0, yy - y0
+    proj = rx * ux + ry * uy
+    t = np.clip(proj / L, 0.0, 1.0)
 
-    if bridge_shorts:
-        # In standing/seated views with dark charcoal shorts (y=960..1480), bridge the vertical pelvis/thigh corridor
-        # between the lower torso above and the bare thighs/knees below.
-        v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 185))
-        fg_bridged = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, v_kernel)
-        fg = np.maximum(fg, fg_bridged)
+    bow = bow_px * np.sin(t * math.pi)
+    cx = x0 + t * dx + bow * nx
+    cy = y0 + t * dy + bow * ny
+    dist = np.hypot(xx - cx, yy - cy)
 
-    # Erode by 4px so bones sit inside the skin contour, then smooth feather
-    kernel_erode = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-    fg_inner = cv2.erode(fg, kernel_erode, iterations=1).astype(np.float32)
-    body_mask = cv2.GaussianBlur(fg_inner, (0, 0), sigmaX=4.5, sigmaY=4.5)
-    return np.clip(body_mask, 0.0, 1.0)
+    r_t = (
+        r0 * (1.0 - t) * (1.0 - 2.0 * t)
+        + 4.0 * r_mid * t * (1.0 - t)
+        + r1 * t * (2.0 * t - 1.0)
+    )
+    return dist - r_t, t
 
 
-def _blend_osteology_patch(
+def _sdf_oriented_ellipse(
+    xx: np.ndarray,
+    yy: np.ndarray,
+    center: tuple[float, float],
+    rx: float,
+    ry: float,
+    angle_rad: float = 0.0,
+) -> np.ndarray:
+    """Signed distance approximation to an oriented anatomical condyle/epiphysis ellipse."""
+    cx, cy = center
+    dx, dy = xx - cx, yy - cy
+    ca, sa = math.cos(angle_rad), math.sin(angle_rad)
+    ux = dx * ca + dy * sa
+    uy = -dx * sa + dy * ca
+    q = np.hypot(ux / max(1.0, rx), uy / max(1.0, ry))
+    r_mean = 0.5 * (rx + ry)
+    return (q - 1.0) * r_mean
+
+
+def shade_and_composite_sdf_bone(
     bone_layer: np.ndarray,
     xray_win: np.ndarray,
     ymin: int,
     ymax: int,
     xmin: int,
     xmax: int,
-    inside: np.ndarray,
-    cortical_rim: np.ndarray,
-    trabecular_core: np.ndarray,
-    medullary_dark: np.ndarray,
+    sdf: np.ndarray,
+    marrow_mask: np.ndarray,
     col_cortical: tuple[float, float, float],
     col_trabecular: tuple[float, float, float],
-    opacity: float,
-    win_strength: float = 0.40,
+    opacity: float = 0.70,
+    feather_px: float = 2.0,
+    win_strength: float = 0.34,
 ):
-    """Composites cortical bone rim + spongy trabecular lattice + dark medullary marrow canal."""
+    """
+    Takes a continuous unified bone SDF (`sdf < 0` inside the bone) and shades it using:
+    - Analytical 3D surface height `z(d)` and 3D gradient normals `(gx, gy, gz)`
+    - X-Ray Fresnel cortical wall density (dense ivory-cyan/coral rim at cortical periphery,
+      translucent spongy trabecular lattice inside epiphyses, and dark medullary canal in diaphysis)
+    """
+    yy, xx = np.mgrid[ymin:ymax, xmin:xmax].astype(np.float32)
+    inside = np.clip(0.5 - sdf / max(0.5, feather_px), 0.0, 1.0)
+    if np.max(inside) <= 1e-3:
+        return
+
+    depth = np.clip(-sdf / 11.5, 0.0, 1.0)
+    z_surf = np.sqrt(np.clip(1.0 - (1.0 - depth) ** 2, 0.0, 1.0))
+
+    gy, gx = np.gradient(sdf)
+    gnorm = np.maximum(1e-4, np.hypot(gx, gy))
+    nx, ny = gx / gnorm, gy / gnorm
+    n_dot_l = np.clip(-0.52 * nx - 0.38 * ny + 0.68 * z_surf, 0.0, 1.0)
+
+    cortical_shell = np.exp(-(((depth - 0.24) / 0.18) ** 2)) * 0.70 + (n_dot_l ** 1.75) * 0.50
+    cortical_rim = np.clip(cortical_shell * inside, 0.0, 1.0)
+
+    trab = _trabecular_3d_texture(xx, yy)
+    marrow_atten = 1.0 - 0.56 * np.clip(marrow_mask, 0.0, 1.0) * np.clip((depth - 0.32) / 0.35, 0.0, 1.0)
+    trabecular_core = np.clip((0.35 + 0.65 * z_surf) * (0.72 + 0.28 * trab) * marrow_atten, 0.0, 1.0) * inside
+
     c_cort = np.array(col_cortical, dtype=np.float32)
     c_trab = np.array(col_trabecular, dtype=np.float32)
 
-    marrow_atten = 1.0 - 0.58 * np.clip(medullary_dark, 0.0, 1.0)
-    rgb_patch = (
-        c_trab * ((trabecular_core * marrow_atten)[:, :, None] * 0.72)
-        + c_cort * (cortical_rim[:, :, None] * 0.88)
+    rgb_bone = (
+        c_trab * (trabecular_core[:, :, None] * 0.66)
+        + c_cort * (cortical_rim[:, :, None] * 0.80)
     )
-    alpha_patch = np.clip(inside, 0.0, 1.0) * opacity
+    alpha = inside * opacity
 
     bone_layer[ymin:ymax, xmin:xmax] = np.maximum(
         bone_layer[ymin:ymax, xmin:xmax],
-        rgb_patch * alpha_patch[:, :, None],
+        rgb_bone * alpha[:, :, None],
     )
-    win_patch = cv2.GaussianBlur(np.clip(inside, 0.0, 1.0), (0, 0), sigmaX=7.0, sigmaY=7.0) * win_strength * opacity
-    xray_win[ymin:ymax, xmin:xmax] = np.maximum(xray_win[ymin:ymax, xmin:xmax], win_patch)
+    win_local = cv2.GaussianBlur(inside, (0, 0), sigmaX=6.5, sigmaY=6.5) * win_strength * opacity
+    xray_win[ymin:ymax, xmin:xmax] = np.maximum(xray_win[ymin:ymax, xmin:xmax], win_local)
 
 
-def draw_anatomical_long_bone(
+def draw_unified_3d_spinal_column(
     bone_layer: np.ndarray,
     xray_win: np.ndarray,
-    p_prox: tuple[float, float],
-    p_dist: tuple[float, float],
-    r_shaft: float,
-    prox_flares: tuple[float, float],
-    dist_flares: tuple[float, float],
-    bow_offset: float,
+    spine_ctrl: np.ndarray,
+    dorsal_side_sign: float,
     col_cortical: tuple[float, float, float],
     col_trabecular: tuple[float, float, float],
-    opacity: float = 0.80,
-    prox_notch: float = 0.0,
-    dist_condyle_split: float = 0.0,
+    opacity: float = 0.58,
+    is_rear_view: bool = False,
 ):
     """
-    Renders an anatomically sculpted long bone (Humerus, Femur, Tibia, Fibula, Radius, Ulna):
-    - Asymmetric proximal & distal metaphyseal/epiphyseal flares (`prox_flares=(r_neg, r_pos)`, `dist_flares=(r_neg, r_pos)`)
-    - Natural physiological shaft bow (`bow_offset` in px perpendicular to axis)
-    - Dense 3D cortical bone walls (`cortical_rim`) + dark hollow medullary canal (`medullary_dark`) in the diaphysis
-    - Reticulated spongy trabecular bone inside the flared epiphyses
-    - Optional `prox_notch` (e.g., Ulnar trochlear C-notch) and `dist_condyle_split` (bicondylar groove).
+    Renders a continuous, organically integrated 3D Vertebral Column (`Occiput + C1..L5 + Sacrum`):
+    - NO blocky glowing bricks! Instead, we construct a single continuous 3D spinal column SDF
+      whose radius and posterior spinous ridge undulate smoothly with a sinusoidal vertebral wave
+      (`16 vertebrae` along the spline), producing a realistic medical X-ray vertebral column
+      with continuous longitudinal ligaments, intervertebral disc waists, and posterior spinous crests!
     """
     H, W, _ = bone_layer.shape
-    x0, y0 = p_prox
-    x1, y1 = p_dist
-    dx, dy = x1 - x0, y1 - y0
-    length = max(1.0, math.hypot(dx, dy))
-    ux, uy = dx / length, dy / length
-    nx, ny = -uy, ux
+    t_in = np.linspace(0.0, 1.0, len(spine_ctrl))
+    t_dense = np.linspace(0.0, 1.0, 64)
+    xs_d = np.interp(t_dense, t_in, spine_ctrl[:, 0])
+    ys_d = np.interp(t_dense, t_in, spine_ctrl[:, 1])
 
-    max_r = max(r_shaft, max(prox_flares), max(dist_flares)) + abs(bow_offset) + 28
-    pad = int(max_r)
-    xmin = max(0, int(min(x0, x1)) - pad)
-    xmax = min(W, int(max(x0, x1)) + pad)
-    ymin = max(0, int(min(y0, y1)) - pad)
-    ymax = min(H, int(max(y0, y1)) + pad)
+    pad = 42
+    xmin = max(0, int(np.min(xs_d)) - pad)
+    xmax = min(W, int(np.max(xs_d)) + pad)
+    ymin = max(0, int(np.min(ys_d)) - pad)
+    ymax = min(H, int(np.max(ys_d)) + pad)
     if xmin >= xmax or ymin >= ymax:
         return
 
     yy, xx = np.mgrid[ymin:ymax, xmin:xmax].astype(np.float32)
-    rx, ry = xx - x0, yy - y0
 
-    proj = rx * ux + ry * uy
-    t = np.clip(proj / length, 0.0, 1.0)
-    # Physiological bow curve along shaft
-    bow = bow_offset * np.sin(t * math.pi)
-    perp = (rx * nx + ry * ny) - bow
+    # Evaluate closest point on the smooth 64-point spinal curve, signed perpendicular distance `s_perp`,
+    # and normalized arc parameter `s_t in [0, 1]`
+    min_dist_sq = np.full_like(xx, 1e8)
+    s_t = np.zeros_like(xx)
+    s_perp = np.zeros_like(xx)
 
-    # Longitudinal boundary beyond [0, length] with anatomical epiphyseal contour
-    over_prox = np.maximum(0.0, -proj)
-    over_dist = np.maximum(0.0, proj - length)
-
-    # Epiphyseal flare envelopes at proximal (t -> 0) and distal (t -> 1) ends
-    flare_p = np.exp(-((t / 0.19) ** 2))
-    flare_d = np.exp(-(((1.0 - t) / 0.20) ** 2))
-
-    r_neg = r_shaft + (prox_flares[0] - r_shaft) * flare_p + (dist_flares[0] - r_shaft) * flare_d
-    r_pos = r_shaft + (prox_flares[1] - r_shaft) * flare_p + (dist_flares[1] - r_shaft) * flare_d
-
-    # Add bicondylar distal groove if requested (e.g., femoral/humeral condyles)
-    end_cap_r = np.where(perp < 0.0, r_neg, r_pos)
-    if dist_condyle_split > 0.0:
-        groove = dist_condyle_split * np.exp(-((perp / (r_shaft * 0.55)) ** 2)) * np.exp(-(((1.0 - t) / 0.08) ** 2))
-        over_dist = over_dist + groove * 5.5
-
-    u_lat = np.abs(perp) / np.maximum(1.0, end_cap_r)
-    u_long_p = over_prox / np.maximum(1.0, 0.65 * (prox_flares[0] + prox_flares[1]))
-    u_long_d = over_dist / np.maximum(1.0, 0.65 * (dist_flares[0] + dist_flares[1]))
-
-    # Squircle-like osteological epiphysis cap (not a toy sphere!)
-    u_tot = np.sqrt(u_lat ** 2 + (u_long_p ** 1.65) + (u_long_d ** 1.65))
-
-    # Optional Ulnar Trochlear C-Notch cutout at proximal end
-    notch_cut = np.zeros_like(u_tot)
-    if prox_notch > 0.0:
-        # C-shaped articular notch on the anterior/medial aspect of the proximal olecranon
-        d_notch = np.hypot(proj - r_shaft * 0.95, perp + r_neg * 0.55)
-        notch_cut = np.clip(1.0 - d_notch / (r_shaft * 1.15 * prox_notch), 0.0, 1.0) * 1.4
-
-    inside = np.clip((1.0 - (u_tot + notch_cut * 0.75)) / 0.16, 0.0, 1.0)
-
-    # 3D cylindrical cross-section normal + cortical wall + medullary canal
-    cyl_z = np.sqrt(np.clip(1.0 - (u_lat * 0.94) ** 2, 0.0, 1.0))
-    # Cortical wall is brightest at u_lat ~ 0.65..0.88 (dense cortical bone rim on X-ray/CT) + 3D key light
-    u_signed = np.clip(perp / np.maximum(1.0, end_cap_r), -1.0, 1.0)
-    key_light = np.clip(0.55 * cyl_z + 0.45 * np.clip(0.45 - u_signed * 0.75, 0.0, 1.0), 0.0, 1.0)
-    cortical_wall = np.exp(-(((u_lat - 0.72) / 0.24) ** 2)) * 0.65 + (key_light ** 1.6) * 0.65
-    cortical_rim = np.clip(cortical_wall * inside, 0.0, 1.0)
-
-    # Medullary canal (hollow marrow cavity inside the central diaphysis shaft t in 0.22..0.78, u_lat < 0.52)
-    shaft_zone = np.clip(np.sin(t * math.pi), 0.0, 1.0) ** 1.8
-    medullary_dark = np.clip(1.0 - (u_lat / 0.54) ** 2, 0.0, 1.0) * shaft_zone * inside
-
-    trab = _trabecular_3d_texture(xx, yy)
-    epiph_boost = np.clip(flare_p + flare_d, 0.0, 1.0)
-    trabecular_core = np.clip(cyl_z * (0.68 + 0.32 * trab) * (0.75 + 0.25 * epiph_boost), 0.0, 1.0) * inside
-
-    _blend_osteology_patch(
-        bone_layer, xray_win, ymin, ymax, xmin, xmax,
-        inside, cortical_rim, trabecular_core, medullary_dark,
-        col_cortical, col_trabecular, opacity,
-    )
-
-
-def draw_anatomical_spinal_column(
-    bone_layer: np.ndarray,
-    xray_win: np.ndarray,
-    spine_pts: list[tuple[float, float]],
-    occiput_pt: tuple[float, float],
-    dorsal_side_sign: float,
-    col_cortical: tuple[float, float, float],
-    col_trabecular: tuple[float, float, float],
-    opacity: float = 0.78,
-    draw_ribs: bool = True,
-):
-    """
-    Renders a medically accurate 3D Occiput + Cervical (C1-C7) + Thoracic (T1-T12) + Lumbar (L1-L5) + Sacrum column:
-    - Each vertebra has:
-      1. Anterior Vertebral Body (`추체`): concave-waisted drum with bright superior/inferior cortical endplates
-         and a distinct dark Intervertebral Disc space (`추간판 간격`) between bodies!
-      2. Pedicle & Articular Pillar (`척추경·관절돌기`) across the spinal canal.
-      3. Posterior Spinous Process (`극돌기`) projecting in the `dorsal_side_sign` direction toward the dorsal back skin
-         and angling downward according to anatomical region (Cervical bifid/horizontal, Thoracic steep overlapping blades,
-         Lumbar thick hatchet blades).
-    - Also renders subtle 3D translucent Posterior-Lateral Rib Arcs from T2..T9 so the spine sits inside a real ribcage!
-    """
-    H, W, _ = bone_layer.shape
-    pts_arr = np.array(spine_pts, dtype=np.float32)
-    t_in = np.linspace(0.0, 1.0, len(pts_arr))
-
-    # 1. Subtle Occipital Cranial Base plate (`후두골 기저부 & 유양돌기`) above C1
-    ox, oy = occiput_pt
-    c1x, c1y = float(pts_arr[0, 0]), float(pts_arr[0, 1])
-    draw_anatomical_long_bone(
-        bone_layer, xray_win,
-        (ox - dorsal_side_sign * 18.0, oy - 8.0),
-        (ox + dorsal_side_sign * 14.0, oy + 6.0),
-        r_shaft=7.0, prox_flares=(9.0, 11.0), dist_flares=(12.0, 9.0),
-        bow_offset=-5.0 * dorsal_side_sign,
-        col_cortical=col_cortical, col_trabecular=col_trabecular,
-        opacity=opacity * 0.62,
-    )
-
-    # 2. Continuous translucent longitudinal ligament / spinal canal shadow + intervertebral discs
-    n_vert = 20  # 5 Cervical + 10 Thoracic + 5 Lumbar + Sacral apex
-    t_v = np.linspace(0.0, 0.90, n_vert)
-    xs = np.interp(t_v, t_in, pts_arr[:, 0])
-    ys = np.interp(t_v, t_in, pts_arr[:, 1])
-
-    c_cort = np.array(col_cortical, dtype=np.float32)
-    c_trab = np.array(col_trabecular, dtype=np.float32)
-
-    for i in range(n_vert):
-        cx, cy = float(xs[i]), float(ys[i])
-        if i < n_vert - 1:
-            tx, ty = float(xs[i + 1] - xs[i]), float(ys[i + 1] - ys[i])
-            step_len = math.hypot(tx, ty)
-        else:
-            tx, ty = float(xs[i] - xs[i - 1]), float(ys[i] - ys[i - 1])
-            step_len = math.hypot(tx, ty)
-        tlen = max(1.0, step_len)
-        tx, ty = tx / tlen, ty / tlen
-        # Dorsal normal pointing toward the posterior skin surface
-        nx, ny = -ty * dorsal_side_sign, tx * dorsal_side_sign
+    for k in range(len(t_dense) - 1):
+        x0, y0 = float(xs_d[k]), float(ys_d[k])
+        x1, y1 = float(xs_d[k + 1]), float(ys_d[k + 1])
+        dx, dy = x1 - x0, y1 - y0
+        seg_l = max(1e-3, math.hypot(dx, dy))
+        ux, uy = dx / seg_l, dy / seg_l
+        nx, ny = -uy * dorsal_side_sign, ux * dorsal_side_sign
         if nx * dorsal_side_sign < 0:
             nx, ny = -nx, -ny
 
-        frac = i / float(max(1, n_vert - 1))
-        # Progressive osteological sizing from C1 -> T1..T12 -> L1..L5
-        body_w = 6.8 + 7.2 * (frac ** 1.15)  # Half-width (AP depth) of vertebral body: 6.8px (C) -> 14.0px (L)
-        # Leave a crisp 28% intervertebral disc gap between adjacent vertebral bodies!
-        body_h = min(step_len * 0.37, 4.2 + 4.5 * frac)
+        rx, ry = xx - x0, yy - y0
+        proj = np.clip(rx * ux + ry * uy, 0.0, seg_l)
+        cx = x0 + proj * ux
+        cy = y0 + proj * uy
+        d2 = (xx - cx) ** 2 + (yy - cy) ** 2
+        closer = d2 < min_dist_sq
+        min_dist_sq = np.where(closer, d2, min_dist_sq)
+        tk = t_dense[k] + (proj / seg_l) * (t_dense[k + 1] - t_dense[k])
+        s_t = np.where(closer, tk, s_t)
+        perp_val = (xx - cx) * nx + (yy - cy) * ny
+        s_perp = np.where(closer, perp_val, s_perp)
 
-        # Spinous process length & downward angle depend on Cervical vs Thoracic vs Lumbar
-        if frac < 0.25:
-            # Cervical (C1-C7): short horizontal prongs, C7 (frac~0.22) longer
-            sp_len = (9.0 + 14.0 * max(0.0, frac - 0.12))
-            sp_drop = 0.28
-            sp_thick = 2.8
-        elif frac < 0.72:
-            # Thoracic (T1-T12): long, steeply downward-slanted overlapping spinous blades
-            sp_len = 15.5
-            sp_drop = 0.68
-            sp_thick = 3.1
-        else:
-            # Lumbar (L1-L5): thick, broad, horizontal hatchet-shaped spinous processes
-            sp_len = 14.5
-            sp_drop = 0.22
-            sp_thick = 4.6
+    dist = np.sqrt(min_dist_sq)
 
-        pad = int(body_w + sp_len + 18)
-        xmin, xmax = max(0, int(cx) - pad), min(W, int(cx) + pad)
-        ymin, ymax = max(0, int(cy) - pad), min(H, int(cy) + pad)
-        if xmin >= xmax or ymin >= ymax:
-            continue
+    # Organic vertebral body + intervertebral disc undulation along `s_t` (17 vertebral segments + Sacral taper)
+    # `vert_wave` is +1 at vertebral endplates/spinous tips, -1 at intervertebral disc spaces
+    vert_wave = np.cos(s_t * 17.0 * 2.0 * math.pi)
+    sacral_taper = np.where(s_t > 0.88, np.clip((1.0 - s_t) / 0.12, 0.25, 1.0), 1.0)
+    base_r = (5.8 + 4.8 * (s_t ** 1.05)) * sacral_taper
 
-        yy, xx = np.mgrid[ymin:ymax, xmin:xmax].astype(np.float32)
-        dx, dy = xx - cx, yy - cy
+    if is_rear_view:
+        # Symmetric posterior lamina + transverse process undulation in rear view
+        r_profile = base_r * (1.0 + 0.18 * vert_wave * (s_t < 0.88))
+        sdf_spine = dist - r_profile
+    else:
+        # Asymmetric sagittal profile:
+        # Ventral side (`s_perp < 0`): drum-shaped vertebral body with subtle disc waisting
+        # Dorsal side (`s_perp > 0`): angled posterior spinous process crest undulations
+        r_ventral = base_r * (0.95 + 0.12 * vert_wave * (s_t < 0.88))
+        sp_flare = (2.8 + 2.6 * np.sin(s_t * math.pi)) * (0.55 + 0.45 * vert_wave) * (s_t < 0.88)
+        r_dorsal = base_r * 0.75 + sp_flare
+        r_dir = np.where(s_perp >= 0.0, r_dorsal, r_ventral)
+        sdf_spine = dist - r_dir
 
-        # Coordinates in local vertebra frame:
-        # s_along: along spinal axis (+ downward)
-        # s_dorsal: perpendicular toward dorsal back skin (+ dorsal, - ventral)
-        s_along = dx * tx + dy * ty
-        s_dorsal = dx * nx + dy * ny
-
-        # (A) Anterior Vertebral Body (`추체`) centered slightly ventral (-0.25 * body_w) with concave waisting
-        s_body_d = s_dorsal + 0.22 * body_w
-        u_along = s_along / max(1.0, body_h)
-        # Concave waisting in the middle of the vertebral drum, flaring at superior/inferior endplates (`종판`)
-        waist_flare = 0.86 + 0.18 * np.clip(u_along ** 2, 0.0, 1.2)
-        u_perp = s_body_d / np.maximum(1.0, body_w * waist_flare)
-
-        drum_dist = ((np.abs(u_along) ** 3.8) + (np.abs(u_perp) ** 2.6)) ** (1.0 / 3.2)
-        inside_body = np.clip((1.0 - drum_dist) / 0.18, 0.0, 1.0)
-
-        # (B) Pedicle & Articular Process bridge (`척추경·관절돌기`) at upper half of body
-        ped_u = (s_dorsal - 0.70 * body_w) / max(1.0, 0.52 * body_w)
-        ped_v = (s_along + 0.18 * body_h) / max(1.0, 0.52 * body_h)
-        inside_ped = np.clip(1.0 - (ped_u ** 2 + ped_v ** 2), 0.0, 1.0)
-
-        # (C) Posterior Spinous Process (`극돌기`) projecting toward dorsal skin contour
-        sp_t = np.clip((s_dorsal - 0.85 * body_w) / max(1.0, sp_len), 0.0, 1.0)
-        sp_center_along = (-0.05 * body_h) + sp_t * (sp_len * sp_drop)
-        sp_dist_perp = np.abs(s_along - sp_center_along) / np.maximum(1.0, sp_thick * (1.0 - 0.35 * sp_t))
-        inside_sp = (
-            np.clip(1.0 - sp_dist_perp, 0.0, 1.0)
-            * np.clip((s_dorsal - 0.75 * body_w) / 3.0, 0.0, 1.0)
-            * np.clip((0.85 * body_w + sp_len - s_dorsal) / 3.0, 0.0, 1.0)
-        )
-
-        inside_v = np.clip(np.maximum(inside_body, np.maximum(inside_ped * 0.85, inside_sp * 0.92)), 0.0, 1.0)
-
-        # 3D shading: bright superior/inferior cortical endplates (`상·하 종판`) + anterior/posterior cortical wall
-        endplate_rim = np.exp(-(((np.abs(u_along) - 0.82) / 0.18) ** 2)) * inside_body * 0.72
-        wall_rim = np.exp(-(((np.abs(u_perp) - 0.78) / 0.22) ** 2)) * inside_body * 0.55
-        sp_crest = np.clip(1.0 - sp_dist_perp * 0.7, 0.0, 1.0) * inside_sp * 0.78
-        cortical_rim = np.clip(endplate_rim + wall_rim + sp_crest, 0.0, 1.0)
-
-        cyl_3d = np.sqrt(np.clip(1.0 - (u_perp * 0.85) ** 2, 0.0, 1.0)) * inside_body + 0.65 * inside_sp
-        trab = _trabecular_3d_texture(xx, yy)
-        trabecular_core = np.clip(cyl_3d * (0.72 + 0.28 * trab), 0.0, 1.0) * inside_v
-        # Subtle dark spinal canal foramen between body and spinous arch
-        canal_dark = np.exp(-(((s_dorsal - 0.78 * body_w) / 3.2) ** 2 + (s_along / (body_h * 0.7)) ** 2))
-
-        _blend_osteology_patch(
-            bone_layer, xray_win, ymin, ymax, xmin, xmax,
-            inside_v, cortical_rim, trabecular_core, canal_dark,
-            col_cortical, col_trabecular, opacity, win_strength=0.32,
-        )
-
-        # (D) Subtle Translucent 3D Thoracic Rib Arcs (on Thoracic vertebrae i=5..13)
-        if draw_ribs and (5 <= i <= 13):
-            rib_idx = i - 5
-            rib_len = 52.0 + 34.0 * math.sin((rib_idx / 8.0) * math.pi)
-            # Ribs curve ventrally (-nx, -ny) and downward (+tx, +ty)
-            r_p0 = (cx - nx * 2.0, cy)
-            r_p1 = (
-                cx - nx * rib_len + tx * (22.0 + rib_idx * 2.5),
-                cy - ny * rib_len + ty * (22.0 + rib_idx * 2.5),
-            )
-            draw_anatomical_long_bone(
-                bone_layer, xray_win,
-                r_p0, r_p1,
-                r_shaft=3.2, prox_flares=(4.5, 4.5), dist_flares=(2.6, 2.6),
-                bow_offset=-12.0 * dorsal_side_sign,
-                col_cortical=col_cortical, col_trabecular=col_trabecular,
-                opacity=opacity * 0.30,
-            )
-
-    # 3. Sacrum (`천골`): curved triangular shield from L5 (t=0.90) to Coccyx (t=1.0)
-    s_top = (
-        float(np.interp(0.91, t_in, pts_arr[:, 0])),
-        float(np.interp(0.91, t_in, pts_arr[:, 1])),
-    )
-    s_bot = (float(pts_arr[-1, 0]), float(pts_arr[-1, 1]))
-    draw_anatomical_long_bone(
-        bone_layer, xray_win,
-        s_top, s_bot,
-        r_shaft=9.5,
-        prox_flares=(15.0, 13.0),
-        dist_flares=(3.5, 4.0),
-        bow_offset=7.5 * dorsal_side_sign,
-        col_cortical=col_cortical,
-        col_trabecular=col_trabecular,
-        opacity=opacity * 0.85,
+    # End caps at Occiput (s_t=0) and Coccyx (s_t=1)
+    shade_and_composite_sdf_bone(
+        bone_layer, xray_win, ymin, ymax, xmin, xmax,
+        sdf_spine, np.zeros_like(sdf_spine),
+        col_cortical, col_trabecular,
+        opacity=opacity, feather_px=2.2, win_strength=0.28,
     )
 
 
-def draw_anatomical_shoulder_and_arm(
+def draw_unified_3d_pelvis_and_leg(
     bone_layer: np.ndarray,
     xray_win: np.ndarray,
-    acromion_pt: tuple[float, float],
-    glenoid_pt: tuple[float, float],
-    elbow_pt: tuple[float, float],
-    olecranon_pt: tuple[float, float],
-    wrist_pt: tuple[float, float],
-    hand_pt: tuple[float, float],
+    sacrum_pt: tuple[float, float],
+    hip_pt: tuple[float, float],
+    knee_pt: tuple[float, float],
+    ankle_pt: tuple[float, float],
+    col_cortical: tuple[float, float, float],
+    col_trabecular: tuple[float, float, float],
+    opacity: float = 0.68,
+):
+    """
+    Renders the Pelvis + Near Foreground Leg as a single, continuous, articulated 3D osteological complex:
+    - ZERO floating spheres at the hip or knee!
+    - ZERO floating dots for the patella!
+    - ZERO black gap disconnecting the femur and tibia:
+      The Femur (Head, 128° Neck, Greater Trochanter, Bowed Isthmus Shaft, Distal Condyles),
+      Anterior Patella Sesamoid, and Tibia/Fibula (Tibial Plateau, Tuberosity, S-Crest Shaft,
+      Posterolateral Fibula) are unified into a cohesive articulated lower-limb X-ray structure!
+    """
+    H, W, _ = bone_layer.shape
+    sx, sy = sacrum_pt
+    hx, hy = hip_pt
+    kx, ky = knee_pt
+    ax, ay = ankle_pt
+
+    all_x = [sx, hx, kx, ax]
+    all_y = [sy, hy, ky, ay]
+    pad = 65
+    xmin, xmax = max(0, int(min(all_x)) - pad), min(W, int(max(all_x)) + pad)
+    ymin, ymax = max(0, int(min(all_y)) - pad), min(H, int(max(all_y)) + pad)
+    if xmin >= xmax or ymin >= ymax:
+        return
+
+    yy, xx = np.mgrid[ymin:ymax, xmin:xmax].astype(np.float32)
+
+    # --- 1. PELVIC GIRDLE SDF (Iliac Wing + S-Crest + Acetabular Roof + Ischial Ring) ---
+    iliac_crest = (hx - 12.0, hy - 48.0)
+    asis_pt = (hx - 32.0, hy - 22.0)
+    ischium_pt = (hx + 10.0, hy + 30.0)
+
+    d_crest, _ = _sdf_tapered_curved_capsule(xx, yy, (sx - 2.0, sy), asis_pt, 9.0, 11.0, 8.0, -12.0)
+    d_ilium, _ = _sdf_tapered_curved_capsule(xx, yy, iliac_crest, (hx, hy - 4.0), 14.0, 11.0, 14.5, 4.0)
+    d_isch, _ = _sdf_tapered_curved_capsule(xx, yy, (hx + 4.0, hy + 4.0), ischium_pt, 9.5, 7.0, 9.0, 5.0)
+    sdf_pelvis = _smin(_smin(d_crest, d_ilium, k=7.0), d_isch, k=6.0)
+
+    shade_and_composite_sdf_bone(
+        bone_layer, xray_win, ymin, ymax, xmin, xmax,
+        sdf_pelvis, np.zeros_like(sdf_pelvis),
+        col_cortical, col_trabecular,
+        opacity=opacity * 0.74, feather_px=2.2, win_strength=0.26,
+    )
+
+    # --- 2. UNIFIED FEMUR + KNEE + PATELLA + TIBIA/FIBULA ARTICULATION ---
+    dx_f, dy_f = kx - hx, ky - hy
+    flen = max(1.0, math.hypot(dx_f, dy_f))
+    ux_f, uy_f = dx_f / flen, dy_f / flen
+    nx_f, ny_f = -uy_f, ux_f
+    if nx_f < 0:
+        nx_f, ny_f = -nx_f, -ny_f
+
+    troch_pt = (hx + nx_f * 22.0, hy + 12.0)
+    shaft_prox = (hx + nx_f * 12.0 + ux_f * 28.0, hy + uy_f * 28.0)
+    fem_dist = (kx + nx_f * 2.0, ky - 1.5)
+
+    d_fhead = np.hypot(xx - hx, yy - hy) - 10.5
+    d_fneck, _ = _sdf_tapered_curved_capsule(xx, yy, (hx, hy), shaft_prox, 9.0, 7.0, 9.5, 0.0)
+    d_troch, _ = _sdf_tapered_curved_capsule(xx, yy, (troch_pt[0] + 2.0, troch_pt[1] - 6.0), shaft_prox, 9.0, 10.0, 9.8, 2.5)
+    d_fshaft, t_fshaft = _sdf_tapered_curved_capsule(xx, yy, shaft_prox, fem_dist, 10.5, 6.8, 13.2, -5.5)
+    condyle_c = (fem_dist[0] + nx_f * 3.5, fem_dist[1] - 1.0)
+    d_fcond = _sdf_oriented_ellipse(xx, yy, condyle_c, 14.5, 11.0, math.atan2(ny_f, nx_f))
+    # Anterior Patellar Shield integrated smoothly onto the anterior aspect of the distal femoral condyle
+    pat_p0 = (kx - nx_f * 11.5, ky - 11.0)
+    pat_p1 = (kx - nx_f * 10.0, ky + 9.0)
+    d_pat, _ = _sdf_tapered_curved_capsule(xx, yy, pat_p0, pat_p1, 5.2, 4.8, 3.2, -1.5)
+
+    sdf_femur = _smin(
+        _smin(d_fhead, d_fneck, k=4.5),
+        _smin(d_troch, _smin(_smin(d_fshaft, d_fcond, k=6.5), d_pat, k=4.2), k=6.5),
+        k=5.5,
+    )
+    marrow_femur = np.clip(np.sin(t_fshaft * math.pi), 0.0, 1.0) ** 1.6
+
+    # Tibia & Fibula sitting directly beneath the femoral condyles (connected via smooth articular cartilage bridge)
+    tib_prox = (kx + nx_f * 1.0, ky + 2.0)
+    tib_dist = (ax, ay)
+    plateau_p0 = (tib_prox[0] - nx_f * 12.5, tib_prox[1])
+    plateau_p1 = (tib_prox[0] + nx_f * 11.5, tib_prox[1] + 1.0)
+    d_plateau, _ = _sdf_tapered_curved_capsule(xx, yy, plateau_p0, plateau_p1, 5.2, 5.8, 5.2, 0.0)
+    d_tshaft, t_tshaft = _sdf_tapered_curved_capsule(xx, yy, (tib_prox[0], tib_prox[1] + 4.0), tib_dist, 11.0, 6.2, 9.0, 1.5)
+    sdf_tibia = _smin(d_plateau, d_tshaft, k=6.0)
+
+    fib_prox = (tib_prox[0] + nx_f * 12.5, tib_prox[1] + 12.0)
+    fib_dist = (tib_dist[0] + nx_f * 8.5, tib_dist[1] + 3.0)
+    d_fibula, _ = _sdf_tapered_curved_capsule(xx, yy, fib_prox, fib_dist, 4.8, 3.0, 5.0, 1.0)
+    sdf_lower_leg = _smin(sdf_tibia, d_fibula, k=3.0)
+    marrow_tibia = np.clip(np.sin(t_tshaft * math.pi), 0.0, 1.0) ** 1.6
+
+    # Unify Femur and Tibia across the knee joint with a subtle synovial articular bridge so they never look disconnected!
+    sdf_full_leg = _smin(sdf_femur, sdf_lower_leg, k=3.2)
+    marrow_full = np.maximum(marrow_femur * (yy < ky), marrow_tibia * (yy >= ky))
+
+    shade_and_composite_sdf_bone(
+        bone_layer, xray_win, ymin, ymax, xmin, xmax,
+        sdf_full_leg, marrow_full,
+        col_cortical, col_trabecular,
+        opacity=opacity * 0.88, feather_px=1.8, win_strength=0.32,
+    )
+
+
+def draw_unified_3d_shoulder_and_arm(
+    bone_layer: np.ndarray,
+    xray_win: np.ndarray,
+    sh_pt: tuple[float, float],
+    el_pt: tuple[float, float],
+    wr_pt: tuple[float, float],
+    hd_pt: tuple[float, float],
     pronation: float,
     col_cortical: tuple[float, float, float],
     col_trabecular: tuple[float, float, float],
     draw_full_humerus: bool = False,
-    opacity: float = 0.84,
+    opacity: float = 0.82,
 ):
     """
-    Renders true 3D Upper Limb Osteology:
-    1. Scapular Spine & Acromion Hood (`견갑극·견봉`) + Concave Glenoid Socket (`관절와`)
-    2. Proximal Humeral Head & Greater Tubercle (`상완골두·대결절`) + Distal Humeral Condyles (`상완골 외측상과·활차·소두`)
-       (If `draw_full_humerus=True`, renders the entire Humerus shaft; otherwise renders the proximal head and
-       distal condylar metaphysis so active upper-arm 3D muscle fibers remain 100% unoccluded!)
-    3. Elbow Articulation: Ulnar Olecranon Hook (`척골 주두 & 활차절흔`) wrapping around the humeral trochlea
-       + Cylindrical Radial Head (`요골두`) separated by a dark synovial joint space!
-    4. Dual Forearm Bones: Radius (`요골`) & Ulna (`척골`) with true anatomical pronation crossover!
-    5. Wrist & Hand: Curved Carpal Bone Arch (`수근골 2열`) + 4 Diverging Metacarpal Rays (`중수골`)!
+    Renders a unified, medically accurate 3D Upper Limb Osteology complex:
+    1. Scapular Spine & Acromion Hood (`견갑극·견봉`) + Glenoid Socket (`관절와`)
+    2. Humerus (`상완골두 + 대결절 + 상완골체 + 원위 활차/소두/외측상과`)
+    3. Articulated Elbow Hinge (`주관절`):
+       - Ulnar Olecranon Hook (`척골 주두`) & Trochlear C-Notch cradling the Humeral Trochlea
+       - Disc-shaped Radial Head (`요골두`) articulating with the Humeral Capitulum
+    4. Dual Forearm Bones (`요골 Radius & 척골 Ulna`) tapering and crossing during pronation
+    5. Carpal Wrist Arch & Metacarpal Rays (`수근골 & 중수골`).
     """
-    # 1. Scapular Spine & Acromion Process overhanging the Glenoid Cavity
-    ax, ay = acromion_pt
-    gx, gy = glenoid_pt
-    ex, ey = elbow_pt
-    ox, oy = olecranon_pt
-    wx, wy = wrist_pt
-    hx, hy = hand_pt
+    H, W, _ = bone_layer.shape
+    sx, sy = sh_pt
+    ex, ey = el_pt
+    wx, wy = wr_pt
+    hx, hy = hd_pt
 
-    # Scapular Spine ridge extending posteromedially from the Acromion
-    scap_med = (ax + 44.0, ay + 12.0)
-    draw_anatomical_long_bone(
-        bone_layer, xray_win,
-        scap_med, (ax - 10.0, ay - 3.0),
-        r_shaft=5.2, prox_flares=(4.0, 7.0), dist_flares=(9.5, 8.5),
-        bow_offset=-4.5,
-        col_cortical=col_cortical, col_trabecular=col_trabecular,
-        opacity=opacity * 0.74,
-    )
-    # Scapular Lateral Border / Infraspinous triangle hint
-    draw_anatomical_long_bone(
-        bone_layer, xray_win,
-        (gx + 14.0, gy + 4.0), (gx + 36.0, gy + 64.0),
-        r_shaft=4.5, prox_flares=(11.0, 9.0), dist_flares=(4.0, 4.0),
-        bow_offset=3.0,
-        col_cortical=col_cortical, col_trabecular=col_trabecular,
-        opacity=opacity * 0.48,
+    all_x = [sx, ex, wx, hx]
+    all_y = [sy, ey, wy, hy]
+    pad = 65
+    xmin, xmax = max(0, int(min(all_x)) - pad), min(W, int(max(all_x)) + pad)
+    ymin, ymax = max(0, int(min(all_y)) - pad), min(H, int(max(all_y)) + pad)
+    if xmin >= xmax or ymin >= ymax:
+        return
+
+    yy, xx = np.mgrid[ymin:ymax, xmin:xmax].astype(np.float32)
+
+    # --- 1. SCAPULAR ACROMION & GLENOID CAVITY ---
+    acromion_p0 = (sx + 34.0, sy - 6.0)
+    acromion_p1 = (sx - 8.0, sy - 14.0)
+    d_acrom, _ = _sdf_tapered_curved_capsule(xx, yy, acromion_p0, acromion_p1, 4.2, 5.8, 7.5, -4.0)
+    d_glenoid = _sdf_oriented_ellipse(xx, yy, (sx + 5.0, sy + 2.0), 7.0, 10.5, -0.25)
+    sdf_scap = _smin(d_acrom, d_glenoid, k=4.5)
+    shade_and_composite_sdf_bone(
+        bone_layer, xray_win, ymin, ymax, xmin, xmax,
+        sdf_scap, np.zeros_like(sdf_scap),
+        col_cortical, col_trabecular,
+        opacity=opacity * 0.70, feather_px=2.0, win_strength=0.24,
     )
 
-    # 2. Humerus (Proximal Humeral Head + Greater Tubercle, and Distal Epicondyles/Trochlea)
-    dx_h, dy_h = ex - gx, ey - gy
+    # --- 2. HUMERUS ---
+    dx_h, dy_h = ex - sx, ey - sy
     hlen = max(1.0, math.hypot(dx_h, dy_h))
     ux_h, uy_h = dx_h / hlen, dy_h / hlen
+    nx_h, ny_h = -uy_h, ux_h
+
+    d_hhead = np.hypot(xx - sx, yy - sy) - 11.0
+    d_gtub = np.hypot(xx - (sx - ux_h * 3.0 + nx_h * 5.5), yy - (sy + 4.0)) - 9.0
+    d_hcond = _sdf_oriented_ellipse(xx, yy, (ex, ey), 12.0, 9.0, math.atan2(ny_h, nx_h))
 
     if draw_full_humerus:
-        draw_anatomical_long_bone(
-            bone_layer, xray_win,
-            (gx, gy), (ex, ey),
-            r_shaft=9.5,
-            prox_flares=(16.5, 19.5),  # Humeral head + Greater tubercle
-            dist_flares=(17.0, 15.5),  # Lateral/Medial epicondyles + Capitulum/Trochlea
-            bow_offset=-3.0,
-            col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=opacity * 0.90,
-            dist_condyle_split=1.0,
-        )
+        d_hshaft, t_h = _sdf_tapered_curved_capsule(xx, yy, (sx, sy), (ex, ey), 10.0, 6.5, 11.0, -2.5)
+        sdf_hum = _smin(_smin(d_hhead, d_gtub, k=4.5), _smin(d_hshaft, d_hcond, k=5.5), k=5.0)
+        marrow_h = np.clip(np.sin(t_h * math.pi), 0.0, 1.0) ** 1.6
     else:
-        # Proximal Humerus (Head, Anatomical Neck, Greater Tubercle, Surgical Neck taper)
-        p_surg = (gx + ux_h * 52.0, gy + uy_h * 52.0)
-        draw_anatomical_long_bone(
-            bone_layer, xray_win,
-            (gx, gy), p_surg,
-            r_shaft=9.0,
-            prox_flares=(16.0, 19.0),
-            dist_flares=(8.5, 8.5),
-            bow_offset=-2.0,
-            col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=opacity * 0.82,
-        )
-        # Distal Humerus (Supracondylar ridges + Lateral Epicondyle + Capitulum & Trochlea)
-        p_supra = (ex - ux_h * 54.0, ey - uy_h * 54.0)
-        draw_anatomical_long_bone(
-            bone_layer, xray_win,
-            p_supra, (ex, ey),
-            r_shaft=8.8,
-            prox_flares=(8.2, 8.2),
-            dist_flares=(16.5, 15.0),
-            bow_offset=0.0,
-            col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=opacity * 0.88,
-            dist_condyle_split=1.0,
-        )
+        p_surg = (sx + ux_h * 40.0, sy + uy_h * 40.0)
+        p_supra = (ex - ux_h * 42.0, ey - uy_h * 42.0)
+        d_hprox, _ = _sdf_tapered_curved_capsule(xx, yy, (sx, sy), p_surg, 10.0, 7.2, 6.0, 0.0)
+        d_hdist, _ = _sdf_tapered_curved_capsule(xx, yy, p_supra, (ex, ey), 6.0, 7.5, 11.0, 0.0)
+        sdf_hum = np.minimum(_smin(_smin(d_hhead, d_gtub, k=4.5), d_hprox, k=4.5), _smin(d_hdist, d_hcond, k=5.0))
+        marrow_h = np.zeros_like(sdf_hum)
 
-    # 3. Forearm Dual Bones: ULNA (with Olecranon Hook at `olecranon_pt`) & RADIUS (with Radial Head)
+    shade_and_composite_sdf_bone(
+        bone_layer, xray_win, ymin, ymax, xmin, xmax,
+        sdf_hum, marrow_h,
+        col_cortical, col_trabecular,
+        opacity=opacity * 0.86, feather_px=1.8, win_strength=0.30,
+    )
+
+    # --- 3. ARTICULATED ELBOW (OLECRANON HOOK + RADIAL HEAD) & DUAL FOREARM BONES (RADIUS + ULNA) ---
     dx_f, dy_f = wx - ex, wy - ey
     flen = max(1.0, math.hypot(dx_f, dy_f))
     ux_f, uy_f = dx_f / flen, dy_f / flen
-    # Normal pointing toward thumb/radial side (anterior/superior in neutral pushdown)
     nx_f, ny_f = -uy_f, ux_f
     if ny_f > 0:
         nx_f, ny_f = -nx_f, -ny_f
 
-    # Ulna starts at the posterior Olecranon beak (`ox, oy`) and runs to the pinky/ulnar side of the wrist
-    ulna_prox = (ox, oy)
-    ulna_dist = (wx - nx_f * 7.5, wy - ny_f * 7.5)
-    draw_anatomical_long_bone(
-        bone_layer, xray_win,
-        ulna_prox, ulna_dist,
-        r_shaft=5.6,
-        prox_flares=(13.5, 15.5),  # Prominent Olecranon process + Coronoid beak!
-        dist_flares=(6.5, 7.5),    # Slender Ulnar Head + Styloid process at wrist
-        bow_offset=-3.2,
-        col_cortical=col_cortical, col_trabecular=col_trabecular,
-        opacity=opacity * 0.92,
-        prox_notch=0.95,           # C-shaped Trochlear Notch articulating with humerus trochlea!
+    olec_pt = (ex - ux_f * 7.5 - nx_f * 7.0, ey - uy_f * 7.5 - ny_f * 7.0)
+    ulna_wr = (wx - nx_f * 6.0, wy - ny_f * 6.0)
+    d_ulna_shaft, t_ulna = _sdf_tapered_curved_capsule(xx, yy, olec_pt, ulna_wr, 9.8, 4.4, 5.0, -2.2)
+    d_troch_notch = np.hypot(xx - (ex + ux_f * 2.0), yy - (ey + uy_f * 2.0)) - 7.5
+    sdf_ulna = _smax(d_ulna_shaft, -d_troch_notch, k=2.8)
+
+    rad_head_pt = (ex + ux_f * 10.5 + nx_f * 6.0, ey + uy_f * 10.5 + ny_f * 6.0)
+    rad_cross = (1.0 - 1.55 * pronation) * 7.0
+    rad_wr = (wx + nx_f * rad_cross, wy + ny_f * rad_cross)
+    d_rad_shaft, t_rad = _sdf_tapered_curved_capsule(
+        xx, yy, rad_head_pt, rad_wr,
+        6.8, 4.6, 9.2,
+        3.5 * (1.0 - 0.75 * pronation),
     )
 
-    # Radius starts at the disc-shaped Radial Head (just distal/anterior to the humeral capitulum, separated by a 4px synovial gap)
-    rad_prox = (ex + ux_f * 10.0 + nx_f * 7.5, ey + uy_f * 10.0 + ny_f * 7.5)
-    # During pronation (`pronation` in 0..1), the distal Radius crosses diagonally over the Ulna!
-    rad_cross = (1.0 - 1.65 * pronation) * 8.5
-    rad_dist = (wx + nx_f * rad_cross, wy + ny_f * rad_cross)
-    draw_anatomical_long_bone(
-        bone_layer, xray_win,
-        rad_prox, rad_dist,
-        r_shaft=6.0,
-        prox_flares=(10.5, 10.5),  # Cylindrical disc-shaped Radial Head!
-        dist_flares=(13.0, 11.5),  # Broad flared Distal Radius Styloid at wrist!
-        bow_offset=4.5 * (1.0 - 0.8 * pronation),
-        col_cortical=col_cortical, col_trabecular=col_trabecular,
-        opacity=opacity * 0.94,
+    shade_and_composite_sdf_bone(
+        bone_layer, xray_win, ymin, ymax, xmin, xmax,
+        sdf_ulna, np.clip(np.sin(t_ulna * math.pi), 0.0, 1.0) ** 1.6,
+        col_cortical, col_trabecular,
+        opacity=opacity * 0.88, feather_px=1.6, win_strength=0.30,
+    )
+    shade_and_composite_sdf_bone(
+        bone_layer, xray_win, ymin, ymax, xmin, xmax,
+        d_rad_shaft, np.clip(np.sin(t_rad * math.pi), 0.0, 1.0) ** 1.6,
+        col_cortical, col_trabecular,
+        opacity=opacity * 0.90, feather_px=1.6, win_strength=0.30,
     )
 
-    # 4. Wrist Carpal Arch (2 rows of faceted carpal bones) + 4 Metacarpal Rays into the hand
+    # --- 4. CARPAL ARCH & METACARPAL HAND RAYS ---
     dx_w, dy_w = hx - wx, hy - wy
-    hlen_w = max(1.0, math.hypot(dx_w, dy_w))
-    ux_w, uy_w = dx_w / hlen_w, dy_w / hlen_w
+    wlen = max(1.0, math.hypot(dx_w, dy_w))
+    ux_w, uy_w = dx_w / wlen, dy_w / wlen
     nx_w, ny_w = -uy_w, ux_w
 
-    # Proximal & Distal Carpal rows (separated from distal radius/ulna by a 3px radiocarpal joint space)
-    for row_i, d_along in enumerate([7.0, 14.5]):
-        for lat_off in [-8.0, -2.5, 3.0, 8.0]:
-            c_p0 = (wx + ux_w * (d_along - 2.5) + nx_w * (lat_off - 2.2), wy + uy_w * (d_along - 2.5) + ny_w * (lat_off - 2.2))
-            c_p1 = (wx + ux_w * (d_along + 2.5) + nx_w * (lat_off + 2.2), wy + uy_w * (d_along + 2.5) + ny_w * (lat_off + 2.2))
-            draw_anatomical_long_bone(
-                bone_layer, xray_win, c_p0, c_p1,
-                r_shaft=3.2, prox_flares=(3.8, 3.8), dist_flares=(3.8, 3.8),
-                bow_offset=0.0, col_cortical=col_cortical, col_trabecular=col_trabecular,
-                opacity=opacity * 0.78,
-            )
+    carpal_c = (wx + ux_w * 8.5, wy + uy_w * 8.5)
+    sdf_hand = _sdf_oriented_ellipse(xx, yy, carpal_c, 6.0, 9.8, math.atan2(uy_w, ux_w))
+    for lat_off in [-7.0, -2.3, 2.3, 7.0]:
+        mc_p0 = (wx + ux_w * 14.0 + nx_w * lat_off * 0.8, wy + uy_w * 14.0 + ny_w * lat_off * 0.8)
+        mc_p1 = (hx + nx_w * lat_off * 1.05, hy + ny_w * lat_off * 1.05)
+        d_mc, _ = _sdf_tapered_curved_capsule(xx, yy, mc_p0, mc_p1, 2.6, 1.9, 2.6, 0.0)
+        sdf_hand = _smin(sdf_hand, d_mc, k=2.2)
 
-    # 4 Slender diverging Metacarpal shafts (`중수골`) extending into the hand grip
-    for mc_idx, lat_off in enumerate([-9.0, -3.0, 3.0, 8.5]):
-        mc_p0 = (wx + ux_w * 19.0 + nx_w * lat_off * 0.85, wy + uy_w * 19.0 + ny_w * lat_off * 0.85)
-        mc_p1 = (hx + nx_w * lat_off * 1.15, hy + ny_w * lat_off * 1.15)
-        draw_anatomical_long_bone(
-            bone_layer, xray_win, mc_p0, mc_p1,
-            r_shaft=2.6, prox_flares=(4.2, 4.2), dist_flares=(4.4, 4.4),
-            bow_offset=0.0, col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=opacity * 0.74,
-        )
-
-
-def draw_anatomical_pelvis_and_lower_limbs(
-    bone_layer: np.ndarray,
-    xray_win: np.ndarray,
-    sacrum_pt: tuple[float, float],
-    iliac_crest_pt: tuple[float, float],
-    hip_R: tuple[float, float],
-    trochanter_R: tuple[float, float],
-    knee_R: tuple[float, float],
-    patella_R: tuple[float, float],
-    ankle_R: tuple[float, float],
-    hip_L: tuple[float, float] | None = None,
-    knee_L: tuple[float, float] | None = None,
-    patella_L: tuple[float, float] | None = None,
-    ankle_L: tuple[float, float] | None = None,
-    col_cortical: tuple[float, float, float] = (195.0, 242.0, 225.0),
-    col_trabecular: tuple[float, float, float] = (28.0, 175.0, 115.0),
-    opacity: float = 0.76,
-):
-    """
-    Renders true 3D Lower-Body Osteology (Pelvis, Femur, Patella, Tibia & Fibula) with ZERO toy spheres:
-    1. Pelvis (`장골익 Iliac Wing + S-curved Iliac Crest 장골능 + Acetabulum Socket 비구 + Ischial Ring 좌골`)
-    2. Femur (`대퇴골`):
-       - Spherical Femoral Head seated inside the Acetabulum (with dark hip joint space)
-       - Angled Femoral Neck (`대퇴경부`) + Prominent Lateral Greater Trochanter (`대전자`)
-       - Anteriorly bowed Femoral Diaphysis (`대퇴골체`) with cortical bone walls & medullary canal
-       - Scroll-shaped Distal Femoral Condyles (`대퇴골 내·외측과`)
-    3. Patella (`슬개골`):
-       - Shield/wedge-shaped sesamoid kneecap positioned ANTERIOR to the femoral condyles (with patellofemoral space)
-    4. Tibia & Fibula (`경골 · 비골`):
-       - Flat-topped Tibial Plateau (`경골 고평부`) separated from the femoral condyles by a crisp 5px dark synovial knee joint space!
-       - Anterior Tibial Tuberosity (`경골 조면`) & sharp anterior shin crest tapering to the Medial Malleolus (`내과`)
-       - Slender parallel Fibula (`비골두 Fibular Head + 비골체 Shaft + 외과 Lateral Malleolus`) posterolaterally!
-    """
-    sx, sy = sacrum_pt
-    icx, icy = iliac_crest_pt
-    hx_r, hy_r = hip_R
-    tx_r, ty_r = trochanter_R
-    kx_r, ky_r = knee_R
-    px_r, py_r = patella_R
-    ax_r, ay_r = ankle_R
-
-    # 1. Pelvic Girdle: Iliac Crest arch (PSIS near sacrum -> Iliac Crest -> ASIS) + Iliac Body to Acetabulum + Ischial Loop
-    asis_pt = (icx - 36.0, icy + 18.0)
-    # Iliac crest S-curve
-    draw_anatomical_long_bone(
-        bone_layer, xray_win,
-        (sx - 6.0, sy - 12.0), asis_pt,
-        r_shaft=7.5, prox_flares=(13.0, 11.0), dist_flares=(11.0, 14.0),
-        bow_offset=14.0,
-        col_cortical=col_cortical, col_trabecular=col_trabecular,
-        opacity=opacity * 0.78,
-    )
-    # Iliac column from Iliac Crest down to Acetabular Roof (`비구 상연`)
-    draw_anatomical_long_bone(
-        bone_layer, xray_win,
-        icx_pt := (icx - 8.0, icy + 6.0), (hx_r, hy_r - 8.0),
-        r_shaft=12.5, prox_flares=(18.0, 16.0), dist_flares=(19.0, 16.0),
-        bow_offset=4.0,
-        col_cortical=col_cortical, col_trabecular=col_trabecular,
-        opacity=opacity * 0.82,
-    )
-    # Ischial Tuberosity / Pubic arch below Acetabulum
-    draw_anatomical_long_bone(
-        bone_layer, xray_win,
-        (hx_r + 6.0, hy_r + 8.0), (hx_r - 16.0, hy_r + 42.0),
-        r_shaft=6.5, prox_flares=(11.0, 9.0), dist_flares=(9.5, 11.5),
-        bow_offset=-7.0,
-        col_cortical=col_cortical, col_trabecular=col_trabecular,
-        opacity=opacity * 0.68,
+    shade_and_composite_sdf_bone(
+        bone_layer, xray_win, ymin, ymax, xmin, xmax,
+        sdf_hand, np.zeros_like(sdf_hand),
+        col_cortical, col_trabecular,
+        opacity=opacity * 0.76, feather_px=1.6, win_strength=0.22,
     )
 
-    def _render_single_leg(hip_pt, troch_pt, knee_pt, pat_pt, ankle_pt, leg_op):
-        hx, hy = hip_pt
-        trx, try_ = troch_pt
-        kx, ky = knee_pt
-        px, py = pat_pt
-        ax, ay = ankle_pt
 
-        # (A) Femoral Head & Angled Femoral Neck (`대퇴골두 · 대퇴경부`) + Greater Trochanter (`대전자`)
-        # Neck-shaft junction is slightly below the Greater Trochanter
-        neck_base = (trx - 8.0, try_ + 16.0)
-        draw_anatomical_long_bone(
-            bone_layer, xray_win,
-            (hx, hy), neck_base,
-            r_shaft=8.0,
-            prox_flares=(14.5, 14.5),  # Spherical Femoral Head inside Acetabulum
-            dist_flares=(11.5, 13.5),
-            bow_offset=0.0,
-            col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=leg_op * 0.90,
-        )
-        # Greater Trochanter bony prominence projecting superolaterally
-        draw_anatomical_long_bone(
-            bone_layer, xray_win,
-            (trx + 4.0, try_ - 10.0), neck_base,
-            r_shaft=9.5,
-            prox_flares=(13.5, 11.5),
-            dist_flares=(11.0, 10.0),
-            bow_offset=3.0,
-            col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=leg_op * 0.88,
-        )
-
-        # (B) Femoral Shaft (`대퇴골체`) curving down to Distal Femoral Condyles (`대퇴골 내·외측과`)
-        # Stop 4px above `ky` to leave a real dark Tibiofemoral Synovial Joint Space (`무릎 관절강`)!
-        fem_dist = (kx, ky - 5.0)
-        draw_anatomical_long_bone(
-            bone_layer, xray_win,
-            neck_base, fem_dist,
-            r_shaft=9.8,
-            prox_flares=(13.5, 15.0),
-            dist_flares=(16.5, 21.0),  # Posterior scroll of Femoral Condyles flares backward!
-            bow_offset=-5.5,           # Natural anterior physiological bow of the human femur!
-            col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=leg_op * 0.92,
-            dist_condyle_split=1.0,
-        )
-
-        # (C) Patella (`슬개골`): distinct wedge/shield-shaped sesamoid bone IN FRONT OF the knee joint!
-        draw_anatomical_long_bone(
-            bone_layer, xray_win,
-            (px, py - 13.0), (px + 2.0, py + 14.0),
-            r_shaft=6.5,
-            prox_flares=(8.5, 6.5),    # Broad superior base of patella
-            dist_flares=(3.5, 4.0),    # Pointed inferior apex of patella (attaching to patellar tendon)
-            bow_offset=-2.5,
-            col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=leg_op * 0.95,
-        )
-
-        # (D) Tibia (`경골`): Flat Tibial Plateau (`경골 고평부`, 5px below femoral condyles) + Anterior Tibial Tuberosity + Shaft to Medial Malleolus
-        tib_prox = (kx, ky + 6.0)
-        tib_dist = (ax - 3.0, ay)
-        draw_anatomical_long_bone(
-            bone_layer, xray_win,
-            tib_prox, tib_dist,
-            r_shaft=8.2,
-            prox_flares=(18.5, 17.5),  # Broad flat-topped Tibial Plateau + anterior Tibial Tuberosity!
-            dist_flares=(12.5, 11.0),  # Distal Tibial Plafond & Medial Malleolus at ankle
-            bow_offset=1.5,
-            col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=leg_op * 0.90,
-        )
-
-        # (E) Fibula (`비골`): Slender lateral bone from Fibular Head (posterolateral below lateral tibial condyle) to Lateral Malleolus
-        fib_prox = (kx + 17.0, ky + 18.0)
-        fib_dist = (ax + 12.0, ay + 5.0)
-        draw_anatomical_long_bone(
-            bone_layer, xray_win,
-            fib_prox, fib_dist,
-            r_shaft=4.2,
-            prox_flares=(7.5, 7.5),    # Knob-like Fibular Head (`비골두`)
-            dist_flares=(7.0, 8.0),    # Pointed Lateral Malleolus (`외과`)
-            bow_offset=1.0,
-            col_cortical=col_cortical, col_trabecular=col_trabecular,
-            opacity=leg_op * 0.78,
-        )
-
-    # Render far/lead Left Leg first at subtle depth-cued opacity so near Right Leg sits cleanly in foreground
-    if hip_L is not None and knee_L is not None and patella_L is not None and ankle_L is not None:
-        troch_L = (hip_L[0] + 22.0, hip_L[1] + 14.0)
-        _render_single_leg(hip_L, troch_L, knee_L, patella_L, ankle_L, opacity * 0.56)
-
-    # Render primary foreground Right Leg
-    _render_single_leg(hip_R, trochanter_R, knee_R, patella_R, ankle_R, opacity)
-
-
-def extract_and_solve_day1_anatomical_rig(canvas_rgb: np.ndarray, step_idx: int) -> dict:
+def solve_universal_anatomical_rig(canvas_rgb: np.ndarray, view_mode: str = "sagittal_right", step_idx: int = 0) -> dict:
     """
-    Automatically extracts the dorsal back contour `x_dorsal(y)`, arm chroma cluster, hand grip cluster,
-    and leg silhouette columns from `canvas_rgb`, returning a 100% silhouette-locked anatomical rig dictionary.
+    Universal Pose & Silhouette Landmark Solver powered by MediaPipe PoseLandmarker Heavy (33 keypoints +
+    segmentation mask) plus Anatomical Dorsal & Medial-Axis Constraints.
     """
+    H, W, _ = canvas_rgb.shape
+    detector = get_pose_detector()
+    mp_im = mp.Image(image_format=mp.ImageFormat.SRGB, data=canvas_rgb)
+    res = detector.detect(mp_im)
+
+    lms = res.pose_landmarks[0]
+    seg = np.squeeze(res.segmentation_masks[0].numpy_view())
+    pts = [(lm.x * W, lm.y * H) for lm in lms]
+
     c = canvas_rgb.astype(np.float32)
-    r, g, b = c[:, :, 0], c[:, :, 1], c[:, :, 2]
-    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    lum = 0.299 * c[:, :, 0] + 0.587 * c[:, :, 1] + 0.114 * c[:, :, 2]
+    fg_u8 = ((seg > 0.30) & ((lum > 22.0) | (seg > 0.55))).astype(np.uint8)
+    kernel_erode = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    fg_inner = cv2.erode(fg_u8, kernel_erode, iterations=1).astype(np.float32)
+    body_mask = cv2.GaussianBlur(fg_inner, (0, 0), sigmaX=4.5, sigmaY=4.5)
 
-    # Automatically measure dorsal edge `x_dorsal(y)` of neck & torso
-    def get_dorsal_x(y_val: int, x_min: int = 520, x_max: int = 965, thr: float = 52.0) -> float:
-        y0, y1 = max(0, y_val - 4), min(c.shape[0], y_val + 5)
-        band = np.mean(lum[y0:y1, x_min:x_max], axis=0)
-        xs = np.where(band > thr)[0]
-        if len(xs) > 0:
-            return float(x_min + xs[-1])
-        return 750.0
+    if view_mode == "rear_back":
+        # Seated Rear / 3/4 Back View (Day 2 Wide-Grip Lat Pulldown):
+        # Measure the actual segmented torso center / vertebral groove between C7 and Sacrum
+        occ = ((pts[7][0] + pts[8][0]) * 0.5 - 12.0, (pts[7][1] + pts[8][1]) * 0.5 + 18.0)
+        c7_x = (pts[11][0] + pts[12][0]) * 0.5 - 18.0
+        c7_y = (pts[11][1] + pts[12][1]) * 0.5 - 18.0
+        sac_x = (pts[23][0] + pts[24][0]) * 0.5 - 10.0
+        sac_y = min(1320.0, (pts[23][1] + pts[24][1]) * 0.5 - 45.0)
 
-    if step_idx == 1:
-        # Step 1 (Hunched forward 35° in WRONG_I2V f=45):
-        # Lock spine 20px inside the actual detected dorsal neck/back contour!
-        y_samples = [525, 585, 640, 680, 725, 780, 850, 935, 1030, 1130, 1210]
-        inward_offsets = [18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 23.0, 23.0, 24.0, 25.0, 26.0]
-        spine_pts = []
-        for yv, off in zip(y_samples, inward_offsets):
-            xd = get_dorsal_x(yv, x_min=480, x_max=968, thr=50.0)
-            spine_pts.append((xd - off, float(yv)))
+        # Ensure every spine point stays strictly inside the torso segmentation mask (at least 45px inside the right back edge!)
+        spine_pts = [occ]
+        for frac in [0.0, 0.28, 0.55, 0.80, 1.0]:
+            yv = c7_y + frac * (sac_y - c7_y)
+            xv = c7_x + frac * (sac_x - c7_x)
+            yi = int(np.clip(yv, 0, H - 1))
+            row_s = np.where((seg[yi, :] > 0.45) & (np.arange(W) > 380) & (np.arange(W) < 960))[0]
+            if len(row_s) > 20:
+                # Keep spine well inside the back volume (at least 48px left of the rightmost back contour)
+                xv = min(xv, float(row_s[-1]) - 48.0)
+                xv = max(xv, float(row_s[0]) + 48.0)
+            spine_pts.append((xv, yv))
 
+        spine_ctrl = np.array(spine_pts, dtype=np.float32)
         return {
-            "occiput": (spine_pts[0][0] - 8.0, 502.0),
-            "spine": spine_pts,
+            "view_mode": view_mode,
+            "body_mask": body_mask,
+            "spine": spine_ctrl,
             "dorsal_sign": 1.0,
-            "acromion": (786.0, 790.0),
-            "sh_glenoid": (794.0, 816.0),
-            "el_center": (832.0, 956.0),
-            "el_olecranon": (852.0, 952.0),
-            "wr_center": (826.0, 1168.0),
-            "hand_tip": (818.0, 1215.0),
-            "pronation": 0.45,
-            "draw_full_humerus": True,
-            # Pelvis & Lower Limbs (fitted to S1_w45's actual pelvis at y=1220..1320 and thighs/knees at y=1560..1700)
-            "sacrum": spine_pts[-1],
-            "iliac_crest": (882.0, 1215.0),
-            "hip_R": (868.0, 1295.0),
-            "trochanter_R": (898.0, 1312.0),
-            "knee_R": (868.0, 1595.0),
-            "patella_R": (824.0, 1590.0),
-            "ankle_R": (882.0, 1735.0),
-            "hip_L": (665.0, 1295.0),
-            "knee_L": (638.0, 1585.0),
-            "patella_L": (596.0, 1580.0),
-            "ankle_L": (650.0, 1735.0),
+            "sh_L": pts[11], "el_L": pts[13], "wr_L": pts[15], "hd_L": pts[19],
+            "sh_R": (min(pts[12][0], 835.0), pts[12][1]),
+            "el_R": (min(pts[14][0], 955.0), pts[14][1]),
+            "wr_R": (min(pts[16][0], 950.0), pts[16][1]),
+            "hd_R": (min(pts[20][0], 945.0), pts[20][1]),
+            "hip_L": pts[23], "hip_R": pts[24],
         }
 
-    # Steps 2, 3, 4 (Upright / 15° Hinge in CORRECT_I2V f=14, 42, 64):
-    # Track the posterior neck & dorsal back contour closely (19-22px inside dorsal edge)
-    spine_pts = [
-        (get_dorsal_x(512, 560, 740) - 18.0, 512.0),  # C1/C2
-        (get_dorsal_x(558, 560, 740) - 18.0, 558.0),  # C4
-        (get_dorsal_x(602, 560, 755) - 19.0, 602.0),  # C7
-        (get_dorsal_x(642, 560, 810) - 21.0, 642.0),  # T2
-        (get_dorsal_x(690, 560, 845) - 24.0, 690.0),  # T5
-        (798.0, 755.0),                               # T8 (posterior thoracic column behind scapular plane)
-        (786.0, 825.0),                               # T11
-        (764.0, 895.0),                               # L1
-        (get_dorsal_x(955, 560, 785) - 19.0, 955.0),  # L3
-        (get_dorsal_x(1005, 560, 785) - 19.0, 1005.0),# L5
-        (752.0, 1052.0),                              # Sacrum S2
-    ]
+    # Sagittal / 3-quarter right view (Day 1 Standing Pushdown)
+    ear = pts[7]
+    sh  = pts[11]
+    el  = pts[13]
+    wr  = pts[15]
+    hd  = pts[19]
+    hip = pts[23]
+    knee = pts[25]
+    ank  = pts[27]
 
-    if step_idx == 2:
-        el_c, el_o = (744.0, 892.0), (766.0, 900.0)
-        wr_c, hd_t = (542.0, 852.0), (488.0, 840.0)
-        pron = 0.15
-    elif step_idx == 3:
-        el_c, el_o = (768.0, 932.0), (792.0, 938.0)
-        wr_c, hd_t = (678.0, 1126.0), (648.0, 1170.0)
-        pron = 0.45
-    else:
-        el_c, el_o = (812.0, 936.0), (834.0, 934.0)
-        wr_c, hd_t = (820.0, 1140.0), (818.0, 1190.0)
-        pron = 0.92
+    if ank[1] > 1705.0:
+        t_clip = (1705.0 - knee[1]) / max(1.0, ank[1] - knee[1])
+        ank = (knee[0] + t_clip * (ank[0] - knee[0]), 1705.0)
+
+    # Exclude upper-arm/forearm envelope when measuring dorsal torso boundary
+    yy_g, xx_g = np.mgrid[:H, :W].astype(np.float32)
+    d_upper_arm, _ = _sdf_tapered_curved_capsule(xx_g, yy_g, sh, el, 36.0, 34.0, 32.0, 0.0)
+    d_forearm, _   = _sdf_tapered_curved_capsule(xx_g, yy_g, el, wr, 30.0, 26.0, 26.0, 0.0)
+    arm_excl = ((np.minimum(d_upper_arm, d_forearm) < 0.0) & (yy_g > (sh[1] + 20.0)))
+    torso_seg = (seg > 0.35) & (~arm_excl)
+
+    # 1. Occiput (base of skull inside posterior head/neck contour) & Cervical Spine (C4, C7):
+    # Scan the actual posterior neck edge at `y = ear[1] - 15` and `y = ear[1] + 20`
+    def get_neck_or_back_dorsal_x(yv: float, x_max_lim: float) -> float:
+        yi = int(np.clip(yv, 0, H - 1))
+        row = np.where(torso_seg[yi, :] & (np.arange(W) > int(ear[0] - 20)) & (np.arange(W) < int(x_max_lim)))[0]
+        if len(row) > 4:
+            return float(row[-1])
+        return float(ear[0] + 55.0)
+
+    y_occ = ear[1] - 28.0
+    occ_dorsal = get_neck_or_back_dorsal_x(y_occ, ear[0] + 115.0)
+    occ = (occ_dorsal - 22.0, y_occ)
+
+    y_c4 = ear[1] + 8.0
+    c4_dorsal = get_neck_or_back_dorsal_x(y_c4, ear[0] + 145.0)
+    c4 = (c4_dorsal - 22.0, y_c4)
+
+    y_c7 = 0.45 * ear[1] + 0.55 * sh[1]
+    c7_dorsal = get_neck_or_back_dorsal_x(y_c7, sh[0] + 95.0)
+    c7 = (c7_dorsal - 24.0, y_c7)
+
+    # 2. Sacrum (posterior to hip joint `hip`, inside dorsal hip contour)
+    y_sac = hip[1] - 18.0
+    sac_dorsal = get_neck_or_back_dorsal_x(y_sac, hip[0] + 85.0)
+    sac = (min(hip[0] + 34.0, sac_dorsal - 24.0), y_sac)
+
+    # 3. Thoracic & Lumbar curve between C7 and Sacrum
+    spine_pts = [occ, c4, c7]
+    for frac in [0.22, 0.45, 0.68, 0.85]:
+        yv = c7[1] + frac * (sac[1] - c7[1])
+        x_chord = c7[0] + frac * (sac[0] - c7[0])
+        xd = get_neck_or_back_dorsal_x(yv, min(952.0, x_chord + 75.0))
+        inward = 24.0 if frac < 0.6 else 27.0
+        spine_pts.append((xd - inward, yv))
+    spine_pts.append(sac)
+
+    ctrl = np.array(spine_pts, dtype=np.float32)
+    xs_sm = ctrl[:, 0].copy()
+    for _ in range(3):
+        xs_sm[1:-1] = 0.25 * xs_sm[:-2] + 0.50 * xs_sm[1:-1] + 0.25 * xs_sm[2:]
+    ctrl[:, 0] = xs_sm
+
+    pronation = 0.15 if step_idx == 2 else (0.45 if step_idx in (1, 3) else 0.92)
 
     return {
-        "occiput": (spine_pts[0][0] - 6.0, 488.0),
-        "spine": spine_pts,
+        "view_mode": view_mode,
+        "body_mask": body_mask,
+        "occiput": occ,
+        "spine": ctrl,
         "dorsal_sign": 1.0,
-        "acromion": (752.0, 680.0),
-        "sh_glenoid": (760.0, 706.0),
-        "el_center": el_c,
-        "el_olecranon": el_o,
-        "wr_center": wr_c,
-        "hand_tip": hd_t,
-        "pronation": pron,
+        "sh": sh,
+        "el": el,
+        "wr": wr,
+        "hd": hd,
+        "pronation": pronation,
+        "preserve_native_arm_xray": (step_idx == 1),
         "draw_full_humerus": False,
-        # Lower body: Hip Acetabulum at y=1065, Knee Joint at y=1318 (above calf bulge at y=1390!), Ankle at y=1615
-        "sacrum": spine_pts[-1],
-        "iliac_crest": (722.0, 1018.0),
-        "hip_R": (704.0, 1072.0),
-        "trochanter_R": (734.0, 1088.0),
-        "knee_R": (706.0, 1318.0),
-        "patella_R": (672.0, 1314.0),
-        "ankle_R": (736.0, 1615.0),
-        "hip_L": (626.0, 1068.0),
-        "knee_L": (605.0, 1304.0),
-        "patella_L": (572.0, 1300.0),
-        "ankle_L": (602.0, 1565.0),
+        "sacrum": (float(ctrl[-1, 0]), float(ctrl[-1, 1])),
+        "hip": hip,
+        "knee": knee,
+        "ank": ank,
     }
