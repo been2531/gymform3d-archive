@@ -3,12 +3,18 @@
 Day 3 — BARBELL BACK SQUAT (`build_day3_v39_squat.py`)
 ======================================================
 Produces Day 3 of `@gymform.3d`'s Daily 3D Biomechanics Encyclopedia Reels series
-strictly adhering to the locked `v39 Instagram Reels Safe-Zone Master` specification:
+strictly adhering to `/workspace/daily_info_reels/PRODUCTION_QC_CHECKLIST.md`, `qc_gate.py`,
+and the locked `v39 Instagram Reels Safe-Zone Master` specification:
+- 4 Genuinely Distinct 3D Postures & Camera Angles across Steps 1, 2, 3, and 4:
+  * Step 1 (`0–5s`): Direct Front Coronal Knee Valgus Collapse X-Ray view (`gym_day3_step1_valgus_i2v.mp4`)
+  * Step 2 (`5–10s`): 3/4 Side-Profile Lumbar Rounding & Forward Dive X-Ray view (`gym_day3_wrong_i2v.mp4`)
+  * Step 3 (`10–15s`): Lower-Body Medium Close-Up Tripod Foot & Knees Tracking Outward view (`gym_day3_step3_kneelock_i2v.mp4`)
+  * Step 4 (`15–20s`): Full-Body Wide 3/4 Deep Parallel Squat Drive view (`gym_day3_correct_i2v.mp4`)
 - Horizontal 19.5:9 Safe Zone (`x in 96..980`, clear of `x=0..50` and `x=1030..1080` iPhone crop).
 - Top Exercise Header (`BARBELL BACK SQUAT [ LEGS · QUADS & GLUTES ]`) at `x=96, y=258..304`
   and 3-Thumbnail Progression Dock at `x=96, y=316..446` (0% overlap with Instagram's `+ / 릴스 친구` at `y=175..242`).
 - Bottom-Left HUD at `x=96, y=1300..1444` (well above `@gymform.3d 팔로우` at `y=1585`).
-- Right-side exterior callout badges clamped to `x <= 805` (with text right edge `<= 980`) and `y <= 940`
+- Right-side exterior callout badges clamped to `x <= 805` (with text right edge `<= 975`) and `y <= 935`
   (well above the right-side Heart icon at `y=1055`).
 - ZERO checkmark (`✓`) or cross (`✕`) icons anywhere.
 """
@@ -40,8 +46,10 @@ TMP_AUDIO = "/workspace/daily_info_reels/_tmp_day3_v39_audio"
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(TMP_AUDIO, exist_ok=True)
 
-DAY3_WRONG_I2V = os.path.join(OUT_DIR, "gym_day3_wrong_i2v.mp4")
-DAY3_CORRECT_I2V = os.path.join(OUT_DIR, "gym_day3_correct_i2v.mp4")
+DAY3_STEP1_VALGUS_I2V = os.path.join(OUT_DIR, "gym_day3_step1_valgus_i2v.mp4")
+DAY3_STEP2_WRONG_I2V = os.path.join(OUT_DIR, "gym_day3_wrong_i2v.mp4")
+DAY3_STEP3_KNEELOCK_I2V = os.path.join(OUT_DIR, "gym_day3_step3_kneelock_i2v.mp4")
+DAY3_STEP4_CORRECT_I2V = os.path.join(OUT_DIR, "gym_day3_correct_i2v.mp4")
 USER_SCREENSHOT_PATH = v39.USER_SCREENSHOT_PATH
 
 W, H = eng.W, eng.H
@@ -80,6 +88,7 @@ async def synthesize_day3_voiceover_wav(
     and verifies that all 3 inter-step pauses are `>= 1.78s`.
     """
     import edge_tts
+    os.makedirs(TMP_AUDIO, exist_ok=True)
 
     sr = 44100
     n_samples = int(sr * duration_s)
@@ -152,17 +161,17 @@ def render_day3_i2v_frame_v39(
     is_wrong: bool,
 ) -> tuple[np.ndarray, dict]:
     """
-    Upscales a raw 720x1280 frame from `gym_day3_wrong_i2v.mp4` or `gym_day3_correct_i2v.mp4`
+    Upscales a raw 720x1280 frame from one of Day 3's 4 dedicated 3D I2V clips
     to `1080x1920` with crisp unsharp mask, extracts squat keypoints (`hip`, `kn_r`, `kn_l`, `ank_r`),
     and applies the v39 studio anatomical shader:
-    - Step 1 (`LUMBAR & KNEE RISK`): Preserves and boosts the native 3D X-Ray crimson-orange lumbar vertebrae,
-      hip, femur, patella, and tibia overload glow.
-    - Step 2 (`ANTERIOR FORCE LEAK`): Focuses crimson 3D fiber-strand and joint shear on the knees, patellar tendon,
-      shins, and forward-pitched torso.
-    - Step 3 (`NEUTRAL SPINE & KNEE LOCK`): Intrinsic emerald-green 3D muscle fiber striations across the Quadriceps
-      and knee tracking stabilization.
-    - Step 4 (`FULL QUAD & GLUTE · 4×10`): Vivid full-intensity emerald-green 3D muscle fiber striations across
-      the entire Quadriceps (`vastus lateralis`, `rectus femoris`, `vastus medialis`) and Gluteus Maximus.
+    - Step 1 (`LUMBAR & KNEE RISK` — Direct Front Knee Valgus X-Ray clip):
+      Preserves and boosts the native 3D X-Ray crimson-orange medial knee valgus collapse glow.
+    - Step 2 (`ANTERIOR FORCE LEAK` — 3/4 Side Lumbar Rounding & Forward Dive clip):
+      Preserves and boosts the crimson 3D X-Ray lumbar spine rounding & anterior knee/ankle shear.
+    - Step 3 (`NEUTRAL SPINE & KNEE LOCK` — Lower-Body Close-Up Tripod Foot & Knees Over Toes clip):
+      Vivid intrinsic emerald-green 3D muscle fiber striations across the VMO, Vastus Lateralis, and calves.
+    - Step 4 (`FULL QUAD & GLUTE · 4×10` — Full-Body 3/4 Wide Deep Parallel Squat Drive clip):
+      Full-intensity emerald-green 3D muscle fiber striations across the Quadriceps and Gluteus Maximus.
     """
     up = cv2.resize(bgr_720p, (W, H), interpolation=cv2.INTER_LANCZOS4)
     blur = cv2.GaussianBlur(up, (0, 0), 1.0)
@@ -175,21 +184,58 @@ def render_day3_i2v_frame_v39(
     detector = uar.get_pose_detector()
     mp_im = uar.mp.Image(image_format=uar.mp.ImageFormat.SRGB, data=rgb.astype(np.uint8))
     res = detector.detect(mp_im)
-    if res.pose_landmarks:
-        lms = res.pose_landmarks[0]
-        hip_x = float(np.clip(lms[24].x * W, 380.0, 580.0))
-        hip_y = float(np.clip(lms[24].y * H, 710.0, 1150.0))
-        kn_r_x = float(np.clip(lms[26].x * W, 450.0, 560.0))
-        kn_r_y = float(np.clip(lms[26].y * H, 1110.0, 1260.0))
-        kn_l_x = float(np.clip(lms[25].x * W, 680.0, 880.0))
-        kn_l_y = float(np.clip(lms[25].y * H, 1100.0, 1240.0))
-        ank_r_x = float(np.clip(lms[28].x * W, 375.0, 445.0))
-        ank_r_y = float(np.clip(lms[28].y * H, 1520.0, 1630.0))
+
+    if step_idx == 1:
+        # Direct Front View (`gym_day3_step1_valgus_i2v.mp4`)
+        if res.pose_landmarks:
+            lms = res.pose_landmarks[0]
+            hip_x = float(np.clip(lms[24].x * W, 430.0, 520.0))
+            hip_y = float(np.clip(lms[24].y * H, 780.0, 1220.0))
+            kn_r_x = float(np.clip(lms[26].x * W, 330.0, 445.0))
+            kn_r_y = float(np.clip(lms[26].y * H, 1140.0, 1245.0))
+            kn_l_x = float(np.clip(lms[25].x * W, 635.0, 760.0))
+            kn_l_y = float(np.clip(lms[25].y * H, 1140.0, 1245.0))
+            ank_r_x = float(np.clip(lms[28].x * W, 305.0, 365.0))
+            ank_r_y = float(np.clip(lms[28].y * H, 1490.0, 1560.0))
+        else:
+            hip_x, hip_y = 465.0, 1060.0
+            kn_r_x, kn_r_y = 385.0, 1195.0
+            kn_l_x, kn_l_y = 695.0, 1195.0
+            ank_r_x, ank_r_y = 325.0, 1522.0
+    elif step_idx == 3:
+        # Lower-Body Medium Close-Up View (`gym_day3_step3_kneelock_i2v.mp4`)
+        if res.pose_landmarks:
+            lms = res.pose_landmarks[0]
+            hip_x = float(np.clip(lms[24].x * W, 275.0, 420.0))
+            hip_y = float(np.clip(lms[24].y * H, 580.0, 760.0))
+            kn_r_x = float(np.clip(lms[26].x * W, 285.0, 475.0))
+            kn_r_y = float(np.clip(lms[26].y * H, 815.0, 920.0))
+            kn_l_x = float(np.clip(lms[25].x * W, 740.0, 920.0))
+            kn_l_y = float(np.clip(lms[25].y * H, 800.0, 910.0))
+            ank_r_x = float(np.clip(lms[28].x * W, 215.0, 290.0))
+            ank_r_y = float(np.clip(lms[28].y * H, 1360.0, 1460.0))
+        else:
+            hip_x, hip_y = 335.0, 685.0
+            kn_r_x, kn_r_y = 385.0, 865.0
+            kn_l_x, kn_l_y = 835.0, 855.0
+            ank_r_x, ank_r_y = 240.0, 1420.0
     else:
-        hip_x, hip_y = 435.0, 1020.0
-        kn_r_x, kn_r_y = 505.0, 1215.0
-        kn_l_x, kn_l_y = 835.0, 1195.0
-        ank_r_x, ank_r_y = 408.0, 1585.0
+        # 3/4 Full-Body Views (Step 2 `gym_day3_wrong_i2v.mp4` & Step 4 `gym_day3_correct_i2v.mp4`)
+        if res.pose_landmarks:
+            lms = res.pose_landmarks[0]
+            hip_x = float(np.clip(lms[24].x * W, 380.0, 580.0))
+            hip_y = float(np.clip(lms[24].y * H, 710.0, 1150.0))
+            kn_r_x = float(np.clip(lms[26].x * W, 450.0, 560.0))
+            kn_r_y = float(np.clip(lms[26].y * H, 1110.0, 1260.0))
+            kn_l_x = float(np.clip(lms[25].x * W, 680.0, 880.0))
+            kn_l_y = float(np.clip(lms[25].y * H, 1100.0, 1240.0))
+            ank_r_x = float(np.clip(lms[28].x * W, 375.0, 445.0))
+            ank_r_y = float(np.clip(lms[28].y * H, 1520.0, 1630.0))
+        else:
+            hip_x, hip_y = 435.0, 1020.0
+            kn_r_x, kn_r_y = 505.0, 1215.0
+            kn_l_x, kn_l_y = 835.0, 1195.0
+            ank_r_x, ank_r_y = 408.0, 1585.0
 
     kpts = {
         "hip": (hip_x, hip_y),
@@ -213,7 +259,7 @@ def render_day3_i2v_frame_v39(
     hv = np.clip((sigma_belly - 28.0) / 165.0, 0.0, 1.0)
     sulc = np.clip((sigma_broad - sigma_ridge - 3.5) / 22.0, 0.0, 1.0)
 
-    chroma_any = np.clip(( np.maximum(rb_diff, gb_diff) - 12.0) / 85.0, 0.0, 1.0)
+    chroma_any = np.clip((np.maximum(rb_diff, gb_diff) - 12.0) / 85.0, 0.0, 1.0)
     grey_sculpt = np.clip(34.0 + 148.0 * (hv ** 1.05) + hf_ridge * 0.95, 16.0, 235.0)
     base_lum = 0.299 * r_ch + 0.587 * g_ch + 0.114 * b_ch
     neutral_lum = np.clip(base_lum * (1.0 - chroma_any) + grey_sculpt * chroma_any, 14.0, 240.0)
@@ -226,29 +272,32 @@ def render_day3_i2v_frame_v39(
     ], axis=2)
 
     if step_idx == 1:
-        # Step 1 (`LUMBAR & KNEE RISK`): Preserve and boost the native 3D X-Ray lumbar spine & knee valgus glow
+        # Step 1 (`LUMBAR & KNEE RISK` — Direct Front Knee Valgus X-Ray clip):
+        # Preserve and boost the native 3D X-Ray crimson-orange medial knee valgus collapse glow
         xray_alpha = np.clip((rb_diff - 18.0) / 88.0, 0.0, 1.0)
         xray_boost = rgb.copy()
-        xray_boost[:, :, 0] = np.clip(r_ch * 1.16 + 24.0, 0, 255)
-        xray_boost[:, :, 1] = np.clip(g_ch * 0.92, 0, 255)
+        xray_boost[:, :, 0] = np.clip(r_ch * 1.18 + 26.0, 0, 255)
+        xray_boost[:, :, 1] = np.clip(g_ch * 0.90, 0, 255)
         out = mono * (1.0 - xray_alpha[:, :, None]) + xray_boost * xray_alpha[:, :, None]
         return np.clip(out, 0, 255).astype(np.uint8), kpts
 
     if step_idx == 2:
-        # Step 2 (`ANTERIOR FORCE LEAK` / `HEEL LIFT & FORWARD DIVE`):
-        # Focus crimson 3D strain on the anterior knees, patellar tendon, ankles, and forward-leaning spine
+        # Step 2 (`ANTERIOR FORCE LEAK` / `HEEL LIFT & FORWARD DIVE` — 3/4 Side Lumbar Rounding & Forward Dive clip):
+        # Preserve the native X-Ray lumbar spine AND boost crimson 3D strain on anterior knees & ankles
         kn_flare_r = np.exp(-(((xx - kn_r_x) / 115.0) ** 2 + ((yy - kn_r_y) / 125.0) ** 2))
         kn_flare_l = np.exp(-(((xx - kn_l_x) / 115.0) ** 2 + ((yy - kn_l_y) / 125.0) ** 2))
         ank_flare = np.exp(-(((xx - ank_r_x) / 95.0) ** 2 + ((yy - ank_r_y) / 95.0) ** 2))
         body_gate = np.clip((base_lum - 36.0) / 85.0, 0.0, 1.0)
-        fe = np.clip(np.clip((rb_diff - 20.0) / 95.0, 0.0, 1.0) * 0.88 + (kn_flare_r + kn_flare_l + 0.65 * ank_flare) * body_gate * 0.58, 0.0, 1.0)
+        fe = np.clip(np.clip((rb_diff - 18.0) / 90.0, 0.0, 1.0) * 0.94 + (kn_flare_r + kn_flare_l + 0.65 * ank_flare) * body_gate * 0.58, 0.0, 1.0)
         hc = np.clip((gb_diff - 10.0) / 90.0, 0.0, 1.0)
     elif step_idx == 3:
-        # Step 3 (`NEUTRAL SPINE & KNEE LOCK`): Crisp emerald-green 3D muscle fiber striations on Quadriceps & knee stabilizers
-        fe = np.clip(( np.maximum(gb_diff, gr_diff) - 16.0) / 92.0, 0.0, 1.0)
-        hc = np.clip((gr_diff - 12.0) / 80.0, 0.0, 1.0)
+        # Step 3 (`NEUTRAL SPINE & KNEE LOCK` — Lower-Body Close-Up Tripod Foot & Knees Over Toes clip):
+        # Crisp emerald-green 3D muscle fiber striations on VMO, Vastus Lateralis, and lower-leg stabilizers
+        fe = np.clip((np.maximum(gb_diff, gr_diff) - 14.0) / 86.0, 0.0, 1.0)
+        hc = np.clip((gr_diff - 10.0) / 76.0, 0.0, 1.0)
     else:
-        # Step 4 (`FULL QUAD & GLUTE · 4×10`): Full-intensity emerald-green 3D muscle fibers on Quadriceps & Gluteus Maximus
+        # Step 4 (`FULL QUAD & GLUTE · 4×10` — Full-Body 3/4 Wide Deep Parallel Squat Drive clip):
+        # Full-intensity emerald-green 3D muscle fibers on Quadriceps & Gluteus Maximus
         glute_flare = np.exp(-(((xx - (hip_x - 28.0)) / 92.0) ** 2 + ((yy - (hip_y + 18.0)) / 98.0) ** 2)) * np.clip((base_lum - 38.0) / 80.0, 0.0, 1.0)
         fe = np.clip(np.clip((np.maximum(gb_diff, gr_diff) - 14.0) / 85.0, 0.0, 1.0) * 1.08 + glute_flare * 0.72, 0.0, 1.0)
         hc = np.clip((gr_diff - 10.0) / 75.0, 0.0, 1.0)
@@ -464,7 +513,8 @@ def render_day3_v39_safezone_callouts(
     rep_amount: float = 1.0,
 ):
     """
-    Day 3 (Barbell Back Squat) exterior callouts with strict v39 iPhone Safe-Zone clamping:
+    Day 3 (Barbell Back Squat) exterior callouts tailored to each of the 4 distinct camera views,
+    with strict v39 iPhone Safe-Zone clamping:
     - Left-side callout badges (`align="right"`) are placed at `x >= 255` so their left edge never goes below `x = 115`.
     - Right-side callout badges (`align="left"`) are clamped so `x <= SAFE_X_RIGHT_BADGE (805)` and their right edge
       never exceeds `x = 975` (`55px` inside the iPhone right crop `x=1030`), and `y <= 935` (`120px` above the Heart icon `y=1055`).
@@ -485,29 +535,32 @@ def render_day3_v39_safezone_callouts(
 
     hip_s = S(map_pt(*kp["hip"]))
     kn_r_s = S(map_pt(*kp["kn_r"]))
+    kn_l_s = S(map_pt(*kp["kn_l"]))
     ank_r_s = S(map_pt(*kp["ank_r"]))
 
     if step_idx == 1:
-        # Step 1: Knee joint reticle (◎) + solid red inward valgus arc 18° (VALGUS CAVE) + right-side badge 84% (ACL & LUMBAR LOAD)
+        # Step 1 (Direct Front Coronal Knee Valgus View):
+        # Bilateral knee reticles (◎) + inward-buckling valgus arc 18° (VALGUS CAVE) + right-side badge 84% (ACL & LUMBAR LOAD)
         v36.draw_single_elbow_pivot_ring(rd, kn_r_s, 10.0, col_main, SS)
+        v36.draw_single_elbow_pivot_ring(rd, kn_l_s, 9.0, col_main, SS)
 
-        c_arc = S(map_pt(kp["kn_r"][0] - 20.0, kp["kn_r"][1] - 10.0))
-        r_a = 128 * SS
-        start_ang = 152
-        end_ang = int(round(196 + 24 * rep_amount))
+        c_arc = S(map_pt(kp["kn_r"][0] + 15.0, kp["kn_r"][1] - 10.0))
+        r_a = 118 * SS
+        start_ang = 330
+        end_ang = int(round(375 + 22 * rep_amount))
         rd.arc([c_arc[0] - r_a, c_arc[1] - r_a, c_arc[0] + r_a, c_arc[1] + r_a], start=start_ang, end=end_ang, fill=(*col_main, 248), width=4 * SS)
         ang_t = math.radians(end_ang)
         tip_p = (c_arc[0] + r_a * math.cos(ang_t), c_arc[1] + r_a * math.sin(ang_t))
         v30.draw_arrow_head(rd, tip_p, end_ang + 90, 12 * SS, (*col_soft, 255))
 
-        p_left = map_pt(355, 1065)
+        p_left = map_pt(340, 1045)
         v30.draw_floating_number_badge(
             od, sd,
-            (max(255, int(p_left[0])), int(np.clip(p_left[1], 880, 1120))),
+            (max(255, int(p_left[0])), int(np.clip(p_left[1], 880, 1110))),
             "18°", "VALGUS CAVE", col_main, col_soft, align="right"
         )
 
-        p_right = map_pt(795, 865)
+        p_right = map_pt(785, 865)
         rx = min(SAFE_X_RIGHT_BADGE, int(p_right[0]))
         ry = min(920, int(p_right[1]))
         v30.draw_floating_number_badge(
@@ -517,7 +570,8 @@ def render_day3_v39_safezone_callouts(
         )
 
     elif step_idx == 2:
-        # Step 2: Knee/Ankle reticle (◎) + solid red forward arc +28° (HEELS LIFTING) + right-side badge 79% (PATELLAR STRESS)
+        # Step 2 (3/4 Side-Profile Lumbar Rounding & Forward Dive View):
+        # Knee/Ankle reticle (◎) + solid red forward arc +28° (HEELS LIFTING) + right-side badge 79% (PATELLAR STRESS)
         v36.draw_single_elbow_pivot_ring(rd, ank_r_s, 9.5, col_main, SS)
         v36.draw_single_elbow_pivot_ring(rd, kn_r_s, 8.5, col_main, SS)
 
@@ -547,36 +601,39 @@ def render_day3_v39_safezone_callouts(
         )
 
     elif step_idx == 3:
-        # Step 3: Knee joint reticle (◎) + solid green tracking arc 0° (KNEES TRACK TOES) + right-side badge 100% (BRACED SPINE)
-        v36.draw_single_elbow_pivot_ring(rd, kn_r_s, 10.0, col_main, SS)
+        # Step 3 (Lower-Body Medium Close-Up Tripod Foot & Knees Tracking Outward View):
+        # Knee & Ankle reticles (◎) + solid green outward tracking arc 0° (KNEES TRACK TOES) + right-side badge 100% (TRIPOD & TORQUE)
+        v36.draw_single_elbow_pivot_ring(rd, kn_r_s, 10.5, col_main, SS)
+        v36.draw_single_elbow_pivot_ring(rd, ank_r_s, 8.5, col_main, SS)
 
-        c_arc = S(map_pt(kp["kn_r"][0] - 18.0, kp["kn_r"][1] - 5.0))
-        r_a = 132 * SS
+        c_arc = S(map_pt(kp["kn_r"][0] - 12.0, kp["kn_r"][1] + 5.0))
+        r_a = 126 * SS
         start_ang = 142
-        end_ang = 202
+        end_ang = 204
         rd.arc([c_arc[0] - r_a, c_arc[1] - r_a, c_arc[0] + r_a, c_arc[1] + r_a], start=start_ang, end=end_ang, fill=(*col_main, 248), width=4 * SS)
         ang_t = math.radians(start_ang)
         tip_p = (c_arc[0] + r_a * math.cos(ang_t), c_arc[1] + r_a * math.sin(ang_t))
         v30.draw_arrow_head(rd, tip_p, start_ang - 90, 12 * SS, (*col_soft, 255))
 
-        p_left = map_pt(365, 1055)
+        p_left = map_pt(355, 985)
         v30.draw_floating_number_badge(
             od, sd,
-            (max(265, int(p_left[0])), int(np.clip(p_left[1], 880, 1120))),
+            (max(265, int(p_left[0])), int(np.clip(p_left[1], 840, 1060))),
             "0°", "KNEES TRACK TOES", col_main, col_soft, align="right"
         )
 
-        p_right = map_pt(795, 855)
+        p_right = map_pt(790, 845)
         rx = min(SAFE_X_RIGHT_BADGE, int(p_right[0]))
         ry = min(915, int(p_right[1]))
         v30.draw_floating_number_badge(
             od, sd,
             (rx, ry),
-            "100%", "BRACED SPINE", col_main, col_soft, align="left"
+            "100%", "TRIPOD & TORQUE", col_main, col_soft, align="left"
         )
 
     else:
-        # Step 4: Hip/Knee reticle (◎) + solid green depth arc 95° (PARALLEL DEPTH) + right-side badge 100% (QUAD & GLUTE DRIVE)
+        # Step 4 (Full-Body Wide 3/4 Deep Parallel Squat Drive View):
+        # Hip/Knee reticle (◎) + solid green depth arc 95° (PARALLEL DEPTH) + right-side badge 100% (QUAD & GLUTE DRIVE)
         v36.draw_single_elbow_pivot_ring(rd, hip_s, 10.0, col_main, SS)
         v36.draw_single_elbow_pivot_ring(rd, kn_r_s, 8.5, col_main, SS)
 
@@ -626,77 +683,101 @@ def build_cached_day3_v39_top_docks(torso_icons) -> dict:
     return cache
 
 
+def _load_clip_frames(mp4_path: str) -> list[np.ndarray]:
+    cap = cv2.VideoCapture(mp4_path)
+    frames = []
+    while True:
+        ret, fr = cap.read()
+        if not ret:
+            break
+        frames.append(fr)
+    cap.release()
+    assert len(frames) > 30, f"Failed to load frames from {mp4_path}"
+    return frames
+
+
+def _smooth_kpts_seq(raw_kp_list: list[dict]) -> list[dict]:
+    n = len(raw_kp_list)
+    smooth = [dict() for _ in range(n)]
+    for k in ["hip", "kn_r", "kn_l", "ank_r"]:
+        arr = np.array([rk[k] for rk in raw_kp_list], dtype=np.float32)
+        ax = gaussian_filter1d(arr[:, 0], sigma=2.0, mode="nearest")
+        ay = gaussian_filter1d(arr[:, 1], sigma=2.0, mode="nearest")
+        for i in range(n):
+            smooth[i][k] = (float(ax[i]), float(ay[i]))
+    return smooth
+
+
 def build_day3_v39_master_reel():
-    print("Building Day 3 (Barbell Back Squat) v39 Instagram Reels Safe-Zone Master...")
-    cap_w = cv2.VideoCapture(DAY3_WRONG_I2V)
-    raw_w = []
-    while True:
-        ret, fr = cap_w.read()
-        if not ret:
-            break
-        raw_w.append(fr)
-    cap_w.release()
+    print("Building Day 3 (Barbell Back Squat) v39 4-Angle Distinct Instagram Reels Master...")
+    raw_s1 = _load_clip_frames(DAY3_STEP1_VALGUS_I2V)
+    raw_s2 = _load_clip_frames(DAY3_STEP2_WRONG_I2V)
+    raw_s3 = _load_clip_frames(DAY3_STEP3_KNEELOCK_I2V)
+    raw_s4 = _load_clip_frames(DAY3_STEP4_CORRECT_I2V)
 
-    cap_c = cv2.VideoCapture(DAY3_CORRECT_I2V)
-    raw_c = []
-    while True:
-        ret, fr = cap_c.read()
-        if not ret:
-            break
-        raw_c.append(fr)
-    cap_c.release()
+    print(
+        f"Loaded 4 distinct Day 3 I2V clips: "
+        f"step1_valgus={len(raw_s1)}, step2_wrong={len(raw_s2)}, "
+        f"step3_kneelock={len(raw_s3)}, step4_correct={len(raw_s4)}"
+    )
 
-    print(f"Loaded Day 3 I2V clips: wrong={len(raw_w)} frames, correct={len(raw_c)} frames")
+    # Monotonic full-rep frame slices (standing top -> deepest squat position) across 4 distinct camera angles:
+    # - Step 1 (`raw_s1[54:119][::-1]`, 65 frames): Direct Front View standing -> deep knock-kneed valgus collapse
+    # - Step 2 (`raw_s2[64:121]`, 57 frames): 3/4 Side Profile standing -> deep forward-lean & lumbar rounding
+    # - Step 3 (`raw_s3[56:126][::-1]`, 70 frames): Lower-Body Medium Close-Up standing -> deep tripod-foot & knees-over-toes squat
+    # - Step 4 (`raw_s4[90:145]`, 55 frames): Full-Body 3/4 Wide Studio View standing -> deep parallel squat drive
+    stroke_s1 = raw_s1[54:119][::-1]
+    stroke_s2 = raw_s2[64:121]
+    stroke_s3 = raw_s3[56:126][::-1]
+    stroke_s4 = raw_s4[90:145]
 
-    # Monotonic full-rep frame slices:
-    # - Wrong clip `raw_w[64:121]` (57 frames): standing top (`f=64`) -> deep knee-valgus/forward-lean squat (`f=120`)
-    # - Correct clip `raw_c[90:145]` (55 frames): standing top (`f=90`) -> deep parallel textbook squat (`f=144`)
-    raw_w_stroke = raw_w[64:121]
-    pool_s1, pool_s2, raw_kp_w = [], [], []
-    for fr in raw_w_stroke:
-        rgb1, kp1 = render_day3_i2v_frame_v39(fr, 1, True)
-        rgb2, _   = render_day3_i2v_frame_v39(fr, 2, True)
-        pool_s1.append(rgb1)
-        pool_s2.append(rgb2)
-        raw_kp_w.append(kp1)
+    pool_s1, kp_s1_raw = [], []
+    for fr in stroke_s1:
+        rgb, kp = render_day3_i2v_frame_v39(fr, 1, True)
+        pool_s1.append(rgb)
+        kp_s1_raw.append(kp)
+    smooth_kp_s1 = _smooth_kpts_seq(kp_s1_raw)
 
-    n_w = len(raw_w_stroke)
-    smooth_kp_w = [dict() for _ in range(n_w)]
-    for k in ["hip", "kn_r", "kn_l", "ank_r"]:
-        arr = np.array([rk[k] for rk in raw_kp_w], dtype=np.float32)
-        ax = gaussian_filter1d(arr[:, 0], sigma=2.0, mode="nearest")
-        ay = gaussian_filter1d(arr[:, 1], sigma=2.0, mode="nearest")
-        for i in range(n_w):
-            smooth_kp_w[i][k] = (float(ax[i]), float(ay[i]))
+    pool_s2, kp_s2_raw = [], []
+    for fr in stroke_s2:
+        rgb, kp = render_day3_i2v_frame_v39(fr, 2, True)
+        pool_s2.append(rgb)
+        kp_s2_raw.append(kp)
+    smooth_kp_s2 = _smooth_kpts_seq(kp_s2_raw)
 
-    raw_c_stroke = raw_c[90:145]
-    pool_s3, pool_s4, raw_kp_c = [], [], []
-    for fr in raw_c_stroke:
-        rgb3, kp3 = render_day3_i2v_frame_v39(fr, 3, False)
-        rgb4, _   = render_day3_i2v_frame_v39(fr, 4, False)
-        pool_s3.append(rgb3)
-        pool_s4.append(rgb4)
-        raw_kp_c.append(kp3)
+    pool_s3, kp_s3_raw = [], []
+    for fr in stroke_s3:
+        rgb, kp = render_day3_i2v_frame_v39(fr, 3, False)
+        pool_s3.append(rgb)
+        kp_s3_raw.append(kp)
+    smooth_kp_s3 = _smooth_kpts_seq(kp_s3_raw)
 
-    n_c = len(raw_c_stroke)
-    smooth_kp_c = [dict() for _ in range(n_c)]
-    for k in ["hip", "kn_r", "kn_l", "ank_r"]:
-        arr = np.array([rk[k] for rk in raw_kp_c], dtype=np.float32)
-        ax = gaussian_filter1d(arr[:, 0], sigma=2.0, mode="nearest")
-        ay = gaussian_filter1d(arr[:, 1], sigma=2.0, mode="nearest")
-        for i in range(n_c):
-            smooth_kp_c[i][k] = (float(ax[i]), float(ay[i]))
+    pool_s4, kp_s4_raw = [], []
+    for fr in stroke_s4:
+        rgb, kp = render_day3_i2v_frame_v39(fr, 4, False)
+        pool_s4.append(rgb)
+        kp_s4_raw.append(kp)
+    smooth_kp_s4 = _smooth_kpts_seq(kp_s4_raw)
 
-    # 3-Thumbnail Progression Dock crops focusing on the lower-body & torso squat mechanics
+    # 3-Thumbnail Progression Dock showing the 3 distinct postures/views:
+    # Thumbnail 0: Front Knee Valgus (`pool_s1[-1]`)
+    # Thumbnail 1: Side Forward Lean (`pool_s2[-1]`)
+    # Thumbnail 2: Full-Body Deep Squat Drive (`pool_s4[-1]`)
     size = (136, 108)
-    crop_box = (310, 680, 910, 1460)
-    inact_base = Image.fromarray(pool_s3[35]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    inact_base.alpha_composite(Image.new("RGBA", size, (10, 12, 16, 135)))
+    im0_act = Image.fromarray(pool_s1[-1]).convert("RGBA").crop((220, 740, 860, 1480)).resize(size, Image.Resampling.LANCZOS)
+    im1_act = Image.fromarray(pool_s2[-1]).convert("RGBA").crop((310, 680, 910, 1460)).resize(size, Image.Resampling.LANCZOS)
+    im2_act = Image.fromarray(pool_s4[-1]).convert("RGBA").crop((310, 680, 910, 1460)).resize(size, Image.Resampling.LANCZOS)
 
-    im0 = Image.fromarray(pool_s1[-1]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    im1 = Image.fromarray(pool_s2[-1]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    im2 = Image.fromarray(pool_s4[-1]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    torso_icons = [(im0, inact_base.copy()), (im1, inact_base.copy()), (im2, inact_base.copy())]
+    def _make_inact(act_im: Image.Image) -> Image.Image:
+        out = act_im.copy()
+        out.alpha_composite(Image.new("RGBA", size, (10, 12, 16, 138)))
+        return out
+
+    torso_icons = [
+        (im0_act, _make_inact(im0_act)),
+        (im1_act, _make_inact(im1_act)),
+        (im2_act, _make_inact(im2_act)),
+    ]
     dock_cache = build_cached_day3_v39_top_docks(torso_icons)
     hud_cache = {}
 
@@ -723,28 +804,28 @@ def build_day3_v39_master_reel():
     for f_idx in range(TOTAL_FRAMES):
         t = f_idx / float(FPS)
         if t < 5.0:
-            # Step 1 (0.0s - 5.0s, Red / Error 1): Knee Valgus & Lumbar Collapse
+            # Step 1 (0.0s - 5.0s, Red / Error 1): Direct Front Knee Valgus X-Ray
             u = t / 5.0
             rep_w = v37.controlled_single_rep_wave(u)
             pos_f = rep_w * (len(pool_s1) - 1)
             base_rgb = v37.sample_pool_interpolated(pool_s1, pos_f)
-            kp = v37.sample_kpts_interpolated(smooth_kp_w, pos_f)
+            kp = v37.sample_kpts_interpolated(smooth_kp_s1, pos_f)
             step_idx = 1
             is_wrong = True
             active_slot = 0
             cam_zoom = 1.02 + 0.02 * rep_w
-            cam_focus, cam_dest = (580.0, 960.0), (590.0, 960.0)
+            cam_focus, cam_dest = (540.0, 980.0), (550.0, 980.0)
             pct = int(round(78 + 6 * rep_w))
             tag_pill = "LUMBAR & KNEE RISK"
-            tag_ctx = "SPINE & KNEE COLLAPSE"
+            tag_ctx = "MEDIAL KNEE COLLAPSE"
             cue_1line = "18° KNEE VALGUS"
         elif t < 10.0:
-            # Step 2 (5.0s - 10.0s, Red / Error 2): Heel Lift & Forward Lean
+            # Step 2 (5.0s - 10.0s, Red / Error 2): 3/4 Side Torso Forward Dive & Lumbar X-Ray
             u = (t - 5.0) / 5.0
             rep_w = v37.controlled_single_rep_wave(u)
             pos_f = rep_w * (len(pool_s2) - 1)
             base_rgb = v37.sample_pool_interpolated(pool_s2, pos_f)
-            kp = v37.sample_kpts_interpolated(smooth_kp_w, pos_f)
+            kp = v37.sample_kpts_interpolated(smooth_kp_s2, pos_f)
             step_idx = 2
             is_wrong = True
             active_slot = 1
@@ -755,28 +836,28 @@ def build_day3_v39_master_reel():
             tag_ctx = "HEEL LIFT & FORWARD DIVE"
             cue_1line = "+28° FORWARD LEAN"
         elif t < 15.0:
-            # Step 3 (10.0s - 15.0s, Green / Correct 1): Tripod Foot, Braced Spine & Knees Over Toes
+            # Step 3 (10.0s - 15.0s, Green / Correct 1): Lower-Body Close-Up Tripod Foot & Knees Tracking Outward
             u = (t - 10.0) / 5.0
             rep_w = v37.controlled_single_rep_wave(u)
             pos_f = rep_w * (len(pool_s3) - 1)
             base_rgb = v37.sample_pool_interpolated(pool_s3, pos_f)
-            kp = v37.sample_kpts_interpolated(smooth_kp_c, pos_f)
+            kp = v37.sample_kpts_interpolated(smooth_kp_s3, pos_f)
             step_idx = 3
             is_wrong = False
             active_slot = 2
             cam_zoom = 1.02 + 0.02 * rep_w
-            cam_focus, cam_dest = (580.0, 960.0), (590.0, 960.0)
+            cam_focus, cam_dest = (560.0, 940.0), (570.0, 940.0)
             pct = int(round(92 + 4 * rep_w))
             tag_pill = "NEUTRAL SPINE & KNEE LOCK"
-            tag_ctx = "TRIPOD FOOT & HIP HINGE"
+            tag_ctx = "TRIPOD FOOT & HIP TORQUE"
             cue_1line = "KNEES OVER TOES"
         else:
-            # Step 4 (15.0s - 20.0s, Green / Correct 2): Deep Parallel Squat Drive (Quads & Glutes · 4×10)
+            # Step 4 (15.0s - 20.0s, Green / Correct 2): Full-Body Wide Deep Parallel Squat Drive (Quads & Glutes · 4×10)
             u = (t - 15.0) / 5.0
             rep_w = v37.controlled_single_rep_wave(u)
             pos_f = rep_w * (len(pool_s4) - 1)
             base_rgb = v37.sample_pool_interpolated(pool_s4, pos_f)
-            kp = v37.sample_kpts_interpolated(smooth_kp_c, pos_f)
+            kp = v37.sample_kpts_interpolated(smooth_kp_s4, pos_f)
             step_idx = 4
             is_wrong = False
             active_slot = 2
@@ -847,15 +928,15 @@ def build_day3_v39_master_reel():
     f_col = v30.f_pretendard(15, "bold")
     bd.text(
         (28, 20),
-        "DAY 3 · BARBELL BACK SQUAT (v39 INSTAGRAM REELS SAFE-ZONE MASTER)  ·  아이폰 릴스 세이프존 100% 최적화 · 대퇴사두근 & 둔근",
+        "DAY 3 · BARBELL BACK SQUAT (v39 4-ANGLE DISTINCT MASTER)  ·  4개 구간 독립 3D 앵글/자세 + 아이폰 세이프존 100% 최적화",
         font=f_row,
         fill=COL_GREEN,
     )
     col_titles = [
-        "STEP 1 · 84% | 18° KNEE VALGUS",
-        "STEP 2 · 79% | +28° FORWARD LEAN",
-        "STEP 3 · 96% | KNEES OVER TOES",
-        "STEP 4 · 98% | DEEP SQUAT DRIVE",
+        "STEP 1 (전면 뷰) · 84% | 18° KNEE VALGUS",
+        "STEP 2 (측면 뷰) · 79% | +28° FORWARD LEAN",
+        "STEP 3 (하체 근접) · 96% | KNEES OVER TOES",
+        "STEP 4 (전신 풀샷) · 98% | DEEP SQUAT DRIVE",
     ]
     for i in range(4):
         x = pad + i * (pw + pad)
@@ -881,15 +962,15 @@ def build_day3_v39_master_reel():
     idraw = ImageDraw.Draw(ip_board)
     idraw.text(
         (28, 20),
-        "DAY 3 · iPHONE INSTAGRAM REELS UI SAFE-ZONE PREVIEW (1179×2556)  ·  상단 '+ / 릴스 친구' · 좌우 크롭 · 우측 아이콘 · 하단 프로필 간섭 0%",
+        "DAY 3 · iPHONE INSTAGRAM REELS UI SAFE-ZONE PREVIEW (1179×2556)  ·  4개 구간 실제 자세·카메라 앵글 차별화 + UI 간섭 0%",
         font=f_row,
         fill=COL_GREEN,
     )
     ip_titles = [
-        "iPhone View · STEP 1 (18° KNEE VALGUS)",
-        "iPhone View · STEP 2 (+28° FORWARD LEAN)",
-        "iPhone View · STEP 3 (KNEES OVER TOES)",
-        "iPhone View · STEP 4 (DEEP SQUAT DRIVE)",
+        "iPhone View · STEP 1 (전면 무릎 내반 붕괴)",
+        "iPhone View · STEP 2 (측면 상체 쏠림·요추 과부하)",
+        "iPhone View · STEP 3 (하체 근접 무릎-발끝 정렬)",
+        "iPhone View · STEP 4 (전신 풀 스쿼트 드라이브)",
     ]
     for i in range(4):
         x = ipad + i * (cw + ipad)
