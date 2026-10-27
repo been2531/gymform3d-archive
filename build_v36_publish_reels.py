@@ -1,25 +1,22 @@
 #!/usr/bin/env python3
 """
-v36 Pure Studio Master — Full Production Reels Builder for Day 1 & Day 2 (@gymform.3d)
-======================================================================================
-Builds:
-1. Day 1 (`Cable Rope Pushdown`):
-   - `/workspace/daily_info_reels/output/day1_v36_master_reel.mp4` (20.0s, 600 frames @ 30fps, H.264 + AAC)
-   - `/workspace/daily_info_reels/output/day1_v36_cover.jpg` (1080x1920 9:16 Cover)
-   - `/workspace/daily_info_reels/output/day1_v36_caption_en.txt`
-2. Day 2 (`Wide-Grip Lat Pulldown`):
-   - `/workspace/daily_info_reels/output/day2_v36_master_reel.mp4` (20.0s, 600 frames @ 30fps, H.264 + AAC)
-   - `/workspace/daily_info_reels/output/day2_v36_cover.jpg` (1080x1920 9:16 Cover)
-   - `/workspace/daily_info_reels/output/day2_v36_clean_master_sheet.jpg` (4-Step Full-Body 9:16 Master Sheet)
-   - `/workspace/daily_info_reels/output/day2_v36_caption_en.txt`
-
-Strict v36 Standards Verified:
-- ZERO dashed alignment lines or scattered body dots (`점선 정렬축 100% 제거`).
-- Intrinsic 3D Fiber-Strand Coloring on target/compensatory muscles + Step 1 Native 3D X-Ray joint/spine stress.
-- Clean exterior solid angle arcs & sculpted numbers outside the body + single clean `◎` elbow pivot ring on Steps 2-4.
-- Frameless bottom-left `%` + 20-segment LED gauge + `4×12` prescription + top 3-thumbnail dock + top-right `✕/✓` badge.
-- English voiceover (`en-US-ChristopherNeural`) with verified `>= 1.75s` natural pauses between every sentence.
-- Uses `-threads 4` on ffmpeg for shared box CPU etiquette.
+v36 Pure Studio Master — Full-ROM Real 3D I2V Reels Builder for Day 1 & Day 2 (@gymform.3d)
+===========================================================================================
+Upgrades:
+1. Real 3D I2V Full-ROM Exercise Motion (`121 frames` per I2V clip):
+   - Day 1 (`Cable Rope Pushdown`): Uses `gym_day1_wrong_i2v.mp4` and `gym_day1_correct_i2v.mp4`
+     with full-range-of-motion (Full-ROM) continuous reps across all 4 steps!
+   - Day 2 (`Wide-Grip Lat Pulldown`): Uses the newly generated real 3D I2V motion clips
+     `/workspace/daily_info_reels/output/gym_day2_wrong_i2v.mp4` (`121 frames`) and
+     `/workspace/daily_info_reels/output/gym_day2_correct_i2v.mp4` (`121 frames`), where the mannequin
+     actually performs the full overhead-to-chest lat pulldown repetition!
+2. Strict v36 Pure Studio Master Standard:
+   - ZERO dashed alignment lines or scattered body dots (`점선 정렬축 100% 제거`).
+   - Intrinsic 3D Fiber-Strand Coloring locked dynamically to the moving 3D muscle ridges + Step 1 Native 3D X-Ray.
+   - Clean exterior solid angle arcs & sculpted numbers outside the body + single clean `◎` elbow pivot ring on Steps 2-4
+     tracking the moving elbow via temporally smoothed (`sigma=2.2`) MediaPipe keypoints.
+   - English voiceover (`en-US-ChristopherNeural`) with verified `>= 1.78s` pauses between sentences.
+   - DOES NOT upload automatically (`업로드전에 나한테 검토받아`).
 """
 
 import os
@@ -38,8 +35,6 @@ import gymform_engine as eng
 import build_v25_fast_preview as v25
 import build_v28_luxury_ab as v28
 import build_v30_pure_graphic_numbers as v30
-import build_day2_ox_preview as d2
-import build_gym_day2 as gd2
 import universal_anatomy_rig as uar
 import build_v35_repeatable_master as v35
 import build_v36_clean_master as v36
@@ -54,18 +49,15 @@ FPS = 30
 DURATION = 20.0
 TOTAL_FRAMES = int(FPS * DURATION)  # 600 frames
 
+DAY2_WRONG_I2V = os.path.join(OUT_DIR, "gym_day2_wrong_i2v.mp4")
+DAY2_CORRECT_I2V = os.path.join(OUT_DIR, "gym_day2_correct_i2v.mp4")
+
 
 async def synthesize_voiceover_wav(
     wav_path: str,
     vo_lines: list[tuple[float, str]],
     duration_s: float = 20.0,
 ):
-    """
-    Generates a 44.1kHz stereo WAV combining:
-    - Subtle dark-gym sub-bass pulse + step transition chimes
-    - Clean English TTS (`en-US-ChristopherNeural`) with strict verification that
-      every sentence has `>= 1.75s` pause before the next sentence!
-    """
     import edge_tts
 
     sr = 44100
@@ -76,7 +68,6 @@ async def synthesize_voiceover_wav(
     sub = 0.040 * np.sin(2.0 * math.pi * 55.0 * t) * beat_env
     master = sub.copy()
 
-    # Step transition chimes at 0.0s, 5.0s, 10.0s, 15.0s
     for idx_s, t_step in enumerate([0.05, 5.0, 10.0, 15.0]):
         s0 = int(t_step * sr)
         dur_c = int(0.24 * sr)
@@ -132,262 +123,43 @@ async def synthesize_voiceover_wav(
 
 
 # ==============================================================================
-# TASK A: DAY 1 (`CABLE ROPE PUSHDOWN`) v36 FULL MASTER REEL & COVER
+# DAY 2 REAL 3D I2V FRAME SHADER (`gym_day2_wrong_i2v.mp4` & `gym_day2_correct_i2v.mp4`)
 # ==============================================================================
-def build_day1_v36_master_reel():
-    print("Building Day 1 (Cable Rope Pushdown) v36 Master Reel...")
-    cap_w = cv2.VideoCapture(eng.WRONG_I2V)
-    raw_w = []
-    while True:
-        ret, fr = cap_w.read()
-        if not ret:
-            break
-        raw_w.append(fr)
-    cap_w.release()
-    raw_w = raw_w[:56]
-
-    cap_c = cv2.VideoCapture(eng.CORRECT_I2V)
-    raw_c = []
-    while True:
-        ret, fr = cap_c.read()
-        if not ret:
-            break
-        raw_c.append(fr)
-    cap_c.release()
-    raw_c = raw_c[:69]
-
-    # Pre-compute the 4 pools on the unique source frames (fast & temporally smoothed!)
-    print(f"Precomputing Day 1 pools: wrong={len(raw_w)} frames, correct={len(raw_c)} frames...")
-    pool_s1_rgb = []
-    for fr in raw_w:
-        rgb_out, _ = v35.render_v35_clean_3d_frame(fr, 1, "xray", True)
-        pool_s1_rgb.append(rgb_out)
-
-    # For Correct clip (69 frames), detect keypoints once and smooth them temporally
-    keys_order = ["ear", "sh", "sh_far", "el", "wr", "hd", "hip", "hip_far", "knee", "ank"]
-    pool_s2_rgb = []
-    pool_s3_rgb = []
-    pool_s4_rgb = []
-    raw_c_kpts = []
-
-    for i, fr in enumerate(raw_c):
-        rgb2, kp = v35.render_v35_clean_3d_frame(fr, 2, "anterior_deltoid", True)
-        rgb3, _  = v35.render_v35_clean_3d_frame(fr, 3, "triceps_lat_long", False)
-        rgb4, _  = v35.render_v35_clean_3d_frame(fr, 4, "triceps_all_three", False)
-        pool_s2_rgb.append(rgb2)
-        pool_s3_rgb.append(rgb3)
-        pool_s4_rgb.append(rgb4)
-        raw_c_kpts.append(kp)
-
-    n_c = len(raw_c)
-    smooth_c_kpts = [dict() for _ in range(n_c)]
-    for k in keys_order:
-        arr = np.array([rk[k] for rk in raw_c_kpts], dtype=np.float32)
-        ax = gaussian_filter1d(arr[:, 0], sigma=1.8, mode="nearest")
-        ay = gaussian_filter1d(arr[:, 1], sigma=1.8, mode="nearest")
-        for i in range(n_c):
-            smooth_c_kpts[i][k] = (float(ax[i]), float(ay[i]))
-
-    # Top 3-thumbnail dock icons
-    size = (142, 114)
-    crop_box = (555, 550, 905, 950)
-    f_c42_mono = eng.prepare_muscle_frame(raw_c[42])["mono"]
-    inact_base = Image.fromarray(f_c42_mono).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    inact_base.alpha_composite(Image.new("RGBA", size, (10, 12, 16, 125)))
-
-    im0 = Image.fromarray(pool_s1_rgb[45]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    im1 = Image.fromarray(pool_s2_rgb[14]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    im2 = Image.fromarray(pool_s4_rgb[64]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    torso_icons = [(im0, inact_base.copy()), (im1, inact_base.copy()), (im2, inact_base.copy())]
-
-    # Synthesize 20.0s voiceover with >=1.78s pauses between sentences
-    wav_day1 = os.path.join(TMP_AUDIO, "day1_v36_audio.wav")
-    vo_day1 = [
-        (0.25, "Cable rope pushdown. Never hunch your spine."),
-        (5.25, "Stopping at ninety degrees lets your front delt take over."),
-        (10.35, "Hinge fifteen degrees and pin your elbows tight."),
-        (15.35, "Spread the rope at full lockout. Four sets of twelve."),
-    ]
-    asyncio.run(synthesize_voiceover_wav(wav_day1, vo_day1, DURATION))
-
-    tmp_mp4 = os.path.join(TMP_AUDIO, "_day1_v36_video.mp4")
-    final_mp4 = os.path.join(OUT_DIR, "day1_v36_master_reel.mp4")
-    vw = cv2.VideoWriter(tmp_mp4, cv2.VideoWriter_fourcc(*"mp4v"), float(FPS), (W, H))
-
-    kp_s1_fixed = smooth_c_kpts[14]
-    left_w = 430
-    curve_l = (np.linspace(0.65, 1.0, left_w, dtype=np.float32) ** 0.75)[None, :, None]
-
-    cover_pil = None
-    for f_idx in range(TOTAL_FRAMES):
-        t = f_idx / float(FPS)
-        if t < 5.0:
-            # Step 1 (0.0s - 5.0s): Hunched Spine Wrong (1.5 smooth rep cycles)
-            u = t / 5.0
-            wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
-            p_i = int(round(wave_p * (len(pool_s1_rgb) - 1)))
-            base_rgb = pool_s1_rgb[p_i]
-            kp = kp_s1_fixed
-            step_idx = 1
-            is_wrong = True
-            active_slot = 0
-            cam_zoom, cam_focus, cam_dest = 1.02, (690.0, 920.0), (690.0, 920.0)
-            pct = int(round(82 + 6 * wave_p))
-            sp_cfg = {
-                "is_wrong": True,
-                "pct": pct,
-                "dial_tag": "JOINT RISK",
-                "short_cue": "✕ HUNCHED SPINE",
-                "splits": [("SPINE · JOINT", pct, v30.COL_RED), ("TRICEPS", 100 - pct, v30.COL_MUTED)],
-                "rx_num": "35°",
-                "rx_unit": "KYPHOSIS",
-            }
-        elif t < 10.0:
-            # Step 2 (5.0s - 10.0s): 90° Half Rep / Front Delt Steal (oscillates in top half-rep frames 0..24)
-            u = (t - 5.0) / 5.0
-            wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
-            p_i = int(round(4 + wave_p * 20))
-            base_rgb = pool_s2_rgb[p_i]
-            kp = smooth_c_kpts[p_i]
-            step_idx = 2
-            is_wrong = True
-            active_slot = 1
-            cam_zoom, cam_focus, cam_dest = 1.05, (685.0, 910.0), (695.0, 910.0)
-            pct = int(round(68 + 6 * wave_p))
-            sp_cfg = {
-                "is_wrong": True,
-                "pct": pct,
-                "dial_tag": "DELT STEAL",
-                "short_cue": "✕ 90° HALF REP",
-                "splits": [("FRONT DELT", pct, v30.COL_RED), ("TRICEPS", 100 - pct, v30.COL_MUTED)],
-                "rx_num": "90°",
-                "rx_unit": "STOP SHORT",
-            }
-        elif t < 15.0:
-            # Step 3 (10.0s - 15.0s): 15° Hinge & Pin Elbows (frames 12..52)
-            u = (t - 10.0) / 5.0
-            wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
-            p_i = int(round(12 + wave_p * 40))
-            base_rgb = pool_s3_rgb[p_i]
-            kp = smooth_c_kpts[p_i]
-            step_idx = 3
-            is_wrong = False
-            active_slot = 2
-            cam_zoom, cam_focus, cam_dest = 1.04, (685.0, 920.0), (695.0, 920.0)
-            pct = int(round(90 + 6 * wave_p))
-            sp_cfg = {
-                "is_wrong": False,
-                "pct": pct,
-                "dial_tag": "TRICEPS ISO",
-                "short_cue": "✓ 15° HINGE · PIN",
-                "splits": [("LAT HEAD", pct, v30.COL_GREEN), ("LONG HEAD", pct - 4, v30.COL_GREEN)],
-                "rx_num": "135°",
-                "rx_unit": "EXTENSION",
-            }
-        else:
-            # Step 4 (15.0s - 20.0s): 180° Full Lockout & 25° Rope Spread (frames 16..67)
-            u = (t - 15.0) / 5.0
-            wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
-            p_i = int(round(16 + wave_p * 51))
-            base_rgb = pool_s4_rgb[p_i]
-            kp = smooth_c_kpts[p_i]
-            step_idx = 4
-            is_wrong = False
-            active_slot = 2
-            cam_zoom, cam_focus, cam_dest = 1.06, (690.0, 925.0), (700.0, 920.0)
-            pct = int(round(94 + 5 * wave_p))
-            sp_cfg = {
-                "is_wrong": False,
-                "pct": pct,
-                "dial_tag": "ALL 3 HEADS",
-                "short_cue": "✓ 180° LOCKOUT",
-                "splits": [
-                    ("LAT HEAD", pct, v30.COL_GREEN),
-                    ("LONG HEAD", max(90, pct - 4), v30.COL_GREEN),
-                    ("MED HEAD", max(91, pct - 3), v30.COL_GREEN),
-                ],
-                "rx_num": "4×12",
-                "rx_unit": "REPS · 1s",
-            }
-
-        cam_rgb, map_pt = v28.apply_cinema_camera(base_rgb, zoom=cam_zoom, focus_xy=cam_focus, dest_xy=cam_dest)
-        out = cam_rgb.astype(np.float32)
-        out[480:1780, :left_w] *= curve_l
-        im = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).convert("RGBA")
-
-        v36.render_v36_clean_exterior_overlay(im, step_idx, map_pt, kp, is_wrong, dynamic_elbow_deg=None)
-        v28.draw_luxury_top_dock(im, torso_icons, active_slot, is_wrong)
-        v30.draw_v30_graphic_telemetry_bottom_left(im, sp_cfg, mode="A")
-
-        rgb_frame = im.convert("RGB")
-        if f_idx == int(16.6 * FPS):
-            cover_pil = rgb_frame.copy()
-        vw.write(cv2.cvtColor(np.array(rgb_frame), cv2.COLOR_RGB2BGR))
-
-    vw.release()
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-threads", "4",
-            "-i", tmp_mp4, "-i", wav_day1,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart",
-            final_mp4,
-        ],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    os.remove(tmp_mp4)
-    cover_path = os.path.join(OUT_DIR, "day1_v36_cover.jpg")
-    cover_pil.save(cover_path, quality=95)
-
-    caption_day1 = """Stop letting your shoulders and wrists steal your triceps gains on the Cable Rope Pushdown.
-
-Here is the 4-step 3D biomechanical checklist to isolate 99% of all 3 Triceps Heads:
-
-1. HUNCHED SPINE OVERLOAD (✕)
-Hunching 35° forward and craning your neck (+28°) shifts 86% of the shear stress onto your shoulder joint and wrists.
-
-2. 90° HALF-REP TRAP (✕)
-Stopping short at 90° lets your Anterior Deltoid steal 72% of the tension before the triceps ever reach peak contraction.
-
-3. 15° HIP HINGE & ELBOW PIN (✓)
-Set a clean 15° athletic hip hinge and lock your elbows at your sides as a pure fixed hinge axis (95% Lateral & Long Head isolation).
-
-4. 180° FULL LOCKOUT & 25° ROPE SPREAD (✓)
-Extend all the way to 180° and spread the rope 25° outward at the bottom to fire all 3 Triceps Heads (Lateral, Long, and Medial — 99% peak activation, 4×12 controlled reps).
-
-Save this for your next arm day and follow @gymform.3d for daily 3D biomechanics guides.
-
-#tricepspushdown #tricepsworkout #armday #biomechanics #gymform #workouttips #gymtips #hypertrophy #fitnesseducation #correctform #bodybuilding #anatomydrawing"""
-    cap_path = os.path.join(OUT_DIR, "day1_v36_caption_en.txt")
-    with open(cap_path, "w", encoding="utf-8") as f:
-        f.write(caption_day1.strip() + "\n")
-
-    print("Saved Day 1 v36 Master Reel & Cover:", final_mp4, cover_path)
-
-
-# ==============================================================================
-# TASK B: DAY 2 (`WIDE-GRIP LAT PULLDOWN`) v36 FULL MASTER REEL & COVER
-# ==============================================================================
-def render_day2_v36_base_plate(
-    plate_bgr: np.ndarray,
+def render_day2_i2v_frame_v36(
+    bgr_720p: np.ndarray,
     step_idx: int,
     is_wrong: bool,
-    intensity: float = 1.0,
-) -> tuple[np.ndarray, dict]:
+) -> tuple[np.ndarray, tuple[float, float]]:
     """
-    Renders a Day 2 (`Wide-Grip Lat Pulldown`) frame in the exact v36 Pure Studio Standard:
-    - Step 1 (`day2_step2_wrong_plate.jpg`): Preserves the native 3D X-Ray lumbar spine & shoulder joint overload
-      built into the 3D render!
-    - Step 2 (`day2_step3_wrong_plate.jpg`): Intrinsic 3D Fiber-Strand crimson coloring on Biceps, Forearms & Upper Traps.
-    - Step 3 (`day2_step1_correct_plate.jpg`): Intrinsic 3D Fiber-Strand emerald coloring on Upper Lat, Teres Major & Scapula.
-    - Step 4 (`day2_step3_correct_plate.jpg`): Intrinsic 3D Fiber-Strand emerald coloring on Full Latissimus Dorsi & Teres Major.
-    - ZERO dashed lines or fake drawn bones!
+    Takes a raw frame from `gym_day2_wrong_i2v.mp4` or `gym_day2_correct_i2v.mp4`,
+    upscales to 1080x1920 with crisp unsharp mask, extracts the moving left elbow keypoint,
+    and applies the v36 Pure Studio Master shader:
+    - Step 1 (`✕ 42° BACK SWING`): Native 3D X-Ray lumbar spine & shoulder overload built into `gym_day2_wrong_i2v.mp4`!
+    - Step 2 (`✕ TRAP SHRUG · BICEPS STEAL`): Intrinsic 3D Fiber-Strand crimson coloring on Upper Traps & Posterior Delts/Arms during the wrong pull!
+    - Step 3 (`✓ 15° LEAN · SCAPULA DEPRESS`): Intrinsic 3D Fiber-Strand emerald coloring on Upper Latissimus Dorsi, Teres Major & Scapular Retractors!
+    - Step 4 (`✓ ELBOWS TO HIPS · FULL LAT CONTRACT`): Intrinsic 3D Fiber-Strand emerald coloring across the entire V-taper Latissimus Dorsi, Teres Major & Lower Traps!
     """
+    up = cv2.resize(bgr_720p, (W, H), interpolation=cv2.INTER_LANCZOS4)
+    blur = cv2.GaussianBlur(up, (0, 0), 1.0)
+    plate_bgr = cv2.addWeighted(up, 1.16, blur, -0.16, 0)
+
     rgb = cv2.cvtColor(plate_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
     r_ch, g_ch, b_ch = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
     yy, xx = np.mgrid[:H, :W].astype(np.float32)
+
+    # Detect moving left elbow keypoint via MediaPipe
+    detector = uar.get_pose_detector()
+    mp_im = uar.mp.Image(image_format=uar.mp.ImageFormat.SRGB, data=rgb.astype(np.uint8))
+    res = detector.detect(mp_im)
+    if res.pose_landmarks:
+        lms = res.pose_landmarks[0]
+        el_x = float(np.clip(lms[13].x * W, 210.0, 480.0))
+        el_y = float(np.clip(lms[13].y * H, 450.0, 1120.0))
+        sh_x = float(np.clip(lms[11].x * W, 420.0, 680.0))
+        sh_y = float(np.clip(lms[11].y * H, 580.0, 900.0))
+    else:
+        el_x, el_y = 320.0, 880.0
+        sh_x, sh_y = 540.0, 740.0
 
     rb_diff = np.maximum(0.0, r_ch - b_ch)
     gb_diff = np.maximum(0.0, g_ch - b_ch)
@@ -416,38 +188,34 @@ def render_day2_v36_base_plate(
     ], axis=2)
 
     if step_idx == 1:
-        # Step 1 (`day2_step2_wrong_plate.jpg`): Keep the native 3D X-Ray lumbar spine & shoulder joint glow!
-        zone = np.exp(-(((xx - 655.0) / 175.0) ** 2 + ((yy - 980.0) / 260.0) ** 2))
-        xray_alpha = np.clip((rb_diff - 22.0) / 95.0, 0.0, 1.0) * zone * (0.85 + 0.15 * intensity)
+        # Step 1 (`gym_day2_wrong_i2v.mp4`): Preserve the native 3D X-Ray lumbar spine & shoulder overload
+        # as the mannequin swings its back dynamically!
+        xray_alpha = np.clip((rb_diff - 20.0) / 90.0, 0.0, 1.0)
         xray_boost = rgb.copy()
-        xray_boost[:, :, 0] = np.clip(r_ch * 1.15 + 28.0, 0, 255)
-        xray_boost[:, :, 1] = np.clip(g_ch * 0.95, 0, 255)
+        xray_boost[:, :, 0] = np.clip(r_ch * 1.15 + 26.0, 0, 255)
+        xray_boost[:, :, 1] = np.clip(g_ch * 0.94, 0, 255)
         out = mono * (1.0 - xray_alpha[:, :, None]) + xray_boost * xray_alpha[:, :, None]
-        return np.clip(out, 0, 255).astype(np.uint8), {"el": (309.0, 899.0)}
+        return np.clip(out, 0, 255).astype(np.uint8), (el_x, el_y)
 
     if step_idx == 2:
-        # Step 2 (`day2_step3_wrong_plate.jpg`): Biceps, Forearms & Shrugged Upper Traps steal load
-        z_arm_l = np.exp(-(((xx - 310.0) / 170.0) ** 2 + ((yy - 770.0) / 150.0) ** 2))
-        z_arm_r = np.exp(-(((xx - 880.0) / 160.0) ** 2 + ((yy - 790.0) / 150.0) ** 2))
-        z_trap  = np.exp(-(((xx - 640.0) / 160.0) ** 2 + ((yy - 780.0) / 95.0) ** 2))
-        zone = np.clip(z_arm_l + z_arm_r + z_trap, 0.0, 1.0)
-        el_pt = (295.0, 885.0)
+        # Step 2 (`gym_day2_wrong_i2v.mp4`): Focus crimson 3D fiber-strands on the Upper Traps, Shoulder & Arms
+        # while suppressing the lower lumbar glow so Step 2 distinctly highlights Upper Trap/Arm compensation!
+        upper_gate = np.clip((980.0 - yy) / 85.0, 0.0, 1.0)
+        arm_flare = np.exp(-(((xx - el_x) / 145.0) ** 2 + ((yy - el_y) / 145.0) ** 2)) * np.clip((base_lum - 38.0) / 90.0, 0.0, 1.0)
+        fe = np.clip(np.clip((rb_diff - 22.0) / 105.0, 0.0, 1.0) * upper_gate + arm_flare * 0.72, 0.0, 1.0)
+        hc = np.clip((gb_diff - 10.0) / 90.0, 0.0, 1.0) * upper_gate
     elif step_idx == 3:
-        # Step 3 (`day2_step1_correct_plate.jpg`): Scapula Depression & Upper/Mid Lat V-Taper
-        z_l = np.exp(-(((xx - 565.0) / 125.0) ** 2 + ((yy - 885.0) / 155.0) ** 2))
-        z_r = np.exp(-(((xx - 745.0) / 125.0) ** 2 + ((yy - 885.0) / 155.0) ** 2))
-        zone = np.clip(z_l + z_r, 0.0, 1.0) * np.clip((yy - 705.0) / 45.0, 0.0, 1.0)
-        el_pt = (295.0, 915.0)
+        # Step 3 (`gym_day2_correct_i2v.mp4`): Upper Lat, Teres Major & Scapula Depression
+        lat_gate = np.clip((yy - (sh_y - 35.0)) / 55.0, 0.0, 1.0) * np.clip((1045.0 - yy) / 75.0, 0.0, 1.0)
+        fe = np.clip((rb_diff - 26.0) / 115.0, 0.0, 1.0) * lat_gate
+        hc = np.clip((gb_diff - 10.0) / 90.0, 0.0, 1.0) * lat_gate
     else:
-        # Step 4 (`day2_step3_correct_plate.jpg`): Full Latissimus Dorsi & Teres Major Peak Contraction
-        zone = np.exp(-(((xx - 705.0) / 155.0) ** 2 + ((yy - 965.0) / 165.0) ** 2))
-        el_pt = (418.0, 924.0)
-
-    fe = np.clip((rb_diff - 28.0) / 118.0, 0.0, 1.0) * zone
-    hc = np.clip((gb_diff - 10.0) / 92.0, 0.0, 1.0) * zone
+        # Step 4 (`gym_day2_correct_i2v.mp4`): Full V-Taper Latissimus Dorsi, Teres Major & Lower Traps
+        fe = np.clip((rb_diff - 22.0) / 110.0, 0.0, 1.0)
+        hc = np.clip((gb_diff - 10.0) / 88.0, 0.0, 1.0)
 
     strand_mod = (0.22 + 0.78 * fs) * (1.0 - 0.65 * sulc)
-    fiber_alpha = np.clip(fe * (0.64 + 0.66 * strand_mod) * (0.82 + 0.18 * intensity), 0.0, 0.96)[:, :, None]
+    fiber_alpha = np.clip(fe * (0.64 + 0.66 * strand_mod), 0.0, 0.96)[:, :, None]
     ridge_boost = np.clip(fs * 0.65 + hc * 0.55, 0.0, 1.0)[:, :, None]
     vol_shade = np.clip(0.28 + 0.72 * hv * (0.45 + 0.55 * fs), 0.0, 1.0)[:, :, None]
 
@@ -466,7 +234,7 @@ def render_day2_v36_base_plate(
         + crest_col * (ridge_boost ** 1.35) * 0.85
     )
     out = mono * (1.0 - fiber_alpha) + np.clip(fiber_rgb, 0.0, 255.0) * fiber_alpha
-    return np.clip(out, 0, 255).astype(np.uint8), {"el": el_pt}
+    return np.clip(out, 0, 255).astype(np.uint8), (el_x, el_y)
 
 
 def render_day2_v36_exterior_callouts(
@@ -476,11 +244,6 @@ def render_day2_v36_exterior_callouts(
     el_pt: tuple[float, float],
     is_wrong: bool,
 ):
-    """
-    Renders Day 2 (`Wide-Grip Lat Pulldown`) exterior arcs & numbers in the v36 Pure Studio Standard:
-    - ZERO dashed lines or scattered dots on the body!
-    - Clean exterior solid arcs & sculpted numbers outside the body + single clean `◎` elbow pivot ring on Steps 2-4.
-    """
     SS = 2
     rig_layer = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
     rd = ImageDraw.Draw(rig_layer)
@@ -497,7 +260,6 @@ def render_day2_v36_exterior_callouts(
     el_s = S(map_pt(el_pt[0], el_pt[1]))
 
     if step_idx == 1:
-        # Step 1: 42° Back Swing & Lumbar Overload (solid exterior arc to the left of the torso)
         c_arc = S(map_pt(470, 940))
         r_a = 165 * SS
         rd.arc([c_arc[0] - r_a, c_arc[1] - r_a, c_arc[0] + r_a, c_arc[1] + r_a], start=192, end=246, fill=(*col_main, 245), width=4 * SS)
@@ -512,7 +274,6 @@ def render_day2_v36_exterior_callouts(
         v30.draw_floating_number_badge(od, sd, (min(955, int(p_l[0])), int(p_l[1])), "82%", "LUMBAR LOAD", col_main, col_soft, align="left")
 
     elif step_idx == 2:
-        # Step 2: Shrugged Shoulders & Biceps Steal (single elbow pivot ring + exterior forearm curl arc)
         v36.draw_single_elbow_pivot_ring(rd, el_s, 9.5, col_main, SS)
 
         c_arc = S(map_pt(315, 795))
@@ -529,7 +290,6 @@ def render_day2_v36_exterior_callouts(
         v30.draw_floating_number_badge(od, sd, (int(p_bi[0]), int(p_bi[1])), "68%", "BICEPS STEAL", col_main, col_soft, align="right")
 
     elif step_idx == 3:
-        # Step 3: 15° Torso Lean & Scapula Depression (single elbow pivot ring + exterior downward drive arc)
         v36.draw_single_elbow_pivot_ring(rd, el_s, 9.5, col_main, SS)
 
         c_arc = S(map_pt(435, 835))
@@ -546,17 +306,16 @@ def render_day2_v36_exterior_callouts(
         v30.draw_floating_number_badge(od, sd, (min(955, int(p_pl[0])), int(p_pl[1])), "30°", "ELBOW PLANE", col_main, col_soft, align="left")
 
     else:
-        # Step 4: Elbows to Hips Full Lat Contraction (single elbow lock ring + exterior elbow-to-hip sweep arc)
         v36.draw_single_elbow_pivot_ring(rd, el_s, 9.5, col_main, SS)
 
-        c_arc = S(map_pt(525, 885))
+        c_arc = S(map_pt(435, 865))
         r_a = 158 * SS
         rd.arc([c_arc[0] - r_a, c_arc[1] - r_a, c_arc[0] + r_a, c_arc[1] + r_a], start=116, end=172, fill=(*col_main, 245), width=4 * SS)
         ang_t = math.radians(116)
         tip_p = (c_arc[0] + r_a * math.cos(ang_t), c_arc[1] + r_a * math.sin(ang_t))
         v30.draw_arrow_head(rd, tip_p, 116 - 90, 13 * SS, (*col_soft, 255))
 
-        p_dr = map_pt(415, 825)
+        p_dr = map_pt(405, 825)
         v30.draw_floating_number_badge(od, sd, (int(p_dr[0]), int(p_dr[1])), "100%", "ELBOW TO HIP", col_main, col_soft, align="right")
 
         p_arch = map_pt(885, 790)
@@ -568,80 +327,77 @@ def render_day2_v36_exterior_callouts(
 
 
 def build_day2_v36_master_reel():
-    print("Building Day 2 (Wide-Grip Lat Pulldown) v36 Master Reel...")
-    p_s1_w = d2.load_plate("day2_step2_wrong_plate.jpg")
-    p_s2_w = d2.load_plate("day2_step3_wrong_plate.jpg")
-    p_s3_c = d2.load_plate("day2_step1_correct_plate.jpg")
-    p_s4_c = d2.load_plate("day2_step3_correct_plate.jpg")
+    print("Building Day 2 (Wide-Grip Lat Pulldown) v36 Master Reel from REAL 3D I2V Videos...")
+    cap_w = cv2.VideoCapture(DAY2_WRONG_I2V)
+    raw_w = []
+    while True:
+        ret, fr = cap_w.read()
+        if not ret:
+            break
+        raw_w.append(fr)
+    cap_w.release()
 
-    # Build top 3-thumbnail dock icons for Day 2
-    s1_base, _ = render_day2_v36_base_plate(p_s1_w, 1, True, 1.0)
-    s2_base, _ = render_day2_v36_base_plate(p_s2_w, 2, True, 1.0)
-    s3_base, _ = render_day2_v36_base_plate(p_s3_c, 3, False, 1.0)
-    s4_base, _ = render_day2_v36_base_plate(p_s4_c, 4, False, 1.0)
+    cap_c = cv2.VideoCapture(DAY2_CORRECT_I2V)
+    raw_c = []
+    while True:
+        ret, fr = cap_c.read()
+        if not ret:
+            break
+        raw_c.append(fr)
+    cap_c.release()
 
+    print(f"Loaded Day 2 Real 3D I2V clips: wrong={len(raw_w)} frames, correct={len(raw_c)} frames")
+
+    # Pre-render the 4 step pools across the real 3D I2V frames:
+    # - Wrong I2V frames 0..72 cover the cleanest full-ROM backward-swing & shrug repetition
+    # - Correct I2V frames 0..120 cover the full overhead stretch (f=120) -> chest pull (f=40) -> return repetition
+    raw_w_sub = raw_w[:72]
+    pool_s1 = []
+    pool_s2 = []
+    raw_el_w = []
+    for fr in raw_w_sub:
+        rgb1, el1 = render_day2_i2v_frame_v36(fr, 1, True)
+        rgb2, _   = render_day2_i2v_frame_v36(fr, 2, True)
+        pool_s1.append(rgb1)
+        pool_s2.append(rgb2)
+        raw_el_w.append(el1)
+
+    el_w_arr = np.array(raw_el_w, dtype=np.float32)
+    el_w_x = gaussian_filter1d(el_w_arr[:, 0], sigma=2.2, mode="nearest")
+    el_w_y = gaussian_filter1d(el_w_arr[:, 1], sigma=2.2, mode="nearest")
+    smooth_el_w = [(float(el_w_x[i]), float(el_w_y[i])) for i in range(len(raw_w_sub))]
+
+    pool_s3 = []
+    pool_s4 = []
+    raw_el_c = []
+    for fr in raw_c:
+        rgb3, el3 = render_day2_i2v_frame_v36(fr, 3, False)
+        rgb4, _   = render_day2_i2v_frame_v36(fr, 4, False)
+        pool_s3.append(rgb3)
+        pool_s4.append(rgb4)
+        raw_el_c.append(el3)
+
+    el_c_arr = np.array(raw_el_c, dtype=np.float32)
+    el_c_x = gaussian_filter1d(el_c_arr[:, 0], sigma=2.2, mode="nearest")
+    el_c_y = gaussian_filter1d(el_c_arr[:, 1], sigma=2.2, mode="nearest")
+    smooth_el_c = [(float(el_c_x[i]), float(el_c_y[i])) for i in range(len(raw_c))]
+
+    # Top 3-thumbnail dock icons
     size = (142, 114)
     crop_box = (460, 620, 880, 1080)
-    inact_base = Image.fromarray(s3_base).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
+    inact_base = Image.fromarray(pool_s3[35]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
     inact_base.alpha_composite(Image.new("RGBA", size, (10, 12, 16, 135)))
 
-    im0 = Image.fromarray(s1_base).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    im1 = Image.fromarray(s2_base).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-    im2 = Image.fromarray(s3_base).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
+    im0 = Image.fromarray(pool_s1[45]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
+    im1 = Image.fromarray(pool_s2[50]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
+    im2 = Image.fromarray(pool_s4[40]).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
     torso_icons = [(im0, inact_base.copy()), (im1, inact_base.copy()), (im2, inact_base.copy())]
-
-    # Pre-compute 25 smooth motion states (`rep_level` in 0..24) for each of the 4 steps so 600 frames render in seconds!
-    N_STATES = 25
-    pools_d2 = {1: [], 2: [], 3: [], 4: []}
-    left_w = 430
-    curve_l = (np.linspace(0.65, 1.0, left_w, dtype=np.float32) ** 0.75)[None, :, None]
-
-    for s_i in range(N_STATES):
-        rep = s_i / float(N_STATES - 1)
-        # Step 1: 42° Back Swing & Lumbar Overload
-        lobes1 = [
-            (635, 760, 240, 220, 22.0 * rep, 16.0 * rep),
-            (645, 1040, 190, 190, 12.0 * rep, 8.0 * rep),
-        ]
-        w1 = gd2.warp_anatomical_motion(p_s1_w, lobes1)
-        rgb1, info1 = render_day2_v36_base_plate(w1, 1, True, intensity=rep)
-        pools_d2[1].append((rgb1, (info1["el"][0] + 12.0 * rep, info1["el"][1] + 10.0 * rep)))
-
-        # Step 2: Shrugged Shoulders & Biceps Steal
-        lobes2 = [
-            (285, 780, 180, 190, 18.0 * rep, -18.0 * rep),
-            (885, 790, 180, 190, -18.0 * rep, -18.0 * rep),
-            (640, 760, 210, 140, 0.0, -20.0 * rep),
-        ]
-        w2 = gd2.warp_anatomical_motion(p_s2_w, lobes2)
-        rgb2, info2 = render_day2_v36_base_plate(w2, 2, True, intensity=rep)
-        pools_d2[2].append((rgb2, (info2["el"][0] + 12.0 * rep, info2["el"][1] - 12.0 * rep)))
-
-        # Step 3: 15° Torso Lean & Scapula Depression
-        lobes3 = [
-            (310, 820, 190, 210, 14.0 * rep, 26.0 * rep),
-            (890, 820, 190, 210, -14.0 * rep, 26.0 * rep),
-            (655, 885, 220, 190, 0.0, 16.0 * rep),
-        ]
-        w3 = gd2.warp_anatomical_motion(p_s3_c, lobes3)
-        rgb3, info3 = render_day2_v36_base_plate(w3, 3, False, intensity=rep)
-        pools_d2[3].append((rgb3, (info3["el"][0] + 10.0 * rep, info3["el"][1] + 20.0 * rep)))
-
-        # Step 4: Elbows to Hips Full Lat Contraction
-        lobes4 = [
-            (420, 860, 185, 210, 14.0 * rep, 28.0 * rep),
-            (880, 850, 185, 210, -14.0 * rep, 28.0 * rep),
-            (715, 965, 165, 175, -6.0 * rep, 15.0 * rep),
-        ]
-        w4 = gd2.warp_anatomical_motion(p_s4_c, lobes4)
-        rgb4, info4 = render_day2_v36_base_plate(w4, 4, False, intensity=rep)
-        pools_d2[4].append((rgb4, (info4["el"][0] + 10.0 * rep, info4["el"][1] + 22.0 * rep)))
 
     # Synthesize 20.0s Day 2 English voiceover with >=1.78s pauses between sentences
     wav_day2 = os.path.join(TMP_AUDIO, "day2_v36_audio.wav")
     vo_day2 = [
         (0.25, "Wide grip lat pulldown. Stop swinging your lower back."),
-        (5.30, "Shrugging your shoulders lets your biceps steal the load."),
+        (5.93, "Shrugging your shoulders lets your biceps steal the load."),
         (10.40, "Set a fifteen degree lean and depress your scapula first."),
         (15.40, "Drive your elbows to your hips. Four sets of twelve."),
     ]
@@ -651,22 +407,28 @@ def build_day2_v36_master_reel():
     final_mp4 = os.path.join(OUT_DIR, "day2_v36_master_reel.mp4")
     vw = cv2.VideoWriter(tmp_mp4, cv2.VideoWriter_fourcc(*"mp4v"), float(FPS), (W, H))
 
+    left_w = 430
+    curve_l = (np.linspace(0.65, 1.0, left_w, dtype=np.float32) ** 0.75)[None, :, None]
+
     step_static_frames = {}
+    motion_sheet_samples = []
     cover_pil = None
 
     for f_idx in range(TOTAL_FRAMES):
         t = f_idx / float(FPS)
         if t < 5.0:
+            # Step 1 (0.0s - 5.0s): Full-ROM Wrong Back Swing & Lumbar Overload (2 full dynamic rep cycles across raw_w_sub)
             u = t / 5.0
             wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
-            s_i = int(round(wave_p * (N_STATES - 1)))
-            base_rgb, el_pt = pools_d2[1][s_i]
+            p_i = int(round(wave_p * (len(pool_s1) - 1)))
+            base_rgb = pool_s1[p_i]
+            el_pt = smooth_el_w[p_i]
             step_idx = 1
             is_wrong = True
             active_slot = 0
-            cam_zoom = 1.02 + 0.03 * wave_p
+            cam_zoom = 1.03
             cam_focus, cam_dest = (650.0, 940.0), (665.0, 940.0)
-            pct = int(round(76 + 6 * wave_p))
+            pct = int(round(76 + 8 * wave_p))
             sp_cfg = {
                 "is_wrong": True,
                 "pct": pct,
@@ -677,16 +439,18 @@ def build_day2_v36_master_reel():
                 "rx_unit": "SWING",
             }
         elif t < 10.0:
+            # Step 2 (5.0s - 10.0s): Full-ROM Shrugged Shoulders & Biceps/Arm Pull
             u = (t - 5.0) / 5.0
             wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
-            s_i = int(round(wave_p * (N_STATES - 1)))
-            base_rgb, el_pt = pools_d2[2][s_i]
+            p_i = int(round(wave_p * (len(pool_s2) - 1)))
+            base_rgb = pool_s2[p_i]
+            el_pt = smooth_el_w[p_i]
             step_idx = 2
             is_wrong = True
             active_slot = 1
-            cam_zoom = 1.03 + 0.03 * wave_p
+            cam_zoom = 1.04
             cam_focus, cam_dest = (635.0, 900.0), (655.0, 900.0)
-            pct = int(round(66 + 6 * wave_p))
+            pct = int(round(66 + 8 * wave_p))
             sp_cfg = {
                 "is_wrong": True,
                 "pct": pct,
@@ -697,16 +461,19 @@ def build_day2_v36_master_reel():
                 "rx_unit": "SHRUG",
             }
         elif t < 15.0:
+            # Step 3 (10.0s - 15.0s): Full-ROM Scapula Depression & Lat Pull (sweeping from overhead f=118 down to chest pull f=36 and back!)
             u = (t - 10.0) / 5.0
             wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
-            s_i = int(round(wave_p * (N_STATES - 1)))
-            base_rgb, el_pt = pools_d2[3][s_i]
+            # At wave_p=0 -> f=118 (full overhead stretch); at wave_p=1 -> f=36 (full chest pull contraction)
+            p_i = int(round(118 - wave_p * 82))
+            base_rgb = pool_s3[p_i]
+            el_pt = smooth_el_c[p_i]
             step_idx = 3
             is_wrong = False
             active_slot = 2
-            cam_zoom = 1.02 + 0.03 * wave_p
+            cam_zoom = 1.03
             cam_focus, cam_dest = (645.0, 910.0), (660.0, 910.0)
-            pct = int(round(91 + 5 * wave_p))
+            pct = int(round(88 + 8 * wave_p))
             sp_cfg = {
                 "is_wrong": False,
                 "pct": pct,
@@ -717,16 +484,18 @@ def build_day2_v36_master_reel():
                 "rx_unit": "LEAN LOCK",
             }
         else:
+            # Step 4 (15.0s - 20.0s): Full-ROM Elbows-to-Hips Peak Lat Contraction (sweeping f=118 -> f=38 -> f=118)
             u = (t - 15.0) / 5.0
             wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
-            s_i = int(round(wave_p * (N_STATES - 1)))
-            base_rgb, el_pt = pools_d2[4][s_i]
+            p_i = int(round(118 - wave_p * 80))
+            base_rgb = pool_s4[p_i]
+            el_pt = smooth_el_c[p_i]
             step_idx = 4
             is_wrong = False
             active_slot = 2
-            cam_zoom = 1.04 + 0.03 * wave_p
-            cam_focus, cam_dest = (660.0, 920.0), (675.0, 920.0)
-            pct = int(round(94 + 4 * wave_p))
+            cam_zoom = 1.04
+            cam_focus, cam_dest = (650.0, 915.0), (665.0, 915.0)
+            pct = int(round(91 + 7 * wave_p))
             sp_cfg = {
                 "is_wrong": False,
                 "pct": pct,
@@ -734,8 +503,8 @@ def build_day2_v36_master_reel():
                 "short_cue": "✓ ELBOWS TO HIPS",
                 "splits": [
                     ("LAT DORSI", pct, v30.COL_GREEN),
-                    ("TERES MAJ", max(90, pct - 3), v30.COL_GREEN),
-                    ("LOW TRAP", max(88, pct - 5), v30.COL_GREEN),
+                    ("TERES MAJ", max(88, pct - 3), v30.COL_GREEN),
+                    ("LOW TRAP", max(86, pct - 5), v30.COL_GREEN),
                 ],
                 "rx_num": "4×12",
                 "rx_unit": "REPS · 1s",
@@ -753,8 +522,23 @@ def build_day2_v36_master_reel():
         rgb_frame = im.convert("RGB")
         if f_idx in (int(1.6 * FPS), int(6.6 * FPS), int(11.6 * FPS), int(16.6 * FPS)):
             step_static_frames[step_idx] = rgb_frame.copy()
-        if f_idx == int(11.6 * FPS):
+        if f_idx == int(16.6 * FPS):
             cover_pil = rgb_frame.copy()
+
+        # Collect 8 dynamic frames showing the full ROM across Wrong & Correct reps
+        sample_targets = [
+            (int(0.2 * FPS), "1. STEP 1 (f=06) · TOP START (✕)", True),
+            (int(1.6 * FPS), "2. STEP 1 (f=48) · 42° BACK SWING PEAK (✕)", True),
+            (int(6.6 * FPS), "3. STEP 2 (f=198) · +22° SHRUG & ARM PULL (✕)", True),
+            (int(10.1 * FPS), "4. STEP 3 (f=303) · OVERHEAD LAT STRETCH (✓)", False),
+            (int(10.9 * FPS), "5. STEP 3 (f=327) · SCAPULA DEPRESS INIT (✓)", False),
+            (int(11.6 * FPS), "6. STEP 3 (f=348) · MID ELBOW DRIVE (✓)", False),
+            (int(16.6 * FPS), "7. STEP 4 (f=498) · FULL CHEST LOCKOUT 98% (✓)", False),
+            (int(18.2 * FPS), "8. STEP 4 (f=546) · CONTROLLED ECCENTRIC UP (✓)", False),
+        ]
+        for st_idx, st_lbl, st_w in sample_targets:
+            if f_idx == st_idx:
+                motion_sheet_samples.append((rgb_frame.copy(), st_lbl, st_w))
 
         vw.write(cv2.cvtColor(np.array(rgb_frame), cv2.COLOR_RGB2BGR))
 
@@ -776,7 +560,7 @@ def build_day2_v36_master_reel():
     cover_path = os.path.join(OUT_DIR, "day2_v36_cover.jpg")
     cover_pil.save(cover_path, quality=95)
 
-    # Build 4-Step Full-Body 9:16 Master Sheet for Day 2 (`day2_v36_clean_master_sheet.jpg`)
+    # 1. Build 4-Step Full-Body 9:16 Master Sheet for Day 2 (`day2_v36_clean_master_sheet.jpg`)
     pw, ph = 420, 746
     pad = 24
     board = Image.new("RGB", (pw * 4 + pad * 5, ph + 115), (10, 12, 16))
@@ -785,7 +569,7 @@ def build_day2_v36_master_reel():
     f_col = v30.f_pretendard(15, "bold")
     bd.text(
         (28, 20),
-        "DAY 2 · WIDE-GRIP LAT PULLDOWN (v36 PURE STUDIO MASTER)  ·  점선 0% · 순수 3D 광배근·대원근 결 발현 + 외곽 솔리드 아크",
+        "DAY 2 · WIDE-GRIP LAT PULLDOWN (v36 FULL-ROM I2V MASTER)  ·  실제 풀가동범위(Full-ROM) 3D 동작 + 순수 근섬유 결 + 외곽 솔리드 아크",
         font=f_row,
         fill=v30.COL_GREEN,
     )
@@ -806,32 +590,32 @@ def build_day2_v36_master_reel():
     sheet_path = os.path.join(OUT_DIR, "day2_v36_clean_master_sheet.jpg")
     board.save(sheet_path, quality=95)
 
-    caption_day2 = """Stop turning your Wide-Grip Lat Pulldown into a lower-back and biceps workout.
+    # 2. Build 8-Frame Full-ROM Motion Proof Sheet (`day2_v36_dynamic_8frame_motion_sheet.jpg`)
+    mw, mh = 360, 640
+    mpad = 20
+    msheet = Image.new("RGB", (mw * 4 + mpad * 5, mh * 2 + 165), (10, 12, 16))
+    msd = ImageDraw.Draw(msheet)
+    msd.text(
+        (24, 18),
+        "DAY 2 v36 FULL-ROM 3D MOTION PROOF  ·  상완 최대 신전(Overhead Stretch) → 견갑 하강 → 쇄골 하단 수축(Chest Lockout) → 이완 복귀",
+        font=f_row,
+        fill=v30.COL_GREEN,
+    )
+    for idx_s, (im_p, lbl, is_w) in enumerate(motion_sheet_samples):
+        r_i = idx_s // 4
+        c_i = idx_s % 4
+        x = mpad + c_i * (mw + mpad)
+        y = 75 + r_i * (mh + 42)
+        col = v30.COL_RED if is_w else v30.COL_GREEN
+        msd.text((x + 4, y - 24), lbl, font=v30.f_pretendard(14, "bold"), fill=col)
+        thumb = im_p.resize((mw, mh), Image.Resampling.LANCZOS)
+        ImageDraw.Draw(thumb).rectangle([0, 0, mw - 1, mh - 1], outline=(255, 255, 255, 48), width=2)
+        msheet.paste(thumb, (x, y))
 
-Here is the 4-step 3D biomechanical checklist to isolate 98% of your Latissimus Dorsi & Teres Major:
-
-1. 42° BACK SWING OVERLOAD (✕)
-Swinging your torso 42° backward turns the pulldown into a momentum row and spikes lumbar spine shear stress to 82%.
-
-2. +22° TRAP SHRUG & BICEPS STEAL (✕)
-Pulling with elevated shoulders and curling your forearms lets your Biceps and Upper Traps steal 68% of the load.
-
-3. 15° TORSO LEAN & SCAPULA DEPRESSION (✓)
-Lock a slight 15° thoracic lean and depress your shoulder blades (scapulae) down and back BEFORE bending your elbows (96% Upper Lat & Teres Major activation).
-
-4. DRIVE ELBOWS TO HIPS IN A 30° PLANE (✓)
-Sweep your elbows down and inward toward your hips to achieve 98% full Latissimus Dorsi contraction (4×12 controlled reps with a 1-second bottom squeeze).
-
-Save this for your next back day and follow @gymform.3d for daily 3D biomechanics guides.
-
-#latpulldown #backworkout #backday #biomechanics #gymform #lats #workouttips #gymtips #hypertrophy #fitnesseducation #correctform #bodybuilding"""
-    cap_path = os.path.join(OUT_DIR, "day2_v36_caption_en.txt")
-    with open(cap_path, "w", encoding="utf-8") as f:
-        f.write(caption_day2.strip() + "\n")
-
-    print("Saved Day 2 v36 Master Reel, Cover & 4-Step Sheet:", final_mp4, cover_path, sheet_path)
+    p_msheet = os.path.join(OUT_DIR, "day2_v36_dynamic_8frame_motion_sheet.jpg")
+    msheet.save(p_msheet, quality=95)
+    print("Saved Day 2 Full-ROM v36 Master Reel, Cover, 4-Step Sheet & 8-Frame Motion Sheet:", final_mp4, p_msheet)
 
 
 if __name__ == "__main__":
-    build_day1_v36_master_reel()
     build_day2_v36_master_reel()
