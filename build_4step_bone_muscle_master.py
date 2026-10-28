@@ -38,91 +38,87 @@ def apply_fitted_3d_drawers_720p(
     sculpt_curve: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Renders skin-tight 3D Matte Charcoal Athletic Drawers (`짧은 사각 드로즈`) that fit 100% snugly
-    in both standing and deep-squat positions:
-    - Left & right outer edges are 100% bound to `human_mask` (the 3D mannequin's exact hip/thigh silhouette),
-      never using a foreshortened 2D `hip->knee` vector that would slice vertically in a deep squat.
-    - Waistband sits cleanly below the lower abs across the iliac crest.
-    - Leg hems hug the upper thigh right below the groin crease, adapting smoothly to `squat_depth`
-      so 100% of the quadriceps bellies remain exposed and the drawers fit like a second skin.
+    True 3D Femur-Coordinate (`t_fem` + `s_glute`) Glute-Wrapped & Quad-Exposed Athletic Drawers (`드로즈`):
+    - Projects every pixel onto the viewer-left (`lm[24] -> lm[26]`) and viewer-right (`lm[23] -> lm[25]`) femur axes:
+      * Along the anterior/outer quadriceps belly (`s_glute <= 0`), the leg opening sits high (`t_hem ~ 0.20..0.25`)
+        so 75%+ of the quadriceps muscle bellies glow cleanly in both standing and deep squat.
+      * Along the inner/posterior glute & groin underside (`s_glute > 0`), the fabric wraps down (`+0.36 * squat_depth`)
+        all the way to the bottom of the glute fold (`crotch_y_split + 26px`) so 100% of the buttocks are enclosed!
     """
     sh_h, sw_w = out_rgb.shape[:2]
     yy, xx = np.mgrid[:sh_h, :sw_w].astype(np.float32)
 
-    sh_l = np.array([lm[11].x * sw_w, lm[11].y * sh_h], dtype=np.float32)
-    sh_r = np.array([lm[12].x * sw_w, lm[12].y * sh_h], dtype=np.float32)
-    hip_r = np.array([lm[24].x * sw_w, lm[24].y * sh_h], dtype=np.float32)
-    hip_l = np.array([lm[23].x * sw_w, lm[23].y * sh_h], dtype=np.float32)
-    kn_r = np.array([lm[26].x * sw_w, lm[26].y * sh_h], dtype=np.float32)
-    kn_l = np.array([lm[25].x * sw_w, lm[25].y * sh_h], dtype=np.float32)
+    sh_l = (lm[11].x * sw_w, lm[11].y * sh_h)
+    sh_r = (lm[12].x * sw_w, lm[12].y * sh_h)
+    hip_vL = (lm[24].x * sw_w, lm[24].y * sh_h)
+    hip_vR = (lm[23].x * sw_w, lm[23].y * sh_h)
+    kn_vL = (lm[26].x * sw_w, lm[26].y * sh_h)
+    kn_vR = (lm[25].x * sw_w, lm[25].y * sh_h)
 
-    if hip_r[0] <= hip_l[0]:
-        h_L, h_R = hip_r, hip_l
-        k_L, k_R = kn_r, kn_l
-    else:
-        h_L, h_R = hip_l, hip_r
-        k_L, k_R = kn_l, kn_r
-
-    hip_cx = 0.5 * (h_L[0] + h_R[0])
-    hip_cy = 0.5 * (h_L[1] + h_R[1])
     sh_cy = 0.5 * (sh_l[1] + sh_r[1])
-    kn_cy = 0.5 * (k_L[1] + k_R[1])
-    torso_h = max(95.0, abs(hip_cy - sh_cy))
+    hip_cx = 0.5 * (hip_vL[0] + hip_vR[0])
+    hip_cy = 0.5 * (hip_vL[1] + hip_vR[1])
+    kn_cy = 0.5 * (kn_vL[1] + kn_vR[1])
 
-    # Squat depth factor: 0.0 when standing (`kn_cy - hip_cy >= 135`), 1.0 in deep squat (`kn_cy - hip_cy <= 25`)
-    squat_depth = float(np.clip((135.0 - (kn_cy - hip_cy)) / 110.0, 0.0, 1.0))
+    torso_h = max(145.0, hip_cy - sh_cy)
+    hip_span = max(78.0, abs(hip_vR[0] - hip_vL[0]))
+    squat_depth = float(np.clip((240.0 - (kn_cy - hip_cy)) / 165.0, 0.0, 1.0))
 
-    # Measure actual pelvis silhouette width from `human_mask` at the waistband row
-    waist_y_nom = hip_cy - (0.16 + 0.08 * squat_depth) * torso_h
-    y_w_row = int(np.clip(waist_y_nom, 0, sh_h - 1))
-    xs_w = np.where(human_mask[y_w_row, :] > 0.35)[0]
-    if len(xs_w) > 20:
-        waist_half_w = 0.5 * float(xs_w.max() - xs_w.min())
-        waist_cx = 0.5 * float(xs_w.max() + xs_w.min())
-    else:
-        waist_half_w = max(72.0, abs(h_R[0] - h_L[0]) * 1.18)
-        waist_cx = hip_cx
+    crotch_y_split = hip_cy + 45.0
+    x_mid = int(round(hip_cx))
+    y_s0 = int(max(0, min(sh_h - 1, hip_cy - 5)))
+    y_s1 = int(max(y_s0 + 1, min(sh_h, max(kn_cy + 55, hip_cy + 115))))
+    for y_scan in range(y_s0, y_s1):
+        strip = human_mask[y_scan, max(0, x_mid - 22):min(sw_w, x_mid + 23)]
+        if strip.size > 0 and np.min(strip) < 0.25:
+            crotch_y_split = float(y_scan)
+            break
 
-    # Also measure outer thigh span at hip_cy
-    y_h_row = int(np.clip(hip_cy, 0, sh_h - 1))
-    xs_h = np.where(human_mask[y_h_row, :] > 0.35)[0]
-    if len(xs_h) > 20:
-        hip_half_w = max(waist_half_w, 0.5 * float(xs_h.max() - xs_h.min()))
-    else:
-        hip_half_w = waist_half_w * 1.15
-
-    dx_w = (xx - waist_cx) / max(42.0, waist_half_w)
-    dx_h = (xx - waist_cx) / max(48.0, hip_half_w)
-
-    # 1. Snug low-rise waistband curve across the lower waist / iliac crest
-    waist_top_y = waist_y_nom + 4.5 * (1.0 - np.clip(dx_w ** 2, 0.0, 1.2))
-    band_h = max(11.0, 0.062 * torso_h)
+    waist_y_center = hip_cy - (0.14 + 0.08 * squat_depth) * torso_h
+    dx_w = (xx - hip_cx) / (hip_span * 0.65)
+    waist_dip = (5.0 + 7.0 * squat_depth) * (1.0 - np.clip(dx_w ** 2, 0.0, 1.4))
+    waist_top_y = waist_y_center + waist_dip
+    band_h = 11.5
     waist_bot_y = waist_top_y + band_h
-
-    # 2. Snug short-square leg hem curve across the upper thighs:
-    # - In standing (`squat_depth ~ 0`): short square boxer-brief hem sits horizontally across the upper thighs
-    #   (`crotch_y = hip_cy + 0.19 * torso_h`, outer thigh hem `hip_cy + 0.14 * torso_h`).
-    # - In deep squat (`squat_depth ~ 1`): knees flare outward & upward while pelvis drops between thighs;
-    #   the fitted drawers wrap under the groin (`crotch_y = hip_cy + 0.13 * torso_h`) and hug the upper thigh
-    #   crease cleanly out to the lateral hip (`outer_y = hip_cy + 0.01 * torso_h`) without ever cutting vertically!
-    crotch_y = hip_cy + (0.19 - 0.06 * squat_depth) * torso_h
-    outer_arch = (0.045 + 0.095 * squat_depth) * torso_h
-    # Subtle upward notch right at the center crotch seam (`|dx_h| < 0.14`) so the left & right short thigh sleeves read clearly
-    crotch_notch = 3.5 * np.exp(-((dx_h / 0.11) ** 2))
-    hem_y = crotch_y - outer_arch * (np.clip(np.abs(dx_h), 0.0, 1.15) ** 1.45) - crotch_notch
-
-    # In a deep squat, limit outer lateral extension so the drawers only cover the pelvis & proximal upper thigh root,
-    # never spilling onto the mid-quadriceps which flare far left/right toward `k_L` and `k_R`!
-    max_pelvis_half_w = waist_half_w * (1.14 + 0.10 * squat_depth)
-    dx_pelvis = np.abs(xx - waist_cx) / max(45.0, max_pelvis_half_w)
-    lateral_gate = np.clip((1.06 - dx_pelvis) / 0.10, 0.0, 1.0)
-
-    # Smooth vertical gates at top of waistband and bottom of leg hem
     top_gate = np.clip((yy - waist_top_y + 1.0) / 1.8, 0.0, 1.0)
-    bot_gate = np.clip((hem_y - yy + 1.0) / 2.2, 0.0, 1.0)
-    fg_gate = np.clip((human_mask - 0.18) / 0.45, 0.0, 1.0)
 
-    shorts_mask = np.clip(top_gate * bot_gate * lateral_gate * fg_gate, 0.0, 1.0)
+    def _femur_coords(h_pt, k_pt, is_viewer_left: bool):
+        vx, vy = k_pt[0] - h_pt[0], k_pt[1] - h_pt[1]
+        l2 = max(100.0, vx * vx + vy * vy)
+        t = ((xx - h_pt[0]) * vx + (yy - h_pt[1]) * vy) / l2
+        length = math.sqrt(l2)
+        if is_viewer_left:
+            nx, ny = vy / length, -vx / length
+        else:
+            nx, ny = -vy / length, vx / length
+        s_glute = (xx - h_pt[0]) * nx + (yy - h_pt[1]) * ny
+        return t, s_glute
+
+    t_vL, s_glute_vL = _femur_coords(hip_vL, kn_vL, is_viewer_left=True)
+    t_vR, s_glute_vR = _femur_coords(hip_vR, kn_vR, is_viewer_left=False)
+
+    def _leg_hem_gate(t, s_glute):
+        quad_arch = -0.05 * np.clip((-s_glute) / 42.0, 0.0, 1.2)
+        glute_wrap = (0.04 + 0.36 * squat_depth) * np.clip(s_glute / 36.0, 0.0, 1.35)
+        t_hem = (0.25 - 0.05 * squat_depth) + quad_arch + glute_wrap
+        return np.clip((t_hem - t) / 0.038, 0.0, 1.0)
+
+    gate_vL = _leg_hem_gate(t_vL, s_glute_vL)
+    gate_vR = _leg_hem_gate(t_vR, s_glute_vR)
+
+    side_blend = np.clip((xx - hip_cx) / 14.0 + 0.5, 0.0, 1.0)
+    thigh_hem_gate = gate_vL * (1.0 - side_blend) + gate_vR * side_blend
+
+    groin_glute_core = (
+        np.exp(-(((xx - hip_cx) / (hip_span * 0.50)) ** 4))
+        * np.clip(((crotch_y_split + 26.0) - yy) / 6.0, 0.0, 1.0)
+    )
+
+    y_glute_max = (hip_cy + 0.48 * (kn_cy - hip_cy)) * (1.0 - squat_depth) + (crotch_y_split + 26.0) * squat_depth
+    glute_bot_gate = np.clip((y_glute_max - yy + 1.0) / 2.5, 0.0, 1.0)
+
+    fg_gate = np.clip((human_mask - 0.18) / 0.45, 0.0, 1.0)
+    shorts_mask = np.clip(top_gate * np.maximum(thigh_hem_gate, groin_glute_core) * glute_bot_gate * fg_gate, 0.0, 1.0)
 
     band_mask = (
         np.clip((yy - waist_top_y + 1.0) / 1.6, 0.0, 1.0)
@@ -130,38 +126,34 @@ def apply_fitted_3d_drawers_720p(
         * shorts_mask
     )
 
-    # 3. Authentic 3D Fabric Shading derived directly from the mannequin's own 3D surface lighting (`sculpt_curve`)
-    # plus subtle 3D pelvic/thigh cylindrical contour & clean seam lines (ZERO text on waistband)
-    base_3d = np.clip(sculpt_curve, 0.18, 0.92)
-    thigh_cyl_L = np.exp(-(((dx_h + 0.46) / 0.36) ** 2))
-    thigh_cyl_R = np.exp(-(((dx_h - 0.46) / 0.36) ** 2))
-    pouch_3d = np.exp(-(((dx_h) / 0.18) ** 2 + ((yy - (waist_bot_y + 0.45 * (crotch_y - waist_bot_y))) / 18.0) ** 2))
-    fly_contour = np.exp(-(((np.abs(dx_h) - 0.17) / 0.022) ** 2)) * np.clip((yy - waist_bot_y) / 6.0, 0.0, 1.0) * np.clip((crotch_y - 6.0 - yy) / 8.0, 0.0, 1.0)
+    base_3d = np.clip(sculpt_curve, 0.16, 0.92)
+    dx_h = (xx - hip_cx) / max(55.0, hip_span * 0.72)
+    thigh_cyl_L = np.exp(-(((dx_h + 0.48) / 0.38) ** 2))
+    thigh_cyl_R = np.exp(-(((dx_h - 0.48) / 0.38) ** 2))
+    pouch_3d = np.exp(-(((dx_h) / 0.20) ** 2 + ((yy - (waist_bot_y + 0.42 * (crotch_y_split - waist_bot_y))) / 22.0) ** 2))
     center_seam = np.exp(-((dx_h / 0.018) ** 2)) * np.clip((yy - waist_bot_y) / 6.0, 0.0, 1.0)
-
-    hem_stitch = np.exp(-(((yy - (hem_y - 2.5)) / 1.1) ** 2)) * shorts_mask
+    hem_edge = np.exp(-(((thigh_hem_gate - 0.52) / 0.16) ** 2)) * shorts_mask * (1.0 - band_mask)
 
     fabric_lit = np.clip(
         0.58 * base_3d
         + 0.26 * np.maximum(thigh_cyl_L, thigh_cyl_R)
-        + 0.18 * pouch_3d
-        - 0.12 * fly_contour
+        + 0.16 * pouch_3d
         - 0.10 * center_seam,
         0.0,
         1.0,
     )
 
-    sh_r = 16.0 + 34.0 * (fabric_lit ** 0.95) + 12.0 * hem_stitch
-    sh_g = 18.0 + 36.0 * (fabric_lit ** 0.95) + 13.0 * hem_stitch
-    sh_b = 21.0 + 40.0 * (fabric_lit ** 0.95) + 15.0 * hem_stitch
+    sh_r = 16.0 + 34.0 * (fabric_lit ** 0.95) + 10.0 * hem_edge
+    sh_g = 18.0 + 36.0 * (fabric_lit ** 0.95) + 11.0 * hem_edge
+    sh_b = 21.0 + 40.0 * (fabric_lit ** 0.95) + 13.0 * hem_edge
 
     band_top_hi = np.exp(-(((yy - (waist_top_y + 1.2)) / 1.0) ** 2))
     band_bot_seam = np.exp(-(((yy - (waist_bot_y - 1.0)) / 1.0) ** 2))
-    band_lit = 0.62 * base_3d + 0.38 * np.exp(-((dx_w / 0.70) ** 2))
+    band_lit = 0.62 * base_3d + 0.38 * np.exp(-((dx_w / 0.75) ** 2))
 
-    bd_r = 12.0 + 22.0 * band_lit + 26.0 * band_top_hi + 14.0 * band_bot_seam
-    bd_g = 14.0 + 24.0 * band_lit + 28.0 * band_top_hi + 15.0 * band_bot_seam
-    bd_b = 17.0 + 27.0 * band_lit + 32.0 * band_top_hi + 18.0 * band_bot_seam
+    bd_r = 12.0 + 22.0 * band_lit + 24.0 * band_top_hi + 12.0 * band_bot_seam
+    bd_g = 14.0 + 24.0 * band_lit + 26.0 * band_top_hi + 13.0 * band_bot_seam
+    bd_b = 17.0 + 27.0 * band_lit + 30.0 * band_top_hi + 16.0 * band_bot_seam
 
     shorts_rgb = np.stack([sh_r, sh_g, sh_b], axis=-1)
     band_rgb = np.stack([bd_r, bd_g, bd_b], axis=-1)
@@ -408,13 +400,13 @@ def render_4step_frame_1080p(
     # Since the top preview capsule is now compact (`y = 148..296`), the mannequin fills the screen
     # from `y ~ 345` (when standing) down to `y_feet = 1615`!
     step_fixed_cam = {
-        1: (1.285, 360.0, 1037.0),
-        2: (1.285, 360.0, 1037.0),
-        3: (1.245, 360.0, 1062.0),
-        4: (1.245, 360.0, 1062.0),
+        1: (1.375, 360.0, 1037.0),
+        2: (1.375, 360.0, 1037.0),
+        3: (1.345, 360.0, 1062.0),
+        4: (1.345, 360.0, 1062.0),
     }
-    scale, cx_fg, y_bot_fg = step_fixed_cam.get(step_idx, (1.265, 360.0, 1050.0))
-    y_anchor = 1615.0
+    scale, cx_fg, y_bot_fg = step_fixed_cam.get(step_idx, (1.360, 360.0, 1050.0))
+    y_anchor = 1658.0
 
     nw, nh = int(round(sw_w * scale)), int(round(sh_h * scale))
     x0 = int(round(540.0 - cx_fg * scale))
@@ -440,9 +432,9 @@ def render_4step_frame_1080p(
         shorts_1080[dy0:dy1, dx0:dx1] = res_shorts[sy0:sy1, sx0:sx1]
 
     # Floor shadow under feet
-    fl_y, fl_x = np.mgrid[1575:1665, 0:W].astype(np.float32)
-    fl_sh = np.exp(-(((fl_x - 540.0) / 285.0) ** 2 + ((fl_y - 1620.0) / 24.0) ** 2)) * 0.42
-    canvas[1575:1665, :] *= 1.0 - fl_sh[:, :, None] * (1.0 - mask_1080[1575:1665, :, None])
+    fl_y, fl_x = np.mgrid[1615:1705, 0:W].astype(np.float32)
+    fl_sh = np.exp(-(((fl_x - 540.0) / 305.0) ** 2 + ((fl_y - 1662.0) / 24.0) ** 2)) * 0.42
+    canvas[1615:1705, :] *= 1.0 - fl_sh[:, :, None] * (1.0 - mask_1080[1615:1705, :, None])
 
     def map_pt(pt):
         return (float(pt[0] * scale + x0), float(pt[1] * scale + y0))
@@ -468,8 +460,8 @@ def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, act
     """
     from PIL import ImageFilter
 
-    bar_x0, bar_y0, bar_x1, bar_y1 = 252, 148, 828, 296
-    tw, th = 142, 168
+    bar_x0, bar_y0, bar_x1, bar_y1 = 258, 132, 822, 274
+    tw, th = 136, 160
     slot_centers_x = [354, 540, 726]
 
     raw_pil = Image.fromarray(frame_rgb).convert("RGBA")
@@ -584,7 +576,7 @@ def draw_single_line_kaushan_title(canvas_pil: Image.Image, exercise_name: str =
     bb = od.textbbox((0, 0), exercise_name, font=f_scr)
     tw, th = bb[2] - bb[0], bb[3] - bb[1]
     tx = (W * SS - tw) // 2 - bb[0]
-    ty = 1742 * SS - th // 2 - bb[1]
+    ty = 1756 * SS - th // 2 - bb[1]
 
     for dx_s, dy_s, a_s in [(0, 5 * SS, 185), (-2 * SS, 3 * SS, 110), (2 * SS, 3 * SS, 110)]:
         od.text((tx + dx_s, ty + dy_s), exercise_name, font=f_scr, fill=(8, 10, 14, a_s))
