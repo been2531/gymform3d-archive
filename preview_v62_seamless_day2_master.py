@@ -22,6 +22,7 @@ from PIL import Image, ImageDraw, ImageFilter
 sys.path.insert(0, "/workspace/daily_info_reels")
 import universal_anatomy_rig as uar
 import build_v30_pure_graphic_numbers as v30
+import build_v36_clean_master as v36
 import build_v38_high_contrast_hud as v38
 import build_v39_ig_safe_zone as v39
 import preview_v58_day2_exact_master as p58
@@ -117,19 +118,39 @@ def shade_v62_day2_authentic_720p(
     hv = np.clip((sigma_belly - 22.0) / 138.0, 0.0, 1.0)
     sulc = np.clip((sigma_broad - sigma_ridge - 0.85) / 9.5, 0.0, 1.0)
 
-    # Cool channel base (`minimum(g_ch, b_ch)`) clamped to `[18, 76]` -> deep matte dark-charcoal écorché skin!
+    # Character A (`PRIMARY LIFTER`) Unified Sculpted Matte Silver-Grey Skin Shader (`t282u`–`t285u`, `@demicstory` Standard):
+    # Quantile-normalizes the non-target body skin across Steps 1, 2, 3, and 4 to the exact same
+    # Sculpted Matte Silver-Grey tone (`p15 -> 84`, `p50 -> 118`, `p85 -> 154`, clamped `[68, 174]`,
+    # pure achromatic cool silver `R:G:B = 0.98 : 1.00 : 1.03`, 0% brown/green color cast!)
+    # while locking the studio background to a uniform Dark Obsidian (`#15181F`, `lum ~ 22`).
+    base_lum = 0.299 * r_ch + 0.587 * g_ch + 0.114 * b_ch
+    bg_lum_est = float(np.median(base_lum[180:720, 12:58]))
+    body_interior = np.clip((base_lum - (bg_lum_est + 9.5)) / 13.5, 0.0, 1.0)
+
     cool_base = np.minimum(g_ch, b_ch)
-    cool_belly = cv2.GaussianBlur(cool_base, (0, 0), 4.2)
-    hv_cool = np.clip((cool_belly - 18.0) / 130.0, 0.0, 1.0)
-    grey_charcoal = np.clip(
-        24.0 + 48.0 * (hv_cool ** 0.95) + np.clip(hf_ridge, -12.0, 14.0) * 0.42 - sulc * 11.0,
-        18.0,
-        76.0,
+    body_pixels = cool_base[body_interior > 0.55]
+    if len(body_pixels) > 200:
+        p15 = float(np.percentile(body_pixels, 15))
+        p50 = float(np.percentile(body_pixels, 50))
+        p85 = float(np.percentile(body_pixels, 85))
+    else:
+        p15, p50, p85 = 40.0, 58.0, 88.0
+
+    low_t = np.clip((cool_base - p15) / max(6.0, p50 - p15), -0.55, 1.0)
+    high_t = np.clip((cool_base - p50) / max(8.0, p85 - p50), 0.0, 1.35)
+    char_a_skin = np.where(
+        cool_base <= p50,
+        118.0 + low_t * (118.0 - 84.0),
+        118.0 + high_t * (154.0 - 118.0),
+    )
+    char_a_skin = np.clip(
+        char_a_skin + np.clip(hf_ridge, -14.0, 16.0) * 0.52 - sulc * 11.5,
+        68.0,
+        174.0,
     )
 
-    base_lum = 0.299 * r_ch + 0.587 * g_ch + 0.114 * b_ch
-    body_interior = np.clip((base_lum - 36.0) / 16.0, 0.0, 1.0)
-    red_any = np.clip((rb_diff - 7.5) / 40.0, 0.0, 1.0) * body_interior
+    bg_studio = np.clip(21.0 + (base_lum - bg_lum_est) * 0.45, 16.0, 30.0)
+    unified_lum = bg_studio * (1.0 - body_interior) + char_a_skin * body_interior
 
     sh_x, sh_y = kp_720["sh"]
     hip_r = kp_720["hip_r"]
@@ -140,16 +161,11 @@ def shade_v62_day2_authentic_720p(
     kn_y = 0.5 * (kn_r[1] + kn_l[1])
     hip_y = 0.5 * (hip_r[1] + hip_l[1])
 
-    mono_target = np.stack([
-        grey_charcoal * 0.95,
-        grey_charcoal * 0.98,
-        grey_charcoal * 1.04,
+    mono = np.stack([
+        unified_lum * 0.98,
+        unified_lum * 1.00,
+        unified_lum * 1.03,
     ], axis=2)
-
-    # Suppress any washed/bright specular highlights (`base_lum > 68`) across the entire body in ALL 4 steps
-    over_bright_body = np.clip((base_lum - 68.0) / 28.0, 0.0, 1.0) * body_interior
-    replace_mask = np.maximum(red_any, over_bright_body)[:, :, None]
-    mono = rgb * (1.0 - replace_mask) + mono_target * replace_mask
 
     y_cut_shin = kn_y + 24.0
     above_shin_gate = np.clip((y_cut_shin - yy) / 18.0, 0.0, 1.0)
@@ -169,14 +185,14 @@ def shade_v62_day2_authentic_720p(
             d_th_r, _ = _segment_distance_field(xx, yy, hip_r, kn_r, 0.18, 1.0)
             d_th_l, _ = _segment_distance_field(xx, yy, hip_l, kn_l, 0.18, 1.0)
 
-            r_kn = 48.0 + 26.0 * rep_a
-            r_th = 42.0 + 28.0 * rep_a
+            r_kn = 40.0 + 38.0 * rep_a
+            r_th = 34.0 + 44.0 * rep_a
             knee_hotspot = np.maximum(np.exp(-0.5 * (d_kn_r / r_kn) ** 2), np.exp(-0.5 * (d_kn_l / r_kn) ** 2))
             thigh_field = np.maximum(np.exp(-0.5 * (d_th_r / r_th) ** 2), np.exp(-0.5 * (d_th_l / r_th) ** 2))
-            valgus_gate = np.clip((yy - (hip_y + 18.0 - 42.0 * rep_a)) / 32.0, 0.0, 1.0) * above_shin_gate
+            valgus_gate = np.clip((yy - (hip_y + 38.0 - 94.0 * rep_a)) / 28.0, 0.0, 1.0) * above_shin_gate
 
-            native_red = np.clip((rb_eff - 8.5) / 30.0, 0.0, 1.0) * valgus_gate
-            sculpt_red = np.maximum(knee_hotspot * 0.92, thigh_field * 0.76) * body_interior * valgus_gate
+            native_red = np.clip((rb_eff - 8.5) / 30.0, 0.0, 1.0) * valgus_gate * (0.66 + 0.34 * rep_a)
+            sculpt_red = np.maximum(knee_hotspot * 0.95, thigh_field * (0.72 + 0.24 * rep_a)) * body_interior * valgus_gate
             xray_alpha = np.clip(np.maximum(native_red, sculpt_red), 0.0, 1.0)
             bone_w = (
                 np.clip((g_ch - 72.0) / 80.0, 0.0, 1.0)
@@ -419,9 +435,9 @@ def build_v62_fullbleed_pool(
         ax_l = np.clip(xx_c / 96.0, 0.0, 1.0)
         ax_r = np.clip((crop_w - 1.0 - xx_c) / 96.0, 0.0, 1.0)
         ax = 0.5 - 0.5 * np.cos(np.pi * np.minimum(ax_l, ax_r))
-        head_guard = np.clip((yy_full - 460.0) / 8.0, 0.0, 1.0)
+        head_guard = np.clip((yy_full - 461.0) / 6.0, 0.0, 1.0)
         xx_full = xx_c + dst_x1
-        in_head_col = np.clip(1.0 - np.abs(xx_full - 540.0) / 165.0, 0.0, 1.0)
+        in_head_col = np.clip((670.0 - xx_full) / 30.0, 0.0, 1.0) * np.clip((xx_full - 410.0) / 30.0, 0.0, 1.0)
         top_mask = 1.0 - in_head_col * (1.0 - head_guard)
         alpha_base = (ax * ay * top_mask)[:, :, None]
 
@@ -448,7 +464,7 @@ def get_or_build_v62_pools() -> dict:
     pools = {
         1: build_v62_fullbleed_pool(s1_raw, 1, True,  scale=1.24, y_head_target_stand=464, y_head_target_squat=502, y_head_src_stand_720=76.0,  y_head_src_squat_720=406.0, x_shift=0),
         2: build_v62_fullbleed_pool(s2_raw, 2, False, scale=1.24, y_head_target_stand=464, y_head_target_squat=502, y_head_src_stand_720=57.0,  y_head_src_squat_720=365.0, x_shift=0),
-        3: build_v62_fullbleed_pool(s3_raw, 3, True,  scale=1.28, y_head_target_stand=464, y_head_target_squat=512, y_head_src_stand_720=195.0, y_head_src_squat_720=498.0, x_shift=-8),
+        3: build_v62_fullbleed_pool(s3_raw, 3, True,  scale=1.28, y_head_target_stand=464, y_head_target_squat=532, y_head_src_stand_720=195.0, y_head_src_squat_720=498.0, x_shift=-8),
         4: build_v62_fullbleed_pool(s4_raw, 4, False, scale=1.28, y_head_target_stand=464, y_head_target_squat=506, y_head_src_stand_720=68.0,  y_head_src_squat_720=342.0, x_shift=-8),
     }
     return pools
@@ -619,10 +635,12 @@ def render_v62_synchronized_angle_and_callouts(
     pct_val: int,
     rep_amount: float = 1.0,
 ):
+    """
+    Ultra-Minimal Zero-Occlusion Exterior Arrow Standard (`t280u`, `t281u`, `t289u`, `@demicstory` Standard):
+    - ZERO lines, wedges, or arrows crossing over the mannequin's muscles or torso!
+    - Every `4*SS` single arc arrow sits 100% in the open studio space (`exterior margin`) outside the body silhouette!
+    """
     SS = 2
-    bloom_1x = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    bd_1x = ImageDraw.Draw(bloom_1x)
-
     rig_layer = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
     rd = ImageDraw.Draw(rig_layer)
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -630,67 +648,93 @@ def render_v62_synchronized_angle_and_callouts(
     ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(ov)
 
+    def S(pt):
+        return (pt[0] * SS, pt[1] * SS)
+
     col_main = COL_RED if is_wrong else COL_GREEN
     col_soft = COL_RED_SOFT if is_wrong else COL_GREEN_SOFT
 
-    sh = kp["sh"]
-    hip_r = kp["hip_r"]
-    hip_l = kp["hip_l"]
     kn_r = kp["kn_r"]
     kn_l = kp["kn_l"]
-    ank_r = kp["ank_r"]
-    ank_l = kp["ank_l"]
+    hip_r = kp["hip_r"]
 
     if step_idx == 1:
-        ref_r = (kn_r[0] - 28.0, hip_r[1] + 10.0)
-        ref_l = (kn_l[0] + 28.0, hip_l[1] + 10.0)
-        draw_v62_high_contrast_angle_gauge_ss(rd, bd_1x, kn_r, ref_r, hip_r, ank_r, arc_radius_1x=92.0, col_main=col_main, col_soft=col_soft, draw_sector_arrow=False, ss=SS)
-        draw_v62_high_contrast_angle_gauge_ss(rd, bd_1x, kn_l, ref_l, hip_l, ank_l, arc_radius_1x=92.0, col_main=col_main, col_soft=col_soft, draw_sector_arrow=False, ss=SS)
+        # Step 1 (16° KNEE VALGUS): Pivot rings on knees + inward-pointing arc arrows strictly in the open studio space
+        v36.draw_single_elbow_pivot_ring(rd, S(kn_r), 9.5, col_main, SS)
+        v36.draw_single_elbow_pivot_ring(rd, S(kn_l), 9.5, col_main, SS)
 
-        _draw_curved_directional_arrow_ss(rd, (kn_r[0] + 22.0, kn_r[1] - 4.0), radius_1x=64.0, start_deg=-52.0, end_deg=34.0, arrow_at_end=True, col_main=col_main, col_soft=col_soft, ss=SS)
-        _draw_curved_directional_arrow_ss(rd, (kn_l[0] - 22.0, kn_l[1] - 4.0), radius_1x=64.0, start_deg=232.0, end_deg=146.0, arrow_at_end=True, col_main=col_main, col_soft=col_soft, ss=SS)
+        r_a = 58 * SS
+        # Left knee (viewer left): arc placed in the open inner gap (`x = kn_r[0] + 64`) curving inward (`→`)
+        c_r = S((kn_r[0] + 44.0, kn_r[1] + 6.0))
+        rd.arc([c_r[0] - r_a, c_r[1] - r_a, c_r[0] + r_a, c_r[1] + r_a], start=316, end=32, fill=(*col_main, 245), width=4 * SS)
+        ang_r = math.radians(32)
+        tip_r = (c_r[0] + r_a * math.cos(ang_r), c_r[1] + r_a * math.sin(ang_r))
+        v30.draw_arrow_head(rd, tip_r, 32 + 90, 12 * SS, (*col_soft, 255))
+
+        # Right knee (viewer right): arc placed in the open inner gap (`x = kn_l[0] - 44`) curving inward (`←`)
+        c_l = S((kn_l[0] - 44.0, kn_l[1] + 6.0))
+        rd.arc([c_l[0] - r_a, c_l[1] - r_a, c_l[0] + r_a, c_l[1] + r_a], start=148, end=224, fill=(*col_main, 245), width=4 * SS)
+        ang_l = math.radians(148)
+        tip_l = (c_l[0] + r_a * math.cos(ang_l), c_l[1] + r_a * math.sin(ang_l))
+        v30.draw_arrow_head(rd, tip_l, 148 - 90, 12 * SS, (*col_soft, 255))
 
         p58.draw_v58_floating_white_callout(od, sd, (255, 895), f"{deg_val}°", "KNEE VALGUS", align="right")
         p58.draw_v58_floating_white_callout(od, sd, (785, 855), f"{pct_val}%", "ACL & MCL LOAD", align="left")
 
     elif step_idx == 2:
-        ref_r = (kn_r[0], hip_r[1] + 8.0)
-        ref_l = (kn_l[0], hip_l[1] + 8.0)
-        draw_v62_high_contrast_angle_gauge_ss(rd, bd_1x, kn_r, ref_r, hip_r, ank_r, arc_radius_1x=0.0, col_main=col_main, col_soft=col_soft, draw_sector_arrow=False, ss=SS)
-        draw_v62_high_contrast_angle_gauge_ss(rd, bd_1x, kn_l, ref_l, hip_l, ank_l, arc_radius_1x=0.0, col_main=col_main, col_soft=col_soft, draw_sector_arrow=False, ss=SS)
+        # Step 2 (0° KNEE TRACKING): Pivot rings on knees + outward-pointing arc arrows strictly in the open outer studio margin (`← →`)
+        v36.draw_single_elbow_pivot_ring(rd, S(kn_r), 9.5, col_main, SS)
+        v36.draw_single_elbow_pivot_ring(rd, S(kn_l), 9.5, col_main, SS)
 
-        _draw_curved_directional_arrow_ss(rd, (kn_r[0] - 18.0, kn_r[1] - 6.0), radius_1x=66.0, start_deg=228.0, end_deg=142.0, arrow_at_end=True, col_main=col_main, col_soft=col_soft, ss=SS)
-        _draw_curved_directional_arrow_ss(rd, (kn_l[0] + 18.0, kn_l[1] - 6.0), radius_1x=66.0, start_deg=-48.0, end_deg=38.0, arrow_at_end=True, col_main=col_main, col_soft=col_soft, ss=SS)
+        r_a = 60 * SS
+        # Left knee (viewer left): arc placed in the open left studio space (`x = kn_r[0] - 46`) pointing outward (`←`)
+        c_r = S((kn_r[0] - 38.0, kn_r[1] + 4.0))
+        rd.arc([c_r[0] - r_a, c_r[1] - r_a, c_r[0] + r_a, c_r[1] + r_a], start=148, end=224, fill=(*col_main, 245), width=4 * SS)
+        ang_r = math.radians(148)
+        tip_r = (c_r[0] + r_a * math.cos(ang_r), c_r[1] + r_a * math.sin(ang_r))
+        v30.draw_arrow_head(rd, tip_r, 148 - 90, 12 * SS, (*col_soft, 255))
+
+        # Right knee (viewer right): arc placed in the open right studio space (`x = kn_l[0] + 38`) pointing outward (`→`)
+        c_l = S((kn_l[0] + 38.0, kn_l[1] + 4.0))
+        rd.arc([c_l[0] - r_a, c_l[1] - r_a, c_l[0] + r_a, c_l[1] + r_a], start=316, end=32, fill=(*col_main, 245), width=4 * SS)
+        ang_l = math.radians(32)
+        tip_l = (c_l[0] + r_a * math.cos(ang_l), c_l[1] + r_a * math.sin(ang_l))
+        v30.draw_arrow_head(rd, tip_l, 32 + 90, 12 * SS, (*col_soft, 255))
 
         p58.draw_v58_floating_white_callout(od, sd, (255, 895), f"{deg_val}°", "KNEE TRACKING", align="right")
         p58.draw_v58_floating_white_callout(od, sd, (785, 855), f"{pct_val}%", "QUAD & VMO LOCK", align="left")
 
     elif step_idx == 3:
-        spine_len = max(195.0, math.hypot(sh[0] - hip_r[0], sh[1] - hip_r[1]))
-        ang_rad = math.radians(deg_val)
-        dir_sign = -1.0 if sh[0] < hip_r[0] else 1.0
-        sh_spine = (hip_r[0] + dir_sign * spine_len * math.sin(ang_rad), hip_r[1] - spine_len * math.cos(ang_rad))
-        ref_top = (hip_r[0], max(464.0, hip_r[1] - spine_len - 24.0))
+        # Step 3 (41° FORWARD LEAN): 1 hip pivot ring + 1 single exterior arc in the open left studio margin (`x = 265..345`)
+        # ZERO overlap with the glowing lumbar spine or torso!
+        v36.draw_single_elbow_pivot_ring(rd, S(hip_r), 9.5, col_main, SS)
 
-        draw_v62_high_contrast_angle_gauge_ss(rd, bd_1x, hip_r, ref_top, sh_spine, None, arc_radius_1x=154.0, col_main=col_main, col_soft=col_soft, draw_sector_arrow=True, ss=SS)
+        c_arc = S((hip_r[0] - 48.0, hip_r[1] - 195.0))
+        r_a = 118 * SS
+        rd.arc([c_arc[0] - r_a, c_arc[1] - r_a, c_arc[0] + r_a, c_arc[1] + r_a], start=178, end=244, fill=(*col_main, 245), width=4 * SS)
+        ang_t = math.radians(244)
+        tip_p = (c_arc[0] + r_a * math.cos(ang_t), c_arc[1] + r_a * math.sin(ang_t))
+        v30.draw_arrow_head(rd, tip_p, 244 + 90, 12 * SS, (*col_soft, 255))
 
         p58.draw_v58_floating_white_callout(od, sd, (265, 895), f"{deg_val}°", "FORWARD LEAN", align="right")
         p58.draw_v58_floating_white_callout(od, sd, (785, 855), f"{pct_val}%", "LUMBAR OVERLOAD", align="left")
 
     else:
-        spine_len = max(200.0, math.hypot(sh[0] - hip_r[0], sh[1] - hip_r[1]))
-        ang_rad = math.radians(deg_val)
-        dir_sign = -1.0 if sh[0] < hip_r[0] else 1.0
-        sh_upright = (hip_r[0] + dir_sign * spine_len * math.sin(ang_rad), hip_r[1] - spine_len * math.cos(ang_rad))
-        ref_top = (hip_r[0], max(464.0, hip_r[1] - spine_len - 24.0))
+        # Step 4 (22° NEUTRAL SPINE): 1 hip pivot ring + 1 single exterior arc in the open left studio margin (`x = 265..345`)
+        # ZERO overlap with the glutes, quadriceps, or upper back!
+        v36.draw_single_elbow_pivot_ring(rd, S(hip_r), 9.5, col_main, SS)
 
-        draw_v62_high_contrast_angle_gauge_ss(rd, bd_1x, hip_r, ref_top, sh_upright, kn_r, arc_radius_1x=150.0, col_main=col_main, col_soft=col_soft, draw_sector_arrow=True, ss=SS)
+        c_arc = S((hip_r[0] - 54.0, hip_r[1] - 185.0))
+        r_a = 118 * SS
+        rd.arc([c_arc[0] - r_a, c_arc[1] - r_a, c_arc[0] + r_a, c_arc[1] + r_a], start=184, end=248, fill=(*col_main, 245), width=4 * SS)
+        ang_t = math.radians(248)
+        tip_p = (c_arc[0] + r_a * math.cos(ang_t), c_arc[1] + r_a * math.sin(ang_t))
+        v30.draw_arrow_head(rd, tip_p, 248 + 90, 12 * SS, (*col_soft, 255))
 
         p58.draw_v58_floating_white_callout(od, sd, (265, 895), f"{deg_val}°", "NEUTRAL SPINE", align="right")
         p58.draw_v58_floating_white_callout(od, sd, (785, 855), f"{pct_val}%", "QUADS & GLUTES", align="left")
 
     rig_1x = Image.fromarray(cv2.resize(np.array(rig_layer), (W, H), interpolation=cv2.INTER_AREA))
-    canvas.alpha_composite(bloom_1x.filter(ImageFilter.GaussianBlur(radius=6)))
     canvas.alpha_composite(rig_1x)
     canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(radius=7)))
     canvas.alpha_composite(ov)

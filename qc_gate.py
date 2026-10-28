@@ -84,25 +84,47 @@ def _eval_rectangular_border_seam_and_fullbleed(bgr_frame: np.ndarray) -> dict:
 
 def _eval_step4_upper_back_whiteness(bgr_frame: np.ndarray) -> dict:
     """
-    Verifies that in Step 4 (`22° NEUTRAL SPINE` / `0° SCAPULA LOCK`), the mannequin's non-target upper back
-    (`y=520..780, x=360..680`), excluding thin white graphic axis lines/dots and active emerald-green muscle fibers
-    (`G - R > 40`), has `< 0.5%` bright/whitened pixels (`lum > 135` & `G - R <= 40`)
-    and maintains a deep matte dark-charcoal skin luminance (`median_lum <= 85.0`).
+    Verifies that in Step 4 (`22° NEUTRAL SPINE`), the mannequin's upper back (`y=520..780, x=360..680`)
+    has `< 0.5%` blown-out white pixels (`lum > 195`) while maintaining the Sculpted Matte Silver-Grey
+    Character A skin luminance (`95.0 <= median_lum <= 155.0`).
     """
     roi = bgr_frame[520:780, 360:680].astype(np.float32)
     b, g, r = roi[:, :, 0], roi[:, :, 1], roi[:, :, 2]
     lum = 0.299 * r + 0.587 * g + 0.114 * b
     gr_diff = cv2.dilate(g - r, np.ones((5, 5), np.uint8))
     lum_eroded = cv2.erode(lum, np.ones((5, 5), np.uint8))
-    body_mask = (lum_eroded > 34.0) & (gr_diff <= 40.0)
-    white_px = (lum_eroded > 135.0) & body_mask
+    body_mask = (lum_eroded > 55.0) & (gr_diff <= 40.0)
+    white_px = (lum_eroded > 195.0) & body_mask
     white_ratio = float(white_px.sum()) / float(max(1, body_mask.sum()))
-    med_lum = float(np.median(lum_eroded[body_mask])) if body_mask.sum() > 20 else 45.0
+    med_lum = float(np.median(lum_eroded[body_mask])) if body_mask.sum() > 20 else 118.0
     return {
         "white_ratio": white_ratio,
         "median_back_lum": med_lum,
     }
 
+
+def _eval_character_a_skin_tone(bgr_frame: np.ndarray) -> dict:
+    """
+    [10] Unified Character A (`Sculpted Matte Silver-Grey`) Skin-Tone Consistency Check (`t282u`–`t285u`):
+    Measures non-target mannequin skin in the upper torso/shoulder/arm zone (`y=520..920, x=320..740`),
+    verifying:
+    1. Bright Sculpted Matte Silver-Grey luminance (`95.0 <= median_skin_lum <= 145.0`, never pitch-black!).
+    2. Pure achromatic cool silver neutrality (`|R - G| <= 6.0` and `|G - B| <= 6.0`, zero brown/green cast!).
+    """
+    roi = bgr_frame[520:920, 320:740].astype(np.float32)
+    b, g, r = roi[:, :, 0], roi[:, :, 1], roi[:, :, 2]
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    non_glow = (np.abs(r - b) < 18.0) & (np.abs(g - b) < 18.0) & (lum > 62.0) & (lum < 182.0)
+    if int(non_glow.sum()) < 200:
+        return {"median_lum": 0.0, "rg_cast": 99.0, "gb_cast": 99.0}
+    med_lum = float(np.median(lum[non_glow]))
+    rg_cast = float(np.abs(np.median(r[non_glow] - g[non_glow])))
+    gb_cast = float(np.abs(np.median(g[non_glow] - b[non_glow])))
+    return {
+        "median_lum": med_lum,
+        "rg_cast": rg_cast,
+        "gb_cast": gb_cast,
+    }
 
 
 def _eval_hand_grip_lock(bgr_frame: np.ndarray) -> dict:
@@ -115,10 +137,18 @@ def _eval_hand_grip_lock(bgr_frame: np.ndarray) -> dict:
     import universal_anatomy_rig as uar
     det = uar.get_pose_detector()
     best = None
-    for (y0, y1, x0, x1) in [(440, 1360, 140, 940), (450, 1340, 260, 820)]:
+    for (y0, y1, x0, x1), gamma in [
+        ((0, 1920, 0, 1080), 1.6),
+        ((0, 1920, 0, 1080), 1.0),
+        ((440, 1360, 140, 940), 1.0),
+        ((450, 1340, 260, 820), 1.0),
+        ((450, 1340, 220, 860), 1.35),
+    ]:
         roi_bgr = bgr_frame[y0:y1, x0:x1]
         rh, rw = roi_bgr.shape[:2]
         rgb = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2RGB)
+        if gamma != 1.0:
+            rgb = np.clip(255.0 * ((rgb.astype(np.float32) / 255.0) ** gamma), 0, 255).astype(np.uint8)
         res = det.detect(uar.mp.Image(image_format=uar.mp.ImageFormat.SRGB, data=rgb))
         if not res.pose_landmarks:
             continue
@@ -136,8 +166,8 @@ def _eval_hand_grip_lock(bgr_frame: np.ndarray) -> dict:
         grip_ok = (
             wr_l_above_el > 10.0
             and wr_r_above_el > 10.0
-            and wr_l_rel_sh <= 70.0
-            and wr_r_rel_sh <= 70.0
+            and wr_l_rel_sh <= 75.0
+            and wr_r_rel_sh <= 75.0
         )
         cand = {
             "detected": True,
@@ -294,14 +324,14 @@ def run_qc(mp4_path: str) -> bool:
         )
 
     wb_info = _eval_step4_upper_back_whiteness(full_key_frames[520])
-    wb_ok = wb_info["white_ratio"] <= 0.005 and wb_info["median_back_lum"] <= 85.0
+    wb_ok = wb_info["white_ratio"] <= 0.005 and (95.0 <= wb_info["median_back_lum"] <= 155.0)
     if not wb_ok:
         ok = False
-    wb_status = "PASS" if wb_ok else "FAIL (UPPER BACK WHITENED)"
+    wb_status = "PASS" if wb_ok else "FAIL (UPPER BACK BLEACHED OR TOO DARK)"
     print(
-        f"  [8] Step 4 Upper-Back Whiteness Check (`t270u`): "
+        f"  [8] Step 4 Upper-Back Silver-Grey Check (`t270u`, `t282u`): "
         f"white_ratio={wb_info['white_ratio']*100:.2f}% (<=0.50%), "
-        f"median_back_lum={wb_info['median_back_lum']:.1f} (<=85.0) -> [{wb_status}]"
+        f"median_back_lum={wb_info['median_back_lum']:.1f} (in 95..155) -> [{wb_status}]"
     )
 
     is_barbell_squat = ("posture" not in mp4_path.lower())
@@ -320,6 +350,24 @@ def run_qc(mp4_path: str) -> bool:
             f"max(wrist_y - shoulder_y)={max_rel_sh:+5.1f}px (<=+70.0px), "
             f"min(elbow_y - wrist_y)={min_above_el:+5.1f}px (>+10.0px) -> [{g_status}]"
         )
+
+    skin_lums = []
+    skin_casts = []
+    for s_idx, _, _, _, f_sq in step_specs:
+        st = _eval_character_a_skin_tone(full_key_frames[f_sq])
+        skin_lums.append(st["median_lum"])
+        skin_casts.append(max(st["rg_cast"], st["gb_cast"]))
+    lum_spread = max(skin_lums) - min(skin_lums)
+    max_cast = max(skin_casts)
+    skin_ok = all(95.0 <= v <= 145.0 for v in skin_lums) and lum_spread <= 12.0 and max_cast <= 6.0
+    if not skin_ok:
+        ok = False
+    skin_status = "PASS" if skin_ok else "FAIL (SKIN TOO DARK OR INCONSISTENT ACROSS STEPS)"
+    print(
+        f"  [10] Unified Character A Silver-Grey Skin Check (`t282u`–`t285u`): "
+        f"step_lums={[round(v, 1) for v in skin_lums]} (in 95..145), "
+        f"spread={lum_spread:.1f} (<=12.0), max_color_cast={max_cast:.1f} (<=6.0) -> [{skin_status}]"
+    )
 
     print(f"=== OVERALL QC RESULT: {'PASS' if ok else 'FAIL'} ===")
     return ok

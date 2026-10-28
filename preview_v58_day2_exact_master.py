@@ -76,8 +76,8 @@ _TINT_RIGHT = np.array([-14.0, 16.0, 13.0], dtype=np.float32)[None, None, :] * _
 
 
 def apply_static_studio_tint(rgb: np.ndarray, is_wrong: bool) -> np.ndarray:
-    out = rgb.astype(np.float32) + (_TINT_WRONG if is_wrong else _TINT_RIGHT)
-    return np.clip(out, 0.0, 255.0).astype(np.uint8)
+    # Unified Character A Silver-Grey Standard (`t282u`–`t285u`): zero red/green cast on the mannequin skin or studio background!
+    return rgb
 
 
 def get_or_build_v58_pools():
