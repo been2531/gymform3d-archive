@@ -125,6 +125,97 @@ def make_clean_barbell_and_human_mask(rgb_720: np.ndarray, lm, mp_seg: np.ndarra
     return full_fg_mask, human_mask, equip_mask
 
 
+def apply_3d_athletic_briefs_720p(out_rgb: np.ndarray, human_mask: np.ndarray, lm, sculpt_curve: np.ndarray) -> np.ndarray:
+    """
+    Renders realistic 3D Matte Charcoal Athletic Compression Briefs / Trunks (`@demicstory` style)
+    wrapping cleanly from the left outer hip across the pelvis to the right outer hip:
+    - Covers the entire pelvis & groin with a 3D contoured brief + elastic waistband + stitched seams,
+      while keeping 100% of the quadriceps (VMO, rectus femoris, vastus lateralis) exposed!
+    """
+    sh_h, sw_w = out_rgb.shape[:2]
+    yy, xx = np.mgrid[:sh_h, :sw_w].astype(np.float32)
+
+    sh_l = np.array([lm[11].x * sw_w, lm[11].y * sh_h], dtype=np.float32)
+    sh_r = np.array([lm[12].x * sw_w, lm[12].y * sh_h], dtype=np.float32)
+    hip_r = np.array([lm[24].x * sw_w, lm[24].y * sh_h], dtype=np.float32)
+    hip_l = np.array([lm[23].x * sw_w, lm[23].y * sh_h], dtype=np.float32)
+
+    if hip_r[0] <= hip_l[0]:
+        h_L, h_R = hip_r, hip_l
+    else:
+        h_L, h_R = hip_l, hip_r
+
+    hip_cx = 0.5 * (h_L[0] + h_R[0])
+    hip_cy = 0.5 * (h_L[1] + h_R[1])
+    sh_cy = 0.5 * (sh_l[1] + sh_r[1])
+    torso_h = max(95.0, abs(hip_cy - sh_cy))
+    hip_span = max(78.0, abs(h_R[0] - h_L[0]))
+
+    # Pelvis outer width spans across both hip bones to the outer silhouette
+    pelvis_half_w = max(84.0, hip_span * 1.06)
+    dx_norm = (xx - hip_cx) / pelvis_half_w
+
+    # Top of elastic waistband sits across the lower pelvis (`hip_cy - 0.24 * torso_h`)
+    waist_curve_y = (hip_cy - 0.24 * torso_h) + 5.0 * (1.0 - np.clip(dx_norm ** 2, 0.0, 1.2))
+    band_h = max(13.0, 0.082 * torso_h)
+    waist_bot_y = waist_curve_y + band_h
+
+    # Bottom of athletic brief: covers the center groin (`hip_cy + 0.24 * torso_h`) and arches cleanly along the upper inner-thigh crease
+    crotch_bot_y = hip_cy + max(34.0, 0.24 * torso_h)
+    side_bot_y = waist_bot_y + max(26.0, 0.17 * torso_h)
+    arch_t = np.clip((np.abs(dx_norm) - 0.17) / 0.78, 0.0, 1.0)
+    leg_arch_y = crotch_bot_y * (1.0 - np.sin(arch_t * math.pi * 0.5) ** 1.35) + side_bot_y * (np.sin(arch_t * math.pi * 0.5) ** 1.35)
+
+    in_brief_y = np.clip((yy - waist_curve_y + 1.0) / 2.2, 0.0, 1.0) * np.clip((leg_arch_y - yy + 1.0) / 2.5, 0.0, 1.0)
+    in_brief_x = np.clip((1.18 - np.abs(dx_norm)) / 0.08, 0.0, 1.0)
+    fg_gate = np.clip((human_mask - 0.12) / 0.50, 0.0, 1.0)
+    brief_mask = in_brief_y * in_brief_x * fg_gate
+
+    in_band_y = np.clip((yy - waist_curve_y + 1.0) / 1.8, 0.0, 1.0) * np.clip((waist_bot_y - yy + 1.0) / 1.8, 0.0, 1.0)
+    band_mask = in_band_y * in_brief_x * fg_gate
+
+    # 3D Cylindrical & Anatomical Pouched Shading for Matte Charcoal Athletic Briefs
+    cyl_highlight = np.exp(-((dx_norm / 0.58) ** 2))
+    pouch_highlight = np.exp(-(((dx_norm) / 0.23) ** 2 + ((yy - (waist_bot_y + 0.46 * (crotch_bot_y - waist_bot_y))) / 22.0) ** 2))
+    pouch_seam = np.exp(-(((np.abs(dx_norm) - 0.23) / 0.042) ** 2)) * np.clip((yy - waist_bot_y) / 9.0, 0.0, 1.0)
+
+    fabric_shade = 0.32 * np.clip(sculpt_curve, 0.28, 0.85) + 0.46 * cyl_highlight + 0.28 * pouch_highlight - 0.18 * pouch_seam
+    fabric_shade = np.clip(fabric_shade, 0.0, 1.0)
+
+    brief_r = 20.0 + 30.0 * fabric_shade
+    brief_g = 22.0 + 33.0 * fabric_shade
+    brief_b = 27.0 + 38.0 * fabric_shade
+
+    leg_hem = np.exp(-(((yy - (leg_arch_y - 2.4)) / 1.5) ** 2)) * (np.abs(dx_norm) > 0.14)
+    band_top_edge = np.exp(-(((yy - (waist_curve_y + 1.4)) / 1.2) ** 2))
+    band_bot_edge = np.exp(-(((yy - (waist_bot_y - 1.2)) / 1.2) ** 2))
+    seam_glow = np.clip(leg_hem * 0.55 + pouch_seam * 0.45, 0.0, 1.0)
+
+    brief_r = brief_r + 22.0 * seam_glow
+    brief_g = brief_g + 24.0 * seam_glow
+    brief_b = brief_b + 28.0 * seam_glow
+
+    band_shade = 0.55 * cyl_highlight + 0.45 * np.clip(sculpt_curve, 0.25, 0.8)
+    band_r = 14.0 + 20.0 * band_shade + 40.0 * (band_top_edge + band_bot_edge)
+    band_g = 16.0 + 22.0 * band_shade + 42.0 * (band_top_edge + band_bot_edge)
+    band_b = 20.0 + 26.0 * band_shade + 48.0 * (band_top_edge + band_bot_edge)
+
+    brief_rgb = np.stack([brief_r, brief_g, brief_b], axis=-1)
+    band_rgb = np.stack([band_r, band_g, band_b], axis=-1)
+
+    res = out_rgb * (1.0 - brief_mask[:, :, None]) + brief_rgb * brief_mask[:, :, None]
+    res = res * (1.0 - band_mask[:, :, None]) + band_rgb * band_mask[:, :, None]
+
+    # Minimalist centered waistband tag (`@demicstory` style)
+    tag_w = max(15.0, 0.15 * pelvis_half_w)
+    tag_cy = 0.5 * (waist_curve_y + waist_bot_y)
+    in_tag = (np.abs(xx - hip_cx) <= tag_w * 0.5) & (np.abs(yy - tag_cy) <= 2.2) & (band_mask > 0.5)
+    tag_pat = in_tag & ((np.abs(xx - hip_cx) < tag_w * 0.18) | (np.abs(xx - hip_cx) > tag_w * 0.28))
+    res[tag_pat] = np.array([160.0, 168.0, 180.0], dtype=np.float32)
+
+    return res
+
+
 def render_zero_haze_day1_mannequin_1080p(
     raw_bgr_720p: np.ndarray,
     step_idx: int,
@@ -286,20 +377,26 @@ def render_zero_haze_day1_mannequin_1080p(
     fill_alpha = np.clip((bone_presence ** 0.78) * 0.94, 0.0, 0.95)[:, :, None]
     out = out * (1.0 - fill_alpha) + bone_rgb * fill_alpha
     out = np.clip(out + trabecular[:, :, None] * np.array([185.0, 195.0, 210.0], dtype=np.float32) * 0.55, 0.0, 255.0)
+    # Dress the mannequin in 3D Matte Charcoal Athletic Briefs / Compression Trunks (`@demicstory` style)
+    out = apply_3d_athletic_briefs_720p(out, human_mask, lm, sculpt_curve)
 
-    # --- 3. PLACE INTO 1080x1920 STUDIO CANVAS WITH ZERO BACKGROUND HAZE & ZERO EQUIPMENT CLIPPING ---
-    ys_fg, xs_fg = np.where(full_fg_mask > 0.35)
-    x_min_fg, x_max_fg = float(np.percentile(xs_fg, 0.2)), float(np.percentile(xs_fg, 99.8))
-    y_top_fg, y_bot_fg = float(np.percentile(ys_fg, 0.5)), float(np.percentile(ys_fg, 99.5))
-
-    scale_h = 735.0 / max(120.0, (y_bot_fg - y_top_fg))
-    scale_w = 1004.0 / max(120.0, (x_max_fg - x_min_fg))
-    scale = min(scale_h, scale_w)
+    # --- 3. PLACE INTO 1080x1920 STUDIO CANVAS WITH FIXED CAMERA SCALE & ZERO TOP-CAPSULE CONTACT ---
+    # Fixed per-step camera parameters `(scale, cx_ref, y_bot_ref)` calibrated on the tallest standing frame (`frame 0`)
+    # so that:
+    # - Feet stay planted firmly at `y = 1475` across the entire squat motion,
+    # - Even at full standing height (`frame 0`), the top of the head/barbell stays at `y >= 548`
+    #   (at least `68px` below the top preview capsule's bottom edge `y = 480` — 0% contact during motion!).
+    step_fixed_cam = {
+        1: (0.955, 360.0, 1037.0),
+        2: (0.920, 360.0, 1062.0),
+        3: (1.020, 360.0, 1132.0),
+        4: (0.880, 360.0, 1117.0),
+    }
+    scale, cx_fg, y_bot_fg = step_fixed_cam.get(step_idx, (0.94, 360.0, 1060.0))
 
     nw, nh = int(round(sw_w * scale)), int(round(sh_h * scale))
-    cx_fg = 0.5 * (x_min_fg + x_max_fg)
     x0 = int(round(540.0 - cx_fg * scale))
-    y0 = int(round(1310.0 - y_bot_fg * scale))
+    y0 = int(round(1475.0 - y_bot_fg * scale))
 
     res_man = cv2.resize(out, (nw, nh), interpolation=cv2.INTER_LANCZOS4).astype(np.float32)
     res_mask = cv2.resize(full_fg_mask, (nw, nh), interpolation=cv2.INTER_LINEAR).astype(np.float32)
@@ -319,7 +416,7 @@ def render_zero_haze_day1_mannequin_1080p(
 
     # Ambient ground shadow strictly under the feet (`y ~ 1310`)
     yy_c, xx_c = np.mgrid[:H, :W].astype(np.float32)
-    shadow = np.exp(-(((xx_c - 540.0) / 250.0) ** 2 + ((yy_c - 1316.0) / 18.0) ** 2)) * 0.45
+    shadow = np.exp(-(((xx_c - 540.0) / 250.0) ** 2 + ((yy_c - 1480.0) / 18.0) ** 2)) * 0.45
     canvas = canvas * (1.0 - shadow[:, :, None] * (1.0 - mask_1080[:, :, None]))
 
     kp_1080 = {k: (pt[0] * scale + x0, pt[1] * scale + y0) for k, pt in kp_720.items()}
