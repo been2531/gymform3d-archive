@@ -89,7 +89,9 @@ def _get_upright_pure_anatomy_portrait(step_idx: int, is_wrong: bool) -> tuple[n
         t_rgb = np.stack([28.0 + 35.0 * sculpt_curve, 215.0 + 38.0 * sculpt_curve, 110.0 + 45.0 * sculpt_curve], axis=-1)
 
     act_full = mono * (1.0 - (target_w * 0.82)[:, :, None]) + t_rgb * (target_w * 0.82)[:, :, None]
+    act_full = cd4.apply_3d_athletic_briefs_720p(act_full, pure_body_mask, lm, sculpt_curve)
     inact_full = np.stack([body_r * 0.58, body_g * 0.60, body_b * 0.64], axis=-1)
+    inact_full = cd4.apply_3d_athletic_briefs_720p(inact_full, pure_body_mask, lm, sculpt_curve * 0.65)
 
     # Crop exact 224:272 portrait window around shoulders-to-knees (`y_sh - 10` to `kn_y + 35`)
     sh_y = 0.5 * (lm[11].y + lm[12].y) * sh_h
@@ -136,7 +138,7 @@ def draw_day1_exact_top_dock(frame_rgb: np.ndarray, torso_icons: list, active_sl
     from PIL import ImageFilter
 
     out_f = frame_rgb.astype(np.float32).copy()
-    bar_x0, bar_y0, bar_x1, bar_y1 = 87, 247, 993, 487
+    bar_x0, bar_y0, bar_x1, bar_y1 = 87, 195, 993, 435
     bar_w, bar_h = bar_x1 - bar_x0, bar_y1 - bar_y0
 
     # 1. Frosted Dark Glass Capsule Background (`x = 87..993, y = 247..487`, centered at `x = 540`)
@@ -167,7 +169,7 @@ def draw_day1_exact_top_dock(frame_rgb: np.ndarray, torso_icons: list, active_sl
             continue
         cx = slot_centers_x[i]
         tx0 = cx - tw // 2
-        ty0 = 231
+        ty0 = 179
         _, inact_arr = torso_icons[i]
         # Feather top/bottom inside `bar_y0+4 .. bar_y1-4` (`251 .. 483`)
         inact_cropped = np.clip(inact_arr * vign[:, :, None], 0, 255).astype(np.uint8)
@@ -179,7 +181,7 @@ def draw_day1_exact_top_dock(frame_rgb: np.ndarray, torso_icons: list, active_sl
 
     # 3. Paste the Active Protruding Portrait Card (`w = 224, h = 272, y = 231 .. 503`, protrudes 16px above & below!)
     cx_a = slot_centers_x[active_slot]
-    ax0, ay0 = cx_a - tw // 2, 231
+    ax0, ay0 = cx_a - tw // 2, 179
     ax1, ay1 = ax0 + tw, ay0 + th
     act_col = (255, 138, 48) if is_wrong else (42, 245, 135)
 
