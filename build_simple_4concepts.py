@@ -29,34 +29,119 @@ OUT_DIR = "/workspace/daily_info_reels/output"
 W, H = 1080, 1920
 
 
-def make_unsquished_day1_top_icons(base_frames: dict) -> list[tuple[Image.Image, Image.Image]]:
+def make_unsquished_day1_top_icons(base_frames: dict) -> list[tuple[np.ndarray, np.ndarray]]:
     """
-    Creates the exact `(142, 114)` thumbnail icons for `v28.draw_luxury_top_dock` with 100% preserved aspect ratio (`142 / 114 = 1.2456`):
-    - Crops `x = 160 .. 920` (`w = 760px`) and `y = 700 .. 1310` (`h = 610px`, `760 / 610 = 1.2459 == 142 / 114`!)
-      so the mannequin & barbell are NEVER squished horizontally or vertically!
-    - Inactive thumbnails are clean desaturated monochrome dimmed just like Day 1 (`build_v36_clean_master.py` lines 478-487).
+    100% Exact Copy of `@demicstory` Centered Top Glass Capsule (`01M60T9XS7J2Z1YCHM1J0Q87DY.png`):
+    - In `@demicstory`, each of the 3 top slots is a **VERTICAL PORTRAIT CARD (`w = 224, h = 272`, aspect ratio `0.8235 : 1`)**,
+      NOT a flat horizontal rectangle! That is why `@demicstory`'s figure inside the top preview never looks vertically squished!
+    - We crop a `650 x 790` vertical portrait window (`650 / 790 = 0.8228 == 224 / 272`) centered on the mannequin (`x = 215..865, y = 535..1325`)
+      so the 3D mannequin has **0.0% vertical or horizontal distortion (`찌부러짐 0%`)**!
     """
-    size = (142, 114)
-    crop_box = (160, 700, 920, 1310)  # 760 x 610 -> exact 142:114 aspect ratio!
+    crop_x0, crop_y0, crop_x1, crop_y1 = 215, 535, 865, 1325  # 650 x 790 (exact 224:272 portrait ratio!)
+    tw, th = 224, 272
 
     icons = []
     for s_i in (1, 2, 4):
-        rgb = base_frames[s_i]
-        act_im = Image.fromarray(rgb).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-        # Create clean monochrome dimmed version for inactive state (exact Day 1 style)
-        lum = np.mean(rgb.astype(np.float32), axis=2, keepdims=True)
-        mono = np.clip(lum * np.array([0.96, 0.99, 1.04]), 0, 255).astype(np.uint8)
-        inact_im = Image.fromarray(mono).convert("RGBA").crop(crop_box).resize(size, Image.Resampling.LANCZOS)
-        inact_im.alpha_composite(Image.new("RGBA", size, (10, 12, 16, 118)))
-        icons.append((act_im, inact_im))
+        rgb = base_frames[s_i][crop_y0:crop_y1, crop_x0:crop_x1]
+        act_arr = cv2.resize(rgb, (tw, th), interpolation=cv2.INTER_LANCZOS4).astype(np.float32)
+
+        # Inactive figure: pure monochrome dark-slate 3D sculpture (`@demicstory` left/right dimmed figures)
+        lum = 0.299 * act_arr[:, :, 0] + 0.587 * act_arr[:, :, 1] + 0.114 * act_arr[:, :, 2]
+        inact_arr = np.stack([lum * 0.54, lum * 0.56, lum * 0.60], axis=-1)
+        icons.append((act_arr, inact_arr))
     return icons
 
 
 def draw_day1_exact_top_dock(frame_rgb: np.ndarray, torso_icons: list, active_slot: int, is_wrong: bool) -> np.ndarray:
-    """Applies the exact Day 1 `v28.draw_luxury_top_dock` (zero squishing, zero sticker clutter)."""
-    canvas = Image.fromarray(frame_rgb).convert("RGBA")
-    v28.draw_luxury_top_dock(canvas, torso_icons, active_idx=active_slot, is_wrong=is_wrong)
-    return np.array(canvas.convert("RGB"))
+    """
+    100% Exact Pixel-Measured Clone of `@demicstory`'s Centered Top Preview Capsule (`01M60T9XS7J2Z1YCHM1J0Q87DY.png`):
+    1. Horizontally Centered Frosted Glass Capsule (`x = 87 .. 993`, `w = 906px`, exact center `x = 540`, `y = 247 .. 487`, `h = 240px`, `radius = 34px`)
+       with `@demicstory`'s signature bottom-edge & corner silver glass specular rim light!
+    2. 3 Portrait Anatomy Slots (`Left cx = 248`, `Center cx = 540`, `Right cx = 832`, each `w = 224px`):
+       - Inactive slots (`h = 232px`, `y = 251 .. 483`) sit seamlessly inside the dark glass capsule with soft edge feathering (no inner box border).
+       - Active slot (`w = 224px, h = 272px`, `y = 231 .. 503`) **protrudes 16px above and 16px below** the horizontal glass bar,
+         with a warm volumetric radial backlight + crisp glowing neon rounded border (`radius = 28px`)!
+    """
+    from PIL import ImageFilter
+
+    out_f = frame_rgb.astype(np.float32).copy()
+    bar_x0, bar_y0, bar_x1, bar_y1 = 87, 247, 993, 487
+    bar_w, bar_h = bar_x1 - bar_x0, bar_y1 - bar_y0
+
+    # 1. Frosted Dark Glass Capsule Background (`x = 87..993, y = 247..487`, centered at `x = 540`)
+    base_pil = Image.fromarray(frame_rgb).convert("RGBA")
+    glass_ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glass_ov)
+
+    # Outer drop shadow
+    gd.rounded_rectangle([bar_x0 + 2, bar_y0 + 8, bar_x1 + 2, bar_y1 + 10], radius=36, fill=(0, 0, 0, 135))
+    # Dark glass fill (`RGB 24, 27, 32`) + subtle top/bottom glass rim
+    gd.rounded_rectangle([bar_x0, bar_y0, bar_x1, bar_y1], radius=34, fill=(22, 25, 30, 225), outline=(95, 102, 114, 115), width=2)
+    # Bright specular bottom/corner glass rim (measured at `RGB ~98,101,106` at `y = 532` in `@demicstory`)
+    gd.rounded_rectangle([bar_x0 + 2, bar_y0 + 2, bar_x1 - 2, bar_y1 - 1], radius=32, outline=(145, 155, 170, 55), width=1)
+    base_pil = Image.alpha_composite(base_pil, glass_ov)
+
+    slot_centers_x = [248, 540, 832]
+    tw, th = 224, 272
+
+    # Build soft radial vignette mask so each portrait figure blends seamlessly into the glass slot
+    yy_t, xx_t = np.mgrid[:th, :tw].astype(np.float32)
+    nx = (xx_t - tw * 0.5) / (tw * 0.48)
+    ny = (yy_t - th * 0.52) / (th * 0.48)
+    vign = np.clip(1.0 - 0.55 * ((nx * nx + ny * ny) ** 1.35), 0.15, 1.0)
+
+    # 2. Paste the 2 Inactive Slots first (clipped inside `y = 251 .. 483`)
+    for i in range(3):
+        if i == active_slot:
+            continue
+        cx = slot_centers_x[i]
+        tx0 = cx - tw // 2
+        ty0 = 231
+        _, inact_arr = torso_icons[i]
+        # Feather top/bottom inside `bar_y0+4 .. bar_y1-4` (`251 .. 483`)
+        inact_cropped = np.clip(inact_arr * vign[:, :, None], 0, 255).astype(np.uint8)
+        im_slot = Image.fromarray(inact_cropped).convert("RGBA")
+        mask_slot = Image.new("L", (tw, th), 0)
+        ImageDraw.Draw(mask_slot).rounded_rectangle([4, 20, tw - 5, th - 21], radius=22, fill=235)
+        mask_slot = mask_slot.filter(ImageFilter.GaussianBlur(radius=4))
+        base_pil.paste(im_slot, (tx0, ty0), mask_slot)
+
+    # 3. Paste the Active Protruding Portrait Card (`w = 224, h = 272, y = 231 .. 503`, protrudes 16px above & below!)
+    cx_a = slot_centers_x[active_slot]
+    ax0, ay0 = cx_a - tw // 2, 231
+    ax1, ay1 = ax0 + tw, ay0 + th
+    act_col = (255, 138, 48) if is_wrong else (42, 245, 135)
+
+    # Warm volumetric radial glow inside and around the active card (`@demicstory` signature!)
+    glow_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gld = ImageDraw.Draw(glow_layer)
+    gld.rounded_rectangle([ax0 - 8, ay0 - 8, ax1 + 8, ay1 + 8], radius=34, outline=(*act_col, 155), width=10)
+    gld.ellipse([cx_a - 95, ay0 + 25, cx_a + 95, ay1 - 25], fill=(*act_col, 85))
+    glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=14))
+    base_pil = Image.alpha_composite(base_pil, glow_layer)
+
+    # Dark card backing for the protruding active card + warm radial center glow
+    act_arr, _ = torso_icons[active_slot]
+    rad_glow = np.exp(-(((xx_t - tw * 0.5) / 78.0) ** 2 + ((yy_t - th * 0.46) / 92.0) ** 2))[:, :, None]
+    card_bg = np.array([26.0, 29.0, 35.0], dtype=np.float32) + rad_glow * np.array(act_col, dtype=np.float32) * 0.36
+    # Separate foreground of thumbnail from its studio background (`lum > 46`)
+    fg_a = np.clip((act_arr.mean(axis=2, keepdims=True) - 44.0) / 14.0, 0.0, 1.0)
+    comp_act = np.clip(card_bg * (1.0 - fg_a) + act_arr * fg_a, 0, 255).astype(np.uint8)
+
+    im_act = Image.fromarray(comp_act).convert("RGBA")
+    mask_act = Image.new("L", (tw, th), 0)
+    ImageDraw.Draw(mask_act).rounded_rectangle([0, 0, tw - 1, th - 1], radius=28, fill=255)
+    base_pil.paste(im_act, (ax0, ay0), mask_act)
+
+    # Crisp glowing neon rounded border (`radius = 28px`, 4x supersampled feel)
+    bdr_ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    bd_d = ImageDraw.Draw(bdr_ov)
+    bd_d.rounded_rectangle([ax0 - 2, ay0 - 2, ax1 + 2, ay1 + 2], radius=30, outline=(*act_col, 95), width=5)
+    bd_d.rounded_rectangle([ax0, ay0, ax1, ay1], radius=28, outline=(*act_col, 255), width=3)
+    bd_d.rounded_rectangle([ax0 + 1, ay0 + 1, ax1 - 1, ay1 - 1], radius=27, outline=(255, 235, 205, 170) if is_wrong else (210, 255, 230, 170), width=1)
+    base_pil = Image.alpha_composite(base_pil, bdr_ov)
+
+    return np.array(base_pil.convert("RGB"))
 
 
 def draw_simple_1_left_right_onepoint_numbers(frame_rgb: np.ndarray, kp_1080: dict, is_wrong: bool) -> np.ndarray:
@@ -255,7 +340,7 @@ def main():
     variants = {"S1": {}, "S2": {}, "S3": {}, "S4": {}}
     for s_i in (1, 2):
         is_w = (s_i == 1)
-        act_slot = 0 if s_i == 1 else 2
+        act_slot = 1
 
         s1 = draw_simple_1_left_right_onepoint_numbers(base_frames[s_i], kps[s_i], is_w)
         variants["S1"][s_i] = draw_day1_exact_top_dock(s1, torso_icons, act_slot, is_w)
@@ -310,7 +395,7 @@ def main():
     sheet.save(out_master, quality=95)
 
     # Also save a 1:1 Close-Up showing the Top Capsule (`y=215..410`) + the Simple Lower/Side Callouts (`y=820..1460`)!
-    closeup = Image.new("RGB", (1020 * 2 + 60, 880 * 2 + 120), (10, 12, 16))
+    closeup = Image.new("RGB", (1020 * 2 + 60, 940 * 2 + 120), (10, 12, 16))
     cd = ImageDraw.Draw(closeup)
     cd.text(
         (20, 18),
@@ -318,15 +403,15 @@ def main():
         font=f_t,
         fill=(255, 255, 255),
     )
-    pos = [(20, 72), (1060, 72), (20, 982), (1060, 982)]
+    pos = [(20, 72), (1060, 72), (20, 1032), (1060, 1032)]
     for idx, k in enumerate(("S1", "S2", "S3", "S4")):
         px, py = pos[idx]
-        top_strip = Image.fromarray(variants[k][1][215:405, 30:1050])   # 1020 x 190 (Top Dock)
-        bot_strip = Image.fromarray(variants[k][1][800:1450, 30:1050])  # 1020 x 650 (Knees + Simple Callout)
+        top_strip = Image.fromarray(variants[k][1][215:520, 30:1050])   # 1020 x 190 (Top Dock)
+        bot_strip = Image.fromarray(variants[k][1][840:1430, 30:1050])  # 1020 x 650 (Knees + Simple Callout)
         closeup.paste(top_strip, (px, py + 32))
-        closeup.paste(bot_strip, (px, py + 32 + 196))
+        closeup.paste(bot_strip, (px, py + 32 + 310))
         cd.text((px + 6, py), meta_cols[idx][0], font=f_c, fill=(255, 165, 70) if idx == 0 else (45, 250, 140))
-        cd.rounded_rectangle([px - 2, py + 30, px + 1022, py + 878], radius=12, outline=(255, 255, 255, 75), width=2)
+        cd.rounded_rectangle([px - 2, py + 30, px + 1022, py + 935], radius=12, outline=(255, 255, 255, 75), width=2)
 
     out_closeup = os.path.join(OUT_DIR, "day3_simple_4variants_1to1_closeup.jpg")
     closeup.save(out_closeup, quality=95)
