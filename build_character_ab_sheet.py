@@ -91,10 +91,10 @@ def render_char_b_gunmetal_pose(raw_jpg: str, out_size: tuple[int, int], add_cya
     t_high = np.clip((cool_base - p50) / max(8.0, p85 - p50), 0.0, 1.3)
     gm_lum = np.where(
         cool_base <= p50,
-        64.0 + t_low * (64.0 - 42.0),
-        64.0 + t_high * (92.0 - 64.0),
+        50.0 + t_low * (50.0 - 34.0),
+        50.0 + t_high * (72.0 - 50.0),
     )
-    gm_lum = np.clip(gm_lum + np.clip(hf, -10.0, 12.0) * 0.38 - sulc * 8.0, 36.0, 104.0)
+    gm_lum = np.clip(gm_lum + np.clip(hf, -10.0, 12.0) * 0.38 - sulc * 8.0, 28.0, 80.0)
 
     bg_lum = np.clip(18.0 + (base_lum - bg_est) * 0.4, 14.0, 26.0)
     lum_out = bg_lum * (1.0 - body_mask) + gm_lum * body_mask
@@ -167,10 +167,10 @@ def main():
 
     # Swatches & Spec Box for Character A
     sy = 782
-    bd.text((52, sy), "1. 피부 톤 & 재질 스펙 (@demicstory 표준 100% 카피 & 4-Step 통일)", font=F_H3, fill=COL_SILVER)
+    bd.text((52, sy), "1. 피부 톤 & 무광 매트 질감 (Day 2 Step 1·2 처음 마네킹 100% 매칭)", font=F_H3, fill=COL_SILVER)
     swatches_a = [
-        ((118, 120, 124), "Core Silver-Grey", "Median Lum 118 (R:G:B = 0.98:1.00:1.03)"),
-        ((154, 157, 162), "Sculpted Highlight", "85th Pct Lum 154 (Max <= 174, 백화 0%)"),
+        ((84, 87, 91), "Smooth Matte Slate-Grey", "Day 2 Step 1·2 동일 RGB(84,87,91) · Lum 86.0"),
+        ((106, 110, 115), "Matte Clay Highlight", "p75=106, p90=122 (Laplacian <= 1.8 무광 매트!)"),
         ((20, 228, 120),  "Right Target Fiber", "Emerald Green #14E478 (3D 근육결 발광)"),
         ((248, 40, 48),   "Wrong Joint/Overload", "Crimson Red #F82830 (국소 X-Ray 발광)"),
     ]
@@ -183,9 +183,9 @@ def main():
     # 4-Step Skin Consistency Proof Bar
     by_a = 1000
     bd.rounded_rectangle([48, by_a, 718, 1372], radius=14, fill=(14, 17, 24, 255), outline=COL_BORDER, width=1)
-    bd.text((66, by_a + 14), "GATE [10] · STEP 1~4 마네킹 피부 톤 100% 단일 통일 검증 (Spread = 2.9 <= 12.0)", font=F_H3, fill=COL_GREEN)
+    bd.text((66, by_a + 14), "GATE [10] · Day 2 Step 1·2 무광 매트 슬레이트-그레이(Lum ~86) 4구간 통일 검증", font=F_H3, fill=COL_GREEN)
     cap_r = cv2.VideoCapture(os.path.join(OUT_DIR, "day3_squat_gripped_master_reel.mp4"))
-    for idx, (s_no, f_no, lbl_s) in enumerate([(1, 70, "S1 · Lum 130.3"), (2, 220, "S2 · Lum 131.3"), (3, 370, "S3 · Lum 131.2"), (4, 520, "S4 · Lum 128.3")]):
+    for idx, (s_no, f_no, lbl_s) in enumerate([(1, 70, "S1 · Lum 86.8"), (2, 220, "S2 · Lum 87.2"), (3, 370, "S3 · Lum 87.4"), (4, 520, "S4 · Lum 86.7")]):
         cap_r.set(cv2.CAP_PROP_POS_FRAMES, f_no)
         _, fr_b = cap_r.read()
         crop_u = cv2.cvtColor(fr_b[460:1180, 240:840], cv2.COLOR_BGR2RGB)
@@ -210,12 +210,12 @@ def main():
     board.paste(im_b_side, (1126, 202))
     bd.rectangle([784, 202, 784 + 315, 202 + 560], outline=(56, 232, 255, 95), width=1)
     bd.rectangle([1126, 202, 1126 + 315, 202 + 560], outline=(56, 232, 255, 95), width=1)
-    bd.text((796, 212), "GUNMETAL SLATE (LUM 64)", font=F_SMALL, fill=COL_CYAN)
+    bd.text((796, 212), "DEEP GUNMETAL (LUM 50)", font=F_SMALL, fill=COL_CYAN)
     bd.text((1138, 212), "CYAN RIM · 0% MUSCLE GLOW", font=F_SMALL, fill=COL_CYAN)
 
-    bd.text((786, sy), "2. 왜 Character B는 건메탈 슬레이트(Lum 64) + 반투명인가? (`t286u`~`t289u`)", font=F_H3, fill=COL_CYAN)
+    bd.text((786, sy), "2. 왜 Character B는 딥 건메탈(Lum 50) + 반투명인가? (`t286u`~`t296u`)", font=F_H3, fill=COL_CYAN)
     swatches_b = [
-        ((58, 66, 80),   "Matte Gunmetal-Slate", "Median Lum 64 (Character A보다 45% 어두운 슬레이트)"),
+        ((46, 52, 62),   "Deep Gunmetal-Charcoal", "Median Lum 50 (Character A Lum 86보다 한 단계 어두운 톤)"),
         ((88, 100, 118), "Slate Rim Contour",    "R:G:B = 0.86:0.96:1.14 (A의 무채색 실버와 즉시 구분)"),
         ((56, 232, 255), "Tactile Contact Ring", "Cyan-Blue #38E8FF (보조자 손끝 큐잉 접점만 표시)"),
         ((28, 34, 44),   "Zero Muscle Glow",     "보조자(B)는 근육 발광 0% -> 운동자(A)에만 시선 집중!"),
@@ -294,7 +294,7 @@ def main():
     comp_canvas.alpha_composite(rig.resize((comp_w, comp_h), Image.Resampling.LANCZOS))
 
     cd.rounded_rectangle([16, 16, 445, 52], radius=8, fill=(12, 16, 22, 225), outline=COL_CYAN, width=1)
-    cd.text((28, 25), "B (Rear-Left · 68% Gunmetal)  +  A (Front-Right · 100% Silver-Grey)", font=F_SMALL, fill=COL_CYAN)
+    cd.text((28, 25), "B (Rear-Left · 65% Deep Gunmetal Lum 50)  +  A (Front-Right · Matte Slate Lum 86)", font=F_SMALL, fill=COL_CYAN)
 
     cd.rounded_rectangle([16, comp_h - 54, comp_w - 16, comp_h - 14], radius=8, fill=(12, 16, 22, 235), outline=COL_GREEN, width=1)
     cd.text((28, comp_h - 42), "시야 방해 0% 검증: A의 대둔근·대퇴사두근 에메랄드 근육결과 양손 바벨 그립이 100% 노출됨!", font=F_SMALL, fill=COL_GREEN)
@@ -307,7 +307,7 @@ def main():
     bd.text((1534, 1014), "4. @gymform.3d 2인 보조 연출 4대 절대 원칙 (`t289u`~`t294u`)", font=F_H3, fill=COL_GREEN)
     rules_ab = [
         ("원칙 1 · Zero Muscle Occlusion", "Character B는 절대 카메라와 Character A의 타겟 근육(대둔근·광배근·삼각근) 사이를 가로막지 않으며, 항상 등 뒤/머리 위 외곽(`Exterior Layer`)에 배치한다."),
-        ("원칙 2 · 45% Luminance Contrast", "Character A(`Lum 118` 실버-그레이)와 Character B(`Lum 64` 건메탈 슬레이트, `68%` 반투명)의 명도·색온도를 분리해 두 마네킹이 겹쳐도 1초 만에 구분되게 한다."),
+        ("원칙 2 · 45% Luminance Contrast", "Character A(`Lum 86` 무광 매트 슬레이트)와 Character B(`Lum 50` 딥 건메탈, `65%` 반투명)의 명도·색온도를 분리해 두 마네킹이 겹쳐도 1초 만에 구분되게 한다."),
         ("원칙 3 · Cyan Contact Ring Only", "Character B에는 적색/녹색 근육 발광을 넣지 않고, 오직 A를 보조하는 손끝 접점(`Under Armpits`, `Wrists`, `Scapula`)에만 시안(`#38E8FF`) 링을 표시한다."),
         ("원칙 4 · Exterior Single Arrow", "모든 운동 궤적 화살표는 마네킹 몸통 위를 침범하지 않고 100% 신체 바깥 스튜디오 여백(`Exterior Margin`)에 단일 `4px` 곡선 화살표로만 그린다."),
     ]

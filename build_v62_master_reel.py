@@ -271,31 +271,17 @@ def main():
         ]
         asyncio.run(d3.synthesize_day3_voiceover_wav(AUDIO_WAV, vo_lines, duration_s=DURATION))
 
-    pools = p62.get_or_build_v62_pools()
-    torso_icons = p58.make_v58_torso_icons(pools)
-
-    top_dock_cache = {}
-    for s_idx, meta in STEP_META.items():
-        td_im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        p58.draw_v58_day2_unsquished_top_dock(td_im, torso_icons, active_idx=meta["dock_idx"], is_wrong=meta["is_wrong"])
-        top_dock_cache[s_idx] = np.array(td_im)
-
     import gc
-    print("Pre-rendering 208 synchronized full-bleed pool frames in-place...")
-    rendered_pools = {}
-    for s_idx in (1, 2, 3, 4):
-        p_pool, p_kps = pools.pop(s_idx)
-        n_p = len(p_pool)
-        td_rgba = top_dock_cache[s_idx]
-        r_list = []
-        for f_i in range(n_p):
-            _, _, out_bgr = _render_pool_frame_worker((s_idx, f_i, n_p, p_pool[f_i], p_kps[f_i], td_rgba))
-            p_pool[f_i] = None
-            r_list.append(out_bgr)
-        rendered_pools[s_idx] = r_list
-        del p_pool, p_kps
-        gc.collect()
-    print(f"Pool pre-render finished in {time.time() - t0:.1f}s")
+    print("Streaming 1-step-at-a-time low-memory render (<700MB RAM)...")
+    # Quick pass for the 3 top-dock thumbnails (only last frame of steps 1, 3, 4)
+    torso_icons = []
+    for s_icon in (1, 3, 4):
+        fn, i0, i1, is_w, sc, y_st, y_sq, ys_st, ys_sq, x_sh = p62.STEP_POOL_SPECS[s_icon]
+        last_raw = p62._load_slice(os.path.join(OUT_DIR, fn), i1, i1, target_len=1)
+        p_1, k_1 = p62.build_v62_fullbleed_pool(last_raw, s_icon, is_w, scale=sc, y_head_target_stand=y_sq, y_head_target_squat=y_sq, y_head_src_stand_720=ys_sq, y_head_src_squat_720=ys_sq, x_shift=x_sh)
+        torso_icons.append(p62.make_single_step_torso_icon(p_1, k_1))
+        del last_raw, p_1, k_1
+    gc.collect()
 
     tmp_silent = os.path.join(OUT_DIR, "_tmp_day3_v62_silent.mp4")
     vw = cv2.VideoWriter(tmp_silent, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W, H))
@@ -303,26 +289,42 @@ def main():
     peak_frames_pil = {}
     panels, crops = [], []
 
-    for fidx in range(TOTAL_FRAMES):
-        t_sec = fidx / float(FPS)
-        s_i = min(3, int(t_sec // 5.0))
-        s_idx = s_i + 1
-        t_local = t_sec - s_i * 5.0
-        pool = rendered_pools[s_idx]
-        n_p = len(pool)
+    for s_idx in (1, 2, 3, 4):
+        meta = STEP_META[s_idx]
+        td_im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        p58.draw_v58_day2_unsquished_top_dock(td_im, torso_icons, active_idx=meta["dock_idx"], is_wrong=meta["is_wrong"])
+        td_rgba = np.array(td_im)
+        del td_im
 
-        phase = min(1.0, t_local / 4.66)
-        u = 0.5 - 0.5 * math.cos(phase * 2.0 * math.pi)
-        idx_near = int(round(u * (n_p - 1)))
-        out_bgr = pool[idx_near]
-        vw.write(out_bgr)
+        p_pool, p_kps = p62.build_single_step_v62_pool(s_idx)
+        n_p = len(p_pool)
+        r_list = []
+        for f_i in range(n_p):
+            _, _, out_bgr = _render_pool_frame_worker((s_idx, f_i, n_p, p_pool[f_i], p_kps[f_i], td_rgba))
+            p_pool[f_i] = None
+            r_list.append(out_bgr)
+        del p_pool, p_kps, td_rgba
+        gc.collect()
 
-        if fidx in (70, 220, 370, 520):
-            peak_frames_pil[s_idx] = Image.fromarray(cv2.cvtColor(out_bgr, cv2.COLOR_BGR2RGB))
-            panels.append(cv2.resize(out_bgr, (540, 960), interpolation=cv2.INTER_AREA))
-            crops.append(out_bgr[430:1360, 0:1080])
+        s_i = s_idx - 1
+        for f_local in range(150):
+            fidx = s_i * 150 + f_local
+            t_local = f_local / float(FPS)
+            phase = min(1.0, t_local / 4.66)
+            u = 0.5 - 0.5 * math.cos(phase * 2.0 * math.pi)
+            idx_near = int(round(u * (n_p - 1)))
+            out_bgr = r_list[idx_near]
+            vw.write(out_bgr)
+            if fidx in (70, 220, 370, 520):
+                peak_frames_pil[s_idx] = Image.fromarray(cv2.cvtColor(out_bgr, cv2.COLOR_BGR2RGB))
+                panels.append(cv2.resize(out_bgr, (540, 960), interpolation=cv2.INTER_AREA))
+                crops.append(out_bgr[430:1360, 0:1080])
+
+        del r_list
+        gc.collect()
 
     vw.release()
+    print(f"Streaming render finished in {time.time() - t0:.1f}s")
 
     final_v62_mp4 = os.path.join(OUT_DIR, "day3_v62_master_reel.mp4")
     subprocess.run(
@@ -371,7 +373,7 @@ def main():
     render_v62_iphone_safezone_sheet(peak_frames_pil, safe_path)
 
     print(f"Done in {time.time() - t0:.1f}s -> {gripped_mp4}")
-    del rendered_pools, top_dock_cache, peak_frames_pil, panels, crops
+    del peak_frames_pil, panels, crops
     gc.collect()
     passed = qc_gate.run_qc(gripped_mp4)
     if not passed:
