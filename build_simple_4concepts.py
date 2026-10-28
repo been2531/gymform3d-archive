@@ -257,37 +257,36 @@ def draw_simple_1_left_right_onepoint_numbers(frame_rgb: np.ndarray, kp_1080: di
 
 def draw_simple_2_single_surgical_callout(frame_rgb: np.ndarray, kp_1080: dict, is_wrong: bool) -> np.ndarray:
     """
-    심플 2 (단일 미니 캡슐 포인터 1개 — @demicstory 순수 미니멀):
-    - Removes the right-side callout completely so only ONE sleek surgical callout (`v28.draw_surgical_micro_callout` style)
-      sits in the left margin pointing to the knee (`84%` | `INWARD KNEE` / `16° VALGUS RISK`), plus the `@demicstory` neon laser line!
+    심플 2 (단일 원포인트 콜아웃 1개 — 우측·하단 여백 100% 비움):
+    - Only ONE ultra-clean exterior pointer on the left margin (`x = 48..285`, 0% overlap with legs!)
+      combining `16°` + `KNEE CAVE` (`84% JOINT RISK`), plus the `@demicstory` neon laser line!
     """
     fr = bd.draw_day1_bone_energy_flow_and_exterior_arcs(
         frame_rgb, np.zeros((H, W), dtype=np.float32), kp_1080, is_wrong, with_exterior_callouts=False, with_laser_axis=True
     )
-    canvas = Image.fromarray(fr).convert("RGBA")
-    kn_r = kp_1080["kn_r"]
+    base = Image.fromarray(fr).convert("RGBA")
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    rd = ImageDraw.Draw(ov)
 
-    if is_wrong:
-        v28.draw_surgical_micro_callout(
-            canvas,
-            joint_xy=kn_r,
-            card_xy=(44, int(kn_r[1] - 54)),
-            deg_val="84%",
-            title_str="INWARD KNEE",
-            sub_str="16° JOINT OVERLOAD",
-            is_wrong=True,
-        )
-    else:
-        v28.draw_surgical_micro_callout(
-            canvas,
-            joint_xy=kn_r,
-            card_xy=(44, int(kn_r[1] - 54)),
-            deg_val="96%",
-            title_str="QUAD LOCK",
-            sub_str="0° ALIGNED TRACK",
-            is_wrong=False,
-        )
-    return np.array(canvas.convert("RGB"))
+    col = (255, 96, 36) if is_wrong else (32, 245, 130)
+    deg_str = "16°" if is_wrong else "0°"
+    l1_str = "KNEE CAVE" if is_wrong else "KNEE LOCK"
+    l2_str = "84% JOINT RISK" if is_wrong else "96% QUAD LOAD"
+
+    kn_r = (int(kp_1080["kn_r"][0]), int(kp_1080["kn_r"][1]))
+    cd4._draw_precision_leader(rd, kn_r, (kn_r[0] - 54, kn_r[1] - 32), (276, kn_r[1] - 32), col)
+
+    tx, ty = 52, kn_r[1] - 108
+    f_big = v30.f_pretendard(92, "extrabold")
+    f_l1 = v30.f_pretendard(22, "extrabold")
+    f_l2 = v30.f_pretendard(16, "bold")
+
+    rd.text((tx + 2, ty + 3), deg_str, font=f_big, fill=(0, 0, 0, 210))
+    rd.text((tx, ty), deg_str, font=f_big, fill=(255, 255, 255, 255))
+    rd.text((tx + 2, ty + 98), l1_str, font=f_l1, fill=(col[0], col[1], col[2], 255))
+    rd.text((tx + 2, ty + 126), l2_str, font=f_l2, fill=(215, 222, 232, 235))
+
+    return np.array(Image.alpha_composite(base, ov).convert("RGB"))
 
 
 def draw_simple_3_single_tug_of_war_bar(frame_rgb: np.ndarray, kp_1080: dict, is_wrong: bool) -> np.ndarray:
