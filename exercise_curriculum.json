@@ -1,0 +1,124 @@
+{
+  "account": "@gymform.3d",
+  "ig_user_id": "17841416467054351",
+  "engine_version": "v65_simple2_demic_trunks_translucent_dock",
+  "Visual_Standard": {
+    "background_rgb": [
+      28,
+      31,
+      36
+    ],
+    "mannequin_skin_rgb_median": [
+      131,
+      135,
+      140
+    ],
+    "shorts_style": "3D Femur-Aligned Short Square Boxer-Briefs (DetEDALjRgE / DevEQskCa2g)",
+    "top_preview_style": "Centered 906x240 Translucent Frosted-Glass Capsule + 3 Upright 224x272 Portraits (DevEQskCa2g)",
+    "telemetry_layout": "Simple 2 (Left-Margin One-Point Surgical Callout + @demicstory Neon Laser Axis + Day 1 3D X-Ray Bone Flow)"
+  },
+  "days": [
+    {
+      "day": 1,
+      "title": "CABLE ROPE PUSHDOWN",
+      "slug": "cable_rope_pushdown",
+      "status": "published",
+      "ig_permalink": "https://www.instagram.com/reel/De_Yl9rAYC4/",
+      "wrong_metric": "28° ELBOW FLARE / 78% JOINT LOAD",
+      "right_metric": "0° ELBOW LOCK / 95% TRICEPS LOAD"
+    },
+    {
+      "day": 2,
+      "title": "WIDE-GRIP LAT PULLDOWN",
+      "slug": "wide_grip_lat_pulldown",
+      "status": "published",
+      "ig_permalink": "https://www.instagram.com/reel/De_mCcFAVTO/",
+      "wrong_metric": "32° SHRUG / 81% TRAP OVERLOAD",
+      "right_metric": "15° SCAPULA LOCK / 94% LAT DRIVE"
+    },
+    {
+      "day": 3,
+      "title": "BARBELL BACK SQUAT",
+      "slug": "barbell_back_squat",
+      "status": "ready_for_approval",
+      "reference_reels": [
+        "DevEQskCa2g",
+        "DetEDALjRgE"
+      ],
+      "wrong_deg": "16°",
+      "wrong_label_1": "KNEE CAVE",
+      "wrong_label_2": "84% JOINT RISK",
+      "right_deg": "0°",
+      "right_label_1": "KNEE LOCK",
+      "right_label_2": "96% QUAD LOAD",
+      "video_path": "/workspace/daily_info_reels/output/day3_barbell_squat_simple2_master.mp4",
+      "sheet_path": "/workspace/daily_info_reels/output/day3_pipeline_master_sheet.jpg",
+      "caption_en": "Stop letting your knees cave inward on the Barbell Back Squat.\n\n❌ 16° Knee Cave (84% Joint Risk): Internal femur rotation shifts heavy shear force onto the medial knee joint and ACL while robbing your quads of tension.\n✅ 0° Knee Lock (96% Quad Load): Screw your feet into the floor, drive your knees out in line with your toes, and lock the load directly into your quadriceps and glutes.\n\nSave this 3D biomechanics check for your next leg day and follow @gymform.3d for daily 3D form upgrades.\n\n#BarbellSquat #SquatForm #LegDay #GymForm #Biomechanics #StrengthTraining #QuadWorkout #FitnessTips #WorkoutForm #3DAnatomy",
+      "last_qc": {
+        "passed": true,
+        "resolution": "1080x1920",
+        "nb_frames": 410,
+        "duration_sec": 13.67,
+        "bg_rgb_mean": [
+          28.0,
+          31.0,
+          36.0
+        ],
+        "bg_haze_std": 0.0,
+        "pelvis_trunks_neutrality_rb_diff": 9.59,
+        "top_preview_center_x": 540,
+        "top_preview_translucent_glass": true,
+        "shorts_style": "3D_femur_aligned_short_square_trunks",
+        "layout": "Simple_2_single_left_callout"
+      }
+    },
+    {
+      "day": 4,
+      "title": "ROMANIAN DEADLIFT",
+      "slug": "romanian_deadlift",
+      "status": "queued",
+      "wrong_deg": "24°",
+      "wrong_label_1": "SPINE ROUND",
+      "wrong_label_2": "88% DISC RISK",
+      "right_deg": "0°",
+      "right_label_1": "HIP HINGE LOCK",
+      "right_label_2": "95% HAMSTRING LOAD"
+    },
+    {
+      "day": 5,
+      "title": "INCLINE DUMBBELL PRESS",
+      "slug": "incline_dumbbell_press",
+      "status": "queued",
+      "wrong_deg": "78°",
+      "wrong_label_1": "ELBOW FLARE",
+      "wrong_label_2": "82% SHOULDER RISK",
+      "right_deg": "45°",
+      "right_label_1": "SCAPULAR TUCK",
+      "right_label_2": "96% UPPER PEC LOAD"
+    },
+    {
+      "day": 6,
+      "title": "SEATED CABLE ROW",
+      "slug": "seated_cable_row",
+      "status": "queued",
+      "wrong_deg": "29°",
+      "wrong_label_1": "SHOULDER SHRUG",
+      "wrong_label_2": "79% NECK STRAIN",
+      "right_deg": "0°",
+      "right_label_1": "ELBOW DRIVE",
+      "right_label_2": "94% MID-BACK LOAD"
+    },
+    {
+      "day": 7,
+      "title": "BULGARIAN SPLIT SQUAT",
+      "slug": "bulgarian_split_squat",
+      "status": "queued",
+      "wrong_deg": "18°",
+      "wrong_label_1": "PELVIC DROP",
+      "wrong_label_2": "85% KNEE SHEAR",
+      "right_deg": "0°",
+      "right_label_1": "HIP-KNEE LOCK",
+      "right_label_2": "97% GLUTE-QUAD LOAD"
+    }
+  ]
+}
