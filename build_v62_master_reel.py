@@ -40,9 +40,19 @@ FPS = 30
 DURATION = 20.0
 TOTAL_FRAMES = int(FPS * DURATION)
 
-_LEFT_W = 430
-_CURVE_L = (np.linspace(0.68, 1.0, _LEFT_W, dtype=np.float32) ** 0.78)[None, :, None]
-_SCRIM_2D = v38.make_bottom_scrim_2d()
+def _apply_localized_bottom_hud_scrim(rgb_arr: np.ndarray) -> np.ndarray:
+    """
+    Applies a subtle, strictly localized vignette ONLY behind the bottom-left HUD (`y = 1320 .. 1560, x = 0 .. 680`),
+    preserving 100% of the studio background (`lum ~ 39`) and mannequin brightness (`y < 1320`) across the entire frame!
+    """
+    out = rgb_arr.astype(np.float32)
+    yy = np.linspace(0.0, 1.0, 240, dtype=np.float32)[:, None]
+    xx = np.linspace(0.0, 1.0, 680, dtype=np.float32)[None, :]
+    vy = np.clip(np.sin(yy * math.pi), 0.0, 1.0) ** 0.85
+    vx = np.clip((1.0 - xx) * 1.25, 0.0, 1.0) ** 0.90
+    atten = (1.0 - 0.28 * (vy * vx))[:, :, None]
+    out[1320:1560, :680] *= atten
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 STEP_META = {
     1: {
@@ -102,8 +112,7 @@ def _render_pool_frame_worker(args):
     pct_val = int(round(meta["pct_base"] + (meta["pct_peak"] - meta["pct_base"]) * u))
     cue_1line = f"{deg_val}° {meta['cue_suffix']}"
 
-    rgb_tinted = p58.apply_static_studio_tint(raw_rgb, is_wrong)
-    rgb_scrim = v38.apply_bottom_left_scrim(rgb_tinted, _CURVE_L, _SCRIM_2D)
+    rgb_scrim = _apply_localized_bottom_hud_scrim(raw_rgb)
     canvas = Image.fromarray(rgb_scrim).convert("RGBA")
 
     p62.render_v62_synchronized_angle_and_callouts(
