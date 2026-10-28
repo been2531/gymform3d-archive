@@ -459,6 +459,45 @@ def draw_single_line_kaushan_title(canvas_pil: Image.Image, exercise_name: str =
     canvas_pil.alpha_composite(_TITLE_CACHE[exercise_name])
 
 
+
+def get_mannequin_fg_mask_1080p(rgb_1080: np.ndarray) -> np.ndarray:
+    """Smooth 0..1 foreground mask of the 3D mannequin + barbell against the studio charcoal background."""
+    bg_med = np.median(
+        np.concatenate([rgb_1080[:24, :, :].reshape(-1, 3), rgb_1080[:, :24, :].reshape(-1, 3), rgb_1080[:, -24:, :].reshape(-1, 3)], axis=0),
+        axis=0,
+    )
+    diff = np.linalg.norm(rgb_1080.astype(np.float32) - bg_med[None, None, :], axis=-1)
+    fg = np.clip((diff - 12.0) / 22.0, 0.0, 1.0).astype(np.float32)
+    return cv2.GaussianBlur(fg, (0, 0), 2.5)
+
+
+def composite_depth_behind_title_and_translucent_preview(
+    base_rgb: np.ndarray,
+    fg_mask: np.ndarray,
+    torso_icons: list,
+    active_slot: int,
+    is_wrong: bool,
+    exercise_name: str = "Barbell Back Squat",
+) -> np.ndarray:
+    """
+    Option 3 Standard (Day 4+):
+    1. Places the Kaushan Script exercise title on the studio back wall BEHIND the 3D mannequin (`fg_front = 0.92`),
+       so when standing tall, the mannequin head/traps pass cleanly in front of the letters with zero facial clutter.
+    2. Renders the 4-slot top preview bar (`y = 248..406`) as a translucent glass pill (`touch_p = 0.65` see-through when touched).
+    """
+    bg_title = Image.fromarray(base_rgb).convert("RGBA")
+    draw_single_line_kaushan_title(bg_title, exercise_name)
+    title_rgb = np.array(bg_title.convert("RGB")).astype(np.float32)
+
+    fg_front = np.clip(fg_mask[:, :, None] * 0.92, 0.0, 0.92)
+    layered = np.clip(title_rgb * (1.0 - fg_front) + base_rgb.astype(np.float32) * fg_front, 0, 255).astype(np.uint8)
+
+    with_prev = draw_compact_demic_top_preview(layered, torso_icons, active_slot=active_slot, is_wrong=is_wrong)
+    touch_p = np.clip(fg_mask[:, :, None] * 0.65, 0.0, 0.65)
+    out = np.clip(with_prev.astype(np.float32) * (1.0 - touch_p) + layered.astype(np.float32) * touch_p, 0, 255).astype(np.uint8)
+    return out
+
+
 def draw_step_laser_and_callout(
     base_rgb: np.ndarray,
     shorts_mask_1080: np.ndarray,
@@ -670,10 +709,11 @@ def build_all():
             deg_s, l1_s, l2_s = f"{deg_v}°", "HIP DRIVE", f"{pct_v}% QUAD & GLUTE"
 
         fr = draw_step_laser_and_callout(base_rgb, sh_mask, step_idx, kp, is_w, deg_s, l1_s, l2_s)
-        fr = draw_compact_demic_top_preview(fr, icons_for_step[step_idx], active_slot=slot_i, is_wrong=is_w)
-        pil = Image.fromarray(fr).convert("RGBA")
-        draw_single_line_kaushan_title(pil, "Barbell Back Squat")
-        rgb_out = pil.convert("RGB")
+        fg_m = get_mannequin_fg_mask_1080p(base_rgb)
+        fr = composite_depth_behind_title_and_translucent_preview(
+            fr, fg_m, icons_for_step[step_idx], active_slot=slot_i, is_wrong=is_w, exercise_name="Barbell Back Squat"
+        )
+        rgb_out = Image.fromarray(fr)
 
         if f_local == 50:
             step_peak_rendered[step_idx] = rgb_out.copy()
