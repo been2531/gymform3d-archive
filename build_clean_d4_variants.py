@@ -98,8 +98,13 @@ def make_clean_barbell_and_human_mask(rgb_720: np.ndarray, lm, mp_seg: np.ndarra
     equip_mask = (equip_filled.astype(np.float32) / 255.0) * np.clip((lum_diff - 3.5) / 5.5 + (grad > 14.0) * 0.8, 0.0, 1.0)
     equip_mask = cv2.GaussianBlur(np.clip(equip_mask * 1.4, 0.0, 1.0), (0, 0), 1.0)
 
-    # 3. Tight, clean MediaPipe human segmentation (`mp_seg > 0.50`) so ZERO background haze around head/torso/legs leaks in!
-    human_mask = np.clip((mp_seg - 0.48) / 0.22, 0.0, 1.0)
+    # 3. Tight MediaPipe human segmentation gated by actual foreground luminance (`lum_diff > 5.5` or `grad > 12.0`)
+    # so empty background space BETWEEN the thighs/knees/shins or under the arms NEVER turns grey (`RGB 81,84,88`)!
+    real_body_Gate = np.clip((lum_diff - 4.8) / 5.5 + (grad > 13.0) * 0.65, 0.0, 1.0)
+    # Smoothly close tiny internal dark shadow spots inside the torso/thighs (`11x11`), while keeping the gap between legs 100% open!
+    rb_u8 = ((real_body_Gate > 0.35) & (mp_seg > 0.45)).astype(np.uint8) * 255
+    rb_closed = cv2.morphologyEx(rb_u8, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))).astype(np.float32) / 255.0
+    human_mask = np.clip((mp_seg - 0.48) / 0.22, 0.0, 1.0) * np.maximum(real_body_Gate, rb_closed * 0.85)
     # Also ensure the hands/forearms gripping the bar (`|y - bar_y| < 65` between wrists) are 100% solid
     grip_box = (
         (xx >= x_wr_left - 28.0)
@@ -185,9 +190,9 @@ def render_zero_haze_day1_mannequin_1080p(
     norm_body = np.clip((lum_clean - raw_lo) / (raw_hi - raw_lo), 0.0, 1.15)
     sculpt_curve = np.clip(norm_body, 0.0, 1.0) ** 0.54 + 0.16 * np.clip(norm_body - 0.70, 0.0, 0.45)
 
-    body_r = 82.0 + 88.0 * sculpt_curve
-    body_g = 85.0 + 89.0 * sculpt_curve
-    body_b = 89.0 + 91.0 * sculpt_curve
+    body_r = 40.0 + 142.0 * (sculpt_curve ** 0.78)
+    body_g = 43.0 + 144.0 * (sculpt_curve ** 0.78)
+    body_b = 47.0 + 148.0 * (sculpt_curve ** 0.78)
 
     # Barbell & weight plates outside human torso get sleek metallic steel contrast (`RGB 52..172`)
     plate_zone = np.clip(equip_mask * (1.0 - human_mask * 0.90), 0.0, 1.0)
