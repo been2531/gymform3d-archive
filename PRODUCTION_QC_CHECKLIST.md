@@ -53,3 +53,13 @@
 4. **MediaPipe Landmark-Locked Joint Pivot Rings (`◎`) & Directional Arrow Arcs (`t271u`, `t272u`)**:
    - Joint pivot rings (`◎`) and alignment axes are 100% locked to MediaPipe joint landmarks (`kn_r`, `kn_l`, `hip_r`, `sh`, `ank_r/l`).
    - Step 1 & Step 2 include high-contrast directional curved arrow arcs (`→ ←` inward knee valgus collapse in Step 1, `← →` outward knee tracking in Step 2), and Step 3 & Step 4 include hip-anchored solid angle arcs with directional arrowheads.
+
+## 10. [필수] 양손 바벨 그립 락온 검증 (`hand_grip_lock_check` — `t273u`, `t277u`, `t278u`)
+- [ ] **근본 원인 분석 (`v62` 노핸드 바벨 오류)**:
+  - `v62`에서 반바지를 없애기 위해 `"medical écorché anatomical muscle statue"`(해부학 조각상) 프롬프트를 단독으로 넣자, 이미지 생성 AI가 해부학 교본의 차렷 자세 조각상을 우선시해 양팔을 허벅지 옆으로 내린 채 바벨만 어깨에 얹는 치명적 오류를 범함.
+  - 또한 `qc_gate.py`에서 MediaPipe 관절 좌표를 추출하면서도 `left_wrist(15)`, `right_wrist(16)`가 어깨/바벨 샤프트 높이에 올라와 있는지 검증하는 게이트가 빠져 있었음.
+- [ ] **재발 방지 규칙 & 자동 게이트 (`qc_gate.py` `[9] Hand-to-Barbell Grip Lock Check`)**:
+  - 프롬프트에 `statue`, `mannequin`, `sculpture` 단어를 쓰지 않고, 양손이 바벨을 꽉 쥔 참조 포즈(`day3_v61_p1..p4_raw.jpg`)와 `"BOTH HANDS RAISED UP WITH FINGERS TIGHTLY WRAPPED AROUND THE STEEL BARBELL SHAFT BESIDE THE SHOULDERS (wide overhand grip locked onto the bar, elbows bent under the bar)"`를 명시한다.
+  - `qc_gate.py` `[9]`에서 Step 1~4 전 구간(`STAND`, `MID`, `SQUAT`) 프레임에 대해 MediaPipe Pose로 `wrist_l(15)`, `wrist_r(16)`, `elbow_l(13)`, `elbow_r(14)`, `shoulder(11, 12)`를 추출하여:
+    1. **양 손목이 양 팔꿈치보다 위에 위치 (`wrist_l_y < elbow_l_y` 및 `wrist_r_y < elbow_r_y`)**,
+    2. **양 손목이 어깨/바벨 샤프트 높이(`wrist_y <= shoulder_y + 70px`)에 고정**되어 있는지 자동 검사하며, 한 프레임이라도 손이 내려가 있으면 즉시 `FAIL` 처리한다.

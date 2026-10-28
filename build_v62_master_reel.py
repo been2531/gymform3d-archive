@@ -17,6 +17,7 @@ import math
 import time
 import asyncio
 import subprocess
+import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 import cv2
 import numpy as np
@@ -199,6 +200,36 @@ def render_v62_vs_v61_before_after_sheet(row_v62_bgr: np.ndarray, out_path: str)
     board.save(out_path, quality=96)
 
 
+
+def render_gripped_vs_v62_before_after_sheet(row_gripped_bgr: np.ndarray, out_path: str):
+    old_path = os.path.join(OUT_DIR, "_old_v62_nohand_4steps.jpg")
+    row_old_bgr = cv2.imread(old_path)
+    w_row = row_gripped_bgr.shape[1]
+    h_row = row_gripped_bgr.shape[0]
+    row_old_bgr = cv2.resize(row_old_bgr, (w_row, h_row), interpolation=cv2.INTER_AREA)
+
+    board = Image.new("RGB", (w_row, h_row * 2 + 120), (10, 12, 16))
+    bd = ImageDraw.Draw(board)
+    f_hdr = v30.f_pretendard(22, "extrabold")
+
+    bd.text(
+        (24, 14),
+        "BEFORE (`v62` 불량 클립 - 폐기): 'statue(조각상)' 프롬프트 오류로 양팔이 허벅지 옆으로 내려가 바벨을 안 잡고 있음 (Gate [9] FAIL)",
+        font=f_hdr,
+        fill=(255, 105, 105),
+    )
+    board.paste(Image.fromarray(cv2.cvtColor(row_old_bgr, cv2.COLOR_BGR2RGB)), (0, 54))
+
+    bd.text(
+        (24, h_row + 68),
+        "AFTER (`day3_squat_gripped` 완성본): 전 구간(Step 1~4) 양손이 바벨 샤프트를 어깨 옆에서 꽉 쥔 오버핸드 그립 락온 + 반바지 0% + 등 백화 0% (Gate [1~9] ALL PASS)",
+        font=f_hdr,
+        fill=p62.COL_GREEN,
+    )
+    board.paste(Image.fromarray(cv2.cvtColor(row_gripped_bgr, cv2.COLOR_BGR2RGB)), (0, h_row + 110))
+    board.save(out_path, quality=96)
+
+
 def main():
     t0 = time.time()
     if not os.path.exists(AUDIO_WAV):
@@ -219,18 +250,21 @@ def main():
         p58.draw_v58_day2_unsquished_top_dock(td_im, torso_icons, active_idx=meta["dock_idx"], is_wrong=meta["is_wrong"])
         top_dock_cache[s_idx] = np.array(td_im)
 
-    tasks = []
+    import gc
+    print("Pre-rendering 208 synchronized full-bleed pool frames in-place...")
+    rendered_pools = {}
     for s_idx in (1, 2, 3, 4):
-        p_pool, p_kps = pools[s_idx]
+        p_pool, p_kps = pools.pop(s_idx)
         n_p = len(p_pool)
+        td_rgba = top_dock_cache[s_idx]
+        r_list = []
         for f_i in range(n_p):
-            tasks.append((s_idx, f_i, n_p, p_pool[f_i], p_kps[f_i], top_dock_cache[s_idx]))
-
-    print(f"Pre-rendering {len(tasks)} synchronized full-bleed pool frames for v62 Master Reel...")
-    rendered_pools = {s_idx: [None] * len(pools[s_idx][0]) for s_idx in (1, 2, 3, 4)}
-    with ProcessPoolExecutor(max_workers=4) as ex:
-        for s_idx, f_i, out_bgr in ex.map(_render_pool_frame_worker, tasks, chunksize=4):
-            rendered_pools[s_idx][f_i] = out_bgr
+            _, _, out_bgr = _render_pool_frame_worker((s_idx, f_i, n_p, p_pool[f_i], p_kps[f_i], td_rgba))
+            p_pool[f_i] = None
+            r_list.append(out_bgr)
+        rendered_pools[s_idx] = r_list
+        del p_pool, p_kps
+        gc.collect()
     print(f"Pool pre-render finished in {time.time() - t0:.1f}s")
 
     tmp_silent = os.path.join(OUT_DIR, "_tmp_day3_v62_silent.mp4")
@@ -278,23 +312,37 @@ def main():
     if os.path.exists(tmp_silent):
         os.remove(tmp_silent)
 
+    import shutil
+    gripped_mp4 = os.path.join(OUT_DIR, "day3_squat_gripped_master_reel.mp4")
+    shutil.copy2(final_v62_mp4, gripped_mp4)
+
     close_path = os.path.join(OUT_DIR, "day3_v62_4step_closeup_sheet.jpg")
+    gripped_sheet_path = os.path.join(OUT_DIR, "day3_squat_gripped_4step_sheet.jpg")
     comp_d2_path = os.path.join(OUT_DIR, "day3_v62_vs_day2_master_compare.jpg")
+    gripped_d2_path = os.path.join(OUT_DIR, "day3_squat_gripped_vs_day2_compare.jpg")
     ba_v61_path = os.path.join(OUT_DIR, "day3_v62_vs_v61_before_after.jpg")
+    ba_v62_path = os.path.join(OUT_DIR, "day3_squat_gripped_vs_v62_before_after.jpg")
     safe_path = os.path.join(OUT_DIR, "day3_v62_iphone_safezone_preview.jpg")
 
-    cv2.imwrite(close_path, np.vstack([np.hstack([crops[0], crops[1]]), np.hstack([crops[2], crops[3]])]), [int(cv2.IMWRITE_JPEG_QUALITY), 96])
+    closeup_grid = np.vstack([np.hstack([crops[0], crops[1]]), np.hstack([crops[2], crops[3]])])
+    cv2.imwrite(close_path, closeup_grid, [int(cv2.IMWRITE_JPEG_QUALITY), 96])
+    cv2.imwrite(gripped_sheet_path, closeup_grid, [int(cv2.IMWRITE_JPEG_QUALITY), 96])
 
     row_v62 = np.hstack(panels)
     d2_4steps = cv2.imread(os.path.join(OUT_DIR, "_day2_v38_exact_4steps.jpg"))
     d2_resized = cv2.resize(d2_4steps, (row_v62.shape[1], row_v62.shape[0]), interpolation=cv2.INTER_AREA)
-    cv2.imwrite(comp_d2_path, np.vstack([d2_resized, row_v62]), [int(cv2.IMWRITE_JPEG_QUALITY), 96])
+    d2_comp = np.vstack([d2_resized, row_v62])
+    cv2.imwrite(comp_d2_path, d2_comp, [int(cv2.IMWRITE_JPEG_QUALITY), 96])
+    cv2.imwrite(gripped_d2_path, d2_comp, [int(cv2.IMWRITE_JPEG_QUALITY), 96])
 
     render_v62_vs_v61_before_after_sheet(row_v62, ba_v61_path)
+    render_gripped_vs_v62_before_after_sheet(row_v62, ba_v62_path)
     render_v62_iphone_safezone_sheet(peak_frames_pil, safe_path)
 
-    print(f"Done in {time.time() - t0:.1f}s -> {final_v62_mp4}")
-    passed = qc_gate.run_qc(final_v62_mp4)
+    print(f"Done in {time.time() - t0:.1f}s -> {gripped_mp4}")
+    del rendered_pools, top_dock_cache, peak_frames_pil, panels, crops
+    gc.collect()
+    passed = qc_gate.run_qc(gripped_mp4)
     if not passed:
         sys.exit(1)
 

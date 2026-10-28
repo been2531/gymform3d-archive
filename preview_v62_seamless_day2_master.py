@@ -169,11 +169,11 @@ def shade_v62_day2_authentic_720p(
             d_th_r, _ = _segment_distance_field(xx, yy, hip_r, kn_r, 0.18, 1.0)
             d_th_l, _ = _segment_distance_field(xx, yy, hip_l, kn_l, 0.18, 1.0)
 
-            r_kn = 56.0 + 10.0 * rep_a
-            r_th = 50.0 + 10.0 * rep_a
+            r_kn = 48.0 + 26.0 * rep_a
+            r_th = 42.0 + 28.0 * rep_a
             knee_hotspot = np.maximum(np.exp(-0.5 * (d_kn_r / r_kn) ** 2), np.exp(-0.5 * (d_kn_l / r_kn) ** 2))
             thigh_field = np.maximum(np.exp(-0.5 * (d_th_r / r_th) ** 2), np.exp(-0.5 * (d_th_l / r_th) ** 2))
-            valgus_gate = np.clip((yy - (hip_y + 4.0)) / 36.0, 0.0, 1.0) * above_shin_gate
+            valgus_gate = np.clip((yy - (hip_y + 18.0 - 42.0 * rep_a)) / 32.0, 0.0, 1.0) * above_shin_gate
 
             native_red = np.clip((rb_eff - 8.5) / 30.0, 0.0, 1.0) * valgus_gate
             sculpt_red = np.maximum(knee_hotspot * 0.92, thigh_field * 0.76) * body_interior * valgus_gate
@@ -229,14 +229,14 @@ def shade_v62_day2_authentic_720p(
 
         if step_idx == 2:
             # Foreshortening compensation (`r_th` widens as thighs squat down so active_px never shrinks!)
-            r_th = 52.0 + 18.0 * rep_a
-            target_gate = np.clip((yy - (hip_y - 52.0)) / 30.0, 0.0, 1.0) * above_shin_gate
+            r_th = 36.0 + 48.0 * rep_a
+            target_gate = np.clip((yy - (hip_y + 12.0 - 96.0 * rep_a)) / 26.0, 0.0, 1.0) * above_shin_gate
             quad_anat = np.maximum(
                 np.exp(-0.5 * (d_th_r / r_th) ** 2),
                 np.exp(-0.5 * (d_th_l / r_th) ** 2),
             ) * body_interior * target_gate
-            native_fe = np.clip((rb_eff - 7.5) / 28.0, 0.0, 1.0) * target_gate
-            fe = np.clip(np.maximum(native_fe, quad_anat * (0.86 + 0.12 * rep_a) * np.clip((base_lum - 38.0) / 24.0, 0.0, 1.0)), 0.0, 1.0)
+            native_fe = np.clip((rb_eff - 7.5) / 28.0, 0.0, 1.0) * target_gate * (0.62 + 0.38 * rep_a)
+            fe = np.clip(np.maximum(native_fe, quad_anat * (0.78 + 0.20 * rep_a) * np.clip((base_lum - 34.0) / 20.0, 0.0, 1.0)), 0.0, 1.0)
         else:
             # Step 4 (3/4 Side Right): Full Gluteus Maximus, Gluteus Medius, and Quadriceps Femoris (pelvis to knee)
             target_gate = np.clip((yy - (hip_y - 62.0)) / 30.0, 0.0, 1.0) * above_shin_gate
@@ -270,6 +270,27 @@ def shade_v62_day2_authentic_720p(
         return np.clip(out, 0, 255).astype(np.uint8)
 
 
+
+def _apply_step1_knee_valgus_720p(bgr_720p: np.ndarray, rep_a: float) -> np.ndarray:
+    """
+    Applies a smooth, localized horizontal inward knee-valgus pinch (`16° KNEE VALGUS`)
+    strictly within the knee/distal-thigh band (`y in 560..920` in 720p) as the athlete squats down (`rep_a: 0->1`),
+    leaving the upper body/hands gripping the barbell (`y < 560`) and the flat feet/ankles (`y > 920`) 100% untouched.
+    """
+    if rep_a <= 0.02:
+        return bgr_720p
+    h, w = bgr_720p.shape[:2]
+    yy, xx = np.mgrid[:h, :w].astype(np.float32)
+    wy = np.exp(-0.5 * ((yy - 745.0) / 72.0) ** 2)
+    wy *= np.clip((yy - 565.0) / 45.0, 0.0, 1.0) * np.clip((925.0 - yy) / 45.0, 0.0, 1.0)
+    wx_r = np.exp(-0.5 * ((xx - 225.0) / 68.0) ** 2)
+    wx_l = np.exp(-0.5 * ((xx - 495.0) / 68.0) ** 2)
+    shift = (44.0 * (rep_a ** 1.15)) * wy
+    map_x = xx - shift * wx_r + shift * wx_l
+    map_y = yy
+    return cv2.remap(bgr_720p, map_x, map_y, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+
 def build_v62_fullbleed_pool(
     raw_frames_720p: list[np.ndarray],
     step_idx: int,
@@ -293,6 +314,13 @@ def build_v62_fullbleed_pool(
     x0 = (W - nw) // 2 + x_shift
     y0_stand = y_head_target_stand - y_head_src_stand_720 * scale
     y0_squat = y_head_target_squat - y_head_src_squat_720 * scale
+
+    n_f_in = len(raw_frames_720p)
+    if step_idx == 1:
+        raw_frames_720p = [
+            _apply_step1_knee_valgus_720p(fr, i / float(max(1, n_f_in - 1)))
+            for i, fr in enumerate(raw_frames_720p)
+        ]
 
     detector = uar.get_pose_detector()
     raw_kps_720 = []
@@ -391,9 +419,9 @@ def build_v62_fullbleed_pool(
         ax_l = np.clip(xx_c / 96.0, 0.0, 1.0)
         ax_r = np.clip((crop_w - 1.0 - xx_c) / 96.0, 0.0, 1.0)
         ax = 0.5 - 0.5 * np.cos(np.pi * np.minimum(ax_l, ax_r))
-        head_guard = np.clip((yy_full - 455.0) / 10.0, 0.0, 1.0)
+        head_guard = np.clip((yy_full - 460.0) / 8.0, 0.0, 1.0)
         xx_full = xx_c + dst_x1
-        in_head_col = np.clip(1.0 - np.abs(xx_full - 540.0) / 145.0, 0.0, 1.0)
+        in_head_col = np.clip(1.0 - np.abs(xx_full - 540.0) / 165.0, 0.0, 1.0)
         top_mask = 1.0 - in_head_col * (1.0 - head_guard)
         alpha_base = (ax * ay * top_mask)[:, :, None]
 
@@ -411,25 +439,18 @@ def build_v62_fullbleed_pool(
 
 
 def get_or_build_v62_pools() -> dict:
-    if os.path.exists(CACHE_V62_PKL):
-        with open(CACHE_V62_PKL, "rb") as f:
-            return pickle.load(f)
-
-    print("Building v62 True Day-2 Close-Up Shorts-Free 3D Pools (`scale = 1.24 .. 1.32`)...")
-    s1_raw = _load_slice(os.path.join(OUT_DIR, "day3_v62_step1_i2v.mp4"), 94, 138, target_len=52)
-    s2_raw = _load_slice(os.path.join(OUT_DIR, "day3_v62_step2_i2v.mp4"), 66, 126, target_len=52)
-    s3_raw = _load_slice(os.path.join(OUT_DIR, "day3_v62_step3_i2v.mp4"), 96, 140, target_len=52)
-    s4_raw = _load_slice(os.path.join(OUT_DIR, "day3_v62_step4_i2v.mp4"), 38, 16,  target_len=52)
+    print("Building Gripped + Shorts-Free Close-Up 3D Pools (`day3_v63_step1..4_i2v.mp4`, `scale = 1.24 .. 1.28`)...")
+    s1_raw = _load_slice(os.path.join(OUT_DIR, "day3_v63_step1_i2v.mp4"), 78, 132, target_len=52)
+    s2_raw = _load_slice(os.path.join(OUT_DIR, "day3_v63_step2_i2v.mp4"), 84, 138, target_len=52)
+    s3_raw = _load_slice(os.path.join(OUT_DIR, "day3_v63_step3_i2v.mp4"), 24, 86,  target_len=52)
+    s4_raw = _load_slice(os.path.join(OUT_DIR, "day3_v63_step4_i2v.mp4"), 72, 124, target_len=52)
 
     pools = {
-        1: build_v62_fullbleed_pool(s1_raw, 1, True,  scale=1.24, y_head_target_stand=464, y_head_target_squat=505, y_head_src_stand_720=42.0,  y_head_src_squat_720=215.0, x_shift=0),
-        2: build_v62_fullbleed_pool(s2_raw, 2, False, scale=1.24, y_head_target_stand=464, y_head_target_squat=505, y_head_src_stand_720=24.0,  y_head_src_squat_720=242.0, x_shift=0),
-        3: build_v62_fullbleed_pool(s3_raw, 3, True,  scale=1.30, y_head_target_stand=464, y_head_target_squat=525, y_head_src_stand_720=36.0,  y_head_src_squat_720=370.0, x_shift=-12),
-        4: build_v62_fullbleed_pool(s4_raw, 4, False, scale=1.30, y_head_target_stand=464, y_head_target_squat=510, y_head_src_stand_720=104.0, y_head_src_squat_720=345.0, x_shift=-10),
+        1: build_v62_fullbleed_pool(s1_raw, 1, True,  scale=1.24, y_head_target_stand=464, y_head_target_squat=502, y_head_src_stand_720=76.0,  y_head_src_squat_720=406.0, x_shift=0),
+        2: build_v62_fullbleed_pool(s2_raw, 2, False, scale=1.24, y_head_target_stand=464, y_head_target_squat=502, y_head_src_stand_720=57.0,  y_head_src_squat_720=365.0, x_shift=0),
+        3: build_v62_fullbleed_pool(s3_raw, 3, True,  scale=1.28, y_head_target_stand=464, y_head_target_squat=512, y_head_src_stand_720=195.0, y_head_src_squat_720=498.0, x_shift=-8),
+        4: build_v62_fullbleed_pool(s4_raw, 4, False, scale=1.28, y_head_target_stand=464, y_head_target_squat=506, y_head_src_stand_720=68.0,  y_head_src_squat_720=342.0, x_shift=-8),
     }
-    with open(CACHE_V62_PKL, "wb") as f:
-        pickle.dump(pools, f)
-    print("Saved:", CACHE_V62_PKL)
     return pools
 
 
@@ -598,7 +619,7 @@ def render_v62_synchronized_angle_and_callouts(
     pct_val: int,
     rep_amount: float = 1.0,
 ):
-    SS = 4
+    SS = 2
     bloom_1x = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     bd_1x = ImageDraw.Draw(bloom_1x)
 
@@ -649,7 +670,7 @@ def render_v62_synchronized_angle_and_callouts(
         ang_rad = math.radians(deg_val)
         dir_sign = -1.0 if sh[0] < hip_r[0] else 1.0
         sh_spine = (hip_r[0] + dir_sign * spine_len * math.sin(ang_rad), hip_r[1] - spine_len * math.cos(ang_rad))
-        ref_top = (hip_r[0], hip_r[1] - spine_len - 24.0)
+        ref_top = (hip_r[0], max(464.0, hip_r[1] - spine_len - 24.0))
 
         draw_v62_high_contrast_angle_gauge_ss(rd, bd_1x, hip_r, ref_top, sh_spine, None, arc_radius_1x=154.0, col_main=col_main, col_soft=col_soft, draw_sector_arrow=True, ss=SS)
 
@@ -661,14 +682,14 @@ def render_v62_synchronized_angle_and_callouts(
         ang_rad = math.radians(deg_val)
         dir_sign = -1.0 if sh[0] < hip_r[0] else 1.0
         sh_upright = (hip_r[0] + dir_sign * spine_len * math.sin(ang_rad), hip_r[1] - spine_len * math.cos(ang_rad))
-        ref_top = (hip_r[0], hip_r[1] - spine_len - 24.0)
+        ref_top = (hip_r[0], max(464.0, hip_r[1] - spine_len - 24.0))
 
         draw_v62_high_contrast_angle_gauge_ss(rd, bd_1x, hip_r, ref_top, sh_upright, kn_r, arc_radius_1x=150.0, col_main=col_main, col_soft=col_soft, draw_sector_arrow=True, ss=SS)
 
         p58.draw_v58_floating_white_callout(od, sd, (265, 895), f"{deg_val}°", "NEUTRAL SPINE", align="right")
         p58.draw_v58_floating_white_callout(od, sd, (785, 855), f"{pct_val}%", "QUADS & GLUTES", align="left")
 
-    rig_1x = rig_layer.resize((W, H), Image.Resampling.LANCZOS)
+    rig_1x = Image.fromarray(cv2.resize(np.array(rig_layer), (W, H), interpolation=cv2.INTER_AREA))
     canvas.alpha_composite(bloom_1x.filter(ImageFilter.GaussianBlur(radius=6)))
     canvas.alpha_composite(rig_1x)
     canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(radius=7)))
