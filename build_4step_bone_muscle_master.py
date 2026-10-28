@@ -209,13 +209,11 @@ def shade_native_3d_frame_1080p(
     y_cut_shin = kn_y + 52.0
     above_shin_gate = np.clip((y_cut_shin - yy) / 28.0, 0.0, 1.0)
 
-    if step_idx == 4:
-        lower_body_gate = np.clip((yy - (hip_y - 125.0)) / 48.0, 0.0, 1.0) * above_shin_gate
+    lower_body_gate = np.clip((yy - (hip_y - 160.0)) / 45.0, 0.0, 1.0) * above_shin_gate
+    if step_idx in (1, 3, 4):
         neutral_lum = grey_sculpt * lower_body_gate + grey_cool_matte * (1.0 - lower_body_gate)
-    elif step_idx == 2:
-        neutral_lum = grey_sculpt
     else:
-        neutral_lum = grey_sculpt * above_shin_gate + grey_cool_matte * (1.0 - above_shin_gate)
+        neutral_lum = grey_sculpt
 
     mono_target = np.stack([
         neutral_lum * 0.96,
@@ -241,11 +239,11 @@ def shade_native_3d_frame_1080p(
     flow_wave = 0.80 + 0.20 * np.cos(2.0 * math.pi * ((yy - hip_y) / 280.0 - pulse_phase))
 
     if visual_mode == "bone_blood":
-        raw_alpha = np.clip((rb_eff - 8.5) / 30.0, 0.0, 1.0) * above_shin_gate
+        raw_alpha = np.clip((rb_eff - 8.5) / 30.0, 0.0, 1.0) * lower_body_gate
         bone_core_w = (
             np.clip((g_ch - 68.0) / 78.0, 0.0, 1.0)
             * np.clip((rb_diff - 18.0) / 42.0, 0.0, 1.0)
-            * above_shin_gate
+            * lower_body_gate
         )[:, :, None]
 
         strand_mod = (0.20 + 0.80 * fs) * ((1.0 - 0.72 * sulc) ** 1.28)
@@ -330,9 +328,9 @@ def shade_native_3d_frame_1080p(
 
 
 def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, active_slot: int, is_wrong: bool) -> np.ndarray:
-    bar_x0, bar_y0, bar_x1, bar_y1 = 258, 132, 822, 274
-    tw, th = 136, 160
-    slot_centers_x = [354, 540, 726]
+    bar_x0, bar_y0, bar_x1, bar_y1 = 212, 132, 868, 274
+    tw, th = 134, 158
+    slot_centers_x = [303, 461, 619, 777]
 
     raw_pil = Image.fromarray(frame_rgb).convert("RGBA")
     blur_pil = Image.fromarray(frame_rgb).filter(ImageFilter.GaussianBlur(radius=9)).convert("RGBA")
@@ -354,7 +352,7 @@ def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, act
     ny = (yy_t - th * 0.52) / (th * 0.48)
     vign = np.clip(1.0 - 0.55 * ((nx * nx + ny * ny) ** 1.35), 0.15, 1.0)
 
-    for i in range(3):
+    for i in range(4):
         if i == active_slot:
             continue
         cx = slot_centers_x[i]
@@ -379,11 +377,10 @@ def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, act
     base_pil = Image.alpha_composite(base_pil, glow_layer)
 
     act_224, _ = torso_icons[active_slot]
-    act_arr = cv2.resize(act_224, (tw, th), interpolation=cv2.INTER_AREA)
-    rad_glow = np.exp(-(((xx_t - tw * 0.5) / 50.0) ** 2 + ((yy_t - th * 0.46) / 60.0) ** 2))[:, :, None]
-    card_bg = np.array([26.0, 29.0, 35.0], dtype=np.float32) + rad_glow * np.array(act_col, dtype=np.float32) * 0.34
-    fg_a = np.clip((act_arr.mean(axis=2, keepdims=True) - 44.0) / 14.0, 0.0, 1.0)
-    comp_act = np.clip(card_bg * (1.0 - fg_a) + act_arr * fg_a, 0, 255).astype(np.uint8)
+    act_arr = cv2.resize(act_224, (tw, th), interpolation=cv2.INTER_AREA).astype(np.float32)
+    edge_dist = np.minimum(np.minimum(xx_t, tw - 1 - xx_t), np.minimum(yy_t, th - 1 - yy_t))
+    rim_glow = np.exp(-edge_dist / 14.0)[:, :, None] * 0.22
+    comp_act = np.clip(act_arr * 1.06 + rim_glow * np.array(act_col, dtype=np.float32), 0, 255).astype(np.uint8)
 
     im_act = Image.fromarray(comp_act).convert("RGBA")
     mask_act = Image.new("L", (tw, th), 0)
@@ -497,8 +494,21 @@ def draw_step_laser_and_callout(
     return np.array(Image.alpha_composite(base_pil, ov).convert("RGB"))
 
 
-def _make_icon_pair(fr_1080: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    crop = fr_1080[420:1220, 200:880, :]
+def _make_icon_pair(fr_1080: np.ndarray, kp_1080: dict) -> tuple[np.ndarray, np.ndarray]:
+    sh_x, sh_y = kp_1080["sh"]
+    hip_x = 0.5 * (kp_1080["hip_r"][0] + kp_1080["hip_l"][0])
+    kn_x = 0.5 * (kp_1080["kn_r"][0] + kp_1080["kn_l"][0])
+    kn_y = 0.5 * (kp_1080["kn_r"][1] + kp_1080["kn_l"][1])
+    cx = int(round(0.35 * sh_x + 0.40 * hip_x + 0.25 * kn_x))
+    y0 = int(round(sh_y - 210))
+    y1 = int(round(kn_y + 195))
+    h_c = max(420, y1 - y0)
+    w_crop = int(round(h_c * (224.0 / 264.0)))
+    x0 = max(0, min(W - w_crop, cx - w_crop // 2))
+    x1 = x0 + w_crop
+    y0 = max(0, min(H - h_c, y0))
+    y1 = y0 + h_c
+    crop = fr_1080[y0:y1, x0:x1, :]
     act_224 = cv2.resize(crop, (224, 264), interpolation=cv2.INTER_AREA)
     gray = cv2.cvtColor(act_224, cv2.COLOR_RGB2GRAY).astype(np.float32)
     inact_224 = np.stack([
@@ -541,17 +551,17 @@ def build_all():
         shaded_pools[s_idx] = pool
         print(f"   Step {s_idx} ({v_mode}): {len(pool)} native frames shaded.")
 
-    # Build top preview thumbnail sets:
-    # Slot 0: Step 1 (Front Wrong), Slot 1: Step 2 (Side Wrong), Slot 2: Step 3 (Front Correct) or Step 4 (Rear Correct)
-    ic_s1 = _make_icon_pair(shaded_pools[1][-1][0])
-    ic_s2 = _make_icon_pair(shaded_pools[2][-1][0])
-    ic_s3 = _make_icon_pair(shaded_pools[3][-1][0])
-    ic_s4 = _make_icon_pair(shaded_pools[4][-1][0])
+    # Build 4-slot top preview thumbnail sets (1:1 matching Steps 1, 2, 3, 4, centered on full squatting figure):
+    ic_s1 = _make_icon_pair(shaded_pools[1][-1][0], kps_seqs[1][-1])
+    ic_s2 = _make_icon_pair(shaded_pools[2][-1][0], kps_seqs[2][-1])
+    ic_s3 = _make_icon_pair(shaded_pools[3][-1][0], kps_seqs[3][-1])
+    ic_s4 = _make_icon_pair(shaded_pools[4][-1][0], kps_seqs[4][-1])
+    icons_all_4 = [ic_s1, ic_s2, ic_s3, ic_s4]
     icons_for_step = {
-        1: [ic_s1, ic_s2, ic_s3],
-        2: [ic_s1, ic_s2, ic_s3],
-        3: [ic_s1, ic_s2, ic_s3],
-        4: [ic_s1, ic_s2, ic_s4],
+        1: icons_all_4,
+        2: icons_all_4,
+        3: icons_all_4,
+        4: icons_all_4,
     }
 
     print("3. Synthesizing 20.0s English Coaching TTS (`en-US-ChristopherNeural`) + Sub-Bass Beat + Step Chimes...")
@@ -609,7 +619,7 @@ def build_all():
             deg_s, l1_s, l2_s = "0°", "KNEE LOCK", f"{pct_v}% JOINT SAFE"
         else:
             is_w = False
-            slot_i = 2
+            slot_i = 3
             deg_v = int(round(12 + 10 * wave_p))
             pct_v = int(round(91 + 7 * wave_p))
             deg_s, l1_s, l2_s = f"{deg_v}°", "HIP DRIVE", f"{pct_v}% QUAD & GLUTE"
