@@ -230,6 +230,36 @@ def render_gripped_vs_v62_before_after_sheet(row_gripped_bgr: np.ndarray, out_pa
     board.save(out_path, quality=96)
 
 
+
+def render_arrows_before_after_sheet(row_after_bgr: np.ndarray, out_path: str):
+    before_path = os.path.join(OUT_DIR, "_before_arrows_4steps_row.jpg")
+    row_before_bgr = cv2.imread(before_path)
+    w_row = row_after_bgr.shape[1]
+    h_row = row_after_bgr.shape[0]
+    row_before_bgr = cv2.resize(row_before_bgr, (w_row, h_row), interpolation=cv2.INTER_AREA)
+
+    board = Image.new("RGB", (w_row, h_row * 2 + 120), (10, 12, 16))
+    bd = ImageDraw.Draw(board)
+    f_hdr = v30.f_pretendard(22, "extrabold")
+
+    bd.text(
+        (24, 14),
+        "BEFORE (기존 복잡한 각도 게이지): 부채꼴 색칠(wedge) + 수직 점선 + 고관절·무릎·발목 3중 직선 + 6개 핀 마커가 겹쳐 복잡함",
+        font=f_hdr,
+        fill=(255, 105, 105),
+    )
+    board.paste(Image.fromarray(cv2.cvtColor(row_before_bgr, cv2.COLOR_BGR2RGB)), (0, 54))
+
+    bd.text(
+        (24, h_row + 68),
+        "AFTER (Day 2 v38 100% 동일 초미니멀 화살표): 부채꼴·점선·직선·끝점 마커 0개! 오직 관절 피벗 링(◎) + 4px 단일 원호 화살표 딱 1개!",
+        font=f_hdr,
+        fill=p62.COL_GREEN,
+    )
+    board.paste(Image.fromarray(cv2.cvtColor(row_after_bgr, cv2.COLOR_BGR2RGB)), (0, h_row + 110))
+    board.save(out_path, quality=96)
+
+
 def main():
     t0 = time.time()
     if not os.path.exists(AUDIO_WAV):
@@ -337,6 +367,7 @@ def main():
 
     render_v62_vs_v61_before_after_sheet(row_v62, ba_v61_path)
     render_gripped_vs_v62_before_after_sheet(row_v62, ba_v62_path)
+    render_arrows_before_after_sheet(row_v62, os.path.join(OUT_DIR, "day3_arrows_before_after.jpg"))
     render_v62_iphone_safezone_sheet(peak_frames_pil, safe_path)
 
     print(f"Done in {time.time() - t0:.1f}s -> {gripped_mp4}")
