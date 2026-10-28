@@ -328,7 +328,7 @@ def shade_native_3d_frame_1080p(
 
 
 def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, active_slot: int, is_wrong: bool) -> np.ndarray:
-    bar_x0, bar_y0, bar_x1, bar_y1 = 212, 132, 868, 274
+    bar_x0, bar_y0, bar_x1, bar_y1 = 212, 258, 868, 400
     tw, th = 134, 158
     slot_centers_x = [303, 461, 619, 777]
 
@@ -409,7 +409,7 @@ def draw_single_line_kaushan_title(canvas_pil: Image.Image, exercise_name: str =
     bb = od.textbbox((0, 0), exercise_name, font=f_scr)
     tw, th = bb[2] - bb[0], bb[3] - bb[1]
     tx = (W * SS - tw) // 2 - bb[0]
-    ty = 1756 * SS - th // 2 - bb[1]
+    ty = 458 * SS - th // 2 - bb[1]
 
     for dx_s, dy_s, a_s in [(0, 5 * SS, 185), (-2 * SS, 3 * SS, 110), (2 * SS, 3 * SS, 110)]:
         od.text((tx + dx_s, ty + dy_s), exercise_name, font=f_scr, fill=(8, 10, 14, a_s))
@@ -476,12 +476,12 @@ def draw_step_laser_and_callout(
     rd = ImageDraw.Draw(ov)
 
     col = (255, 96, 36) if is_wrong else (32, 245, 130)
-    elbow_x = max(242, target_pt[0] - 48)
-    elbow_y = target_pt[1] - 32
-    bcd._draw_precision_leader(rd, target_pt, (elbow_x, elbow_y), (236, elbow_y), col)
+    elbow_x = max(286, target_pt[0] - 42)
+    elbow_y = target_pt[1] - 24
+    bcd._draw_precision_leader(rd, target_pt, (elbow_x, elbow_y), (278, elbow_y), col)
 
-    tx = 36
-    ty = int(np.clip(elbow_y - 76, 420, 1420))
+    tx = 86
+    ty = int(np.clip(elbow_y - 76, 520, 1460))
     f_big = v30.f_pretendard(86, "extrabold")
     f_l1 = v30.f_pretendard(21, "extrabold")
     f_l2 = v30.f_pretendard(16, "bold")
