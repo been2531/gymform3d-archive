@@ -39,3 +39,17 @@
 
 ## 8. 아이폰 릴스 세이프존 & 무왜곡 `136×108` 3-썸네일 도크-머리 분리 (`head_clearance_check`)
 - [ ] 상단 운동명 헤더(`x=96, y=252..298`) + 무왜곡 `136×108` 3-썸네일 도크(`x=96, y=308..438`)와 마네킹 머리 최상단(`min_head_y >= 455px`) 사이 최소 `17px` 이상의 여유를 600프레임 전 구간에서 유지한다.
+
+
+## 9. Shorts-Free 100% Exposed Anatomy, Close-Up Scale, Zero Upper-Back Whitening & Landmark-Locked Arrows (`v62 Standard` — `t267u`~`t272u`)
+1. **Shorts-Free 100% Exposed Écorché Musculature (`t268u`)**:
+   - Mannequins in lower-body reels MUST NEVER wear black shorts, trunks, or pants that obscure the hip crease, gluteus maximus, gluteus medius, or upper quadriceps.
+   - Use medical/sculptural écorché prompts (`"seamless matte dark-charcoal 3D medical écorché anatomical muscle statue with exposed striated gluteus maximus, gluteus medius, and full quadriceps femoris muscle fiber bundles from pelvis to knee, with no fabric covering the hip or thigh muscles"`).
+2. **True Day-2 Close-Up Full-Body Framing (`t269u`)**:
+   - Scale 720p clips at `scale = 1.24 .. 1.32` with smooth vertical squat head tracking (`y_head_stand = 464px -> y_head_squat = 505..525px`) so there is ZERO empty black gap band below the Top Preview Dock (`y = 438px`) and `active_px >= 49,000 .. 85,000px` (`>= 16,000px` gate).
+3. **Zero Upper-Back Whitening in Step 4 (`t270u`, `t272u`)**:
+   - Non-target matte dark-charcoal skin luminance MUST be computed strictly from `cool_base = np.minimum(g_ch, b_ch)` clamped to `[18, 76]` with `over_bright_body` glare suppression across all 4 steps.
+   - Verified by `qc_gate.py` `[8] Step 4 Upper-Back Whiteness Check`: `white_ratio <= 0.50%` (`0.01%` in `v62`) and `median_back_lum <= 85.0` (`49.1` in `v62`).
+4. **MediaPipe Landmark-Locked Joint Pivot Rings (`◎`) & Directional Arrow Arcs (`t271u`, `t272u`)**:
+   - Joint pivot rings (`◎`) and alignment axes are 100% locked to MediaPipe joint landmarks (`kn_r`, `kn_l`, `hip_r`, `sh`, `ank_r/l`).
+   - Step 1 & Step 2 include high-contrast directional curved arrow arcs (`→ ←` inward knee valgus collapse in Step 1, `← →` outward knee tracking in Step 2), and Step 3 & Step 4 include hip-anchored solid angle arcs with directional arrowheads.

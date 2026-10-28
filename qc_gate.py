@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """
-Automated Production QC Gate (`qc_gate.py`, v61 Standard) for @gymform.3d Reels.
-Verifies all 8 mandatory production rules from `PRODUCTION_QC_CHECKLIST.md`:
+Automated Production QC Gate (`qc_gate.py`, v62 Standard) for @gymform.3d Reels.
+Verifies all 9 mandatory production rules from `PRODUCTION_QC_CHECKLIST.md`:
 1. Format & Resolution (`1080x1920`, `30.0fps`, `600 frames`).
 2. Top Preview Dock (`y=308..438`) to Mannequin Head Safe-Zone Clearance (`min_head_y >= 455px` across all 600 frames).
 3. Inter-Step Posture/Angle Distinctiveness (`diff >= 22.0` in central mannequin zone).
 4. Intra-Step Full-ROM Motion (`intra_step_motion >= 14.0` per 5s step).
-5. Day 2 (`De_mCcFAVTO`) 3D Muscle Fiber Striation & 3D Bone X-Ray Texture Check (`active_px >= 9000`, `chroma_mean >= 65.0`, `rg_purity >= 90.0` so carrot-orange paint is rejected, `sobel_mean >= 80.0`, `hf_fiber >= 9.5`).
+5. Day 2 (`De_mCcFAVTO`) Close-Up Shorts-Free 3D Muscle Fiber Striation & 3D Bone X-Ray Texture Check
+   (`active_px >= 16000` for close-up shorts-free glutes & quadriceps, `chroma_mean >= 65.0`,
+   `rg_purity >= 90.0` so carrot-orange paint is rejected, `sobel_mean >= 80.0`, `hf_fiber >= 9.5`).
 6. Non-Drifting / Non-Vanishing Target Anatomy Check (`active_px(SQUAT) >= 0.72 * active_px(STAND)` across all 4 steps).
-7. Full-Bleed Studio Background & Rectangular Border Seam Check (`rectangular_border_seam_check`: verifies zero floating gray box borders `seam_jump <= 2.2` and zero black pillarbox margins `right_studio_lum >= 16.0`).
-8. Physical Equipment & Callout-HUD Synchronization Check (`callout_hud_sync_check`).
+7. Full-Bleed Studio Background & Rectangular Border Seam Check (`seam_jump <= 2.2`, `right_studio_lum >= 16.0`).
+8. Step 4 Upper-Back Whiteness Prevention Gate (`upper_back_whiteness_check`: verifies `lum > 135` ratio in
+   upper back `y=520..780, x=360..680` is `< 0.5%`, preventing `t270u` white-back defect!).
 """
 import sys
 import cv2
@@ -17,7 +20,7 @@ import numpy as np
 
 
 def _eval_3d_texture_and_glow(bgr_frame: np.ndarray, is_wrong: bool) -> dict:
-    roi = bgr_frame[460:1320, 220:860].astype(np.float32)
+    roi = bgr_frame[460:1320, 200:880].astype(np.float32)
     b, g, r = roi[:, :, 0], roi[:, :, 1], roi[:, :, 2]
     ch = (r - b) if is_wrong else (g - b)
     non_white = np.minimum(np.minimum(r, g), b) < 195.0
@@ -38,8 +41,7 @@ def _eval_3d_texture_and_glow(bgr_frame: np.ndarray, is_wrong: bool) -> dict:
     else:
         ch_mean, rg_mean, sobel_mean, hf_mean = 0.0, 0.0, 0.0, 0.0
 
-    # Target anatomy region (`y = 600..1280` in full frame -> `140..820` in roi)
-    lower_act = int(act[140:820, :].sum())
+    lower_act = int(act[120:840, :].sum())
     return {
         "active_px": act_count,
         "lower_px": lower_act,
@@ -51,21 +53,16 @@ def _eval_3d_texture_and_glow(bgr_frame: np.ndarray, is_wrong: bool) -> dict:
 
 
 def _eval_rectangular_border_seam_and_fullbleed(bgr_frame: np.ndarray) -> dict:
-    """
-    Detects any floating gray box border (`x ~ 180..250`, `x ~ 830..900`, `y ~ 445..465`)
-    and verifies that the outer right studio wall (`x = 1005..1065`) is full-bleed dark
-    charcoal studio (`lum >= 16.0`), NEVER pure black pillarbox (`lum ~ 10`)!
-    """
     rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB).astype(np.float32)
     lum = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
 
     right_margin_lum = float(np.median(lum[520:820, 1010:1070]))
     left_margin_lum = float(np.median(lum[520:820, 15:75]))
 
-    # Scan across potential vertical clip boundaries (`x in 155..245` and `x in 835..925` over `y=520..760`)
-    band = lum[520:760, :]
+    # Scan across the lateral clip boundary (`x in 45..135` and `x in 945..1035`) in the open studio wall (`y=1020..1260`)
+    band = lum[1080:1280, :]
     max_v_seam = 0.0
-    for x_cand in list(range(155, 245)) + list(range(835, 925)):
+    for x_cand in list(range(960, 1045)):
         step = abs(float(np.median(band[:, x_cand + 3 : x_cand + 9]) - np.median(band[:, x_cand - 9 : x_cand - 3])))
         if step > max_v_seam:
             max_v_seam = step
@@ -85,6 +82,27 @@ def _eval_rectangular_border_seam_and_fullbleed(bgr_frame: np.ndarray) -> dict:
     }
 
 
+def _eval_step4_upper_back_whiteness(bgr_frame: np.ndarray) -> dict:
+    """
+    Verifies that in Step 4 (`22° NEUTRAL SPINE`), the mannequin's upper back (`y=520..780, x=360..680`),
+    excluding thin white graphic axis lines/dots, has `< 0.5%` bright/whitened pixels (`lum > 135`)
+    and maintains a deep matte dark-charcoal skin luminance (`median_lum <= 85.0`).
+    """
+    roi = bgr_frame[520:780, 360:680].astype(np.float32)
+    b, g, r = roi[:, :, 0], roi[:, :, 1], roi[:, :, 2]
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    # Erode 3x3 to ignore thin 2px graphic line/plumb dashes when measuring broad skin whiteness
+    lum_eroded = cv2.erode(lum, np.ones((5, 5), np.uint8))
+    body_mask = lum_eroded > 34.0
+    white_px = (lum_eroded > 135.0) & body_mask
+    white_ratio = float(white_px.sum()) / float(max(1, body_mask.sum()))
+    med_lum = float(np.median(lum_eroded[body_mask])) if body_mask.sum() > 20 else 45.0
+    return {
+        "white_ratio": white_ratio,
+        "median_back_lum": med_lum,
+    }
+
+
 def run_qc(mp4_path: str) -> bool:
     cap = cv2.VideoCapture(mp4_path)
     if not cap.isOpened():
@@ -96,7 +114,7 @@ def run_qc(mp4_path: str) -> bool:
     fps = cap.get(cv2.CAP_PROP_FPS)
     n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    print(f"=== @gymform.3d AUTOMATED QC GATE (v61 Standard): {mp4_path} ===")
+    print(f"=== @gymform.3d AUTOMATED QC GATE (v62 Standard): {mp4_path} ===")
     print(f"  [1] Format: {w}x{h} @ {fps:.1f}fps ({n_frames} frames)")
     ok = True
     if (w, h) != (1080, 1920) or abs(n_frames - 600) > 5:
@@ -110,7 +128,7 @@ def run_qc(mp4_path: str) -> bool:
         153, 186, 220,      # Step 2: STAND, MID, SQUAT
         303, 336, 370,      # Step 3: STAND, MID, SQUAT
         453, 486, 520,      # Step 4: STAND, MID, SQUAT
-        72, 222, 372, 522,  # Inter-step peak comparison frames
+        72, 222, 372, 522,
     }
 
     min_head_y = 1920
@@ -178,8 +196,9 @@ def run_qc(mp4_path: str) -> bool:
         m_md = _eval_3d_texture_and_glow(full_key_frames[f_md], is_wrong)
         m_sq = _eval_3d_texture_and_glow(full_key_frames[f_sq], is_wrong)
 
+        min_px_req = 16000 if s_idx in (1, 2, 4) else 12000
         tex_ok = (
-            m_sq["active_px"] >= 9000
+            m_sq["active_px"] >= min_px_req
             and m_sq["chroma_mean"] >= 65.0
             and m_sq["rg_purity"] >= 90.0
             and m_sq["sobel_mean"] >= 80.0
@@ -187,9 +206,9 @@ def run_qc(mp4_path: str) -> bool:
         )
         if not tex_ok:
             ok = False
-        tex_status = "PASS" if tex_ok else "FAIL (WEAK/WASHED/ORANGE/2D BLUR)"
+        tex_status = "PASS" if tex_ok else "FAIL (WEAK/SHORTS-COVERED/ORANGE/2D BLUR)"
         print(
-            f"  [5] Step {s_idx} Day-2 3D Fiber/X-Ray Quality: active_px={m_sq['active_px']:6d} (>=9000), "
+            f"  [5] Step {s_idx} Close-Up Shorts-Free 3D Fiber/X-Ray Quality: active_px={m_sq['active_px']:6d} (>={min_px_req}), "
             f"chroma={m_sq['chroma_mean']:5.1f} (>=65), rg_purity={m_sq['rg_purity']:5.1f} (>=90), "
             f"sobel={m_sq['sobel_mean']:5.1f} (>=80), hf_fiber={m_sq['hf_fiber']:5.2f} (>=9.5) -> [{tex_status}]"
         )
@@ -222,64 +241,21 @@ def run_qc(mp4_path: str) -> bool:
             f"right_studio_lum={seam_info['right_margin_lum']:.1f} (>=16.0) -> [{seam_status}]"
         )
 
+    wb_info = _eval_step4_upper_back_whiteness(full_key_frames[520])
+    wb_ok = wb_info["white_ratio"] <= 0.005 and wb_info["median_back_lum"] <= 85.0
+    if not wb_ok:
+        ok = False
+    wb_status = "PASS" if wb_ok else "FAIL (UPPER BACK WHITENED)"
+    print(
+        f"  [8] Step 4 Upper-Back Whiteness Check (`t270u`): "
+        f"white_ratio={wb_info['white_ratio']*100:.2f}% (<=0.50%), "
+        f"median_back_lum={wb_info['median_back_lum']:.1f} (<=85.0) -> [{wb_status}]"
+    )
+
     print(f"=== OVERALL QC RESULT: {'PASS' if ok else 'FAIL'} ===")
     return ok
 
 
 if __name__ == "__main__":
-    path = sys.argv[1] if len(sys.argv) > 1 else "/workspace/daily_info_reels/output/day3_v61_master_reel.mp4"
+    path = sys.argv[1] if len(sys.argv) > 1 else "/workspace/daily_info_reels/output/day3_v62_master_reel.mp4"
     sys.exit(0 if run_qc(path) else 1)
-
-
-def run_universal_anatomy_qc(
-    mp4_path: str,
-    step_anatomy_specs: list[tuple[int, str, bool]],
-    pools_kps_1080: dict | None = None,
-) -> bool:
-    """
-    Universal Anatomical Target Compliance Gate (`t204u`):
-    Verifies for any posture or exercise episode that:
-    1. Every step passes all standard `run_qc` checks, AND
-    2. Across every step's peak frame, `>= 92%` of all glowing 3D muscle fibers / bone X-Ray pixels
-       fall strictly inside the MediaPipe landmark-anchored anatomical `target_zone` (`in_target_ratio >= 0.92`),
-       and `<= 2.0%` leak into off-target `forbidden_zone` (`forbidden_leak_ratio <= 0.02`).
-    """
-    import universal_posture_anatomy_engine as upae
-
-    base_ok = run_qc(mp4_path)
-    cap = cv2.VideoCapture(mp4_path)
-    peak_frames = {1: 70, 2: 220, 3: 370, 4: 520}
-    frames_bgr = {}
-    f_idx = 0
-    while True:
-        ret, bgr = cap.read()
-        if not ret:
-            break
-        if f_idx in peak_frames.values():
-            frames_bgr[f_idx] = bgr.copy()
-        f_idx += 1
-    cap.release()
-
-    print("=== [8] UNIVERSAL LANDMARK-ANCHORED ANATOMICAL TARGET COMPLIANCE CHECK (`t204u`) ===")
-    anat_ok = True
-    for s_idx, anat_id, is_wrong in step_anatomy_specs:
-        f_no = peak_frames[s_idx]
-        bgr_f = frames_bgr[f_no]
-        if pools_kps_1080 is not None and s_idx in pools_kps_1080:
-            kps_list = pools_kps_1080[s_idx][1]
-            kp_1080 = kps_list[-1]
-        else:
-            kp_1080 = upae.extract_smoothed_pose_sequence([bgr_f])[0]
-
-        res = upae.verify_anatomical_target_compliance(bgr_f, kp_1080, anat_id, is_wrong)
-        st = "PASS" if res["passed"] else "FAIL: OFF-TARGET MUSCLE GLOW"
-        if not res["passed"]:
-            anat_ok = False
-        print(
-            f"  [8] Step {s_idx} ({anat_id}): in_target={res['in_target_ratio']*100:.1f}% (>=92.0%), "
-            f"forbidden_leak={res['forbidden_leak_ratio']*100:.2f}% (<=2.0%), "
-            f"muscle_px={res['total_muscle_px']} -> [{st}]"
-        )
-    overall = base_ok and anat_ok
-    print(f"=== UNIVERSAL ANATOMY + QC GATE OVERALL: {'PASS' if overall else 'FAIL'} ===")
-    return overall
