@@ -89,9 +89,9 @@ def _get_upright_pure_anatomy_portrait(step_idx: int, is_wrong: bool) -> tuple[n
         t_rgb = np.stack([28.0 + 35.0 * sculpt_curve, 215.0 + 38.0 * sculpt_curve, 110.0 + 45.0 * sculpt_curve], axis=-1)
 
     act_full = mono * (1.0 - (target_w * 0.82)[:, :, None]) + t_rgb * (target_w * 0.82)[:, :, None]
-    act_full = cd4.apply_3d_athletic_briefs_720p(act_full, pure_body_mask, lm, sculpt_curve)
+    act_full, _ = cd4.apply_3d_athletic_briefs_720p(act_full, pure_body_mask, lm, sculpt_curve)
     inact_full = np.stack([body_r * 0.58, body_g * 0.60, body_b * 0.64], axis=-1)
-    inact_full = cd4.apply_3d_athletic_briefs_720p(inact_full, pure_body_mask, lm, sculpt_curve * 0.65)
+    inact_full, _ = cd4.apply_3d_athletic_briefs_720p(inact_full, pure_body_mask, lm, sculpt_curve * 0.65)
 
     # Crop exact 224:272 portrait window around shoulders-to-knees (`y_sh - 10` to `kn_y + 35`)
     sh_y = 0.5 * (lm[11].y + lm[12].y) * sh_h
@@ -141,17 +141,23 @@ def draw_day1_exact_top_dock(frame_rgb: np.ndarray, torso_icons: list, active_sl
     bar_x0, bar_y0, bar_x1, bar_y1 = 87, 195, 993, 435
     bar_w, bar_h = bar_x1 - bar_x0, bar_y1 - bar_y0
 
-    # 1. Frosted Dark Glass Capsule Background (`x = 87..993, y = 247..487`, centered at `x = 540`)
-    base_pil = Image.fromarray(frame_rgb).convert("RGBA")
+    # 1. Translucent Frosted Dark Glass Capsule Background (`DevEQskCa2g` style — blurs underlying head/equipment when touching!)
+    raw_pil = Image.fromarray(frame_rgb).convert("RGBA")
+    blur_pil = Image.fromarray(frame_rgb).filter(ImageFilter.GaussianBlur(radius=10)).convert("RGBA")
+    frost_mask = Image.new("L", (W, H), 0)
+    fmd = ImageDraw.Draw(frost_mask)
+    fmd.rounded_rectangle([bar_x0, bar_y0, bar_x1, bar_y1], radius=34, fill=190)
+    cx_act_pre = [248, 540, 832][active_slot]
+    fmd.rounded_rectangle([cx_act_pre - 112, 179, cx_act_pre + 112, 179 + 272], radius=28, fill=205)
+    base_pil = Image.composite(blur_pil, raw_pil, frost_mask)
+
     glass_ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glass_ov)
 
-    # Outer drop shadow
-    gd.rounded_rectangle([bar_x0 + 2, bar_y0 + 8, bar_x1 + 2, bar_y1 + 10], radius=36, fill=(0, 0, 0, 135))
-    # Dark glass fill (`RGB 24, 27, 32`) + subtle top/bottom glass rim
-    gd.rounded_rectangle([bar_x0, bar_y0, bar_x1, bar_y1], radius=34, fill=(22, 25, 30, 225), outline=(95, 102, 114, 115), width=2)
-    # Bright specular bottom/corner glass rim (measured at `RGB ~98,101,106` at `y = 532` in `@demicstory`)
-    gd.rounded_rectangle([bar_x0 + 2, bar_y0 + 2, bar_x1 - 2, bar_y1 - 1], radius=32, outline=(145, 155, 170, 55), width=1)
+    # Outer drop shadow + Translucent dark glass fill (`alpha = 135` ~ 53% so overlapping head/barbell softly shows through!)
+    gd.rounded_rectangle([bar_x0 + 2, bar_y0 + 8, bar_x1 + 2, bar_y1 + 10], radius=36, fill=(0, 0, 0, 75))
+    gd.rounded_rectangle([bar_x0, bar_y0, bar_x1, bar_y1], radius=34, fill=(22, 25, 30, 132), outline=(140, 150, 168, 120), width=2)
+    gd.rounded_rectangle([bar_x0 + 2, bar_y0 + 2, bar_x1 - 2, bar_y1 - 1], radius=32, outline=(210, 220, 238, 52), width=1)
     base_pil = Image.alpha_composite(base_pil, glass_ov)
 
     slot_centers_x = [248, 540, 832]
@@ -175,7 +181,7 @@ def draw_day1_exact_top_dock(frame_rgb: np.ndarray, torso_icons: list, active_sl
         inact_cropped = np.clip(inact_arr * vign[:, :, None], 0, 255).astype(np.uint8)
         im_slot = Image.fromarray(inact_cropped).convert("RGBA")
         mask_slot = Image.new("L", (tw, th), 0)
-        ImageDraw.Draw(mask_slot).rounded_rectangle([4, 20, tw - 5, th - 21], radius=22, fill=235)
+        ImageDraw.Draw(mask_slot).rounded_rectangle([4, 20, tw - 5, th - 21], radius=22, fill=182)
         mask_slot = mask_slot.filter(ImageFilter.GaussianBlur(radius=4))
         base_pil.paste(im_slot, (tx0, ty0), mask_slot)
 
@@ -203,7 +209,7 @@ def draw_day1_exact_top_dock(frame_rgb: np.ndarray, torso_icons: list, active_sl
 
     im_act = Image.fromarray(comp_act).convert("RGBA")
     mask_act = Image.new("L", (tw, th), 0)
-    ImageDraw.Draw(mask_act).rounded_rectangle([0, 0, tw - 1, th - 1], radius=28, fill=255)
+    ImageDraw.Draw(mask_act).rounded_rectangle([0, 0, tw - 1, th - 1], radius=28, fill=208)
     base_pil.paste(im_act, (ax0, ay0), mask_act)
 
     # Crisp glowing neon rounded border (`radius = 28px`, 4x supersampled feel)

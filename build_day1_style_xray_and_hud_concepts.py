@@ -316,17 +316,17 @@ def draw_day1_bone_energy_flow_and_exterior_arcs(
     if with_laser_axis:
         if is_wrong:
             kn_rv, kn_lv = (kn_r[0] + 16.0, kn_r[1]), (kn_l[0] - 16.0, kn_l[1])
-            top_r, _ = p62._extend_segment(hip_r, kn_rv, -0.12, 1.0)
+            top_r, _ = p62._extend_segment(hip_r, kn_rv, 0.25, 1.0)
             _, bot_r = p62._extend_segment(kn_rv, ank_r, 0.0, 1.12)
-            top_l, _ = p62._extend_segment(hip_l, kn_lv, -0.12, 1.0)
+            top_l, _ = p62._extend_segment(hip_l, kn_lv, 0.25, 1.0)
             _, bot_l = p62._extend_segment(kn_lv, ank_l, 0.0, 1.12)
             ext_r1, ext_r2 = p62._extend_segment(hip_r, kn_rv, 0.60, 1.44)
             ext_l1, ext_l2 = p62._extend_segment(hip_l, kn_lv, 0.60, 1.44)
             m_ch, a_ch, v_p = [[top_r, kn_rv, bot_r], [top_l, kn_lv, bot_l]], [[ext_r1, ext_r2], [ext_l1, ext_l2]], [kn_rv, kn_lv]
         else:
-            top_r, _ = p62._extend_segment(hip_r, kn_r, -0.12, 1.0)
+            top_r, _ = p62._extend_segment(hip_r, kn_r, 0.25, 1.0)
             _, bot_r = p62._extend_segment(kn_r, ank_r, 0.0, 1.12)
-            top_l, _ = p62._extend_segment(hip_l, kn_l, -0.12, 1.0)
+            top_l, _ = p62._extend_segment(hip_l, kn_l, 0.25, 1.0)
             _, bot_l = p62._extend_segment(kn_l, ank_l, 0.0, 1.12)
             ext_r1, ext_r2 = p62._extend_segment(hip_r, kn_r, 0.64, 1.36)
             ext_l1, ext_l2 = p62._extend_segment(hip_l, kn_l, 0.64, 1.36)
