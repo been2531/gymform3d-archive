@@ -140,24 +140,60 @@ def extract_smoothed_kps_1080(seq_bgr_720: list[np.ndarray], step_idx: int, y_sh
     return out_1080
 
 
-def upscale_and_shift_1080p(bgr_720p: np.ndarray, y_sh: int) -> np.ndarray:
+SCALE = 0.90
+STEP_DY = {
+    1: +235,
+    2: +100,
+    3: +200,
+    4: +115,
+}
+
+
+def transform_frame_and_kp_1080p(bgr_720p: np.ndarray, kp_cached: dict, old_y_sh: int, step_idx: int) -> tuple[np.ndarray, dict]:
     up = cv2.resize(bgr_720p, (W, H), interpolation=cv2.INTER_LANCZOS4)
     blur = cv2.GaussianBlur(up, (0, 0), 0.9)
     sharp_bgr = cv2.addWeighted(up, 1.22, blur, -0.22, 0)
     rgb = cv2.cvtColor(sharp_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
 
-    if y_sh <= 0:
-        return rgb
+    dy = STEP_DY[step_idx]
+    nw, nh = int(round(W * SCALE)), int(round(H * SCALE))
+    scaled = cv2.resize(rgb, (nw, nh), interpolation=cv2.INTER_LANCZOS4)
 
-    canvas = np.zeros_like(rgb)
-    canvas[y_sh:, :, :] = rgb[: H - y_sh, :, :]
-    top_strip = np.median(rgb[:24, :, :], axis=0, keepdims=True)
-    canvas[:y_sh, :, :] = top_strip
-    blend_h = 42
-    for dy in range(blend_h):
-        a = dy / float(blend_h)
-        canvas[y_sh + dy, :, :] = top_strip[0] * (1.0 - a) + canvas[y_sh + dy, :, :] * a
-    return canvas
+    bg_med = np.median(
+        np.concatenate([rgb[:28, :, :].reshape(-1, 3), rgb[:, :28, :].reshape(-1, 3), rgb[:, -28:, :].reshape(-1, 3)], axis=0),
+        axis=0,
+    )
+    canvas = np.ones((H, W, 3), dtype=np.float32) * bg_med[None, None, :]
+
+    x0 = (W - nw) // 2
+    y0 = (H - nh) // 2 + dy
+
+    sx0 = max(0, -x0)
+    sy0 = max(0, -y0)
+    dx0 = max(0, x0)
+    dy0 = max(0, y0)
+    cw = min(nw - sx0, W - dx0)
+    ch = min(nh - sy0, H - dy0)
+
+    sub = scaled[sy0 : sy0 + ch, sx0 : sx0 + cw]
+    yy_s, xx_s = np.mgrid[:ch, :cw].astype(np.float32)
+    feather = 36.0
+    wx = np.minimum(np.clip(xx_s / feather, 0.0, 1.0), np.clip((cw - 1 - xx_s) / feather, 0.0, 1.0))
+    wy = np.minimum(np.clip(yy_s / feather, 0.0, 1.0), np.clip((ch - 1 - yy_s) / feather, 0.0, 1.0))
+    w_mask = (wx * wy)[:, :, None]
+
+    canvas[dy0 : dy0 + ch, dx0 : dx0 + cw] = (
+        canvas[dy0 : dy0 + ch, dx0 : dx0 + cw] * (1.0 - w_mask) + sub * w_mask
+    )
+
+    kp_out = {}
+    for k, (px, py_cached) in kp_cached.items():
+        py_raw = py_cached - old_y_sh
+        nx = (px - W * 0.5) * SCALE + W * 0.5
+        ny = (py_raw - H * 0.5) * SCALE + H * 0.5 + dy
+        kp_out[k] = (float(nx), float(ny))
+
+    return canvas, kp_out
 
 
 def shade_native_3d_frame_1080p(
@@ -396,27 +432,31 @@ def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, act
     return np.array(base_pil.convert("RGB"))
 
 
+_TITLE_CACHE = {}
+
+
 def draw_single_line_kaushan_title(canvas_pil: Image.Image, exercise_name: str = "Barbell Back Squat"):
-    SS = 2
-    ov = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
-    od = ImageDraw.Draw(ov)
+    if exercise_name not in _TITLE_CACHE:
+        SS = 2
+        ov = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
+        od = ImageDraw.Draw(ov)
 
-    try:
-        f_scr = ImageFont.truetype(CURSIVE_FONT_PATH, 62 * SS)
-    except Exception:
-        f_scr = v30.load_font(56 * SS, bold=True)
+        try:
+            f_scr = ImageFont.truetype(CURSIVE_FONT_PATH, 62 * SS)
+        except Exception:
+            f_scr = v30.load_font(56 * SS, bold=True)
 
-    bb = od.textbbox((0, 0), exercise_name, font=f_scr)
-    tw, th = bb[2] - bb[0], bb[3] - bb[1]
-    tx = (W * SS - tw) // 2 - bb[0]
-    ty = 458 * SS - th // 2 - bb[1]
+        bb = od.textbbox((0, 0), exercise_name, font=f_scr)
+        tw, th = bb[2] - bb[0], bb[3] - bb[1]
+        tx = (W * SS - tw) // 2 - bb[0]
+        ty = 458 * SS - th // 2 - bb[1]
 
-    for dx_s, dy_s, a_s in [(0, 5 * SS, 185), (-2 * SS, 3 * SS, 110), (2 * SS, 3 * SS, 110)]:
-        od.text((tx + dx_s, ty + dy_s), exercise_name, font=f_scr, fill=(8, 10, 14, a_s))
-    od.text((tx, ty), exercise_name, font=f_scr, fill=(246, 250, 255, 252))
+        for dx_s, dy_s, a_s in [(0, 5 * SS, 185), (-2 * SS, 3 * SS, 110), (2 * SS, 3 * SS, 110)]:
+            od.text((tx + dx_s, ty + dy_s), exercise_name, font=f_scr, fill=(8, 10, 14, a_s))
+        od.text((tx, ty), exercise_name, font=f_scr, fill=(246, 250, 255, 252))
 
-    ov_1080 = ov.resize((W, H), Image.Resampling.LANCZOS)
-    canvas_pil.alpha_composite(ov_1080)
+        _TITLE_CACHE[exercise_name] = ov.resize((W, H), Image.Resampling.LANCZOS)
+    canvas_pil.alpha_composite(_TITLE_CACHE[exercise_name])
 
 
 def draw_step_laser_and_callout(
@@ -536,20 +576,25 @@ def build_all():
     with open(CACHE_KP_PKL, "wb") as f:
         pickle.dump(kps_seqs, f)
 
-    print("2. Pre-shading native 3D pools (100% native frames, zero 2D drawn shorts/bones)...")
+    print("2. Pre-shading native 3D pools (100% native frames, V3 0.90x full-body downward fill)...")
     shaded_pools = {}
+    kps_v3 = {}
     for s_idx, (fn, i0, i1, is_w, v_mode, y_sh) in STEP_SPECS.items():
         seq = raw_seqs[s_idx]
         kps = kps_seqs[s_idx]
         pool = []
+        kps_out_list = []
         n_f = len(seq)
         for i, bgr in enumerate(seq):
-            rgb_1080 = upscale_and_shift_1080p(bgr, y_sh)
+            rgb_1080, kp_1080 = transform_frame_and_kp_1080p(bgr, kps[i], y_sh, s_idx)
             pulse_ph = (i / float(max(1, n_f - 1))) * 0.75
-            sh_rgb, sh_mask = shade_native_3d_frame_1080p(rgb_1080, s_idx, is_w, v_mode, kps[i], pulse_phase=pulse_ph)
+            sh_rgb, sh_mask = shade_native_3d_frame_1080p(rgb_1080, s_idx, is_w, v_mode, kp_1080, pulse_phase=pulse_ph)
             pool.append((sh_rgb, sh_mask))
+            kps_out_list.append(kp_1080)
         shaded_pools[s_idx] = pool
+        kps_v3[s_idx] = kps_out_list
         print(f"   Step {s_idx} ({v_mode}): {len(pool)} native frames shaded.")
+    kps_seqs = kps_v3
 
     # Build 4-slot top preview thumbnail sets (1:1 matching Steps 1, 2, 3, 4, centered on full squatting figure):
     ic_s1 = _make_icon_pair(shaded_pools[1][-1][0], kps_seqs[1][-1])
@@ -633,6 +678,9 @@ def build_all():
         if f_local == 50:
             step_peak_rendered[step_idx] = rgb_out.copy()
             rgb_out.save(os.path.join(OUT_DIR, f"day3_step{step_idx}_peak.jpg"), quality=95)
+            if step_idx == 4:
+                rgb_out.save(os.path.join(OUT_DIR, "day3_barbell_squat_4step_master_cover.jpg"), quality=95)
+                rgb_out.save(os.path.join(OUT_DIR, "day3_cover_step4_rear34_clean.jpg"), quality=95)
 
         if f_local in sample_local_frames:
             proof_12_samples[(step_idx, f_local)] = (
