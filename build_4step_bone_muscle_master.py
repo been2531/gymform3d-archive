@@ -1,474 +1,335 @@
 #!/usr/bin/env python3
 """
-Day 3 (`Barbell Back Squat`) — 4-Step Master with:
-1. Authentic Day 1 X-Ray Bone + Vascular Energy Flow (`build_clean_d4_variants.py` / `gymform_engine.py` exact formula) for Steps 1 & 3,
-   and Authentic Day 1/Day 2 3D Intrinsic Fiber-Strand Muscle Activation (`build_v36_publish_reels.py` exact formula) for Steps 2 & 4.
-2. Skin-tight, 100% Silhouette-Fitted 3D Matte Charcoal Short Trunks / Drawers (`드로즈`):
-   - Outer edges follow `human_mask` 100% (never slices vertically across the hips during a squat),
-   - Snug low-rise elastic waistband + upper-thigh hem that hugs the groin & upper thigh crease in both standing and deep squat,
-   - Shaded directly from the mannequin's 3D surface lighting (`sculpt_curve`) with zero blurry waistband text.
-3. Large, Screen-Filling Mannequin Scale (`scale = 1.25 ~ 1.30`, feet anchored at `y = 1615`), taking full advantage of the compact top preview (`y = 148..296`).
-4. Confirmed Bottom Single-Line Exercise Title:
-   - `"Barbell Back Squat"` in Font #1 (`Kaushan Script`, `KaushanScript-Regular.ttf`),
-   - NO flanking horizontal lines (`-`) on either side.
+Day 3 (`Barbell Back Squat`) — 100% Native 3D Multi-Angle 4-Step Master Reel Builder
+====================================================================================
+Fixes every issue identified by 중현 님 (`[t362u]`–`[t379u]`):
+1. ZERO 2D Overlays (`[t379u]: "그래 이제 2d는 금지야"`):
+   - ZERO 2D drawn shorts/drawers (`apply_fitted_3d_drawers_720p` 100% removed).
+   - ZERO 2D drawn cylindrical bone tubes (`u_bone` / `d_fem_r` 100% removed).
+   - ZERO 2D image warping (`_apply_step1_knee_valgus_720p` 100% removed).
+   - ZERO 2D cutout masks (`make_clean_barbell_and_human_mask` 100% removed).
+   - Uses 100% pure native 3D I2V clips (`day3_v61_step1..4`) where the 3D mannequin ALREADY wears
+     fitted 3D black athletic shorts that deform naturally with the hips, glutes, and thighs!
+2. ZERO Frame-Blending Ghosting / Onion-Skinning (`[t372u]`, `[t373u]`):
+   - Loads every native 3D frame (`load_native_slice`) with ZERO `cv2.addWeighted` frame interpolation.
+   - Maps 600 frames (20.0s @ 30fps, 150 frames per step) directly to native integer frames (`p_i`)
+     across 1.5 smooth full-ROM squat repetitions per step.
+3. Multi-Angle Camera Progression (`[t373u]`, `[t378u]`):
+   - Step 1 (0.0s–5.0s, Front View Wrong — Bone + Joint Overload): `16° KNEE CAVE / 86% JOINT RISK`
+   - Step 2 (5.0s–10.0s, Side View Wrong — Lumbar Spine + Muscle Strain): `41° FORWARD LEAN / 79% LUMBAR LOAD`
+   - Step 3 (10.0s–15.0s, Front View Correct — Bio-X-Ray Bone + Joint Lock): `0° KNEE LOCK / 96% JOINT SAFE`
+   - Step 4 (15.0s–20.0s, Rear 3/4 View Correct — Full Quad & Glute Muscle Drive): `22° HIP DRIVE / 98% QUAD & GLUTE`
+4. Full-Screen Large Framing & ZERO Left Blur (`[t377u]`):
+   - Upscales the native 9:16 720x1280 studio frame 1.5x to full 1080x1920 with zero left-side blur or vignette (`curve_l = 0%`).
+5. English Coaching TTS (`en-US-ChristopherNeural`) + Sub-Bass Beat + Step Chimes (`[t373u]`).
 """
 import os
 import sys
 import math
+import pickle
+import asyncio
+import subprocess
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from scipy.ndimage import gaussian_filter1d
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 sys.path.insert(0, "/workspace/daily_info_reels")
 import universal_anatomy_rig as uar
 import build_v30_pure_graphic_numbers as v30
 import preview_v62_seamless_day2_master as p62
 import build_clean_d4_variants as bcd
+import build_v36_publish_reels as v36_pub
 
 OUT_DIR = "/workspace/daily_info_reels/output"
-W, H = 1080, 1920
+TMP_DIR = "/workspace/daily_info_reels/_tmp_day3_master"
+CACHE_KP_PKL = "/workspace/daily_info_reels/_cache_day3_v61_native_kps.pkl"
+os.makedirs(OUT_DIR, exist_ok=True)
+os.makedirs(TMP_DIR, exist_ok=True)
 
+W, H = 1080, 1920
+FPS = 30
+DURATION = 20.0
+TOTAL_FRAMES = int(FPS * DURATION)  # 600 frames
 CURSIVE_FONT_PATH = "/workspace/daily_info_reels/fonts/KaushanScript-Regular.ttf"
 
+STEP_SPECS = {
+    1: ("day3_v61_step1_norack_i2v.mp4", 72, 120, True,  "bone_blood",   180),
+    2: ("day3_v61_step3_norack_i2v.mp4", 136, 62, True,  "muscle_blood",  70),
+    3: ("day3_v61_step2_norack_i2v.mp4", 78, 144, False, "bone_blood",   150),
+    4: ("day3_v61_step4_flatfeet_i2v.mp4", 72, 144, False, "muscle_blood", 140),
+}
 
-def apply_fitted_3d_drawers_720p(
-    out_rgb: np.ndarray,
-    human_mask: np.ndarray,
-    lm,
-    sculpt_curve: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    True 3D Femur-Coordinate (`t_fem` + `s_glute`) Glute-Wrapped & Quad-Exposed Athletic Drawers (`드로즈`):
-    - Projects every pixel onto the viewer-left (`lm[24] -> lm[26]`) and viewer-right (`lm[23] -> lm[25]`) femur axes:
-      * Along the anterior/outer quadriceps belly (`s_glute <= 0`), the leg opening sits high (`t_hem ~ 0.20..0.25`)
-        so 75%+ of the quadriceps muscle bellies glow cleanly in both standing and deep squat.
-      * Along the inner/posterior glute & groin underside (`s_glute > 0`), the fabric wraps down (`+0.36 * squat_depth`)
-        all the way to the bottom of the glute fold (`crotch_y_split + 26px`) so 100% of the buttocks are enclosed!
-    """
-    sh_h, sw_w = out_rgb.shape[:2]
-    yy, xx = np.mgrid[:sh_h, :sw_w].astype(np.float32)
 
-    sh_l = (lm[11].x * sw_w, lm[11].y * sh_h)
-    sh_r = (lm[12].x * sw_w, lm[12].y * sh_h)
-    hip_vL = (lm[24].x * sw_w, lm[24].y * sh_h)
-    hip_vR = (lm[23].x * sw_w, lm[23].y * sh_h)
-    kn_vL = (lm[26].x * sw_w, lm[26].y * sh_h)
-    kn_vR = (lm[25].x * sw_w, lm[25].y * sh_h)
-
-    sh_cy = 0.5 * (sh_l[1] + sh_r[1])
-    hip_cx = 0.5 * (hip_vL[0] + hip_vR[0])
-    hip_cy = 0.5 * (hip_vL[1] + hip_vR[1])
-    kn_cy = 0.5 * (kn_vL[1] + kn_vR[1])
-
-    torso_h = max(145.0, hip_cy - sh_cy)
-    hip_span = max(78.0, abs(hip_vR[0] - hip_vL[0]))
-    squat_depth = float(np.clip((240.0 - (kn_cy - hip_cy)) / 165.0, 0.0, 1.0))
-
-    crotch_y_split = hip_cy + 45.0
-    x_mid = int(round(hip_cx))
-    y_s0 = int(max(0, min(sh_h - 1, hip_cy - 5)))
-    y_s1 = int(max(y_s0 + 1, min(sh_h, max(kn_cy + 55, hip_cy + 115))))
-    for y_scan in range(y_s0, y_s1):
-        strip = human_mask[y_scan, max(0, x_mid - 22):min(sw_w, x_mid + 23)]
-        if strip.size > 0 and np.min(strip) < 0.25:
-            crotch_y_split = float(y_scan)
+def load_native_slice(path: str, i0: int, i1: int) -> list[np.ndarray]:
+    """Loads 100% pure native video frames from i0 to i1 with ZERO addWeighted frame blending!"""
+    cap = cv2.VideoCapture(path)
+    frs = []
+    while True:
+        ret, fr = cap.read()
+        if not ret:
             break
+        frs.append(fr)
+    cap.release()
+    assert len(frs) > max(i0, i1), f"Clip {path} has {len(frs)} frames, needed {max(i0, i1)}"
+    return frs[i0 : i1 + 1] if i0 <= i1 else frs[i1 : i0 + 1][::-1]
 
-    waist_y_center = hip_cy - (0.14 + 0.08 * squat_depth) * torso_h
-    dx_w = (xx - hip_cx) / (hip_span * 0.65)
-    waist_dip = (5.0 + 7.0 * squat_depth) * (1.0 - np.clip(dx_w ** 2, 0.0, 1.4))
-    waist_top_y = waist_y_center + waist_dip
-    band_h = 11.5
-    waist_bot_y = waist_top_y + band_h
-    top_gate = np.clip((yy - waist_top_y + 1.0) / 1.8, 0.0, 1.0)
 
-    def _femur_coords(h_pt, k_pt, is_viewer_left: bool):
-        vx, vy = k_pt[0] - h_pt[0], k_pt[1] - h_pt[1]
-        l2 = max(100.0, vx * vx + vy * vy)
-        t = ((xx - h_pt[0]) * vx + (yy - h_pt[1]) * vy) / l2
-        length = math.sqrt(l2)
-        if is_viewer_left:
-            nx, ny = vy / length, -vx / length
+def extract_smoothed_kps_1080(seq_bgr_720: list[np.ndarray], step_idx: int, y_sh: int) -> list[dict]:
+    """
+    Runs MediaPipe PoseLandmarker on the native 720x1280 sequence, enforces anatomical left/right ordering,
+    locks Step 1 knee centers onto the native 3D glowing X-Ray knee joints, applies temporal Gaussian
+    smoothing (`sigma=2.5`), and maps to 1080x1920 (`x * 1.5, y * 1.5 + y_sh`).
+    """
+    detector = uar.get_pose_detector()
+    raw_kps = []
+    yy_720, xx_720 = np.mgrid[:1280, :720].astype(np.float32)
+
+    for bgr in seq_bgr_720:
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        res = detector.detect(uar.mp.Image(image_format=uar.mp.ImageFormat.SRGB, data=rgb))
+        if res.pose_landmarks:
+            lm = res.pose_landmarks[0]
+            sh = (0.5 * (lm[11].x + lm[12].x) * 720.0, 0.5 * (lm[11].y + lm[12].y) * 1280.0)
+            hip_r = (lm[24].x * 720.0, lm[24].y * 1280.0)
+            hip_l = (lm[23].x * 720.0, lm[23].y * 1280.0)
+            kn_r = (lm[26].x * 720.0, lm[26].y * 1280.0)
+            kn_l = (lm[25].x * 720.0, lm[25].y * 1280.0)
+            ank_r = (lm[28].x * 720.0, lm[28].y * 1280.0)
+            ank_l = (lm[27].x * 720.0, lm[27].y * 1280.0)
+
+            if step_idx in (1, 3):
+                if hip_r[0] > hip_l[0]:
+                    hip_r, hip_l = hip_l, hip_r
+                if kn_r[0] > kn_l[0]:
+                    kn_r, kn_l = kn_l, kn_r
+                if ank_r[0] > ank_l[0]:
+                    ank_r, ank_l = ank_l, ank_r
+
+                if step_idx == 1:
+                    rb = rgb[:, :, 0].astype(np.float32) - rgb[:, :, 2].astype(np.float32)
+                    m_vL = (rb > 25.0) & (yy_720 > 660.0) & (yy_720 < 900.0) & (xx_720 < 360.0)
+                    m_vR = (rb > 25.0) & (yy_720 > 660.0) & (yy_720 < 900.0) & (xx_720 >= 360.0)
+                    if np.count_nonzero(m_vL) > 80:
+                        kn_r = (0.35 * kn_r[0] + 0.65 * float(xx_720[m_vL].mean()), 0.50 * kn_r[1] + 0.50 * float(yy_720[m_vL].mean()))
+                    if np.count_nonzero(m_vR) > 80:
+                        kn_l = (0.35 * kn_l[0] + 0.65 * float(xx_720[m_vR].mean()), 0.50 * kn_l[1] + 0.50 * float(yy_720[m_vR].mean()))
         else:
-            nx, ny = -vy / length, vx / length
-        s_glute = (xx - h_pt[0]) * nx + (yy - h_pt[1]) * ny
-        return t, s_glute
+            prev = raw_kps[-1]
+            sh, hip_r, hip_l = prev["sh"], prev["hip_r"], prev["hip_l"]
+            kn_r, kn_l, ank_r, ank_l = prev["kn_r"], prev["kn_l"], prev["ank_r"], prev["ank_l"]
 
-    t_vL, s_glute_vL = _femur_coords(hip_vL, kn_vL, is_viewer_left=True)
-    t_vR, s_glute_vR = _femur_coords(hip_vR, kn_vR, is_viewer_left=False)
+        raw_kps.append({
+            "sh": sh,
+            "hip_r": hip_r,
+            "hip_l": hip_l,
+            "kn_r": kn_r,
+            "kn_l": kn_l,
+            "ank_r": ank_r,
+            "ank_l": ank_l,
+        })
 
-    def _leg_hem_gate(t, s_glute):
-        quad_arch = -0.05 * np.clip((-s_glute) / 42.0, 0.0, 1.2)
-        glute_wrap = (0.04 + 0.36 * squat_depth) * np.clip(s_glute / 36.0, 0.0, 1.35)
-        t_hem = (0.25 - 0.05 * squat_depth) + quad_arch + glute_wrap
-        return np.clip((t_hem - t) / 0.038, 0.0, 1.0)
-
-    gate_vL = _leg_hem_gate(t_vL, s_glute_vL)
-    gate_vR = _leg_hem_gate(t_vR, s_glute_vR)
-
-    side_blend = np.clip((xx - hip_cx) / 14.0 + 0.5, 0.0, 1.0)
-    thigh_hem_gate = gate_vL * (1.0 - side_blend) + gate_vR * side_blend
-
-    groin_glute_core = (
-        np.exp(-(((xx - hip_cx) / (hip_span * 0.50)) ** 4))
-        * np.clip(((crotch_y_split + 26.0) - yy) / 6.0, 0.0, 1.0)
-    )
-
-    y_glute_max = (hip_cy + 0.48 * (kn_cy - hip_cy)) * (1.0 - squat_depth) + (crotch_y_split + 26.0) * squat_depth
-    glute_bot_gate = np.clip((y_glute_max - yy + 1.0) / 2.5, 0.0, 1.0)
-
-    fg_gate = np.clip((human_mask - 0.18) / 0.45, 0.0, 1.0)
-    shorts_mask = np.clip(top_gate * np.maximum(thigh_hem_gate, groin_glute_core) * glute_bot_gate * fg_gate, 0.0, 1.0)
-
-    band_mask = (
-        np.clip((yy - waist_top_y + 1.0) / 1.6, 0.0, 1.0)
-        * np.clip((waist_bot_y - yy + 1.0) / 1.6, 0.0, 1.0)
-        * shorts_mask
-    )
-
-    base_3d = np.clip(sculpt_curve, 0.16, 0.92)
-    dx_h = (xx - hip_cx) / max(55.0, hip_span * 0.72)
-    thigh_cyl_L = np.exp(-(((dx_h + 0.48) / 0.38) ** 2))
-    thigh_cyl_R = np.exp(-(((dx_h - 0.48) / 0.38) ** 2))
-    pouch_3d = np.exp(-(((dx_h) / 0.20) ** 2 + ((yy - (waist_bot_y + 0.42 * (crotch_y_split - waist_bot_y))) / 22.0) ** 2))
-    center_seam = np.exp(-((dx_h / 0.018) ** 2)) * np.clip((yy - waist_bot_y) / 6.0, 0.0, 1.0)
-    hem_edge = np.exp(-(((thigh_hem_gate - 0.52) / 0.16) ** 2)) * shorts_mask * (1.0 - band_mask)
-
-    fabric_lit = np.clip(
-        0.58 * base_3d
-        + 0.26 * np.maximum(thigh_cyl_L, thigh_cyl_R)
-        + 0.16 * pouch_3d
-        - 0.10 * center_seam,
-        0.0,
-        1.0,
-    )
-
-    sh_r = 16.0 + 34.0 * (fabric_lit ** 0.95) + 10.0 * hem_edge
-    sh_g = 18.0 + 36.0 * (fabric_lit ** 0.95) + 11.0 * hem_edge
-    sh_b = 21.0 + 40.0 * (fabric_lit ** 0.95) + 13.0 * hem_edge
-
-    band_top_hi = np.exp(-(((yy - (waist_top_y + 1.2)) / 1.0) ** 2))
-    band_bot_seam = np.exp(-(((yy - (waist_bot_y - 1.0)) / 1.0) ** 2))
-    band_lit = 0.62 * base_3d + 0.38 * np.exp(-((dx_w / 0.75) ** 2))
-
-    bd_r = 12.0 + 22.0 * band_lit + 24.0 * band_top_hi + 12.0 * band_bot_seam
-    bd_g = 14.0 + 24.0 * band_lit + 26.0 * band_top_hi + 13.0 * band_bot_seam
-    bd_b = 17.0 + 27.0 * band_lit + 30.0 * band_top_hi + 16.0 * band_bot_seam
-
-    shorts_rgb = np.stack([sh_r, sh_g, sh_b], axis=-1)
-    band_rgb = np.stack([bd_r, bd_g, bd_b], axis=-1)
-    bw = np.clip(band_mask, 0.0, 1.0)[:, :, None]
-    shorts_rgb = shorts_rgb * (1.0 - bw) + band_rgb * bw
-
-    res = out_rgb * (1.0 - shorts_mask[:, :, None]) + shorts_rgb * shorts_mask[:, :, None]
-    return res, shorts_mask
+    keys = list(raw_kps[0].keys())
+    n = len(raw_kps)
+    out_1080 = [dict() for _ in range(n)]
+    for k in keys:
+        xs = gaussian_filter1d([p[k][0] * 1.5 for p in raw_kps], sigma=2.5, mode="nearest")
+        ys = gaussian_filter1d([p[k][1] * 1.5 + y_sh for p in raw_kps], sigma=2.5, mode="nearest")
+        for i in range(n):
+            out_1080[i][k] = (float(xs[i]), float(ys[i]))
+    return out_1080
 
 
-def render_4step_frame_1080p(
-    raw_bgr_720p: np.ndarray,
+def upscale_and_shift_1080p(bgr_720p: np.ndarray, y_sh: int) -> np.ndarray:
+    up = cv2.resize(bgr_720p, (W, H), interpolation=cv2.INTER_LANCZOS4)
+    blur = cv2.GaussianBlur(up, (0, 0), 0.9)
+    sharp_bgr = cv2.addWeighted(up, 1.22, blur, -0.22, 0)
+    rgb = cv2.cvtColor(sharp_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
+
+    if y_sh <= 0:
+        return rgb
+
+    canvas = np.zeros_like(rgb)
+    canvas[y_sh:, :, :] = rgb[: H - y_sh, :, :]
+    top_strip = np.median(rgb[:24, :, :], axis=0, keepdims=True)
+    canvas[:y_sh, :, :] = top_strip
+    blend_h = 42
+    for dy in range(blend_h):
+        a = dy / float(blend_h)
+        canvas[y_sh + dy, :, :] = top_strip[0] * (1.0 - a) + canvas[y_sh + dy, :, :] * a
+    return canvas
+
+
+def shade_native_3d_frame_1080p(
+    rgb_1080: np.ndarray,
     step_idx: int,
     is_wrong: bool,
-    visual_mode: str,  # "bone_blood" (Steps 1 & 3) or "muscle_blood" (Steps 2 & 4)
+    visual_mode: str,
+    kp_1080: dict,
     pulse_phase: float = 0.0,
-    valgus_amount: float = 1.0,
-    precomputed_masks: tuple | None = None,
-) -> tuple[np.ndarray, np.ndarray, dict]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Renders the 1080x1920 frame with:
-    1. Large, screen-filling mannequin scale (`scale = 1.345 ~ 1.375`, feet at `y = 1658`),
-    2. Fitted 3D matte charcoal short drawers (`apply_fitted_3d_drawers_720p`),
-    3. Authentic Day 1 X-Ray Bone + Vascular Flow (`build_clean_d4_variants.py` / `gymform_engine.py`) for `bone_blood`,
-       and Authentic Day 1/Day 2 3D Intrinsic Fiber-Strand Muscle Activation (`build_v36_publish_reels.py`) for `muscle_blood`.
+    100% Pure Native 3D Shader:
+    - ZERO 2D drawn shorts, ZERO 2D drawn bones, ZERO 2D masks!
+    - Preserves the 3D mannequin's native 3D black athletic shorts (`rb_diff < 9.0` & dark charcoal fabric)
+      and full-width 1080x1920 studio background completely untouched.
+    - Uses cool non-red luminance (`0.35 * g_ch + 0.65 * b_ch`) when neutralizing non-target red regions
+      (e.g., upper back in Step 4) so there is ZERO upper-back whitening!
     """
-    if precomputed_masks is not None:
-        rgb_720, lm, full_fg_mask, human_mask, equip_mask = precomputed_masks
-        sh_h, sw_w = rgb_720.shape[:2]
-    else:
-        if step_idx in (1, 2) and is_wrong and valgus_amount > 0.01:
-            raw_bgr_720p = p62._apply_step1_knee_valgus_720p(raw_bgr_720p, float(valgus_amount))
+    r_ch, g_ch, b_ch = rgb_1080[:, :, 0], rgb_1080[:, :, 1], rgb_1080[:, :, 2]
+    yy, xx = np.mgrid[:H, :W].astype(np.float32)
 
-        sh_h, sw_w = raw_bgr_720p.shape[:2]
-        detector = uar.get_pose_detector()
-        rgb_720 = cv2.cvtColor(raw_bgr_720p, cv2.COLOR_BGR2RGB)
-        mp_res = detector.detect(uar.mp.Image(image_format=uar.mp.ImageFormat.SRGB, data=rgb_720))
-        if mp_res.pose_landmarks and mp_res.segmentation_masks:
-            lm = list(mp_res.pose_landmarks[0])
-            mp_seg = np.nan_to_num(mp_res.segmentation_masks[0].numpy_view()[:, :, 0].copy(), nan=0.0, posinf=1.0, neginf=0.0)
-            globals()["_LAST_MP_LM_SEG"] = (lm, mp_seg)
-        else:
-            lm, mp_seg = globals()["_LAST_MP_LM_SEG"]
-
-        full_fg_mask, human_mask, equip_mask = bcd.make_clean_barbell_and_human_mask(rgb_720, lm, mp_seg)
-        full_fg_mask = np.nan_to_num(full_fg_mask.copy(), nan=0.0)
-        human_mask = np.nan_to_num(human_mask.copy(), nan=0.0)
-        equip_mask = np.nan_to_num(equip_mask.copy(), nan=0.0)
-
-    rgb = rgb_720.astype(np.float32)
-    r_ch, g_ch, b_ch = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
-    base_lum = 0.299 * r_ch + 0.587 * g_ch + 0.114 * b_ch
-    non_red_lum = 0.30 * g_ch + 0.70 * b_ch
     rb_diff = np.maximum(0.0, r_ch - b_ch)
-    gb_diff = np.maximum(0.0, g_ch - b_ch)
+    base_lum = 0.299 * r_ch + 0.587 * g_ch + 0.114 * b_ch
+    cool_lum = 0.35 * g_ch + 0.65 * b_ch
 
-    sh_l = (lm[11].x * sw_w, lm[11].y * sh_h)
-    sh_r = (lm[12].x * sw_w, lm[12].y * sh_h)
-    sh_pt = (0.5 * (sh_l[0] + sh_r[0]), 0.5 * (sh_l[1] + sh_r[1]))
-    hip_r = (lm[24].x * sw_w, lm[24].y * sh_h)
-    hip_l = (lm[23].x * sw_w, lm[23].y * sh_h)
-    kn_r = (lm[26].x * sw_w, lm[26].y * sh_h)
-    kn_l = (lm[25].x * sw_w, lm[25].y * sh_h)
-    ank_r = (lm[28].x * sw_w, lm[28].y * sh_h)
-    ank_l = (lm[27].x * sw_w, lm[27].y * sh_h)
+    fiber_signal = 0.68 * r_ch + 0.32 * g_ch
+    sigma_micro = cv2.GaussianBlur(fiber_signal, (0, 0), 1.0)
+    sigma_ridge = cv2.GaussianBlur(fiber_signal, (0, 0), 2.8)
+    sigma_belly = cv2.GaussianBlur(fiber_signal, (0, 0), 7.2)
+    sigma_broad = cv2.GaussianBlur(fiber_signal, (0, 0), 15.5)
 
-    kp_720 = {
-        "sh": sh_pt,
-        "hip_r": hip_r,
-        "hip_l": hip_l,
-        "kn_r": kn_r,
-        "kn_l": kn_l,
-        "ank_r": ank_r,
-        "ank_l": ank_l,
-    }
+    hf_ridge = (sigma_micro - sigma_ridge) * 4.2 + (sigma_ridge - sigma_belly) * 2.4
+    fs = np.clip(0.46 + hf_ridge / 30.0, 0.0, 1.0) ** 1.42
+    hv = np.clip((sigma_belly - 22.0) / 145.0, 0.0, 1.0)
+    sulc = np.clip((sigma_broad - sigma_ridge - 1.0) / 10.5, 0.0, 1.0)
 
-    yy, xx = np.mgrid[:sh_h, :sw_w].astype(np.float32)
-    hip_mid_y = 0.5 * (hip_r[1] + hip_l[1])
+    # Cool non-red surface volume for neutralizing non-target red areas without whitening!
+    cool_belly = cv2.GaussianBlur(cool_lum, (0, 0), 6.0)
+    hv_cool = np.clip((cool_belly - 18.0) / 115.0, 0.0, 1.0)
+    grey_cool_matte = np.clip(32.0 + 108.0 * (hv_cool ** 0.95) + hf_ridge * 0.45, 20.0, 162.0)
+    grey_sculpt = np.clip(30.0 + 146.0 * (hv ** 1.05) + hf_ridge * 1.08 - sulc * 26.0, 18.0, 228.0)
 
-    # --- 1. PEARL-SILVER MATTE MANNEQUIN SKIN (Day 1 / Day 2 Master Tone) ---
-    red_any = np.clip((rb_diff - 10.0) / 75.0, 0.0, 1.0)
-    neutral_raw = base_lum * (1.0 - red_any) + (non_red_lum * 1.18 + 14.0) * red_any
-    lum_smooth = cv2.GaussianBlur(neutral_raw, (0, 0), 1.5)
-    lum_clean = lum_smooth + (neutral_raw - lum_smooth) * 0.42
+    red_any = np.clip((rb_diff - 9.0) / 52.0, 0.0, 1.0)
 
-    raw_lo, raw_hi = (21.0, 86.0) if is_wrong else (19.0, 82.0)
-    norm_body = np.clip((lum_clean - raw_lo) / (raw_hi - raw_lo), 0.0, 1.15)
-    sculpt_curve = np.clip(norm_body, 0.0, 1.0) ** 0.54 + 0.16 * np.clip(norm_body - 0.70, 0.0, 0.45)
+    kn_y = 0.5 * (kp_1080["kn_r"][1] + kp_1080["kn_l"][1])
+    hip_y = 0.5 * (kp_1080["hip_r"][1] + kp_1080["hip_l"][1])
+    sh_y = kp_1080["sh"][1]
 
-    body_r = 82.0 + 106.0 * (sculpt_curve ** 0.82)
-    body_g = 85.0 + 108.0 * (sculpt_curve ** 0.82)
-    body_b = 89.0 + 111.0 * (sculpt_curve ** 0.82)
+    y_cut_shin = kn_y + 52.0
+    above_shin_gate = np.clip((y_cut_shin - yy) / 28.0, 0.0, 1.0)
 
-    plate_zone = np.clip(equip_mask * (1.0 - human_mask * 0.90), 0.0, 1.0)
-    plate_norm = np.clip((lum_clean - 24.0) / 135.0, 0.0, 1.0) ** 0.78
-    plate_r = 52.0 + 118.0 * plate_norm
-    plate_g = 55.0 + 120.0 * plate_norm
-    plate_b = 60.0 + 124.0 * plate_norm
+    if step_idx == 4:
+        lower_body_gate = np.clip((yy - (hip_y - 125.0)) / 48.0, 0.0, 1.0) * above_shin_gate
+        neutral_lum = grey_sculpt * lower_body_gate + grey_cool_matte * (1.0 - lower_body_gate)
+    elif step_idx == 2:
+        neutral_lum = grey_sculpt
+    else:
+        neutral_lum = grey_sculpt * above_shin_gate + grey_cool_matte * (1.0 - above_shin_gate)
 
-    mono_r = body_r * (1.0 - plate_zone) + plate_r * plate_zone
-    mono_g = body_g * (1.0 - plate_zone) + plate_g * plate_zone
-    mono_b = body_b * (1.0 - plate_zone) + plate_b * plate_zone
-    mono = np.stack([np.clip(mono_r, 0, 238), np.clip(mono_g, 0, 242), np.clip(mono_b, 0, 246)], axis=-1)
+    mono_target = np.stack([
+        neutral_lum * 0.96,
+        neutral_lum * 0.98,
+        neutral_lum * 1.03,
+    ], axis=2)
+    mono = rgb_1080 * (1.0 - red_any[:, :, None]) + mono_target * red_any[:, :, None]
 
-    # Pre-compute Day 1 / Day 2 3D anatomical ridge features (`build_v36_publish_reels.py` & `gymform_engine.py`)
-    fiber_signal = 0.42 * r_ch + 0.58 * g_ch
-    sigma_micro = cv2.GaussianBlur(fiber_signal, (0, 0), 0.9)
-    sigma_ridge = cv2.GaussianBlur(fiber_signal, (0, 0), 2.4)
-    sigma_belly = cv2.GaussianBlur(fiber_signal, (0, 0), 6.5)
-    sigma_broad = cv2.GaussianBlur(fiber_signal, (0, 0), 14.0)
+    body_interior = np.clip((base_lum - 38.0) / 18.0, 0.0, 1.0)
+    rb_blur = cv2.GaussianBlur(rb_diff, (0, 0), 5.5) * body_interior
+    rb_eff = np.maximum(rb_diff, rb_blur * 0.90)
 
-    hf_ridge = (sigma_micro - sigma_ridge) * 3.2 + (sigma_ridge - sigma_belly) * 1.80
-    fs = np.clip(0.48 + hf_ridge / 38.0, 0.0, 1.0) ** 1.32
-    hv = np.clip((sigma_belly - 24.0) / 145.0, 0.0, 1.0)
-    sulc = np.clip((sigma_broad - sigma_ridge - 2.8) / 19.0, 0.0, 1.0)
+    shorts_region = (
+        (yy > (hip_y - 165.0))
+        & (yy < (kn_y - 45.0))
+        & (xx > 220.0)
+        & (xx < 860.0)
+        & (base_lum < 48.0)
+        & (rb_diff < 11.0)
+    ).astype(np.float32)
+    shorts_mask_1080 = cv2.GaussianBlur(shorts_region, (0, 0), 4.0)
 
-    bone_detail = 0.38 * r_ch + 0.62 * g_ch
-    blur_b = cv2.GaussianBlur(bone_detail, (0, 0), 1.4)
-    bone_sharp = np.clip((bone_detail + (bone_detail - blur_b) * 2.2 - 18.0) / 185.0, 0.0, 1.0)
-
-    d_fem_r, t_fem_r = p62._segment_distance_field(xx, yy, hip_r, kn_r, 0.16, 0.98)
-    d_fem_l, t_fem_l = p62._segment_distance_field(xx, yy, hip_l, kn_l, 0.16, 0.98)
-    d_tib_r, t_tib_r = p62._segment_distance_field(xx, yy, kn_r, ank_r, 0.02, 0.88)
-    d_tib_l, t_tib_l = p62._segment_distance_field(xx, yy, kn_l, ank_l, 0.02, 0.88)
-
-    y_chest = sh_pt[1] + 0.38 * (hip_mid_y - sh_pt[1])
-    y_ank_cut = 0.5 * (ank_r[1] + ank_l[1]) + 10.0
-    leg_gate = np.clip((yy - y_chest) / 28.0, 0.0, 1.0) * np.clip((y_ank_cut - yy) / 22.0, 0.0, 1.0) * human_mask
+    flow_wave = 0.80 + 0.20 * np.cos(2.0 * math.pi * ((yy - hip_y) / 280.0 - pulse_phase))
 
     if visual_mode == "bone_blood":
-        # ==============================================================================
-        # STEPS 1 & 3: AUTHENTIC DAY 1 3D X-RAY BONE + VASCULAR ENERGY FLOW (`build_clean_d4_variants.py`)
-        # ==============================================================================
-        condyle_r = np.exp(-(((xx - kn_r[0]) / 26.0) ** 2 + ((yy - kn_r[1]) / 24.0) ** 2))
-        condyle_l = np.exp(-(((xx - kn_l[0]) / 26.0) ** 2 + ((yy - kn_l[1]) / 24.0) ** 2))
+        raw_alpha = np.clip((rb_eff - 8.5) / 30.0, 0.0, 1.0) * above_shin_gate
+        bone_core_w = (
+            np.clip((g_ch - 68.0) / 78.0, 0.0, 1.0)
+            * np.clip((rb_diff - 18.0) / 42.0, 0.0, 1.0)
+            * above_shin_gate
+        )[:, :, None]
 
-        w_fem_r = 12.5 + 11.5 * np.exp(-((t_fem_r - 0.94) / 0.14) ** 2) + 7.0 * np.exp(-((t_fem_r - 0.12) / 0.12) ** 2)
-        w_fem_l = 12.5 + 11.5 * np.exp(-((t_fem_l - 0.94) / 0.14) ** 2) + 7.0 * np.exp(-((t_fem_l - 0.12) / 0.12) ** 2)
-        w_tib_r = 10.5 + 10.5 * np.exp(-((t_tib_r - 0.06) / 0.14) ** 2)
-        w_tib_l = 10.5 + 10.5 * np.exp(-((t_tib_l - 0.06) / 0.14) ** 2)
-
-        u_fem_r = np.clip(d_fem_r / np.maximum(1.0, w_fem_r), 0.0, 1.5)
-        u_fem_l = np.clip(d_fem_l / np.maximum(1.0, w_fem_l), 0.0, 1.5)
-        u_tib_r = np.clip(d_tib_r / np.maximum(1.0, w_tib_r), 0.0, 1.5)
-        u_tib_l = np.clip(d_tib_l / np.maximum(1.0, w_tib_l), 0.0, 1.5)
-        u_bone = np.minimum(np.minimum(u_fem_r, u_fem_l), np.minimum(u_tib_r, u_tib_l))
-
-        bone_cyl = np.clip(1.0 - (u_bone ** 1.8), 0.0, 1.0)
-        cortical_edge = np.exp(-((u_bone - 0.74) / 0.16) ** 2) * np.clip(1.15 - u_bone, 0.0, 1.0)
-
-        flow_wave_r = 0.68 + 0.32 * np.cos(2.0 * math.pi * (t_fem_r * 1.8 - pulse_phase))
-        flow_wave_l = 0.68 + 0.32 * np.cos(2.0 * math.pi * (t_fem_l * 1.8 - pulse_phase))
-        flow_wave = np.maximum(flow_wave_r * (u_fem_r < 1.25), flow_wave_l * (u_fem_l < 1.25))
-        joint_heat = np.clip(condyle_r + condyle_l, 0.0, 1.2)
-
-        bone_presence = np.clip((bone_cyl * 0.85 + cortical_edge * 0.55 + joint_heat * 0.78) * leg_gate, 0.0, 1.0)
-        # Soft Day 1 translucent X-Ray cavity (`0.46` depth, never a muddy blotch!)
-        xray_window = cv2.GaussianBlur(bone_presence, (0, 0), 13.0)
-        xray_window = np.clip(xray_window * 1.22, 0.0, 0.66) * leg_gate
-
-        out = mono * (1.0 - xray_window[:, :, None] * 0.46)
-        trabecular = np.clip((bone_sharp - 0.24) / 0.64, 0.0, 1.0) * cortical_edge * leg_gate
-        b_val = np.clip(
-            bone_cyl * (0.45 + 0.55 * bone_sharp) * (0.78 + 0.28 * flow_wave)
-            + joint_heat * 0.50
-            + cortical_edge * 0.40,
-            0.0,
-            1.0,
-        )
+        strand_mod = (0.20 + 0.80 * fs) * ((1.0 - 0.72 * sulc) ** 1.28)
+        ridge_boost = np.clip((fs * 0.74 + np.clip((rb_diff - 45.0) / 68.0, 0.0, 1.0) * 0.46) * flow_wave, 0.0, 1.0)[:, :, None]
+        vol_shade = np.clip(0.26 + 0.74 * hv * (0.38 + 0.62 * fs) * (1.0 - 0.45 * sulc), 0.0, 1.0)[:, :, None]
 
         if is_wrong:
-            # Exact Day 1 Crimson-Orange-Gold Thermal X-Ray Bone + Vascular Stress Ridges
-            col_r = 105.0 + 150.0 * (b_val ** 0.50)
-            col_g = 18.0 + 125.0 * (b_val ** 1.18) + 115.0 * (b_val ** 2.4) + 38.0 * joint_heat
-            col_b = 10.0 + 42.0 * (b_val ** 1.45) + 135.0 * (b_val ** 2.8)
-            bone_rgb = np.stack([np.clip(col_r, 0, 255), np.clip(col_g, 0, 255), np.clip(col_b, 0, 255)], axis=-1)
-
-            musc_stress = np.clip((rb_diff - 14.0) / 42.0, 0.0, 1.0) * leg_gate * (1.0 - bone_presence * 0.65)
-            stress_rgb = np.stack([
-                65.0 + 180.0 * (fs ** 0.85),
-                18.0 + 48.0 * (fs ** 1.15),
-                18.0 + 35.0 * (fs ** 1.30),
-            ], axis=-1)
-            out = out * (1.0 - (musc_stress * 0.48)[:, :, None]) + stress_rgb * (musc_stress * 0.48)[:, :, None]
+            deep_col = np.array([135.0, 10.0, 14.0], dtype=np.float32)
+            mid_col = np.array([250.0, 38.0, 28.0], dtype=np.float32)
+            crest_col = np.array([255.0, 175.0, 95.0], dtype=np.float32)
+            xray_bone = np.stack([
+                np.clip(r_ch * 1.20 + 32.0 + hf_ridge * 0.75, 0, 255),
+                np.clip(g_ch * 0.78 + 24.0 + hf_ridge * 0.35, 0, 255),
+                np.clip(b_ch * 0.55 + 18.0, 0, 220),
+            ], axis=2)
         else:
-            # Exact Day 1 Emerald-Cyan Bio-X-Ray Bone + Vascular Energy Ridges
-            col_r = 12.0 + 65.0 * (b_val ** 1.35) + 155.0 * (b_val ** 2.7)
-            col_g = 95.0 + 160.0 * (b_val ** 0.52)
-            col_b = 48.0 + 115.0 * (b_val ** 1.10) + 92.0 * (b_val ** 2.3) + 35.0 * joint_heat
-            bone_rgb = np.stack([np.clip(col_r, 0, 255), np.clip(col_g, 0, 255), np.clip(col_b, 0, 255)], axis=-1)
+            deep_col = np.array([6.0, 118.0, 58.0], dtype=np.float32)
+            mid_col = np.array([18.0, 232.0, 118.0], dtype=np.float32)
+            crest_col = np.array([175.0, 255.0, 225.0], dtype=np.float32)
+            b_int = np.clip((g_ch - 45.0) / 135.0, 0.0, 1.0)
+            xray_bone = np.stack([
+                np.clip(35.0 + 165.0 * (b_int ** 1.5) + hf_ridge * 0.45, 0, 245),
+                np.clip(145.0 + 110.0 * (b_int ** 0.7) + hf_ridge * 0.70, 0, 255),
+                np.clip(115.0 + 135.0 * (b_int ** 1.0) + hf_ridge * 0.60, 0, 255),
+            ], axis=2)
 
-            musc_act = np.clip((rb_diff - 12.0) / 38.0, 0.0, 1.0) * leg_gate * (1.0 - bone_presence * 0.60)
-            act_rgb = np.stack([
-                16.0 + 55.0 * (fs ** 1.10),
-                75.0 + 175.0 * (fs ** 0.85),
-                42.0 + 115.0 * (fs ** 1.00),
-            ], axis=-1)
-            out = out * (1.0 - (musc_act * 0.52)[:, :, None]) + act_rgb * (musc_act * 0.52)[:, :, None]
-
-        fill_alpha = np.clip((bone_presence ** 0.78) * 0.95, 0.0, 0.96)[:, :, None]
-        out = out * (1.0 - fill_alpha) + bone_rgb * fill_alpha
-        out = np.clip(out + trabecular[:, :, None] * np.array([190.0, 200.0, 215.0], dtype=np.float32) * 0.58, 0.0, 255.0)
+        vascular_rgb = (
+            deep_col * (1.0 - vol_shade)
+            + mid_col * vol_shade * (1.0 - ridge_boost * 0.58)
+            + crest_col * (ridge_boost ** 1.35) * 0.86
+        )
+        f_alpha = np.clip(raw_alpha * (0.64 + 0.64 * strand_mod), 0.0, 0.96)[:, :, None]
+        combined_src = vascular_rgb * (1.0 - bone_core_w * 0.85) + xray_bone * (bone_core_w * 0.85)
+        alpha_final = np.maximum(f_alpha, bone_core_w * 0.95)
+        out = mono * (1.0 - alpha_final) + np.clip(combined_src, 0, 255) * alpha_final
+        return np.clip(out, 0, 255).astype(np.uint8), shorts_mask_1080
 
     else:
-        # ==============================================================================
-        # STEPS 2 & 4: AUTHENTIC DAY 1 / DAY 2 3D INTRINSIC FIBER-STRAND MUSCLE SHADER (`build_v36_publish_reels.py`)
-        # ==============================================================================
-        # Combine the raw 3D anatomical red muscle channel (`rb_diff`) with the quadriceps geometric envelope
-        # so the 3D muscle bellies (Vastus Medialis, Rectus Femoris, Vastus Lateralis) and their individual striated fibers
-        # light up with deep anatomical volume, dark sulci separation (`sulc`), and glowing blood-flow crests (`crest_col`)!
-        w_quad_r = 25.0 + 14.0 * np.sin(np.clip(t_fem_r, 0.0, 1.0) * math.pi)
-        w_quad_l = 25.0 + 14.0 * np.sin(np.clip(t_fem_l, 0.0, 1.0) * math.pi)
-        q_env_r = np.clip(1.18 - d_fem_r / np.maximum(1.0, w_quad_r), 0.0, 1.0) * (t_fem_r > 0.14) * (t_fem_r < 0.93)
-        q_env_l = np.clip(1.18 - d_fem_l / np.maximum(1.0, w_quad_l), 0.0, 1.0) * (t_fem_l > 0.14) * (t_fem_l < 0.93)
-        quad_env = cv2.GaussianBlur(np.maximum(q_env_r, q_env_l), (0, 0), 4.0) * leg_gate
+        if step_idx == 2:
+            lumbar_gate = np.clip(((hip_y + 75.0) - yy) / 48.0, 0.0, 1.0) * np.clip((yy - (sh_y - 45.0)) / 42.0, 0.0, 1.0)
+            fe = np.clip((rb_eff - 7.5) / 28.0, 0.0, 1.0) * lumbar_gate * above_shin_gate
+            bone_core_w = (
+                np.clip((g_ch - 75.0) / 85.0, 0.0, 1.0)
+                * np.clip((rb_diff - 22.0) / 48.0, 0.0, 1.0)
+                * lumbar_gate
+            )[:, :, None]
+        else:
+            target_gate = np.clip((yy - (hip_y - 125.0)) / 48.0, 0.0, 1.0) * above_shin_gate
+            fe = np.clip((rb_eff - 7.5) / 28.0, 0.0, 1.0) * target_gate
+            bone_core_w = np.zeros((H, W, 1), dtype=np.float32)
 
-        fe_raw = np.clip((rb_diff - 12.0) / 42.0, 0.0, 1.0) * leg_gate
-        fe = np.clip(np.maximum(fe_raw, quad_env * 0.88), 0.0, 1.0)
-        hc = np.clip((gb_diff - 8.0) / 70.0, 0.0, 1.0) * leg_gate
-
-        # Traveling blood-flow wave along the muscle belly from hip to knee
-        blood_wave_r = 0.78 + 0.22 * np.cos(2.0 * math.pi * (t_fem_r * 1.6 - pulse_phase))
-        blood_wave_l = 0.78 + 0.22 * np.cos(2.0 * math.pi * (t_fem_l * 1.6 - pulse_phase))
-        blood_wave = np.maximum(blood_wave_r * (q_env_r > 0.05), blood_wave_l * (q_env_l > 0.05))
-
-        strand_mod = (0.20 + 0.80 * fs) * (1.0 - 0.68 * sulc)
-        fiber_alpha = np.clip(fe * (0.62 + 0.68 * strand_mod), 0.0, 0.95)[:, :, None]
-        ridge_boost = np.clip((fs * 0.72 + hc * 0.45) * blood_wave, 0.0, 1.0)[:, :, None]
-        vol_shade = np.clip(0.26 + 0.74 * hv * (0.42 + 0.58 * fs), 0.0, 1.0)[:, :, None]
+        hc = np.clip((rb_diff - 50.0) / 68.0, 0.0, 1.0) * fs
+        strand_mod = (0.16 + 0.84 * fs) * ((1.0 - 0.78 * sulc) ** 1.35)
+        fiber_alpha = np.clip(fe * (0.72 + 0.66 * strand_mod), 0.0, 0.97)[:, :, None]
+        ridge_boost = np.clip((fs * 0.74 + hc * 0.46) * flow_wave, 0.0, 1.0)[:, :, None]
+        vol_shade = np.clip(0.24 + 0.76 * hv * (0.36 + 0.64 * fs) * (1.0 - 0.50 * sulc), 0.0, 1.0)[:, :, None]
 
         if is_wrong:
-            # Step 2 (`Wrong Muscle`): Lateral quad / tensor fasciae latae shear tension in crimson-orange
-            deep_col = np.array([145.0, 16.0, 15.0], dtype=np.float32)
-            mid_col = np.array([245.0, 50.0, 32.0], dtype=np.float32)
-            crest_col = np.array([255.0, 195.0, 110.0], dtype=np.float32)
+            deep_col = np.array([132.0, 8.0, 14.0], dtype=np.float32)
+            mid_col = np.array([250.0, 24.0, 32.0], dtype=np.float32)
+            crest_col = np.array([255.0, 138.0, 118.0], dtype=np.float32)
         else:
-            # Step 4 (`Correct Muscle`): Full Quadriceps (VMO, Rectus Femoris, Vastus Lateralis) activation in rich emerald-mint
-            deep_col = np.array([8.0, 108.0, 46.0], dtype=np.float32)
-            mid_col = np.array([22.0, 224.0, 96.0], dtype=np.float32)
-            crest_col = np.array([185.0, 255.0, 208.0], dtype=np.float32)
+            deep_col = np.array([4.0, 136.0, 28.0], dtype=np.float32)
+            mid_col = np.array([16.0, 246.0, 64.0], dtype=np.float32)
+            crest_col = np.array([175.0, 255.0, 190.0], dtype=np.float32)
 
         fiber_rgb = (
             deep_col * (1.0 - vol_shade)
-            + mid_col * vol_shade * (1.0 - ridge_boost * 0.62)
-            + crest_col * (ridge_boost ** 1.35) * 0.88
+            + mid_col * vol_shade * (1.0 - ridge_boost * 0.60)
+            + crest_col * (ridge_boost ** 1.40) * 0.86
         )
+        if is_wrong:
+            xray_bone = np.stack([
+                np.clip(r_ch * 1.18 + 28.0 + hf_ridge * 0.70, 0, 255),
+                np.clip(g_ch * 0.65 + 12.0 + hf_ridge * 0.28, 0, 255),
+                np.clip(b_ch * 0.68 + 14.0, 0, 255),
+            ], axis=2)
+            fiber_rgb = fiber_rgb * (1.0 - bone_core_w * 0.75) + xray_bone * (bone_core_w * 0.75)
+
         out = mono * (1.0 - fiber_alpha) + np.clip(fiber_rgb, 0.0, 255.0) * fiber_alpha
-
-    # --- 3. DRESS MANNEQUIN IN FITTED 3D SHORT DRAWERS (`드로즈`) ---
-    out, shorts_mask_720 = apply_fitted_3d_drawers_720p(out, human_mask, lm, sculpt_curve)
-
-    # --- 4. PLACE INTO 1080x1920 STUDIO CANVAS WITH LARGER MANNEQUIN SCALE (`1.26x ~ 1.30x`) ---
-    # Since the top preview capsule is now compact (`y = 148..296`), the mannequin fills the screen
-    # from `y ~ 345` (when standing) down to `y_feet = 1615`!
-    step_fixed_cam = {
-        1: (1.375, 360.0, 1037.0),
-        2: (1.375, 360.0, 1037.0),
-        3: (1.345, 360.0, 1062.0),
-        4: (1.345, 360.0, 1062.0),
-    }
-    scale, cx_fg, y_bot_fg = step_fixed_cam.get(step_idx, (1.360, 360.0, 1050.0))
-    y_anchor = 1658.0
-
-    nw, nh = int(round(sw_w * scale)), int(round(sh_h * scale))
-    x0 = int(round(540.0 - cx_fg * scale))
-    y0 = int(round(y_anchor - y_bot_fg * scale))
-
-    res_man = cv2.resize(out, (nw, nh), interpolation=cv2.INTER_LANCZOS4).astype(np.float32)
-    res_mask = cv2.resize(full_fg_mask, (nw, nh), interpolation=cv2.INTER_LINEAR).astype(np.float32)
-    res_shorts = cv2.resize(shorts_mask_720, (nw, nh), interpolation=cv2.INTER_LINEAR).astype(np.float32)
-
-    canvas = np.full((H, W, 3), [28.0, 31.0, 36.0], dtype=np.float32)
-    mask_1080 = np.zeros((H, W), dtype=np.float32)
-    shorts_1080 = np.zeros((H, W), dtype=np.float32)
-
-    sy0, sy1 = max(0, -y0), min(nh, H - y0)
-    sx0, sx1 = max(0, -x0), min(nw, W - x0)
-    dy0, dy1 = max(0, y0), min(H, y0 + nh)
-    dx0, dx1 = max(0, x0), min(W, x0 + nw)
-
-    if sy1 > sy0 and sx1 > sx0:
-        m_crop = np.clip(res_mask[sy0:sy1, sx0:sx1], 0.0, 1.0)[:, :, None]
-        canvas[dy0:dy1, dx0:dx1] = canvas[dy0:dy1, dx0:dx1] * (1.0 - m_crop) + res_man[sy0:sy1, sx0:sx1] * m_crop
-        mask_1080[dy0:dy1, dx0:dx1] = res_mask[sy0:sy1, sx0:sx1]
-        shorts_1080[dy0:dy1, dx0:dx1] = res_shorts[sy0:sy1, sx0:sx1]
-
-    # Floor shadow under feet
-    fl_y, fl_x = np.mgrid[1615:1705, 0:W].astype(np.float32)
-    fl_sh = np.exp(-(((fl_x - 540.0) / 305.0) ** 2 + ((fl_y - 1662.0) / 24.0) ** 2)) * 0.42
-    canvas[1615:1705, :] *= 1.0 - fl_sh[:, :, None] * (1.0 - mask_1080[1615:1705, :, None])
-
-    def map_pt(pt):
-        return (float(pt[0] * scale + x0), float(pt[1] * scale + y0))
-
-    kp_1080 = {k: map_pt(v) for k, v in kp_720.items()}
-
-    # --- 5. @demicstory LASER JOINT-ALIGNMENT LINES (CLIPPED BELOW DRAWERS SO THEY NEVER CROSS THE BLACK TRUNKS) ---
-    base_rgb = np.clip(canvas, 0, 255).astype(np.uint8)
-    laser_rgb = bcd.bd.draw_day1_bone_energy_flow_and_exterior_arcs(
-        base_rgb, mask_1080, kp_1080, is_wrong, with_exterior_callouts=False, with_laser_axis=True
-    )
-    sh_gate = np.clip(shorts_1080 * 1.4, 0.0, 1.0)[:, :, None]
-    out_1080 = laser_rgb.astype(np.float32) * (1.0 - sh_gate) + base_rgb.astype(np.float32) * sh_gate
-    return np.clip(out_1080, 0, 255).astype(np.uint8), mask_1080, kp_1080
+        return np.clip(out, 0, 255).astype(np.uint8), shorts_mask_1080
 
 
 def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, active_slot: int, is_wrong: bool) -> np.ndarray:
-    """
-    Compact Centered @demicstory Top Preview Capsule (`pill_w = 576, pill_h = 148, x = 252..828, y = 148..296`):
-    - Translucent frosted dark glass capsule with 3 upright anatomical figure slots (`tw = 142, th = 168`),
-    - Active center slot (`x = 540`) highlighted with glowing Red/Orange (Wrong) or Emerald Green (Correct) border,
-    - Compact height (`bottom y = 296`) leaves plenty of headroom so the larger `1.285x` mannequin & barbell are never covered!
-    """
-    from PIL import ImageFilter
-
     bar_x0, bar_y0, bar_x1, bar_y1 = 258, 132, 822, 274
     tw, th = 136, 160
     slot_centers_x = [354, 540, 726]
@@ -538,41 +399,7 @@ def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, act
     return np.array(base_pil.convert("RGB"))
 
 
-def draw_step_simple2_callout(
-    frame_rgb: np.ndarray,
-    kp_1080: dict,
-    is_wrong: bool,
-    deg_str: str,
-    l1_str: str,
-    l2_str: str,
-) -> np.ndarray:
-    base = Image.fromarray(frame_rgb).convert("RGBA")
-    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    rd = ImageDraw.Draw(ov)
-
-    col = (255, 96, 36) if is_wrong else (32, 245, 130)
-    kn_r = (int(kp_1080["kn_r"][0]), int(kp_1080["kn_r"][1]))
-    bcd._draw_precision_leader(rd, kn_r, (kn_r[0] - 48, kn_r[1] - 32), (242, kn_r[1] - 32), col)
-
-    tx, ty = 36, kn_r[1] - 108
-    f_big = v30.f_pretendard(86, "extrabold")
-    f_l1 = v30.f_pretendard(21, "extrabold")
-    f_l2 = v30.f_pretendard(16, "bold")
-
-    rd.text((tx + 2, ty + 3), deg_str, font=f_big, fill=(0, 0, 0, 210))
-    rd.text((tx, ty), deg_str, font=f_big, fill=(255, 255, 255, 255))
-    rd.text((tx + 2, ty + 92), l1_str, font=f_l1, fill=(col[0], col[1], col[2], 255))
-    rd.text((tx + 2, ty + 119), l2_str, font=f_l2, fill=(215, 222, 232, 235))
-
-    return np.array(Image.alpha_composite(base, ov).convert("RGB"))
-
-
 def draw_single_line_kaushan_title(canvas_pil: Image.Image, exercise_name: str = "Barbell Back Squat"):
-    """
-    Renders the confirmed single-line full exercise name (`Barbell Back Squat`)
-    in Font #1 (`Kaushan Script`) at the bottom (`y_center = 1742`),
-    with ZERO flanking horizontal lines (`-`) on either side!
-    """
     SS = 2
     ov = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
     od = ImageDraw.Draw(ov)
@@ -595,79 +422,310 @@ def draw_single_line_kaushan_title(canvas_pil: Image.Image, exercise_name: str =
     canvas_pil.alpha_composite(ov_1080)
 
 
-import build_simple_4concepts as s4
+def draw_step_laser_and_callout(
+    base_rgb: np.ndarray,
+    shorts_mask_1080: np.ndarray,
+    step_idx: int,
+    kp: dict,
+    is_wrong: bool,
+    deg_str: str,
+    l1_str: str,
+    l2_str: str,
+) -> np.ndarray:
+    canvas = Image.fromarray(base_rgb).convert("RGBA")
+    sh = kp["sh"]
+    hip_r, hip_l = kp["hip_r"], kp["hip_l"]
+    kn_r, kn_l = kp["kn_r"], kp["kn_l"]
+    ank_r, ank_l = kp["ank_r"], kp["ank_l"]
 
-def main():
-    print("Loading raw sequences...")
-    fn1, i0_1, i1_1, *_ = p62.STEP_POOL_SPECS[1]
-    fn2, i0_2, i1_2, *_ = p62.STEP_POOL_SPECS[2]
-    seq_wrong = p62._load_slice(os.path.join(OUT_DIR, fn1), i0_1, i1_1, target_len=52)
-    seq_right = p62._load_slice(os.path.join(OUT_DIR, fn2), i0_2, i1_2, target_len=52)
+    if step_idx in (1, 3):
+        top_r, _ = p62._extend_segment(hip_r, kn_r, 0.22, 1.0)
+        _, bot_r = p62._extend_segment(kn_r, ank_r, 0.0, 1.12)
+        top_l, _ = p62._extend_segment(hip_l, kn_l, 0.22, 1.0)
+        _, bot_l = p62._extend_segment(kn_l, ank_l, 0.0, 1.12)
+        ext_r1, ext_r2 = p62._extend_segment(hip_r, kn_r, 0.62, 1.38)
+        ext_l1, ext_l2 = p62._extend_segment(hip_l, kn_l, 0.62, 1.38)
+        p62.draw_demic_laser_joint_axis(
+            canvas,
+            main_chains_1x=[[top_r, kn_r, bot_r], [top_l, kn_l, bot_l]],
+            aux_ext_chains_1x=[[ext_r1, ext_r2], [ext_l1, ext_l2]],
+            vertex_pts_1x=[kn_r, kn_l],
+            is_wrong=is_wrong,
+        )
+        target_pt = (int(kn_r[0]), int(kn_r[1]))
+    else:
+        sh_top, _ = p62._extend_segment(sh, hip_r, -0.12, 1.0)
+        _, kn_ext = p62._extend_segment(hip_r, kn_r, 0.0, 1.14)
+        torso_cross_a, torso_cross_b = p62._extend_segment(sh, hip_r, 0.66, 1.36)
+        thigh_cross_a, thigh_cross_b = p62._extend_segment(kn_r, hip_r, 0.66, 1.32)
+        p62.draw_demic_laser_joint_axis(
+            canvas,
+            main_chains_1x=[[sh_top, hip_r, kn_ext]],
+            aux_ext_chains_1x=[[torso_cross_a, torso_cross_b], [thigh_cross_a, thigh_cross_b]],
+            vertex_pts_1x=[hip_r, kn_r] if not is_wrong else [hip_r],
+            is_wrong=is_wrong,
+        )
+        if step_idx == 2:
+            target_pt = (int(0.45 * sh[0] + 0.55 * hip_r[0]), int(0.45 * sh[1] + 0.55 * hip_r[1]))
+        else:
+            target_pt = (int(0.55 * hip_r[0] + 0.45 * kn_r[0]), int(0.55 * hip_r[1] + 0.45 * kn_r[1]))
 
-    # Ensure top preview icons also use our fitted 3D drawers
-    bcd.apply_3d_athletic_briefs_720p = apply_fitted_3d_drawers_720p
-    s4._UPRIGHT_ANATOMY_CACHE.clear()
-    icons_wrong = s4.make_unsquished_day1_top_icons({}, current_step=1)
-    icons_right = s4.make_unsquished_day1_top_icons({}, current_step=2)
+    laser_rgb = np.array(canvas.convert("RGB")).astype(np.float32)
+    sh_gate = np.clip(shorts_mask_1080 * 0.85, 0.0, 0.85)[:, :, None]
+    blended = np.clip(laser_rgb * (1.0 - sh_gate) + base_rgb.astype(np.float32) * sh_gate, 0, 255).astype(np.uint8)
 
-    steps_cfg = [
-        (1, seq_wrong[-1], True,  "bone_blood",   "16°", "KNEE CAVE",   "86% JOINT RISK",  "1. 오자세 뼈·혈류 (X-Ray Bone)"),
-        (2, seq_wrong[-1], True,  "muscle_blood", "16°", "VALGUS LOAD", "78% QUAD LOSS",   "2. 오자세 근육·혈류 (Muscle Strain)"),
-        (3, seq_right[-1], False, "bone_blood",   "0°",  "KNEE LOCK",   "96% JOINT SAFE",  "3. 정자세 뼈·혈류 (Aligned Bone)"),
-        (4, seq_right[-1], False, "muscle_blood", "0°",  "FULL TRACK",  "98% QUAD DRIVE",  "4. 정자세 근육·혈류 (Full Quad Drive)"),
+    base_pil = Image.fromarray(blended).convert("RGBA")
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    rd = ImageDraw.Draw(ov)
+
+    col = (255, 96, 36) if is_wrong else (32, 245, 130)
+    elbow_x = max(242, target_pt[0] - 48)
+    elbow_y = target_pt[1] - 32
+    bcd._draw_precision_leader(rd, target_pt, (elbow_x, elbow_y), (236, elbow_y), col)
+
+    tx = 36
+    ty = int(np.clip(elbow_y - 76, 420, 1420))
+    f_big = v30.f_pretendard(86, "extrabold")
+    f_l1 = v30.f_pretendard(21, "extrabold")
+    f_l2 = v30.f_pretendard(16, "bold")
+
+    rd.text((tx + 2, ty + 3), deg_str, font=f_big, fill=(0, 0, 0, 210))
+    rd.text((tx, ty), deg_str, font=f_big, fill=(255, 255, 255, 255))
+    rd.text((tx + 2, ty + 92), l1_str, font=f_l1, fill=(col[0], col[1], col[2], 255))
+    rd.text((tx + 2, ty + 119), l2_str, font=f_l2, fill=(215, 222, 232, 235))
+
+    return np.array(Image.alpha_composite(base_pil, ov).convert("RGB"))
+
+
+def _make_icon_pair(fr_1080: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    crop = fr_1080[420:1220, 200:880, :]
+    act_224 = cv2.resize(crop, (224, 264), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(act_224, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    inact_224 = np.stack([
+        np.clip(gray * 0.52 + 8.0, 0, 255),
+        np.clip(gray * 0.55 + 9.0, 0, 255),
+        np.clip(gray * 0.60 + 12.0, 0, 255),
+    ], axis=-1).astype(np.uint8)
+    return (act_224, inact_224)
+
+
+def build_all():
+    print("1. Loading native 3D sequences & extracting smoothed MediaPipe keypoints...")
+    raw_seqs = {}
+    kps_seqs = {}
+    if os.path.exists(CACHE_KP_PKL):
+        with open(CACHE_KP_PKL, "rb") as f:
+            kps_seqs = pickle.load(f)
+
+    for s_idx, (fn, i0, i1, is_w, v_mode, y_sh) in STEP_SPECS.items():
+        seq = load_native_slice(os.path.join(OUT_DIR, fn), i0, i1)
+        raw_seqs[s_idx] = seq
+        if s_idx not in kps_seqs or len(kps_seqs[s_idx]) != len(seq):
+            kps_seqs[s_idx] = extract_smoothed_kps_1080(seq, s_idx, y_sh)
+
+    with open(CACHE_KP_PKL, "wb") as f:
+        pickle.dump(kps_seqs, f)
+
+    print("2. Pre-shading native 3D pools (100% native frames, zero 2D drawn shorts/bones)...")
+    shaded_pools = {}
+    for s_idx, (fn, i0, i1, is_w, v_mode, y_sh) in STEP_SPECS.items():
+        seq = raw_seqs[s_idx]
+        kps = kps_seqs[s_idx]
+        pool = []
+        n_f = len(seq)
+        for i, bgr in enumerate(seq):
+            rgb_1080 = upscale_and_shift_1080p(bgr, y_sh)
+            pulse_ph = (i / float(max(1, n_f - 1))) * 0.75
+            sh_rgb, sh_mask = shade_native_3d_frame_1080p(rgb_1080, s_idx, is_w, v_mode, kps[i], pulse_phase=pulse_ph)
+            pool.append((sh_rgb, sh_mask))
+        shaded_pools[s_idx] = pool
+        print(f"   Step {s_idx} ({v_mode}): {len(pool)} native frames shaded.")
+
+    # Build top preview thumbnail sets:
+    # Slot 0: Step 1 (Front Wrong), Slot 1: Step 2 (Side Wrong), Slot 2: Step 3 (Front Correct) or Step 4 (Rear Correct)
+    ic_s1 = _make_icon_pair(shaded_pools[1][-1][0])
+    ic_s2 = _make_icon_pair(shaded_pools[2][-1][0])
+    ic_s3 = _make_icon_pair(shaded_pools[3][-1][0])
+    ic_s4 = _make_icon_pair(shaded_pools[4][-1][0])
+    icons_for_step = {
+        1: [ic_s1, ic_s2, ic_s3],
+        2: [ic_s1, ic_s2, ic_s3],
+        3: [ic_s1, ic_s2, ic_s3],
+        4: [ic_s1, ic_s2, ic_s4],
+    }
+
+    print("3. Synthesizing 20.0s English Coaching TTS (`en-US-ChristopherNeural`) + Sub-Bass Beat + Step Chimes...")
+    wav_path = os.path.join(TMP_DIR, "day3_4step_master_audio.wav")
+    vo_lines = [
+        (0.25, "Barbell back squat. Stop letting your knees cave in."),
+        (5.60, "Leaning forward overloads your lower lumbar spine."),
+        (10.40, "Lock your knees in line with your toes."),
+        (15.40, "Drive hard through your quads and glutes."),
     ]
+    asyncio.run(v36_pub.synthesize_voiceover_wav(wav_path, vo_lines, DURATION))
 
-    panels = []
-    for step_idx, raw_fr, is_w, v_mode, deg_s, l1_s, l2_s, title_kr in steps_cfg:
-        print(f"Rendering Step {step_idx} ({v_mode})...")
-        fr_1080, mask_1080, kp_1080 = render_4step_frame_1080p(raw_fr, step_idx, is_w, v_mode, pulse_phase=0.15)
-        fr_1080 = draw_step_simple2_callout(fr_1080, kp_1080, is_w, deg_s, l1_s, l2_s)
-        icons = icons_wrong if is_w else icons_right
-        fr_1080 = draw_compact_demic_top_preview(fr_1080, icons, active_slot=1, is_wrong=is_w)
-        pil = Image.fromarray(fr_1080).convert("RGBA")
+    print("4. Rendering 600 frames (20.0s @ 30fps) with 100% unblended native 3D frames...")
+    tmp_mp4 = os.path.join(TMP_DIR, "_day3_video_only.mp4")
+    final_mp4 = os.path.join(OUT_DIR, "day3_barbell_squat_4step_master.mp4")
+    vw = cv2.VideoWriter(tmp_mp4, cv2.VideoWriter_fourcc(*"mp4v"), float(FPS), (W, H))
+
+    step_peak_rendered = {}
+    proof_12_samples = {}
+    # For each step (0..149 frames within step):
+    # u=0.0 -> f_local=4 (Standing), u=0.17 -> f_local=25 (Mid-Squat), u=0.333 -> f_local=50 (Deep Squat)
+    sample_local_frames = {4: "Standing", 25: "Mid-Squat", 50: "Deep Squat"}
+
+    for f_idx in range(TOTAL_FRAMES):
+        t = f_idx / float(FPS)
+        step_idx = min(4, int(t // 5.0) + 1)
+        f_local = f_idx - (step_idx - 1) * 150
+        u = f_local / 150.0
+
+        # Smooth 1.5 full-ROM squat cycles per 5.0s step (50 frames per half-rep = 1:1 native frame speed!)
+        wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
+        pool = shaded_pools[step_idx]
+        kps = kps_seqs[step_idx]
+        p_i = int(round(wave_p * (len(pool) - 1)))
+
+        base_rgb, sh_mask = pool[p_i]
+        kp = kps[p_i]
+
+        if step_idx == 1:
+            is_w = True
+            slot_i = 0
+            deg_v = int(round(2 + 14 * wave_p))
+            pct_v = int(round(78 + 8 * wave_p))
+            deg_s, l1_s, l2_s = f"{deg_v}°", "KNEE CAVE", f"{pct_v}% JOINT RISK"
+        elif step_idx == 2:
+            is_w = True
+            slot_i = 1
+            deg_v = int(round(18 + 23 * wave_p))
+            pct_v = int(round(71 + 8 * wave_p))
+            deg_s, l1_s, l2_s = f"{deg_v}°", "FORWARD LEAN", f"{pct_v}% LUMBAR LOAD"
+        elif step_idx == 3:
+            is_w = False
+            slot_i = 2
+            pct_v = int(round(90 + 6 * wave_p))
+            deg_s, l1_s, l2_s = "0°", "KNEE LOCK", f"{pct_v}% JOINT SAFE"
+        else:
+            is_w = False
+            slot_i = 2
+            deg_v = int(round(12 + 10 * wave_p))
+            pct_v = int(round(91 + 7 * wave_p))
+            deg_s, l1_s, l2_s = f"{deg_v}°", "HIP DRIVE", f"{pct_v}% QUAD & GLUTE"
+
+        fr = draw_step_laser_and_callout(base_rgb, sh_mask, step_idx, kp, is_w, deg_s, l1_s, l2_s)
+        fr = draw_compact_demic_top_preview(fr, icons_for_step[step_idx], active_slot=slot_i, is_wrong=is_w)
+        pil = Image.fromarray(fr).convert("RGBA")
         draw_single_line_kaushan_title(pil, "Barbell Back Squat")
-        out_rgb = pil.convert("RGB")
-        out_rgb.save(os.path.join(OUT_DIR, f"day3_step{step_idx}_{v_mode}.jpg"), quality=95)
-        panels.append((title_kr, is_w, out_rgb))
+        rgb_out = pil.convert("RGB")
 
+        if f_local == 50:
+            step_peak_rendered[step_idx] = rgb_out.copy()
+            rgb_out.save(os.path.join(OUT_DIR, f"day3_step{step_idx}_peak.jpg"), quality=95)
+
+        if f_local in sample_local_frames:
+            proof_12_samples[(step_idx, f_local)] = (
+                rgb_out.copy(),
+                f"Step {step_idx} · {sample_local_frames[f_local]} ({deg_s} {l1_s})",
+                is_w,
+            )
+
+        vw.write(cv2.cvtColor(np.array(rgb_out), cv2.COLOR_RGB2BGR))
+
+    vw.release()
+
+    print("5. Muxing H.264 video + AAC 192k audio into final MP4...")
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-threads", "4",
+            "-i", tmp_mp4, "-i", wav_path,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "17", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart",
+            final_mp4,
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    os.remove(tmp_mp4)
+    print("Saved Master MP4:", final_mp4)
+
+    # 6. Save 4-Step Multi-Angle Master Comparison Sheet
     pw, ph = 520, 924
     pad = 22
     header_h = 96
-    sheet_w = pad + 4 * (pw + pad)
-    sheet_h = header_h + ph + pad
-
-    sheet = Image.new("RGB", (sheet_w, sheet_h), (14, 16, 20))
+    sheet = Image.new("RGB", (pad + 4 * (pw + pad), header_h + ph + pad), (14, 16, 20))
     sd = ImageDraw.Draw(sheet)
     f_t = v30.f_pretendard(26, "extrabold")
     f_s = v30.f_pretendard(18, "bold")
-
     sd.text(
         (28, 18),
-        "Day 3 4구간 마스터 — 밀착 3D 드로즈 + 마네킹 확대(1.285x) + Day 1 X-Ray 뼈·근섬유 + 1번 필기체(양옆 - 제거)",
+        "Day 3 Barbell Back Squat — 100% Native 3D 4-Step Multi-Angle Master (2D 덧칠 0% · 실제 3D 반바지 · 잔상 0%)",
         font=f_t,
         fill=(242, 246, 252),
     )
     sd.text(
         (28, 54),
-        "Step 1: 오자세 뼈·혈류(Day 1 X-Ray) | Step 2: 오자세 근육·혈류 | Step 3: 정자세 뼈·혈류(Day 1 X-Ray) | Step 4: 정자세 근육·혈류 + Barbell Back Squat (Kaushan Script)",
+        "Step 1: 정면 오자세(뼈·관절 X-Ray) | Step 2: 측면 오자세(척추·근육 과부하) | Step 3: 정면 정자세(뼈·관절 정렬) | Step 4: 후측면 정자세(둔근·대퇴사두)",
         font=f_s,
         fill=(185, 225, 255),
     )
-
-    for idx, (label, is_w, p_im) in enumerate(panels):
-        x0 = pad + idx * (pw + pad)
+    step_titles = [
+        (1, True,  "Step 1: 정면 오자세 (16° KNEE CAVE · 뼈/관절)"),
+        (2, True,  "Step 2: 측면 오자세 (41° FORWARD LEAN · 척추/근육)"),
+        (3, False, "Step 3: 정면 정자세 (0° KNEE LOCK · 뼈/관절)"),
+        (4, False, "Step 4: 후측면 정자세 (22° HIP DRIVE · 둔근/대퇴사두)"),
+    ]
+    for idx_p, (s_i, is_w, lbl) in enumerate(step_titles):
+        x0 = pad + idx_p * (pw + pad)
         y0 = header_h
         col = (255, 95, 78) if is_w else (65, 245, 135)
-        rs = p_im.resize((pw, ph), Image.Resampling.LANCZOS)
-        sheet.paste(rs, (x0, y0))
+        sheet.paste(step_peak_rendered[s_i].resize((pw, ph), Image.Resampling.LANCZOS), (x0, y0))
         sd.rounded_rectangle([x0 - 2, y0 - 2, x0 + pw + 2, y0 + ph + 2], radius=12, outline=col, width=3)
         sd.rounded_rectangle([x0 + 10, y0 + 10, x0 + pw - 10, y0 + 44], radius=7, fill=(12, 14, 18))
-        sd.text((x0 + 18, y0 + 15), label, font=f_s, fill=col)
+        sd.text((x0 + 18, y0 + 15), lbl, font=f_s, fill=col)
 
-    out_path = os.path.join(OUT_DIR, "day3_4step_bone_muscle_cursive_sheet.jpg")
-    sheet.save(out_path, quality=95)
-    print("Saved:", out_path)
+    for fn_s in ["day3_4step_multiangle_master_sheet.jpg", "day3_4step_bone_muscle_cursive_sheet.jpg"]:
+        sp = os.path.join(OUT_DIR, fn_s)
+        sheet.save(sp, quality=95)
+        print("Saved 4-Step Sheet:", sp)
+
+    # 7. Save 12-Frame Motion & Multi-Angle Proof Sheet (4 steps x 3 phases: Standing, Mid-Squat, Deep Squat)
+    mw, mh = 360, 640
+    mpad = 18
+    m_header = 88
+    msheet = Image.new("RGB", (mpad + 4 * (mw + mpad), m_header + 3 * (mh + 44) + mpad), (12, 14, 18))
+    msd = ImageDraw.Draw(msheet)
+    f_mt = v30.f_pretendard(24, "extrabold")
+    f_ml = v30.f_pretendard(15, "bold")
+    msd.text(
+        (24, 18),
+        "Day 3 12-Frame Full-ROM Motion & Multi-Angle Proof (Standing → Mid-Squat → Deep Squat across Steps 1–4)",
+        font=f_mt,
+        fill=(242, 246, 252),
+    )
+    msd.text(
+        (24, 52),
+        "100% Unblended Native 3D Frames (Zero Ghosting) · Native 3D Fitted Black Shorts · Real-Time Dynamic Angle & Risk Telemetry",
+        font=f_ml,
+        fill=(175, 225, 255),
+    )
+    for col_i, s_i in enumerate([1, 2, 3, 4]):
+        for row_i, f_loc in enumerate([4, 25, 50]):
+            im_p, lbl, is_w = proof_12_samples[(s_i, f_loc)]
+            x0 = mpad + col_i * (mw + mpad)
+            y0 = m_header + row_i * (mh + 44) + 28
+            col = (255, 95, 78) if is_w else (65, 245, 135)
+            msd.text((x0 + 4, y0 - 24), lbl, font=f_ml, fill=col)
+            thumb = im_p.resize((mw, mh), Image.Resampling.LANCZOS)
+            ImageDraw.Draw(thumb).rectangle([0, 0, mw - 1, mh - 1], outline=col, width=2)
+            msheet.paste(thumb, (x0, y0))
+
+    p_12 = os.path.join(OUT_DIR, "day3_12frame_motion_proof_sheet.jpg")
+    msheet.save(p_12, quality=95)
+    print("Saved 12-Frame Proof Sheet:", p_12)
 
 
 if __name__ == "__main__":
-    main()
+    build_all()
