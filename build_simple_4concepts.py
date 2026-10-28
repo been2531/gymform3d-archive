@@ -29,27 +29,98 @@ OUT_DIR = "/workspace/daily_info_reels/output"
 W, H = 1080, 1920
 
 
+_UPRIGHT_ANATOMY_CACHE = {}
+
+def _get_upright_pure_anatomy_portrait(step_idx: int, is_wrong: bool) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Renders the UPRIGHT standing front-facing 3D anatomical figure (frame 0 of Step 1/2)
+    with ONLY `human_mask` (barbell plates masked out, just like `@demicstory`'s top 3 cards in `01M60T9XS7J2Z1YCHM1J0Q87DY.png`!)
+    and crops an exact `224 : 272` (`0.8235 : 1`) vertical anatomical portrait (`tw = 224, th = 272`) centered on the body!
+    """
+    key = (step_idx, is_wrong)
+    if key in _UPRIGHT_ANATOMY_CACHE:
+        return _UPRIGHT_ANATOMY_CACHE[key]
+
+    fn, i0, i1, *_ = p62.STEP_POOL_SPECS[step_idx]
+    seq = p62._load_slice(os.path.join(OUT_DIR, fn), i0, i1, target_len=52)
+    raw_bgr = seq[0]  # Upright standing anatomical pose!
+
+    sh_h, sw_w = raw_bgr.shape[:2]
+    detector = cd4.uar.get_pose_detector()
+    rgb_720 = cv2.cvtColor(raw_bgr, cv2.COLOR_BGR2RGB)
+    mp_res = detector.detect(cd4.uar.mp.Image(image_format=cd4.uar.mp.ImageFormat.SRGB, data=rgb_720))
+    lm = mp_res.pose_landmarks[0]
+    mp_seg = mp_res.segmentation_masks[0].numpy_view()[:, :, 0]
+
+    # Pure human body mask only (no barbell plates in the top anatomical preview cards, matching @demicstory!)
+    _, human_mask, _ = cd4.make_clean_barbell_and_human_mask(rgb_720, lm, mp_seg)
+    # Trim arms outside shoulders where barbell sleeves sit so it looks like a pure anatomical figure
+    sh_l_x, sh_r_x = lm[11].x * sw_w, lm[12].x * sw_w
+    cx_body = 0.5 * (sh_l_x + sh_r_x)
+    half_span = abs(sh_l_x - sh_r_x) * 0.92
+    yy, xx = np.mgrid[:sh_h, :sw_w].astype(np.float32)
+    torso_corridor = np.clip(1.0 - np.maximum(0.0, np.abs(xx - cx_body) - half_span) / 18.0, 0.0, 1.0)
+    pure_body_mask = human_mask * torso_corridor
+
+    rgb = rgb_720.astype(np.float32)
+    r_ch, g_ch, b_ch = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+    base_lum = 0.299 * r_ch + 0.587 * g_ch + 0.114 * b_ch
+    non_red_lum = 0.30 * g_ch + 0.70 * b_ch
+    rb_diff = np.maximum(0.0, r_ch - b_ch)
+    red_any = np.clip((rb_diff - 10.0) / 75.0, 0.0, 1.0)
+    neutral_raw = base_lum * (1.0 - red_any) + (non_red_lum * 1.18 + 14.0) * red_any
+    norm_body = np.clip((neutral_raw - 20.0) / 64.0, 0.0, 1.15)
+    sculpt_curve = np.clip(norm_body, 0.0, 1.0) ** 0.54 + 0.16 * np.clip(norm_body - 0.70, 0.0, 0.45)
+
+    body_r = 86.0 + 108.0 * (sculpt_curve ** 0.80)
+    body_g = 89.0 + 110.0 * (sculpt_curve ** 0.80)
+    body_b = 94.0 + 113.0 * (sculpt_curve ** 0.80)
+    mono = np.stack([np.clip(body_r, 0, 240), np.clip(body_g, 0, 242), np.clip(body_b, 0, 246)], axis=-1)
+
+    # Highlight target muscles (Quads & Knee Joint) in vibrant @demicstory Orange (Wrong) or Emerald Green (Right)
+    hip_y = 0.5 * (lm[23].y + lm[24].y) * sh_h
+    kn_y = 0.5 * (lm[25].y + lm[26].y) * sh_h
+    quad_zone = np.exp(-(((yy - (0.45 * hip_y + 0.55 * kn_y)) / max(28.0, 0.48 * abs(kn_y - hip_y))) ** 2)) * pure_body_mask
+    target_w = np.clip((rb_diff - 10.0) / 36.0 + quad_zone * 0.65, 0.0, 1.0) * pure_body_mask
+
+    if is_wrong:
+        t_rgb = np.stack([235.0 + 20.0 * sculpt_curve, 95.0 + 55.0 * sculpt_curve, 28.0 + 25.0 * sculpt_curve], axis=-1)
+    else:
+        t_rgb = np.stack([28.0 + 35.0 * sculpt_curve, 215.0 + 38.0 * sculpt_curve, 110.0 + 45.0 * sculpt_curve], axis=-1)
+
+    act_full = mono * (1.0 - (target_w * 0.82)[:, :, None]) + t_rgb * (target_w * 0.82)[:, :, None]
+    inact_full = np.stack([body_r * 0.58, body_g * 0.60, body_b * 0.64], axis=-1)
+
+    # Crop exact 224:272 portrait window around shoulders-to-knees (`y_sh - 10` to `kn_y + 35`)
+    sh_y = 0.5 * (lm[11].y + lm[12].y) * sh_h
+    y0 = int(max(0, sh_y - 12))
+    y1 = int(min(sh_h, kn_y + 36))
+    box_h = max(120, y1 - y0)
+    box_w = int(round(box_h * (224.0 / 272.0)))
+    x0 = int(round(cx_body - box_w * 0.5))
+    x1 = x0 + box_w
+
+    bg_card = np.array([22.0, 25.0, 30.0], dtype=np.float32)
+    m3 = pure_body_mask[y0:y1, x0:x1, None]
+    act_crop = bg_card * (1.0 - m3) + act_full[y0:y1, x0:x1] * m3
+    inact_crop = bg_card * (1.0 - m3) + inact_full[y0:y1, x0:x1] * m3
+
+    tw, th = 224, 272
+    act_224 = cv2.resize(act_crop, (tw, th), interpolation=cv2.INTER_LANCZOS4).astype(np.float32)
+    inact_224 = cv2.resize(inact_crop, (tw, th), interpolation=cv2.INTER_LANCZOS4).astype(np.float32)
+    _UPRIGHT_ANATOMY_CACHE[key] = (act_224, inact_224)
+    return act_224, inact_224
+
+
 def make_unsquished_day1_top_icons(base_frames: dict, current_step: int = 1) -> list[tuple[np.ndarray, np.ndarray]]:
     """
     100% Exact Copy of `@demicstory` Centered Top Glass Capsule (`01M60T9XS7J2Z1YCHM1J0Q87DY.png`):
-    - Crops a close-up vertical anatomical portrait (`x = 300..780, y = 685..1268`, `480 x 583`, exact `224 : 272 = 0.8235` aspect ratio!)
-      so the 3D mannequin torso & legs fill the portrait card cleanly with **0.0% squishing (`찌부러짐 0%`)**!
-    - Places the current active step (`current_step`) in the protruding center card (`slot 1`) so its orange/green highlight always matches the glowing border!
+    All 3 portrait cards (`224 x 272`) show the UPRIGHT, SYMMETRICAL front-facing 3D anatomical figure (zero barbell clutter, zero squat crouching!),
+    with the Left & Right cards dimmed in monochrome slate and the Center protruding card (`x = 540`) glowing in Orange/Green!
     """
-    crop_x0, crop_y0, crop_x1, crop_y1 = 300, 685, 780, 1268  # 480 x 583 -> exact 224:272 portrait ratio!
-    tw, th = 224, 272
-
-    slot_steps = [3, current_step, 4]
-    icons = []
-    for s_i in slot_steps:
-        rgb = base_frames[s_i][crop_y0:crop_y1, crop_x0:crop_x1]
-        act_arr = cv2.resize(rgb, (tw, th), interpolation=cv2.INTER_LANCZOS4).astype(np.float32)
-
-        # Inactive figure: pure monochrome dark-slate 3D sculpture (`@demicstory` left/right dimmed figures)
-        lum = 0.299 * act_arr[:, :, 0] + 0.587 * act_arr[:, :, 1] + 0.114 * act_arr[:, :, 2]
-        inact_arr = np.stack([lum * 0.56, lum * 0.58, lum * 0.62], axis=-1)
-        icons.append((act_arr, inact_arr))
-    return icons
+    is_w = (current_step == 1)
+    act_224, inact_224 = _get_upright_pure_anatomy_portrait(1 if is_w else 2, is_w)
+    return [(act_224, inact_224), (act_224, inact_224), (act_224, inact_224)]
 
 
 def draw_day1_exact_top_dock(frame_rgb: np.ndarray, torso_icons: list, active_slot: int, is_wrong: bool) -> np.ndarray:

@@ -27,97 +27,101 @@ OUT_DIR = "/workspace/daily_info_reels/output"
 W, H = 1080, 1920
 
 
-def make_clean_barbell_and_human_mask(rgb_720: np.ndarray, lm, mp_seg: np.ndarray) -> np.ndarray:
+def make_clean_barbell_and_human_mask(rgb_720: np.ndarray, lm, mp_seg: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Extracts ONLY:
-    1. The human mannequin (`mp_seg`)
-    2. The horizontal barbell shaft + left/right weight plates (`barbell_mask`), using row-wise background subtraction
-       (`|lum - bg_profile(x)|`) and Sobel edge closing strictly inside the barbell & weight-plate regions.
-    Guarantees 0.0% background haze above the head, beside the torso, or between the legs!
+    Extracts:
+    1. Solid, blotch-free human mannequin (`human_mask`) from `mp_seg`, carving out ONLY the empty background gap
+       between the left & right legs (`between_legs_air`) and soft outer halo, so ZERO dark holes ever appear on the neck, torso, or shins!
+    2. The horizontal barbell shaft + left/right weight plates (`equip_mask`), using row-by-row border background subtraction.
     """
     sh_h, sw_w = rgb_720.shape[:2]
     rgb = rgb_720.astype(np.float32)
     lum = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
+    rb_diff = np.maximum(0.0, rgb[:, :, 0] - rgb[:, :, 2])
 
     sh_l = (lm[11].x * sw_w, lm[11].y * sh_h)
     sh_r = (lm[12].x * sw_w, lm[12].y * sh_h)
     wr_l = (lm[15].x * sw_w, lm[15].y * sh_h)
     wr_r = (lm[16].x * sw_w, lm[16].y * sh_h)
+    hip_r = (lm[24].x * sw_w, lm[24].y * sh_h)
+    hip_l = (lm[23].x * sw_w, lm[23].y * sh_h)
+    kn_r = (lm[26].x * sw_w, lm[26].y * sh_h)
+    kn_l = (lm[25].x * sw_w, lm[25].y * sh_h)
+    ank_r = (lm[28].x * sw_w, lm[28].y * sh_h)
+    ank_l = (lm[27].x * sw_w, lm[27].y * sh_h)
+
     sh_y = 0.5 * (sh_l[1] + sh_r[1])
     wr_y = 0.5 * (wr_l[1] + wr_r[1])
     bar_y = 0.55 * sh_y + 0.45 * wr_y
+    hip_mid_y = 0.5 * (hip_r[1] + hip_l[1])
 
-    # Measure the raw background horizontal spotlight profile 210px above the bar (where only empty background exists)
+    # Row-wise 2D background surface estimated from left/right outer borders + top empty studio profile
     y_bg_top = max(20, int(bar_y - 220))
-    bg_x_profile = np.median(lum[y_bg_top : y_bg_top + 35, :], axis=0)
-    bg_x_profile = cv2.GaussianBlur(bg_x_profile.reshape(1, -1), (1, 51), 0).ravel()
+    bg_x_top = np.median(lum[y_bg_top : y_bg_top + 35, :], axis=0)
+    bg_x_top = cv2.GaussianBlur(bg_x_top.reshape(1, -1), (1, 51), 0).ravel()
+    bg_x_shape = bg_x_top - np.median(bg_x_top[:40])
 
-    # Difference from the raw studio background profile + Sobel edge magnitude
-    lum_diff = np.abs(lum - bg_x_profile[None, :])
+    row_border = 0.5 * (np.median(lum[:, 8:32], axis=1) + np.median(lum[:, sw_w - 32 : sw_w - 8], axis=1))
+    row_border = cv2.GaussianBlur(row_border.reshape(-1, 1), (51, 1), 0).ravel()
+    bg_2d = row_border[:, None] + bg_x_shape[None, :]
+
+    lum_diff = np.abs(lum - bg_2d)
     gx = cv2.Sobel(lum, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(lum, cv2.CV_32F, 0, 1, ksize=3)
     grad = np.hypot(gx, gy)
 
     yy, xx = np.mgrid[:sh_h, :sw_w].astype(np.float32)
 
-    # 1. Barbell horizontal shaft region: thin band `|y - bar_y| <= 18px` across the bar (`x = 18 .. 702`)
+    # 1. Barbell horizontal shaft + Left & Right Weight Plates
     shaft_band = (np.abs(yy - bar_y) <= 18.0) & (xx >= 16.0) & (xx <= 704.0)
-    shaft_mask = shaft_band & ((lum_diff > 7.5) | (grad > 16.0))
+    shaft_mask = shaft_band & ((lum_diff > 6.5) | (grad > 15.0))
 
-    # 2. Left & Right Weight Plates regions:
-    # Viewer's left wrist is `min(wr_l[0], wr_r[0])` (~150..165), viewer's right wrist is `max(wr_l[0], wr_r[0])` (~555..575).
     x_wr_left = min(wr_l[0], wr_r[0])
     x_wr_right = max(wr_l[0], wr_r[0])
+    left_plate_box = (xx >= 12.0) & (xx <= x_wr_left + 12.0) & (yy >= bar_y - 148.0) & (yy <= bar_y + 108.0)
+    right_plate_box = (xx >= x_wr_right - 12.0) & (xx <= sw_w - 12.0) & (yy >= bar_y - 148.0) & (yy <= bar_y + 108.0)
+    plate_raw = ((lum_diff > 7.0) | (grad > 15.0)) & (left_plate_box | right_plate_box)
 
-    left_plate_box = (
-        (xx >= 12.0)
-        & (xx <= x_wr_left + 12.0)
-        & (yy >= bar_y - 148.0)
-        & (yy <= bar_y + 108.0)
-    )
-    right_plate_box = (
-        (xx >= x_wr_right - 12.0)
-        & (xx <= sw_w - 12.0)
-        & (yy >= bar_y - 148.0)
-        & (yy <= bar_y + 108.0)
-    )
-    plate_Boxes = left_plate_box | right_plate_box
-    plate_raw = ((lum_diff > 8.0) | (grad > 16.0)) & plate_Boxes
-
-    # Close interior holes inside each weight plate and shaft using morphological closing + connected contour fill
     equip_u8 = ((shaft_mask | plate_raw).astype(np.uint8)) * 255
-    k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19))
-    equip_u8 = cv2.morphologyEx(equip_u8, cv2.MORPH_CLOSE, k_close)
-    # Fill internal holes of the weight plates
+    equip_u8 = cv2.morphologyEx(equip_u8, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19)))
     cnts, _ = cv2.findContours(equip_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     equip_filled = np.zeros_like(equip_u8)
     for c in cnts:
         if cv2.contourArea(c) >= 180:
             cv2.drawContours(equip_filled, [c], -1, 255, thickness=cv2.FILLED)
 
-    equip_mask = (equip_filled.astype(np.float32) / 255.0) * np.clip((lum_diff - 3.5) / 5.5 + (grad > 14.0) * 0.8, 0.0, 1.0)
-    equip_mask = cv2.GaussianBlur(np.clip(equip_mask * 1.4, 0.0, 1.0), (0, 0), 1.0)
+    equip_mask = (equip_filled.astype(np.float32) / 255.0) * np.clip((lum_diff - 3.0) / 5.0 + (grad > 13.0) * 0.85, 0.0, 1.0)
+    equip_mask = cv2.GaussianBlur(np.clip(equip_mask * 1.35, 0.0, 1.0), (0, 0), 1.0)
 
-    # 3. Tight MediaPipe human segmentation gated by actual foreground luminance (`lum_diff > 5.5` or `grad > 12.0`)
-    # so empty background space BETWEEN the thighs/knees/shins or under the arms NEVER turns grey (`RGB 81,84,88`)!
-    real_body_Gate = np.clip((lum_diff - 4.8) / 5.5 + (grad > 13.0) * 0.65, 0.0, 1.0)
-    # Smoothly close tiny internal dark shadow spots inside the torso/thighs (`11x11`), while keeping the gap between legs 100% open!
-    rb_u8 = ((real_body_Gate > 0.35) & (mp_seg > 0.45)).astype(np.uint8) * 255
-    rb_closed = cv2.morphologyEx(rb_u8, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))).astype(np.float32) / 255.0
-    human_mask = np.clip((mp_seg - 0.48) / 0.22, 0.0, 1.0) * np.maximum(real_body_Gate, rb_closed * 0.85)
-    # Also ensure the hands/forearms gripping the bar (`|y - bar_y| < 65` between wrists) are 100% solid
-    grip_box = (
-        (xx >= x_wr_left - 28.0)
-        & (xx <= x_wr_right + 28.0)
-        & (yy >= bar_y - 42.0)
-        & (yy <= bar_y + 85.0)
-    )
-    grip_fg = grip_box & ((lum_diff > 9.5) | (grad > 18.0))
+    # 2. Solid, blotch-free human mask:
+    # Keep 100% of the interior body (`mp_seg`) intact so neck/chest/forearms/shins NEVER get dark holes,
+    # and carve out ONLY the empty background pocket between the legs (`between_legs_air`) and outer halo!
+    base_human = np.clip((mp_seg - 0.52) / 0.18, 0.0, 1.0)
+
+    # Empty background corridor between left and right legs (`y > hip_mid_y - 8`)
+    x_leg_min = min(kn_r[0], ank_r[0], hip_r[0]) + 18.0
+    x_leg_max = max(kn_l[0], ank_l[0], hip_l[0]) - 18.0
+    between_legs_corridor = (yy >= hip_mid_y - 8.0) & (xx >= x_leg_min) & (xx <= x_leg_max)
+    between_legs_air = between_legs_corridor & (lum_diff < 5.8) & (grad < 11.5) & (rb_diff < 10.0)
+    air_u8 = (between_legs_air.astype(np.uint8)) * 255
+    air_u8 = cv2.morphologyEx(air_u8, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
+    air_u8 = cv2.dilate(air_u8, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)), iterations=1)
+    air_mask = cv2.GaussianBlur(air_u8.astype(np.float32) / 255.0, (0, 0), 1.2)
+
+    # Also trim any soft outer halo where `mp_seg < 0.85` AND `lum_diff < 4.5`
+    outer_halo_air = (mp_seg < 0.85) & (lum_diff < 4.5) & (grad < 10.0) & (rb_diff < 8.0)
+    outer_halo_mask = cv2.GaussianBlur(outer_halo_air.astype(np.float32), (0, 0), 1.0)
+
+    human_mask = np.clip(base_human * (1.0 - air_mask) * (1.0 - outer_halo_mask * 0.9), 0.0, 1.0)
+
+    # Hands gripping the bar
+    grip_box = (xx >= x_wr_left - 28.0) & (xx <= x_wr_right + 28.0) & (yy >= bar_y - 42.0) & (yy <= bar_y + 85.0)
+    grip_fg = grip_box & ((lum_diff > 7.5) | (grad > 16.0))
     grip_u8 = cv2.morphologyEx(grip_fg.astype(np.uint8) * 255, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (13, 13)))
-    grip_mask = (grip_u8.astype(np.float32) / 255.0)
+    grip_mask = grip_u8.astype(np.float32) / 255.0
 
     full_fg_mask = np.clip(np.maximum(human_mask, np.maximum(equip_mask, grip_mask)), 0.0, 1.0)
-    full_fg_mask = cv2.GaussianBlur(full_fg_mask, (0, 0), 1.0)
+    full_fg_mask = cv2.GaussianBlur(full_fg_mask, (0, 0), 0.8)
     return full_fg_mask, human_mask, equip_mask
 
 
@@ -190,9 +194,9 @@ def render_zero_haze_day1_mannequin_1080p(
     norm_body = np.clip((lum_clean - raw_lo) / (raw_hi - raw_lo), 0.0, 1.15)
     sculpt_curve = np.clip(norm_body, 0.0, 1.0) ** 0.54 + 0.16 * np.clip(norm_body - 0.70, 0.0, 0.45)
 
-    body_r = 40.0 + 142.0 * (sculpt_curve ** 0.78)
-    body_g = 43.0 + 144.0 * (sculpt_curve ** 0.78)
-    body_b = 47.0 + 148.0 * (sculpt_curve ** 0.78)
+    body_r = 82.0 + 106.0 * (sculpt_curve ** 0.82)
+    body_g = 85.0 + 108.0 * (sculpt_curve ** 0.82)
+    body_b = 89.0 + 111.0 * (sculpt_curve ** 0.82)
 
     # Barbell & weight plates outside human torso get sleek metallic steel contrast (`RGB 52..172`)
     plate_zone = np.clip(equip_mask * (1.0 - human_mask * 0.90), 0.0, 1.0)
@@ -300,7 +304,7 @@ def render_zero_haze_day1_mannequin_1080p(
     res_man = cv2.resize(out, (nw, nh), interpolation=cv2.INTER_LANCZOS4).astype(np.float32)
     res_mask = cv2.resize(full_fg_mask, (nw, nh), interpolation=cv2.INTER_LINEAR).astype(np.float32)
 
-    canvas = bd.STUDIO_BG_DAY1.copy()
+    canvas = np.full((H, W, 3), [28.0, 31.0, 36.0], dtype=np.float32)
     mask_1080 = np.zeros((H, W), dtype=np.float32)
 
     sy0, sy1 = max(0, -y0), min(nh, H - y0)
