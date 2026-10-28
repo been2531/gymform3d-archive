@@ -170,29 +170,38 @@ def render_4step_frame_1080p(
     is_wrong: bool,
     visual_mode: str,  # "bone_blood" (Steps 1 & 3) or "muscle_blood" (Steps 2 & 4)
     pulse_phase: float = 0.0,
+    valgus_amount: float = 1.0,
+    precomputed_masks: tuple | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
     """
     Renders the 1080x1920 frame with:
-    1. Large, screen-filling mannequin scale (`scale = 1.25 ~ 1.30`, feet at `y = 1615`),
+    1. Large, screen-filling mannequin scale (`scale = 1.345 ~ 1.375`, feet at `y = 1658`),
     2. Fitted 3D matte charcoal short drawers (`apply_fitted_3d_drawers_720p`),
     3. Authentic Day 1 X-Ray Bone + Vascular Flow (`build_clean_d4_variants.py` / `gymform_engine.py`) for `bone_blood`,
        and Authentic Day 1/Day 2 3D Intrinsic Fiber-Strand Muscle Activation (`build_v36_publish_reels.py`) for `muscle_blood`.
     """
-    if step_idx in (1, 2) and is_wrong:
-        raw_bgr_720p = p62._apply_step1_knee_valgus_720p(raw_bgr_720p, 1.0)
-
-    sh_h, sw_w = raw_bgr_720p.shape[:2]
-    detector = uar.get_pose_detector()
-    rgb_720 = cv2.cvtColor(raw_bgr_720p, cv2.COLOR_BGR2RGB)
-    mp_res = detector.detect(uar.mp.Image(image_format=uar.mp.ImageFormat.SRGB, data=rgb_720))
-    if mp_res.pose_landmarks and mp_res.segmentation_masks:
-        lm = mp_res.pose_landmarks[0]
-        mp_seg = mp_res.segmentation_masks[0].numpy_view()[:, :, 0]
-        globals()["_LAST_MP_LM_SEG"] = (lm, mp_seg)
+    if precomputed_masks is not None:
+        rgb_720, lm, full_fg_mask, human_mask, equip_mask = precomputed_masks
+        sh_h, sw_w = rgb_720.shape[:2]
     else:
-        lm, mp_seg = globals()["_LAST_MP_LM_SEG"]
+        if step_idx in (1, 2) and is_wrong and valgus_amount > 0.01:
+            raw_bgr_720p = p62._apply_step1_knee_valgus_720p(raw_bgr_720p, float(valgus_amount))
 
-    full_fg_mask, human_mask, equip_mask = bcd.make_clean_barbell_and_human_mask(rgb_720, lm, mp_seg)
+        sh_h, sw_w = raw_bgr_720p.shape[:2]
+        detector = uar.get_pose_detector()
+        rgb_720 = cv2.cvtColor(raw_bgr_720p, cv2.COLOR_BGR2RGB)
+        mp_res = detector.detect(uar.mp.Image(image_format=uar.mp.ImageFormat.SRGB, data=rgb_720))
+        if mp_res.pose_landmarks and mp_res.segmentation_masks:
+            lm = list(mp_res.pose_landmarks[0])
+            mp_seg = np.nan_to_num(mp_res.segmentation_masks[0].numpy_view()[:, :, 0].copy(), nan=0.0, posinf=1.0, neginf=0.0)
+            globals()["_LAST_MP_LM_SEG"] = (lm, mp_seg)
+        else:
+            lm, mp_seg = globals()["_LAST_MP_LM_SEG"]
+
+        full_fg_mask, human_mask, equip_mask = bcd.make_clean_barbell_and_human_mask(rgb_720, lm, mp_seg)
+        full_fg_mask = np.nan_to_num(full_fg_mask.copy(), nan=0.0)
+        human_mask = np.nan_to_num(human_mask.copy(), nan=0.0)
+        equip_mask = np.nan_to_num(equip_mask.copy(), nan=0.0)
 
     rgb = rgb_720.astype(np.float32)
     r_ch, g_ch, b_ch = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
