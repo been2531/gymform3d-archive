@@ -29,25 +29,25 @@ OUT_DIR = "/workspace/daily_info_reels/output"
 W, H = 1080, 1920
 
 
-def make_unsquished_day1_top_icons(base_frames: dict) -> list[tuple[np.ndarray, np.ndarray]]:
+def make_unsquished_day1_top_icons(base_frames: dict, current_step: int = 1) -> list[tuple[np.ndarray, np.ndarray]]:
     """
     100% Exact Copy of `@demicstory` Centered Top Glass Capsule (`01M60T9XS7J2Z1YCHM1J0Q87DY.png`):
-    - In `@demicstory`, each of the 3 top slots is a **VERTICAL PORTRAIT CARD (`w = 224, h = 272`, aspect ratio `0.8235 : 1`)**,
-      NOT a flat horizontal rectangle! That is why `@demicstory`'s figure inside the top preview never looks vertically squished!
-    - We crop a `650 x 790` vertical portrait window (`650 / 790 = 0.8228 == 224 / 272`) centered on the mannequin (`x = 215..865, y = 535..1325`)
-      so the 3D mannequin has **0.0% vertical or horizontal distortion (`찌부러짐 0%`)**!
+    - Crops a close-up vertical anatomical portrait (`x = 300..780, y = 685..1268`, `480 x 583`, exact `224 : 272 = 0.8235` aspect ratio!)
+      so the 3D mannequin torso & legs fill the portrait card cleanly with **0.0% squishing (`찌부러짐 0%`)**!
+    - Places the current active step (`current_step`) in the protruding center card (`slot 1`) so its orange/green highlight always matches the glowing border!
     """
-    crop_x0, crop_y0, crop_x1, crop_y1 = 215, 535, 865, 1325  # 650 x 790 (exact 224:272 portrait ratio!)
+    crop_x0, crop_y0, crop_x1, crop_y1 = 300, 685, 780, 1268  # 480 x 583 -> exact 224:272 portrait ratio!
     tw, th = 224, 272
 
+    slot_steps = [3, current_step, 4]
     icons = []
-    for s_i in (1, 2, 4):
+    for s_i in slot_steps:
         rgb = base_frames[s_i][crop_y0:crop_y1, crop_x0:crop_x1]
         act_arr = cv2.resize(rgb, (tw, th), interpolation=cv2.INTER_LANCZOS4).astype(np.float32)
 
         # Inactive figure: pure monochrome dark-slate 3D sculpture (`@demicstory` left/right dimmed figures)
         lum = 0.299 * act_arr[:, :, 0] + 0.587 * act_arr[:, :, 1] + 0.114 * act_arr[:, :, 2]
-        inact_arr = np.stack([lum * 0.54, lum * 0.56, lum * 0.60], axis=-1)
+        inact_arr = np.stack([lum * 0.56, lum * 0.58, lum * 0.62], axis=-1)
         icons.append((act_arr, inact_arr))
     return icons
 
@@ -335,12 +335,11 @@ def main():
         kps[s_i] = b_kp
 
     # Build the 100% UN-SQUISHED (`142x114`, exact `1.2456:1` crop) Day 1 top dock icons!
-    torso_icons = make_unsquished_day1_top_icons(base_frames)
-
     variants = {"S1": {}, "S2": {}, "S3": {}, "S4": {}}
     for s_i in (1, 2):
         is_w = (s_i == 1)
         act_slot = 1
+        torso_icons = make_unsquished_day1_top_icons(base_frames, current_step=s_i)
 
         s1 = draw_simple_1_left_right_onepoint_numbers(base_frames[s_i], kps[s_i], is_w)
         variants["S1"][s_i] = draw_day1_exact_top_dock(s1, torso_icons, act_slot, is_w)
