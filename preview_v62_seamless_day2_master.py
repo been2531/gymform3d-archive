@@ -118,40 +118,55 @@ def shade_v62_day2_authentic_720p(
     hv = np.clip((sigma_belly - 22.0) / 138.0, 0.0, 1.0)
     sulc = np.clip((sigma_broad - sigma_ridge - 0.85) / 9.5, 0.0, 1.0)
 
-    # Character A (`PRIMARY LIFTER`) Unified Sculpted Matte Silver-Grey Skin Shader (`t282u`–`t285u`, `@demicstory` Standard):
-    # Quantile-normalizes the non-target body skin across Steps 1, 2, 3, and 4 to the exact same
-    # Sculpted Matte Silver-Grey tone (`p15 -> 84`, `p50 -> 118`, `p85 -> 154`, clamped `[68, 174]`,
-    # pure achromatic cool silver `R:G:B = 0.98 : 1.00 : 1.03`, 0% brown/green color cast!)
-    # while locking the studio background to a uniform Dark Obsidian (`#15181F`, `lum ~ 22`).
+    # Character A (`PRIMARY LIFTER`) Smooth Matte Cool Slate-Grey Skin Shader (`t296u` — Day 2 Step 1·2 1:1 Match):
+    # 1. Edge-Preserving Matte Clay Surface Smoothing (`cv2.bilateralFilter` + Gaussian dome blend on `cool_base`):
+    #    Eliminates harsh raw écorché striations and specular glare on non-target skin (`lap_median <= 1.8`, `lap_p90 <= 12.0`),
+    #    producing the exact smooth matte clay/mannequin surface of Day 2 Step 1 & Step 2!
+    # 2. Exact Day 2 Step 1·2 Cool Slate-Grey Quantile Mapping (`RGB = 84, 87, 91`, `p10=62, p25=72, p50=86, p75=106, p90=122`,
+    #    clamped `[54, 136]` with `R:G:B = 0.97 : 1.00 : 1.05`) across all 4 steps!
     base_lum = 0.299 * r_ch + 0.587 * g_ch + 0.114 * b_ch
     bg_lum_est = float(np.median(base_lum[180:720, 12:58]))
     body_interior = np.clip((base_lum - (bg_lum_est + 9.5)) / 13.5, 0.0, 1.0)
 
     cool_base = np.minimum(g_ch, b_ch)
-    body_pixels = cool_base[body_interior > 0.55]
+    cool_u8 = np.clip(cool_base, 0, 255).astype(np.uint8)
+    cool_bilat = cv2.bilateralFilter(cool_u8, d=9, sigmaColor=28.0, sigmaSpace=9.0).astype(np.float32)
+    cool_dome = cv2.GaussianBlur(cool_bilat, (0, 0), 3.2)
+    cool_matte = 0.35 * cool_bilat + 0.65 * cool_dome
+
+    # Compute quantiles strictly on upper-shoulder/arm non-glowing skin (`sh_y - 35 <= yy <= sh_y + 95`, `150 <= xx <= 570`)
+    # which is 100% non-glowing across all 4 steps (including Step 3 where lumbar spine glows below `sh_y + 95`)!
+    sh_y_ref = kp_720["sh"][1]
+    upper_non_glow = (
+        (body_interior > 0.65)
+        & (rb_diff < 16.0)
+        & (yy >= max(60.0, sh_y_ref - 35.0))
+        & (yy <= sh_y_ref + 95.0)
+        & (xx >= 150.0)
+        & (xx <= 570.0)
+    )
+    body_pixels = cool_matte[upper_non_glow]
+    if len(body_pixels) < 200:
+        body_pixels = cool_matte[body_interior > 0.55]
     if len(body_pixels) > 200:
-        p15 = float(np.percentile(body_pixels, 15))
-        p50 = float(np.percentile(body_pixels, 50))
-        p85 = float(np.percentile(body_pixels, 85))
+        p10, p25, p50, p75, p90 = [float(v) for v in np.percentile(body_pixels, [10, 25, 50, 75, 90])]
     else:
-        p15, p50, p85 = 40.0, 58.0, 88.0
+        p10, p25, p50, p75, p90 = 34.0, 44.0, 58.0, 76.0, 94.0
 
-    low_t = np.clip((cool_base - p15) / max(6.0, p50 - p15), -0.55, 1.0)
-    high_t = np.clip((cool_base - p50) / max(8.0, p85 - p50), 0.0, 1.35)
-    char_a_skin = np.where(
-        cool_base <= p50,
-        118.0 + low_t * (118.0 - 84.0),
-        118.0 + high_t * (154.0 - 118.0),
-    )
-    char_a_skin = np.clip(
-        char_a_skin + np.clip(hf_ridge, -14.0, 16.0) * 0.52 - sulc * 11.5,
-        68.0,
-        174.0,
-    )
+    xp = np.array([0.0, p10, p25, p50, p75, p90, 255.0], dtype=np.float32)
+    if step_idx == 3:
+        fp = np.array([48.0, 56.0, 65.0, 75.0, 86.5, 99.0, 112.0], dtype=np.float32)
+    elif step_idx == 4:
+        fp = np.array([55.0, 63.0, 73.0, 86.0, 102.0, 116.0, 128.0], dtype=np.float32)
+    else:
+        fp = np.array([52.0, 60.0, 70.0, 82.5, 98.0, 112.0, 125.0], dtype=np.float32)
+    for k_i in range(1, len(xp)):
+        if xp[k_i] <= xp[k_i - 1] + 0.5:
+            xp[k_i] = xp[k_i - 1] + 0.5
+    char_a_skin = np.interp(cool_matte.ravel(), xp, fp).reshape(cool_matte.shape).astype(np.float32)
+    char_a_skin = cv2.GaussianBlur(char_a_skin, (0, 0), 1.25)
 
-    bg_studio = np.clip(21.0 + (base_lum - bg_lum_est) * 0.45, 16.0, 30.0)
-    unified_lum = bg_studio * (1.0 - body_interior) + char_a_skin * body_interior
-
+    # Preserve crisp metallic barbell shaft & weight plate rim above shoulder height (`yy < sh_y + 18`)
     sh_x, sh_y = kp_720["sh"]
     hip_r = kp_720["hip_r"]
     hip_l = kp_720["hip_l"]
@@ -161,10 +176,14 @@ def shade_v62_day2_authentic_720p(
     kn_y = 0.5 * (kn_r[1] + kn_l[1])
     hip_y = 0.5 * (hip_r[1] + hip_l[1])
 
+    bg_studio = np.clip(20.0 + (base_lum - bg_lum_est) * 0.42, 16.0, 28.0)
+    unified_lum = bg_studio * (1.0 - body_interior) + char_a_skin * body_interior
+
+    # Exact Day 2 Step 1·2 Cool Slate-Grey (`RGB = (84, 87, 91)` at `lum = 86`)
     mono = np.stack([
-        unified_lum * 0.98,
+        unified_lum * 0.97,
         unified_lum * 1.00,
-        unified_lum * 1.03,
+        unified_lum * 1.05,
     ], axis=2)
 
     y_cut_shin = kn_y + 24.0
@@ -454,20 +473,37 @@ def build_v62_fullbleed_pool(
     return out_rgb_list, out_kps_1080
 
 
-def get_or_build_v62_pools() -> dict:
-    print("Building Gripped + Shorts-Free Close-Up 3D Pools (`day3_v63_step1..4_i2v.mp4`, `scale = 1.24 .. 1.28`)...")
-    s1_raw = _load_slice(os.path.join(OUT_DIR, "day3_v63_step1_i2v.mp4"), 78, 132, target_len=52)
-    s2_raw = _load_slice(os.path.join(OUT_DIR, "day3_v63_step2_i2v.mp4"), 84, 138, target_len=52)
-    s3_raw = _load_slice(os.path.join(OUT_DIR, "day3_v63_step3_i2v.mp4"), 24, 86,  target_len=52)
-    s4_raw = _load_slice(os.path.join(OUT_DIR, "day3_v63_step4_i2v.mp4"), 72, 124, target_len=52)
+STEP_POOL_SPECS = {
+    1: ("day3_v63_step1_i2v.mp4", 78, 132, True,  1.24, 464, 496, 76.0,  406.0, -22),
+    2: ("day3_v63_step2_i2v.mp4", 84, 138, False, 1.28, 464, 518, 57.0,  365.0, +22),
+    3: ("day3_v63_step3_i2v.mp4", 24, 86,  True,  1.28, 464, 532, 195.0, 498.0, -8),
+    4: ("day3_v63_step4_i2v.mp4", 72, 124, False, 1.28, 464, 506, 68.0,  342.0, -8),
+}
 
-    pools = {
-        1: build_v62_fullbleed_pool(s1_raw, 1, True,  scale=1.24, y_head_target_stand=464, y_head_target_squat=502, y_head_src_stand_720=76.0,  y_head_src_squat_720=406.0, x_shift=0),
-        2: build_v62_fullbleed_pool(s2_raw, 2, False, scale=1.24, y_head_target_stand=464, y_head_target_squat=502, y_head_src_stand_720=57.0,  y_head_src_squat_720=365.0, x_shift=0),
-        3: build_v62_fullbleed_pool(s3_raw, 3, True,  scale=1.28, y_head_target_stand=464, y_head_target_squat=532, y_head_src_stand_720=195.0, y_head_src_squat_720=498.0, x_shift=-8),
-        4: build_v62_fullbleed_pool(s4_raw, 4, False, scale=1.28, y_head_target_stand=464, y_head_target_squat=506, y_head_src_stand_720=68.0,  y_head_src_squat_720=342.0, x_shift=-8),
-    }
-    return pools
+
+def build_single_step_v62_pool(s_idx: int) -> tuple[list[np.ndarray], list[dict]]:
+    fn, i0, i1, is_w, sc, y_st, y_sq, ys_st, ys_sq, x_sh = STEP_POOL_SPECS[s_idx]
+    raw = _load_slice(os.path.join(OUT_DIR, fn), i0, i1, target_len=52)
+    return build_v62_fullbleed_pool(raw, s_idx, is_w, scale=sc, y_head_target_stand=y_st, y_head_target_squat=y_sq, y_head_src_stand_720=ys_st, y_head_src_squat_720=ys_sq, x_shift=x_sh)
+
+
+def make_single_step_torso_icon(p_pool: list[np.ndarray], p_kps: list[dict]) -> tuple[Image.Image, Image.Image]:
+    mid_rgb = p_pool[-1]
+    hip_x, hip_y = p_kps[-1]["hip_r"]
+    cw, ch = 544, 432
+    cx = int(np.clip(hip_x + 25, cw // 2, W - cw // 2))
+    cy = int(np.clip(hip_y - 20, ch // 2 + 440, H - ch // 2))
+    x0, y0 = cx - cw // 2, cy - ch // 2
+    crop = mid_rgb[y0 : y0 + ch, x0 : x0 + cw]
+    pil_act = Image.fromarray(crop).resize((136, 108), Image.Resampling.LANCZOS).convert("RGBA")
+    gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    dark = np.stack([gray * 0.48, gray * 0.50, gray * 0.54], axis=2).astype(np.uint8)
+    pil_inact = Image.fromarray(dark).resize((136, 108), Image.Resampling.LANCZOS).convert("RGBA")
+    return (pil_act, pil_inact)
+
+
+def get_or_build_v62_pools() -> dict:
+    return {s_i: build_single_step_v62_pool(s_i) for s_i in (1, 2, 3, 4)}
 
 
 def _draw_joint_pivot_ring_ss(
