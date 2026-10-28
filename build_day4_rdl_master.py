@@ -257,10 +257,10 @@ def build_all():
     print("3. Synthesizing 20.0s English Coaching TTS (`en-US-ChristopherNeural`) + Sub-Bass Beat + Step Chimes...", flush=True)
     wav_path = os.path.join(TMP_DIR, "day4_4step_master_audio.wav")
     vo_lines = [
-        (0.20, "Romanian deadlift. Avoid rounding your lumbar spine and compressing your discs."),
-        (5.45, "Letting the barbell drift forward overloads your traps and lower back."),
-        (10.35, "Lock your vertebrae in a neutral spine and hinge straight back."),
-        (15.30, "Shave the bar down your thighs to stretch and fire your hamstring fibers."),
+        (0.20, "Romanian deadlift. Avoid rounding your lower spine and discs."),
+        (5.20, "Barbell drift overloads your traps and lower back."),
+        (10.20, "Lock your vertebrae in a neutral spine and hinge back."),
+        (15.20, "Shave the bar down your thighs to fire your hamstring fibers."),
     ]
     asyncio.run(v36_pub.synthesize_voiceover_wav(wav_path, vo_lines, DURATION))
 
