@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 
 from gymform import ctx
-from gymform.ctx import CFG, LAST_MASKS, CUR_PLATE, W, H, FPS, d5, b4
+from gymform.ctx import CFG, LAST_MASKS, CUR_PLATE, W, H, FPS, d5, b4, SPEC
 from gymform import bg, mask, equipment, xray, muscle, layout, tempo
 
 
@@ -21,13 +21,38 @@ def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0):
     K = mask.body_key(F, step_idx, kp)
     foot = equipment.footprint(rgb_1080, kp, F)
     w_fg, eq_solid, shorts_mask = mask.finalize(F, K, foot)
-    LAST_MASKS.update(eq_solid=eq_solid, eq_foot=foot, eq_zone=K["near_wrist"], src=rgb_1080)
+    metal = equipment.metal_mask(F, foot) * (1.0 - K["skin_seg"])   # metal only, never on a skin segment
+    LAST_MASKS.update(eq_solid=metal, eq_foot=foot, eq_zone=K["near_wrist"], src=rgb_1080)
+    eq_solid = metal
     mono = muscle.silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong)
     mannequin, anat = muscle.activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase)
     mannequin = xray.apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, eq_solid, kp, step_idx, is_wrong)
+    mannequin = skin_tone_lock(mannequin, w_fg, shorts_mask, metal, step_idx)
     back = bg.studio_bg() * (1.0 - 0.80 * bg.contact_shadow(kp)[:, :, None])
     wf = w_fg[:, :, None]
     return np.clip(back * (1.0 - wf) + mannequin * wf, 0, 255).astype(np.uint8), shorts_mask, w_fg
+
+
+def skin_tone_lock(rgb, w_fg, shorts_mask, metal, step_idx):
+    """Deterministic silver lock on the composited mannequin, every step and frame: skin luminance is mapped by a
+    monotonic piecewise-linear curve so p75 -> 165, p90 -> 191, max -> 226 (spec), scaling RGB by the same
+    factor per pixel so 3D shading ratios are kept. Activation colour, X-Ray window, shorts and metal are untouched."""
+    lk = SPEC["mannequin"]["skin_lock_all_steps"]
+    f = rgb.astype(np.float32)
+    L = 0.299 * f[:, :, 0] + 0.587 * f[:, :, 1] + 0.114 * f[:, :, 2]
+    act = np.maximum(f[:, :, 0] - 0.5 * (f[:, :, 1] + f[:, :, 2]), f[:, :, 1] - 0.5 * (f[:, :, 0] + f[:, :, 2]))
+    xw = LAST_MASKS.get("xwin")
+    keep_out = np.maximum(np.maximum(shorts_mask, metal), xw if xw is not None else 0.0)
+    skin = (w_fg > 0.9) & (keep_out < 0.05) & (act < 12.0) & (L > 46.0)
+    if skin.sum() < 2000:
+        return rgb
+    p75, p90, pmx = (float(np.percentile(L[skin], q)) for q in (75, 90, 99.9))
+    xs = [0.0, 46.0, p75, max(p90, p75 + 1), max(pmx, p90 + 2), 255.0]
+    ys = [0.0, 46.0, float(lk["p75"]), float(lk["p90"]), float(lk["max"]), float(lk["max"])]
+    gain = np.interp(L, xs, ys) / np.maximum(L, 1.0)
+    w = np.clip(w_fg, 0, 1) * (1.0 - np.clip(keep_out * 4, 0, 1)) * np.clip((12.0 - act) / 6.0, 0.0, 1.0)
+    g = 1.0 + (gain - 1.0) * w
+    return np.clip(f * g[:, :, None], 0, 255)
 
 
 def render_pose(step_idx, seq, kps, p_i, icons, qc=False):
@@ -55,7 +80,12 @@ def load_inputs():
         fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(s)
         seq = d5.load_native_slice_720p(os.path.join(CFG["assets_dir"], fn), i0, i1)
         raw_seqs[s] = seq
-        if s not in kps_seqs or len(kps_seqs[s]) != len(seq):
+        sig = (fn, i0, i1, y_sh)
+        if ("sig", s) not in kps_seqs and s in kps_seqs and tuple(d5.STEP_SPECS_DAY5.get(s, ())[:3]) == (fn, i0, i1):
+            kps_seqs[("sig", s)] = sig      # legacy cache entry built from the same clip slice
+            dirty = True
+        if s not in kps_seqs or len(kps_seqs[s]) != len(seq) or kps_seqs.get(("sig", s)) != sig:
+            kps_seqs[("sig", s)] = sig
             kps_seqs[s] = d5.extract_day5_kps_1080(seq, s, y_sh)
             dirty = True
     if dirty:

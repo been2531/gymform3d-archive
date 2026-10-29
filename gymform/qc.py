@@ -193,6 +193,30 @@ def check_equipment(key, src, plate, zone, wfg, shorts, kp):
     return fails, rows, exp
 
 
+def arm_skin_check(base, wfg, eq, xw, kp):
+    """(j) both arms (keypoint segments, shoulder..80% forearm) outside the X-Ray window: silver skin, no dark fill.
+    Returns {side: (p75, dark_fraction)}."""
+    l, a = lum_of(base.astype(np.float32)), act_of(base.astype(np.float32))
+    xw_d = (cv2.dilate((xw > 0.02).astype(np.uint8), np.ones((15, 15), np.uint8)) > 0) if xw is not None else np.zeros((H, W), bool)
+    out = {}
+    for side in ("r", "l"):
+        m = np.zeros((H, W), np.uint8)
+        sh, el, wr = kp[f"sh_{side}"], kp[f"elb_{side}"], kp[f"wr_{side}"]
+        fw = (el[0] + 0.8 * (wr[0] - el[0]), el[1] + 0.8 * (wr[1] - el[1]))
+        P = lambda p: (int(round(p[0])), int(round(p[1])))
+        cv2.line(m, P(sh), P(el), 1, 20); cv2.line(m, P(el), P(fw), 1, 14)
+        lit = cv2.dilate((a > 12.0).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0   # muscle-fibre colour + its sulci
+        sel = (m > 0) & (wfg > 0.9) & ~xw_d & ~lit & ((eq < 0.5) if eq is not None else True)
+        if sel.sum() < 300:
+            continue
+        # a dark FILL is a solid dark blob (natural creases are thin lines): largest opened dark component
+        dk = cv2.morphologyEx(((l < 60.0) & sel).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        n, _, st, _ = cv2.connectedComponentsWithStats(dk)
+        blob = int(max([st[i, cv2.CC_STAT_AREA] for i in range(1, n)] or [0]))
+        out[side] = (float(np.percentile(l[sel], 50)), blob, int(sel.sum()))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mp4")
@@ -318,8 +342,15 @@ def main():
         sk_o = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
         if sk_o.sum() > 2000:
             LOCK.setdefault(s, []).append((float(np.percentile(l[sk_o], 75)), float(np.percentile(l[sk_o], 90))))
+        # (j) arm skin: silver on both arms, no dark fill
+        for side, (p75a, blob, npx) in arm_skin_check(base, wfg, eq, xw, kp).items():
+            ARM_ROWS.append(f"{key} {side}: p50={p75a:.0f} darkfill={blob}px ({npx}px)")
+            # silver range: shaded silver .. highlight (spec curve 46..226); a black fill sits far below it
+            if blob > 250 or (npx > 800 and not (100.0 <= p75a <= 215.0)):
+                arm_fail.append(ARM_ROWS[-1])
         # (f) skin + shorts
-        skin = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5)
+        # (spec: the skin lock excludes only the local X-Ray window, same mask as (i))
+        skin = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
         if skin.sum() > 2000:
             p75, p90, mx = np.percentile(l[skin], 75), np.percentile(l[skin], 90), l[skin].max()
             sh = (shorts > 0.6) & (wfg > 0.9)
@@ -343,6 +374,8 @@ def main():
            "; ".join(eq_fail) or f"types={[e['type'] for e in meta['equipment']]} | " + " | ".join(EQ_ROWS))
     report("(h) equipment fully in front of preview/title (no UI pixels over it)", not ui_fail,
            "; ".join(ui_fail) or (" | ".join(H_ROWS) if H_ROWS else "no equipment under UI in sampled frames"))
+    report("(j) both arms silver skin, no dark fill (keypoint segments)", not arm_fail,
+           "; ".join(arm_fail) or " | ".join(ARM_ROWS))
     for key, is_bone, ncol, detail, ok in RESULTS_E:
         report(f"(e) {key} {'bone X-Ray' if is_bone else 'muscle fibers'} present/readable", ok, f"coloured px={ncol}, edge detail={detail:.1f}")
     report("(f) skin p75~165/p90~191, shorts 10..22", not skin_fail, " | ".join(SKIN))
@@ -380,7 +413,7 @@ def main():
     sys.exit(0 if all(RESULTS) else 1)
 
 
-RESULTS_E, SKIN, EQ_ROWS, H_ROWS, LOCK = [], [], [], [], {}
+RESULTS_E, SKIN, EQ_ROWS, H_ROWS, LOCK, ARM_ROWS, arm_fail = [], [], [], [], {}, [], []
 
 if __name__ == "__main__":
     main()

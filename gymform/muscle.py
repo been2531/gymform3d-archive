@@ -20,7 +20,7 @@ def silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong):
     # Lock skin tone to the Bright Silver-Grey standard (p75~165, p90~191, max 226) with a max-anchored remap.
     skin_q = (w_fg > 0.9) & (shorts_mask < 0.2) & (act_dom < 12.0) & (lum > 46.0)
     if step_idx in CFG["bone_steps"]:   # colour lock is defined on the body OUTSIDE the X-Ray window
-        skin_q &= cv2.dilate((xray_window(kp, is_wrong) > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) == 0
+        skin_q &= cv2.dilate((xray_window(kp, step_idx in CFG.get('xray_full_steps', [1])) > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) == 0
     if skin_q.sum() > 2000:
         p75_g = float(np.percentile(grey[skin_q], 75))
         k = float(np.clip((226.0 - 165.0) / max(226.0 - p75_g, 1.0), 0.90, 1.30))

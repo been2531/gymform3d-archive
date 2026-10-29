@@ -170,6 +170,14 @@ def footprint(rgb_1080, kp, F):
         # dark pixels only (a plate-scale closing never bridges to bright body or across the open backdrop)
         closed = cv2.morphologyEx(strong_f.astype(np.uint8), cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))) > 0
         strong_f |= closed & (lz_eq < 75.0)
+        # faces fully enclosed by the solid object (e.g. a plate face the temporal plate also holds) are the object
+        ef = np.pad(strong_f.astype(np.uint8), 1).copy()
+        cv2.floodFill(ef, None, (0, 0), 2)
+        enc = ((ef[1:-1, 1:-1] != 2) & ~strong_f).astype(np.uint8)
+        n_e, lab_e, st_e, _ = cv2.connectedComponentsWithStats(enc)
+        for ei in range(1, n_e):
+            if st_e[ei, cv2.CC_STAT_AREA] <= 3000:
+                strong_f |= (lab_e == ei) & (lz_eq < 90.0)
         # weak (proportional) alpha only as a thin soft edge of a solid object: weak-difference pixels away from
         # any solid equipment are backdrop-plate ghosts (arm positions held in the median plate), never equipment
         near_obj = cv2.dilate(strong_f.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (13, 13))) > 0
@@ -177,6 +185,23 @@ def footprint(rgb_1080, kp, F):
         f = ((filled & (zone > 0)) * alpha).astype(np.float32)
         foot[y0:y1, x0:x1] = np.maximum(foot[y0:y1, x0:x1], f)
     return foot
+
+
+def metal_mask(F, foot):
+    """Equipment METAL inside the footprint. The plate-difference footprint also holds the moving hand/forearm
+    (it differs from the backdrop plate too); only neutral, dark, un-lit pixels are metal. Activation-lit skin
+    (high act_dom) and bright skin are body and keep the silver skin curve (root cause of the black arm)."""
+    r, g, b, lum, act = F["r"], F["g"], F["b"], F["lum"], F["act_dom"]
+    neutral = (np.abs(b - r) < 9.0) & (np.abs(b - g) < 9.0) & (np.abs(r - g) < 9.0)
+    m = ((foot > 0.3) & neutral & (act < 9.0) & (lum < 105.0)).astype(np.uint8)
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(m)
+    keep = np.zeros_like(m)
+    for i in range(1, n):
+        if st[i, cv2.CC_STAT_AREA] >= 400:
+            keep[lab == i] = 1
+    return keep.astype(np.float32) * np.clip(foot, 0.0, 1.0)
 
 
 def metal_shade(grey, F, eq_solid):
