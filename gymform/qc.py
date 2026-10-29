@@ -134,6 +134,102 @@ def ui_see_through(fr, pre, uia, uirgb, occ, band):
     return a_hat, resid, int(strong.sum())
 
 
+def skeletal_size(kp):
+    import math
+    D = lambda a, b: math.hypot(a[0] - b[0], a[1] - b[1])
+    M = lambda a, b: (0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1]))
+    return (D(M(kp["sh_r"], kp["sh_l"]), M(kp["hip_r"], kp["hip_l"])) + 0.5 * (D(kp["hip_r"], kp["kn_r"]) + D(kp["hip_l"], kp["kn_l"]))
+            + 0.5 * (D(kp["kn_r"], kp["ank_r"]) + D(kp["kn_l"], kp["ank_l"])) + 0.5 * (D(kp["sh_r"], kp["elb_r"]) + D(kp["sh_l"], kp["elb_l"])))
+
+
+def native_fabric(src):
+    """QC's own native fabric map from the raw source frame: dark, neutral, un-lit pixels, small enclosed sheen
+    spots included (they are native highlights on the 3D fabric)."""
+    f = src.astype(np.float32)
+    lum, act = lum_of(f), act_of(f)
+    mx, mn = f.max(axis=-1), f.min(axis=-1)
+    sat = (mx - mn) / (mx + 1.0)
+    lum_eq = np.maximum(lum - 0.85 * act, mn)
+    fab = ((lum_eq < 64.0) & (sat < 0.32) & (act < 20.0)).astype(np.uint8)
+    fc = cv2.morphologyEx(fab, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    ff = np.pad(fc, 1).copy()
+    cv2.floodFill(ff, None, (0, 0), 2)
+    return (ff[1:-1, 1:-1] != 2)
+
+
+def overpaint_px(src, shorts):
+    """(n) shorts pixels (core, >0.5, 1px in from the soft edge) that are NOT native fabric in the source."""
+    core = cv2.erode((shorts > 0.5).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    nat = cv2.dilate(native_fabric(src).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    return int((core & ~nat).sum()), int(core.sum())
+
+
+_SQC = {}
+
+
+def static_objects_qc(plate):
+    """QC's own static-object map (independent of the renderer): textured or clearly (>16) darker than a coarse
+    median backdrop of the plate; smooth faint shadows are not required to be kept."""
+    k = (plate.shape, float(plate[::97, ::89].sum()))
+    if k in _SQC:
+        return _SQC[k]
+    l = lum_of(plate.astype(np.float32))
+    tex = cv2.GaussianBlur(np.abs(l - cv2.GaussianBlur(l, (0, 0), 2.0)), (0, 0), 1.5)
+    # object-free backdrop: everything textured or far from the global backdrop level is masked and inpainted
+    # (a plain median is biased by the large bright seated body and over-calls backdrop as "object")
+    sm = cv2.resize(l, (W // 8, H // 8), interpolation=cv2.INTER_AREA).astype(np.uint8)
+    lev = float(np.median(sm))
+    ob = (np.abs(sm.astype(np.float32) - lev) > 10.0) | (cv2.resize(tex, (W // 8, H // 8), interpolation=cv2.INTER_AREA) > 2.0)
+    ob = cv2.dilate(ob.astype(np.uint8), np.ones((5, 5), np.uint8))
+    bgm = cv2.resize(cv2.GaussianBlur(cv2.inpaint(sm, ob, 8, cv2.INPAINT_NS), (0, 0), 3.0).astype(np.float32), (W, H), interpolation=cv2.INTER_CUBIC)
+    _SQC[k] = (((bgm - l) > 16.0) | (tex > 3.0), tex)
+    return _SQC[k]
+
+
+def static_check(src, base, plate, wfg, shorts, kp):
+    """(m) QC's own static-object map (plate vs smooth backdrop; dark, not skin, frame shows the plate) near the
+    body: rendered pre-UI base must equal the native source there (not faded into the backdrop, not re-shaded)
+    and be fully opaque in the fg mask."""
+    f = src.astype(np.float32)
+    stat, tex = static_objects_qc(plate)
+    obj = stat & (np.abs(f - plate).max(axis=-1) < 8.0) & (lum_of(f) < 70.0) & (shorts < 0.2)
+    hip = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), 0.5 * (kp["hip_r"][1] + kp["hip_l"][1]))
+    near = np.zeros((H, W), np.uint8)
+    cv2.ellipse(near, (int(hip[0]), int(hip[1]) + 120), (330, 420), 0, 0, 360, 1, -1)
+    obj = cv2.erode((obj & (near > 0)).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    n = int(obj.sum())
+    if n < 1500:
+        return False, f"static object not found ({n}px) - bench missing/faded or cut"
+    diff = np.abs(base[obj].astype(np.float32) - f[obj]).max(axis=-1)
+    cov = float((wfg[obj] > 0.9).mean())
+    t_src = float(tex[obj].mean())
+    lb = lum_of(base.astype(np.float32))
+    t_out = float(cv2.GaussianBlur(np.abs(lb - cv2.GaussianBlur(lb, (0, 0), 2.0)), (0, 0), 1.5)[obj].mean())
+    ok = cov >= 0.95 and float(np.median(diff)) <= 6.0 and t_out >= 0.85 * t_src
+    return ok, f"{n}px, opaque {100 * cov:.0f}%, median |out-src|={np.median(diff):.1f}, detail {t_out:.1f}/{t_src:.1f}"
+
+
+ALLOWED_SOURCES = ("native_3d_clip", "native_3d_blender")
+FORBIDDEN_2D = ("shorts_polygon", "shorts_fill", "drawn_bones", "drawn_shorts", "drawn_equipment", "warp", "rembg_cutout")
+
+
+def native_source_ok(prov):
+    """Hard rule: source must be native 3D (mannequin, 3D shorts, equipment and anatomy rendered in the 3D source,
+    not drawn afterwards) and no 2D overpaint stage may be enabled."""
+    if not prov:
+        return False, "config has no 'source' provenance block"
+    if prov.get("type") not in ALLOWED_SOURCES:
+        return False, f"source.type={prov.get('type')!r} not in {ALLOWED_SOURCES}"
+    need = {"mannequin", "shorts", "equipment"}
+    missing = need - set(prov.get("native", []))
+    if missing:
+        return False, f"not native in source: {sorted(missing)}"
+    bad = [k for k in FORBIDDEN_2D if prov.get("overpaint_2d", {}).get(k)]
+    if bad:
+        return False, f"2D overpaint stage enabled: {bad}"
+    return True, f"type={prov['type']} native={sorted(prov.get('native', []))} overpaint_2d=none"
+
+
 LAST_BK = [None]   # backdrop pixels covered by fg in the last checked frame (proof overlays)
 
 
@@ -163,6 +259,8 @@ def check_equipment(key, src, plate, zone, wfg, shorts, kp):
     metal = (lum_eq < 80.0) & (act_of(fs) < 12.0) & neutral & (zone > 0.5)
     # (matte plate faces can equal the backdrop in max-channel; the QC's own footprint says they are the item)
     backdrop = (d < 6.0) & (fp.max(axis=-1) < 52.0) & (zone > 0.5) & ~shd & ~(cv2.dilate(exp.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
+    if any(e.get("static") for e in CFG_EQ[0]):   # a static bench/machine in the zone is equipment, not backdrop
+        backdrop &= ~(cv2.dilate(static_objects_qc(fp)[0].astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
     backdrop &= ~metal   # backdrop = the cool blue-grey studio colour; neutral dark metal of a held-still item is not backdrop
     bk = (wfg > 0.5) & cv2.erode(backdrop.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
     bloat = float(bk.sum()) / n_exp
@@ -254,6 +352,9 @@ def leg_below_hem_check(base, wfg, shorts, kp, eqfoot=None, src=None):
         cv2.line(m, P(hip), P(kn), 1, 70); cv2.line(m, P(kn), P(an), 1, 50)
         m[:hem + 5] = 0
         sel = (m > 0) & (wfg > 0.9)
+        # native shorts fabric is not leg skin ((n) proves every shorts pixel is native fabric); seated thighs
+        # run diagonally, so the row-based hem alone left the lower shorts edge inside the "leg" band
+        sel &= ~(cv2.dilate((shorts > 0.3).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
         if eqfoot is not None:   # hands/dumbbells resting beside the thigh are not leg skin
             sel &= ~(cv2.dilate((eqfoot > 0.3).astype(np.uint8), np.ones((41, 41), np.uint8)) > 0)
         dark = (l < 60.0) & sel
@@ -282,6 +383,7 @@ def main():
     report("format", (w, h) == (W, H) and abs(fps - 30) < 0.01 and n >= 590, f"{w}x{h} @ {fps:.2f}fps, {n} frames ({n / max(fps, 1):.2f}s)")
 
     frames_meta = meta["frames"]
+    CFG_EQ[0] = meta.get("equipment", [])
     vids = read_frames(args.mp4, [v["frame_idx"] for v in frames_meta.values()])
     bg = cv2.cvtColor(cv2.imread(meta["studio_bg"]), cv2.COLOR_BGR2RGB)
     bg_act = act_of(bg)
@@ -332,6 +434,15 @@ def main():
                             ui_fail.append(H_ROWS[-1])
         else:
             eq_fail.append(f"{key}: no equipment sidecar (config: {[e['type'] for e in meta['equipment']]})")
+        # (c) mannequin size: pose-invariant skeletal size (torso+thigh+shin+upper arm) on EVERY sidecar frame;
+        # the old head-top extent was fooled by overhead arms / seated poses (Day 6 Step 3 rendered 20% larger)
+        heights[key] = skeletal_size(kp)
+        # (n) NATIVE shorts: every rendered shorts pixel must be a native fabric pixel of the source (0% 2D overpaint)
+        src_rgb = cv2.cvtColor(cv2.imread(pre + "_src.png"), cv2.COLOR_BGR2RGB)
+        OVP.append((key,) + overpaint_px(src_rgb, shorts))
+        # (m) static equipment (bench) preserved as native pixels: not faded, not cut, not re-shaded
+        if any(e.get("static") for e in meta["equipment"]) and os.path.exists(plate_p):
+            STATIC.append((key,) + static_check(src_rgb, base, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB), wfg, shorts, kp))
         if not main_frame:
             continue
 
@@ -374,12 +485,6 @@ def main():
                 if d > 60.0 or sharp < 0.55:
                     prev_bad.append(f"{key}: diff={d:.1f}, sharpness ratio={sharp:.2f}")
 
-        # (c) head-to-ankle height from the clean mask
-        sx = 0.5 * (kp["sh_r"][0] + kp["sh_l"][0])
-        col = (wfg[:, int(sx) - 40 : int(sx) + 40] > 0.5).any(axis=1)
-        ys = np.where(col[: int(kp["sh"][1])])[0]
-        if len(ys):
-            heights[key] = max(kp["ank_r"][1], kp["ank_l"][1]) - ys.min()
 
         # (e) bone vs muscle on peak frames (pre-UI composite, inside body)
         if fm["tag"] == "peak":
@@ -428,10 +533,20 @@ def main():
         steps_h = {}
         for k, v in heights.items():
             steps_h.setdefault(k.split("_")[0], []).append(v)
-        hs = {k: max(v) for k, v in steps_h.items()}
+        hs = {k: float(np.median(v)) for k, v in steps_h.items()}
         spread = (max(hs.values()) - min(hs.values())) / max(hs.values())
-        report("(c) head-to-ankle height equal across steps (<=4%)", spread <= 0.04,
+        report("(c) mannequin size equal across steps (skeletal, <=4%)", spread <= 0.04,
                ", ".join(f"{k}={v:.0f}px" for k, v in sorted(hs.items())) + f" | spread {100 * spread:.1f}%")
+    ov_bad = [f"{k}: {n}px painted outside native fabric (of {t}px shorts)" for k, n, t in OVP if n > 0]
+    tot = sum(t for _, _, t in OVP)
+    report("(n) 2d_overpaint_ratio == 0 (shorts = native 3D fabric pixels only)", not ov_bad,
+           "; ".join(ov_bad) or f"2d_overpaint_ratio=0.000 over {len(OVP)} frames ({tot}px native shorts)")
+    if STATIC:
+        st_bad = [f"{k}: {msg}" for k, ok, msg in STATIC if not ok]
+        report("(m) static equipment (bench) preserved: native, opaque, not faded/cut", not st_bad,
+               "; ".join(st_bad) or " | ".join(f"{k}: {m}" for k, _, m in STATIC[:6]))
+    prov = meta.get("source", {})
+    report("(o) native_3d_source (config provenance, no 2D overpaint stage)", native_source_ok(prov)[0], native_source_ok(prov)[1])
     report("(d) equipment = per-frame expected footprint: solid, no holes, in frame, not clipped", not eq_fail,
            "; ".join(eq_fail) or f"types={[e['type'] for e in meta['equipment']]} | " + " | ".join(EQ_ROWS))
     report("(h) title/preview see-through over equipment, equipment intact under it", not ui_fail,
@@ -490,6 +605,8 @@ def main():
     sys.exit(0 if all(RESULTS) else 1)
 
 
+OVP, STATIC = [], []
+CFG_EQ = [[]]
 RESULTS_E, SKIN, EQ_ROWS, H_ROWS, LOCK, ARM_ROWS, arm_fail, LEG_ROWS, leg_fail = [], [], [], [], {}, [], [], [], []
 
 if __name__ == "__main__":

@@ -125,7 +125,9 @@ def autofix(rows, c, ovr):
         if st != "FAIL":
             continue
         steps = {int(x) for x in re.findall(r"step(\d)_", item)} or {1, 2, 3, 4}
-        if item.startswith("(c)"):
+        if item.startswith("(c)") and c.get("auto_scale", True):
+            notes.append("needs-human (scale is auto-normalised from keypoints; fix ctx.normalize_scale, not a param): " + item[:120])
+        elif item.startswith("(c)"):
             hs = {int(k): float(v) for k, v in re.findall(r"step(\d)=(\d+)px", item)}
             med = sorted(hs.values())[len(hs) // 2]
             sc = ovr.setdefault("step_scale", {})
@@ -167,8 +169,16 @@ def main():
     if not os.path.exists(cfg_p):
         print(json.dumps({"day": a.day, "ok": False, "blocker": f"missing {os.path.relpath(cfg_p, ROOT)}"}))
         sys.exit(2)
+    print(f"RULES: {os.path.join(ROOT, 'RULES.md')} (locked; native 3D only, 0% 2D overpaint, root cause before render)", file=sys.stderr)
     spec = json.load(open(SPEC_P))
     day_cfg = json.load(open(cfg_p))
+    # HARD GUARD (RULES.md #1): native 3D source only, no 2D overpaint stage -> fail before any rendering
+    sys.path.insert(0, ROOT)
+    from gymform.qc import native_source_ok
+    ok_src, why = native_source_ok(day_cfg.get("source", {}))
+    if not ok_src:
+        print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "native_3d_source: " + why, "rules": "RULES.md"}))
+        sys.exit(3)
     clips = [os.path.join(ROOT, day_cfg["assets_dir"], v["file"]) for v in day_cfg["clips"].values()]
     missing = [os.path.basename(p) for p in clips if not os.path.exists(p)]
     sys.path.insert(0, ROOT)
@@ -297,6 +307,10 @@ def main():
             log("caption lint: " + "; ".join(cap_err))
         open(A(f"output/day{a.day}_caption.txt"), "w").write(cap_txt)
     T["total"] = round(time.time() - t0, 1)
+    # production time is measured every run (RULES.md: each reel faster than the last)
+    hist_p = os.path.join(ROOT, "output", "qc", "production_times.jsonl")
+    with open(hist_p, "a") as hf:
+        hf.write(json.dumps({"day": a.day, "at": time.strftime("%Y-%m-%d %H:%M:%S"), "ok": ok, "t": T}) + "\n")
     status.update({"ok": ok, "mp4": os.path.relpath(A(c["out_mp4"]), ROOT), "t": T, "log": os.path.relpath(LOG, ROOT)})
     json.dump(status, open(os.path.join(ROOT, "output", "qc", f"day{a.day}_status.json"), "w"), indent=1)
     print(json.dumps(status, separators=(",", ":")))

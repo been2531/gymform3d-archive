@@ -44,9 +44,11 @@
    "skin_segments_always_skin": true,
    "segments": "upper arm, forearm to 80% (before hand), torso above hip band, knee..ankle",
    "equipment_metal_excludes_skin_segments": true,
-   "shorts_limited_to_hip_band_polygon": true,
-   "post_composite_skin_tone_lock": "every step, every frame: monotonic map p75->165, p90->191, max->226, RGB scaled by the same gain (3D shading ratios kept); excludes X-Ray window, shorts, metal, activation colour"
-  }
+   "post_composite_skin_tone_lock": "every step, every frame: monotonic map p75->165, p90->191, max->226, RGB scaled by the same gain (3D shading ratios kept); excludes X-Ray window, shorts, metal, activation colour",
+   "shorts_native_only": "shorts = the source's own native 3D fabric pixels (mask.native_shorts, pose-aware hem along each thigh axis); no 2D polygon/fill; QC (n) 2d_overpaint_ratio == 0",
+   "skin_shadow_floor": "skin never renders darker than its own native shadow up to lum 62 (muscle.silver_skin)"
+  },
+  "equal_size_metric": "skeletal size (torso+thigh+shin+upper arm), auto-normalised per step by ctx.normalize_scale; QC (c) <= 4%"
  },
  "steps": {
   "1": {
@@ -179,5 +181,9 @@
    "step4_line_budget": "Step 4 line (start 15.2s) + 0.25s gap + question must end <= 19.85s -> keep the Step 4 line <= ~11 words",
    "checks": "run_day.py --check lint (estimate) + tts assert (real durations) + QC (l) from tts timing sidecar"
   }
- }
+ },
+ "equipment_rules": {
+  "static": "static equipment (bench/machine) kept as native source pixels, opaque (equipment.static_equipment); QC (m)"
+ },
+ "source_rule": "native 3D only (config.source.type native_3d_clip|native_3d_blender, mannequin/shorts/equipment native), 0% 2D overpaint; run_day guard + QC (o). See RULES.md"
 }
