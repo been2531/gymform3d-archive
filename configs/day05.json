@@ -150,7 +150,16 @@
       "Raise thirty degrees forward in the scapular plane to fire your lateral deltoid fibers."
     ]
   ],
-  "caption": "Be honest: are your lateral raises building side delts or just your traps? Comment \"UP\" if you lift past shoulder height, \"LEVEL\" if you stop at 90°.\n\nWRONG: Swinging the dumbbells up to 115° pinches the shoulder joint, and the traps shrug in to steal the work.\n\nRIGHT: Shoulder blades down, arms raised about 30° forward in the scapular plane, stop at shoulder height and pause. Every rep goes into the lateral delts.\n\nSave this for your next shoulder day and send it to your lifting partner.\n",
+  "caption": {
+    "title": "Your lateral raises are training your traps, not your side delts.",
+    "body": [
+      "WRONG: Swinging the dumbbells up to 115° pinches the shoulder joint, and your traps shrug in to steal the work.",
+      "",
+      "RIGHT: Shoulder blades down, arms about 30° forward in the scapular plane, stop at shoulder height and pause. Every rep goes into the lateral delts."
+    ],
+    "question": "What weight do you use for lateral raises, and where do you feel them most?",
+    "save": "Save this for your next shoulder day."
+  },
   "sheet_title": "Day 5 Dumbbell Lateral Raise — gymform modular pipeline · locked studio · local Day-1 X-Ray",
   "sheet_labels": [
     "Step 1: wrong · bone X-Ray",

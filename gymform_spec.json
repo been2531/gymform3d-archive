@@ -142,7 +142,22 @@
  "caption_rules": {
   "language": "100% English",
   "hashtags": 0,
-  "open_with": "comment-bait question or poll hook",
+  "structure": [
+   "line 1: short one-line title statement (demicstory-style, no question)",
+   "concise coaching: mistakes + fix, angles must match on-screen",
+   "ONE personal-experience question inviting people to share their own situation (weight used, where they feel it, when form breaks)",
+   "optional short save line"
+  ],
+  "forbidden": [
+   "DM-reward / comment-keyword-for-DM CTAs",
+   "vote hooks (1 or 2, Comment \"WORD\")",
+   "hashtags"
+  ],
+  "question_examples": [
+   "What weight do you use for lateral raises, and where do you feel them most?",
+   "Where do you feel your pulldowns most right now?"
+  ],
+  "config_format": "configs/dayNN.json caption = {title, body[], question, save}; built + linted by gymform/caption.py",
   "angles_must_match_on_screen": true,
   "include_seo_keywords": true
  }
