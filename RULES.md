@@ -37,6 +37,7 @@ rules marked **[QC]** fail the QC gate (`gymform/qc.py`). A day that fails is ne
 - Equipment never cut off, distorted or faded. Moving equipment **[QC] (d)(h)**; static equipment (bench)
   kept as native pixels, opaque **[QC] (m)**.
 - Tempo 0.3 / 1.5 / 1.3 / 1.5 / 0.4 s, one rep per step.
+- On-screen angle numbers = the coached joint angle the label names; label, config and TTS must agree (`layout.callout_lint`: [guard] + [QC] (p)). deg is "N°" or {"from","to"}, never a bare list.
 - Title + preview stay visible at **0.40 translucency** wherever the mannequin/equipment overlaps them
   (Day 4 rule). **[QC] (b1)(b2)(h)**
 

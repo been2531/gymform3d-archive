@@ -85,10 +85,7 @@
   "callouts": {
     "1": {
       "slot": 0,
-      "deg": [
-        45,
-        78
-      ],
+      "deg": "90°",
       "l1": "ELBOW FLARE",
       "l2": [
         "SHOULDER RISK",
@@ -98,10 +95,10 @@
     },
     "2": {
       "slot": 1,
-      "deg": [
-        10,
-        24
-      ],
+      "deg": {
+        "from": 10,
+        "to": 25
+      },
       "l1": "SHOULDER ROLL",
       "l2": [
         "FRONT DELT OVERLOAD",
@@ -112,7 +109,7 @@
     "3": {
       "slot": 2,
       "deg": "45°",
-      "l1": "SCAPULAR TUCK",
+      "l1": "ELBOW TUCK 45°",
       "l2": [
         "JOINT SAFE",
         92,
@@ -121,10 +118,7 @@
     },
     "4": {
       "slot": 3,
-      "deg": [
-        30,
-        45
-      ],
+      "deg": "45°",
       "l1": "ELBOWS 45°",
       "l2": [
         "UPPER PEC LOAD",
@@ -185,5 +179,6 @@
     "note": "3D mannequin with real 3D matte-black shorts, equipment and anatomy are rendered inside the source clip; the pipeline only regrades native pixels",
     "overpaint_2d": {}
   },
-  "auto_scale": true
+  "auto_scale": true,
+  "callout_note": "deg = coached joint angle the label names for the shown pose (Step 1 elbow flare 90 deg = wrong; Steps 3/4 elbows tucked 45 deg = TTS 'forty-five degrees'); not 2D-measured"
 }

@@ -9,6 +9,6 @@
  "cover": "output/day6_cover.jpg",
  "sheet": "output/day6_4step_sheet.jpg",
  "caption": "output/day6_caption.txt",
- "qc": "21/21 PASS (output/logs/day06_20261030_073637.log)",
+ "qc": "22/22 PASS (output/logs/day06_20261030_074029.log)",
  "note": "Awaiting 중현 님 approval. Do not publish until status=approved."
 }

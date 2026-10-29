@@ -80,10 +80,10 @@
   "callouts": {
     "1": {
       "slot": 0,
-      "deg": [
-        18,
-        100
-      ],
+      "deg": {
+        "from": 18,
+        "to": 118
+      },
       "l1": "HIGH FLARE",
       "l2": [
         "JOINT PINCH",
@@ -93,10 +93,10 @@
     },
     "2": {
       "slot": 1,
-      "deg": [
-        8,
-        20
-      ],
+      "deg": {
+        "from": 8,
+        "to": 28
+      },
       "l1": "TRAP SHRUG",
       "l2": [
         "TRAP OVERLOAD",
@@ -116,10 +116,10 @@
     },
     "4": {
       "slot": 3,
-      "deg": [
-        12,
-        18
-      ],
+      "deg": {
+        "from": 12,
+        "to": 30
+      },
       "l1": "SCAPULAR PLANE",
       "l2": [
         "LATERAL DELT",

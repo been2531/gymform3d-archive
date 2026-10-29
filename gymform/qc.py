@@ -545,6 +545,28 @@ def main():
         st_bad = [f"{k}: {msg}" for k, ok, msg in STATIC if not ok]
         report("(m) static equipment (bench) preserved: native, opaque, not faded/cut", not st_bad,
                "; ".join(st_bad) or " | ".join(f"{k}: {m}" for k, _, m in STATIC[:6]))
+    # (p) on-screen angle numbers agree with label / config / TTS (Day 6: 121 deg and 74 deg under 'ELBOWS 45 deg')
+    import re as _re
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from gymform.layout import callout_lint
+    p_bad = []
+    if meta.get("callouts"):
+        p_bad += callout_lint({"callouts": meta["callouts"], "tts_lines": meta.get("tts_lines", [])})
+        for key, fm in sorted(frames_meta.items()):
+            co, c = fm.get("callout"), meta["callouts"][str(fm["step"])]
+            if not co:
+                p_bad.append(f"{key}: no drawn-callout sidecar"); continue
+            v = int(co["deg"].rstrip("\u00b0"))
+            d = c["deg"]
+            lo, hi = (sorted((d["from"], d["to"])) if isinstance(d, dict) else (int(d[:-1]), int(d[:-1])))
+            lab = [int(x) for x in _re.findall(r"(\d+)\u00b0", co["l1"])]
+            if not (lo <= v <= hi) or (lab and lab[0] != v):
+                p_bad.append(f"{key}: drew {co['deg']} under '{co['l1']}' (config {lo}-{hi})")
+    else:
+        p_bad.append("meta has no callout config")
+    shown = sorted({(fm["step"], fm.get("callout", {}).get("deg")) for fm in frames_meta.values() if fm.get("tag") == "peak"})
+    report("(p) on-screen angle numbers match label / config / TTS", not p_bad,
+           "; ".join(p_bad) or " | ".join(f"step{s} peak {d}" for s, d in shown))
     prov = meta.get("source", {})
     report("(o) native_3d_source (config provenance, no 2D overpaint stage)", native_source_ok(prov)[0], native_source_ok(prov)[1])
     report("(d) equipment = per-frame expected footprint: solid, no holes, in frame, not clipped", not eq_fail,
