@@ -9,7 +9,7 @@ Reads the rendered mp4 at the start/peak frame of every step and the QC sidecar 
 (build_day5_gym_studio_v4.py -> CFG["qc_dir"]: per-frame clean fg mask, shorts mask, equipment masks,
 pre-UI base frame, keypoints, equipment config). Prints PASS/FAIL per item and exits 1 if any item fails:
   (a) no coloured halo / bloom outside the mannequin mask
-  (b) title depth-behind (title suppressed over mannequin) + preview see-through and sharp over mannequin
+  (b) title + preview VISIBLE see-through (ui.overlap_alpha, Day 4 rule) over mannequin; mannequin sharp under preview
   (c) mannequin head-to-ankle height equal across the 4 steps (within 4%)
   (d) equipment (any type in config) fully inside frame, fully covered by fg mask (no holes), not distorted
   (e) bone X-Ray present/readable on bone steps, muscle fibers on muscle steps
@@ -114,6 +114,24 @@ def expected_equipment(src, plate, zone):
 def load_mask(path):
     m = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
     return None if m is None else m.astype(np.float32) / 255.0
+
+
+def ui_see_through(fr, pre, uia, uirgb, occ, band):
+    """Day 4 see-through rule. Over occluder pixels (mannequin / equipment) inside the UI layer, fit the effective
+    UI alpha A in  frame = preUI + A * ui_a * (ui_rgb - preUI)  (least squares). Returns (A_hat, residual, n):
+    A_hat ~ spec alpha => title/preview VISIBLE (non-zero contrast) but not opaque; small residual => the 3D layer
+    under it is intact (not cut, hidden, blurred or distorted)."""
+    sel = occ & band & (uia > 0.5)
+    f, p_, u = (x[sel].astype(np.float32) for x in (fr, pre, uirgb))
+    a = uia[sel][:, None]
+    du = (u - p_) * a
+    strong = np.abs(du).max(axis=1) > 20.0
+    if strong.sum() < 60:
+        return None, None, int(strong.sum())
+    d, du = (f - p_)[strong], du[strong]
+    a_hat = float((d * du).sum() / max((du * du).sum(), 1e-6))
+    resid = float(np.abs(d - a_hat * du).max(axis=1).mean())
+    return a_hat, resid, int(strong.sum())
 
 
 LAST_BK = [None]   # backdrop pixels covered by fg in the last checked frame (proof overlays)
@@ -272,6 +290,10 @@ def main():
 
     heights = {}
     halo_bad, title_bad, prev_bad, eq_fail, skin_fail, ui_fail = [], [], [], [], [], []
+    oa = meta.get("overlap_alpha", {"title": 0.40, "preview": 0.40, "qc_tolerance": 0.12})
+    global OA_SPEC, OA_TOL
+    OA_SPEC, OA_TOL = float(oa["title"]), float(oa.get("qc_tolerance", 0.12))
+    B1_ROWS = []
     eq_area = {}
     for key, fm in sorted(frames_meta.items()):
         fr = vids.get(fm["frame_idx"])
@@ -293,26 +315,20 @@ def main():
             EQ_ROWS.extend(r_)
             core = cv2.erode(exp.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
             if exp.sum() >= 1500:
-                # (h) equipment fully IN FRONT of UI overlays (preview pill / title): in the final frame the
-                # equipment pixels must be the pre-UI composite, with no preview/title pixels over them
+                # (h) Day 4 see-through over EQUIPMENT: title/preview visible at ui.overlap_alpha over the equipment
+                # (not hidden behind it) while the equipment under it is reconstructed intact (never cut/distorted)
                 pre_ui_p = pre + "_preui.png"
                 ref_ui = cv2.cvtColor(cv2.imread(pre_ui_p), cv2.COLOR_BGR2RGB) if os.path.exists(pre_ui_p) else base
-                if fr is not None:
-                    px0, py0, px1, py1 = meta["preview_roi"]
-                    ui = np.zeros((H, W), bool)
-                    ui[py0:py1, px0:px1] = True
-                    ui[meta["title_roi"][1]:meta["title_roi"][3]] = True
-                    over = core & ui
-                    # laser/callout lines are drawn on the 3D layer before the UI: exclude their pixels
-                    free = core & ~ui
-                    if over.sum() > 50:
-                        # vs the frame just before the UI pass (3D layer + laser), so only UI pixels count;
-                        # H.264 noise floor measured on the same equipment outside the UI regions
-                        dd = np.abs(fr[over].astype(np.float32) - ref_ui[over].astype(np.float32)).max(axis=-1)
-                        mean_d, p99 = float(dd.mean()), float(np.percentile(dd, 99))
-                        noise = float(np.abs(fr[free].astype(np.float32) - ref_ui[free].astype(np.float32)).max(axis=-1).mean()) if free.sum() > 200 else 3.0
-                        H_ROWS.append(f"{key}: {int(over.sum())}px under UI, mean|frame-preUI|={mean_d:.1f} (codec floor {noise:.1f}), p99={p99:.0f}")
-                        if mean_d > noise + 2.0 or p99 > 40.0:
+                uia = load_mask(pre + "_uia.png")
+                if fr is not None and uia is not None:
+                    uirgb = cv2.cvtColor(cv2.imread(pre + "_uirgb.png"), cv2.COLOR_BGR2RGB)
+                    band = np.ones((H, W), bool); band[405:430] = False      # title/preview stacking rows
+                    free = core & (uia < 0.02)
+                    noise = float(np.abs(fr[free].astype(np.float32) - ref_ui[free].astype(np.float32)).max(axis=-1).mean()) if free.sum() > 200 else 3.0
+                    a_hat, resid, n_px = ui_see_through(fr, ref_ui, uia, uirgb, core, band)
+                    if a_hat is not None:
+                        H_ROWS.append(f"{key}: {n_px}px UI over equipment, alpha={a_hat:.2f} (spec {OA_SPEC:.2f}), residual={resid:.1f} (codec {noise:.1f})")
+                        if abs(a_hat - OA_SPEC) > OA_TOL or resid > noise + 6.0:
                             ui_fail.append(H_ROWS[-1])
         else:
             eq_fail.append(f"{key}: no equipment sidecar (config: {[e['type'] for e in meta['equipment']]})")
@@ -330,13 +346,23 @@ def main():
             halo_bad.append(f"{key}: {halo_n}px coloured, ring lift p95={lift:.1f}")
 
         if fr is not None:
-            # (b1) title depth-behind: where mannequin is solid inside title ROI, final frame ~ base (title <=~10%)
-            reg = np.zeros((H, W), bool); reg[ty0:ty1] = True
-            over = reg & (wfg > 0.9)
-            if over.sum() > 200:
-                d = float(np.mean(np.abs(fr[over].astype(np.float32) - base[over].astype(np.float32))))
-                if d > 18.0:
-                    title_bad.append(f"{key}: mean|frame-base| over mannequin in title ROI = {d:.1f}")
+            # (b1) Day 4 see-through: title + preview VISIBLE at ui.overlap_alpha over the solid mannequin
+            uia = load_mask(pre + "_uia.png")
+            if uia is not None:
+                uirgb = cv2.cvtColor(cv2.imread(pre + "_uirgb.png"), cv2.COLOR_BGR2RGB)
+                pre_ui_p = pre + "_preui.png"
+                ref_ui = cv2.cvtColor(cv2.imread(pre_ui_p), cv2.COLOR_BGR2RGB) if os.path.exists(pre_ui_p) else base
+                solid = cv2.erode((wfg > 0.9).astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
+                for nm, (y0, y1) in (("title", (430, ty1)), ("preview", (py0, 405))):
+                    band = np.zeros((H, W), bool); band[y0:y1] = True
+                    a_hat, resid, n_px = ui_see_through(fr, ref_ui, uia, uirgb, solid, band)
+                    if a_hat is None:
+                        continue
+                    B1_ROWS.append(f"{key} {nm}: {n_px}px over body, alpha={a_hat:.2f}, residual={resid:.1f}")
+                    if abs(a_hat - OA_SPEC) > OA_TOL or resid > 10.0:
+                        title_bad.append(B1_ROWS[-1])
+            else:
+                title_bad.append(f"{key}: no UI alpha sidecar (_uia.png)")
             # (b2) preview see-through + sharp over mannequin
             reg = np.zeros((H, W), bool); reg[py0:py1, px0:px1] = True
             over = reg & (wfg > 0.9)
@@ -345,7 +371,7 @@ def main():
                 lb = cv2.Laplacian(lum_of(base), cv2.CV_32F)[over].var()
                 lf = cv2.Laplacian(lum_of(fr), cv2.CV_32F)[over].var()
                 sharp = lf / max(lb, 1e-3)
-                if d > 30.0 or sharp < 0.55:
+                if d > 60.0 or sharp < 0.55:
                     prev_bad.append(f"{key}: diff={d:.1f}, sharpness ratio={sharp:.2f}")
 
         # (c) head-to-ankle height from the clean mask
@@ -396,7 +422,7 @@ def main():
                 skin_fail.append(SKIN[-1])
 
     report("(a) no colour halo / bloom outside mannequin", not halo_bad, "; ".join(halo_bad) or f"{len(frames_meta)} frames clean")
-    report("(b1) title depth-behind mannequin", not title_bad, "; ".join(title_bad) or "title suppressed where mannequin overlaps")
+    report("(b1) title/preview see-through over mannequin (Day 4 rule)", not title_bad, "; ".join(title_bad) or (" | ".join(B1_ROWS[:6]) if B1_ROWS else "no UI/body overlap in sampled frames"))
     report("(b2) preview translucent + sharp over mannequin", not prev_bad, "; ".join(prev_bad) or "mannequin shows through preview, no frost blur")
     if heights:
         steps_h = {}
@@ -408,7 +434,7 @@ def main():
                ", ".join(f"{k}={v:.0f}px" for k, v in sorted(hs.items())) + f" | spread {100 * spread:.1f}%")
     report("(d) equipment = per-frame expected footprint: solid, no holes, in frame, not clipped", not eq_fail,
            "; ".join(eq_fail) or f"types={[e['type'] for e in meta['equipment']]} | " + " | ".join(EQ_ROWS))
-    report("(h) equipment fully in front of preview/title (no UI pixels over it)", not ui_fail,
+    report("(h) title/preview see-through over equipment, equipment intact under it", not ui_fail,
            "; ".join(ui_fail) or (" | ".join(H_ROWS) if H_ROWS else "no equipment under UI in sampled frames"))
     report("(j) both arms silver skin, no dark fill (keypoint segments)", not arm_fail,
            "; ".join(arm_fail) or " | ".join(ARM_ROWS))

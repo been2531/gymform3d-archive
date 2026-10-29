@@ -1,177 +1,183 @@
 {
-  "spec_version": "gymform-v5",
-  "locked": true,
-  "description": "Locked @gymform.3d 4-step reel rules, implemented by gymform/{bg,mask,equipment,xray,muscle,layout,tempo,tts,qc}.py. A day differs only by configs/dayNN.json (exercise, clips, equipment, X-Ray bones, target muscles, callouts, TTS lines, caption, per-step alignment).",
-  "format": {
-    "width": 1080,
-    "height": 1920,
-    "fps": 30,
-    "duration_s": 20.0,
-    "audio": "aac, edge_tts en-US-ChristopherNeural",
-    "steps": 4,
-    "frames_per_step": 150
+ "spec_version": "gymform-v5",
+ "locked": true,
+ "description": "Locked @gymform.3d 4-step reel rules, implemented by gymform/{bg,mask,equipment,xray,muscle,layout,tempo,tts,qc}.py. A day differs only by configs/dayNN.json (exercise, clips, equipment, X-Ray bones, target muscles, callouts, TTS lines, caption, per-step alignment).",
+ "format": {
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "duration_s": 20.0,
+  "audio": "aac, edge_tts en-US-ChristopherNeural",
+  "steps": 4,
+  "frames_per_step": 150
+ },
+ "background": {
+  "style": "minimal dark charcoal studio, no props (no racks, slats, equipment in bg)",
+  "plate": "output/assets/private_gym_studio_minimal_graded_1080p.jpg",
+  "floor_contact_shadow": true
+ },
+ "mannequin": {
+  "skin_lock_all_steps": {
+   "p75": 165,
+   "p90": 191,
+   "max": 226,
+   "qc_p75_range": [
+    155,
+    175
+   ],
+   "qc_p90_range": [
+    181,
+    201
+   ],
+   "qc_max": 228
   },
-  "background": {
-    "style": "minimal dark charcoal studio, no props (no racks, slats, equipment in bg)",
-    "plate": "output/assets/private_gym_studio_minimal_graded_1080p.jpg",
-    "floor_contact_shadow": true
-  },
-  "mannequin": {
-    "skin_lock_all_steps": {
-      "p75": 165,
-      "p90": 191,
-      "max": 226,
-      "qc_p75_range": [
-        155,
-        175
-      ],
-      "qc_p90_range": [
-        181,
-        201
-      ],
-      "qc_max": 228
-    },
-    "skin_lock_cross_step_tolerance": 0.05,
-    "skin_lock_excludes": "only the local X-Ray window",
-    "shorts_lum_range": [
-      10,
-      22
-    ],
-    "equal_height_tolerance": 0.04,
-    "feet_on_same_floor_line": true,
-    "camera_angle": "3/4 views (front-3/4 and back-3/4), same framing every step",
-    "skin_by_construction": {
-      "skin_segments_always_skin": true,
-      "segments": "upper arm, forearm to 80% (before hand), torso above hip band, knee..ankle",
-      "equipment_metal_excludes_skin_segments": true,
-      "shorts_limited_to_hip_band_polygon": true,
-      "post_composite_skin_tone_lock": "every step, every frame: monotonic map p75->165, p90->191, max->226, RGB scaled by the same gain (3D shading ratios kept); excludes X-Ray window, shorts, metal, activation colour"
-    }
-  },
-  "steps": {
-    "1": {
-      "role": "WRONG posture",
-      "render": "bone_xray",
-      "tint": "crimson",
-      "xray_window": "local: both shoulder girdles, upper arms, upper rib cage"
-    },
-    "2": {
-      "role": "WRONG posture",
-      "render": "muscle_fibers",
-      "tint": "red"
-    },
-    "3": {
-      "role": "RIGHT posture",
-      "render": "bone_xray",
-      "tint": "emerald",
-      "xray_window": "local: near shoulder girdle (clavicle, scapula/acromion, humeral head) + near upper arm (humerus)"
-    },
-    "4": {
-      "role": "RIGHT posture",
-      "render": "muscle_fibers",
-      "tint": "green",
-      "cover_frame": "step 4 peak"
-    }
-  },
-  "xray": {
-    "style": "Day 1 v36 approved (https://www.instagram.com/reel/De_Yl9rAYC4/)",
-    "method": "native per-pixel 3D shading: glass cavity 28+135*bone_sharp^1.15, luminous bone ramp tint->hot core, 0.48 window darkening",
-    "bones_are_hero": true,
-    "local_window_only": true,
-    "no_2d_overlays_or_warps": true,
-    "qc_reference_frame": "output/qc/ref/day1_v36_xray_t1.5.jpg"
-  },
-  "quality": {
-    "bloom": "zero",
-    "blur": "zero (mask feather <=1px only)",
-    "halo_max_coloured_px": 150,
-    "ring_lift_p95_max": 12,
-    "qc_role": "final check only; the look is correct by construction"
-  },
-  "ui": {
-    "title": "depth-behind the mannequin (fg_front ~0.92 over clean mask)",
-    "preview": "4-slot top preview, translucent over mannequin (no frost), equipment fully in front of it",
-    "laser": "crisp 2.8px core, no bloom",
-    "callouts": "never overlap equipment; per-step override allowed"
-  },
-  "equipment": {
-    "types_supported": [
-      "dumbbell",
-      "barbell",
-      "cable",
-      "machine",
-      "bench",
-      "rack"
-    ],
-    "zone_types": [
-      "anchor+radius",
-      "segment+pad",
-      "roi"
-    ],
-    "rule": "never cut, clipped, holed, ghosted or distorted; inside frame; solid on every frame",
-    "detector": "temporal backdrop plate + darker/neutral-chroma/texture differences + plate-disc completion",
-    "qc_min_coverage": 0.985,
-    "qc_max_hole_px": 60
-  },
-  "tempo_s": {
-    "hold_start": 0.3,
-    "concentric": 1.5,
-    "hold_top": 1.3,
-    "eccentric": 1.5,
-    "hold_end": 0.4,
-    "monotonic": true
-  },
-  "pipeline": {
-    "build_threads": 2,
-    "ffmpeg_threads": 2,
-    "nice": 10,
-    "qc_gate": "gymform/qc.py (qc_gate_gymform.py shim)",
-    "max_autofix_loops": 3,
-    "commit": "scripts/config/spec/plates only; never mp4, wav, tmp, caches or secrets",
-    "stages": [
-      "kp",
-      "icons",
-      "composite",
-      "overlays",
-      "tts",
-      "encode",
-      "qc"
-    ],
-    "cache": "_cache_gymform/ keyed on sha1(day-config subset, spec, module sources)"
-  },
-  "caption_rules": {
-    "language": "100% English",
-    "hashtags": 0,
-    "structure": [
-      "EXACTLY 3 lines separated by blank lines (from Day 6)",
-      "line 1: short one-line title statement (no question)",
-      "line 2: ONE personal-experience question ending with ?",
-      "line 3: save line (Save this for your next ... day.)",
-      "NO coaching body (video already explains it)"
-    ],
-    "forbidden": [
-      "DM-reward / comment-keyword-for-DM CTAs",
-      "vote hooks (1 or 2, Comment \"WORD\")",
-      "hashtags"
-    ],
-    "question_examples": [
-      "What weight do you use for lateral raises?",
-      "Where do you feel your pulldowns most right now?"
-    ],
-    "config_format": "configs/dayNN.json caption = {title, question, save} (body forbidden); built + linted by gymform/caption.py",
-    "angles_must_match_on_screen": true,
-    "include_seo_keywords": true,
-    "spoken_question": {
-      "from_day": 6,
-      "rule": "final TTS line = short spoken version of the caption's experience question, appended right after the Step 4 line (inside the top hold / lower / 0.4s bottom), steps 1-3 lines and their breathing gaps unchanged",
-      "config_field": "question_spoken (optional; default = shortest '?' clause of caption.question, pronouns -> 'it', else default)",
-      "default": "Where do you feel it most?",
-      "max_words": 6,
-      "gap_after_step4_s": 0.25,
-      "min_start_s": 17.0,
-      "latest_end_s": 19.85,
-      "step4_line_budget": "Step 4 line (start 15.2s) + 0.25s gap + question must end <= 19.85s -> keep the Step 4 line <= ~11 words",
-      "checks": "run_day.py --check lint (estimate) + tts assert (real durations) + QC (l) from tts timing sidecar"
-    }
+  "skin_lock_cross_step_tolerance": 0.05,
+  "skin_lock_excludes": "only the local X-Ray window",
+  "shorts_lum_range": [
+   10,
+   22
+  ],
+  "equal_height_tolerance": 0.04,
+  "feet_on_same_floor_line": true,
+  "camera_angle": "3/4 views (front-3/4 and back-3/4), same framing every step",
+  "skin_by_construction": {
+   "skin_segments_always_skin": true,
+   "segments": "upper arm, forearm to 80% (before hand), torso above hip band, knee..ankle",
+   "equipment_metal_excludes_skin_segments": true,
+   "shorts_limited_to_hip_band_polygon": true,
+   "post_composite_skin_tone_lock": "every step, every frame: monotonic map p75->165, p90->191, max->226, RGB scaled by the same gain (3D shading ratios kept); excludes X-Ray window, shorts, metal, activation colour"
   }
+ },
+ "steps": {
+  "1": {
+   "role": "WRONG posture",
+   "render": "bone_xray",
+   "tint": "crimson",
+   "xray_window": "local: both shoulder girdles, upper arms, upper rib cage"
+  },
+  "2": {
+   "role": "WRONG posture",
+   "render": "muscle_fibers",
+   "tint": "red"
+  },
+  "3": {
+   "role": "RIGHT posture",
+   "render": "bone_xray",
+   "tint": "emerald",
+   "xray_window": "local: near shoulder girdle (clavicle, scapula/acromion, humeral head) + near upper arm (humerus)"
+  },
+  "4": {
+   "role": "RIGHT posture",
+   "render": "muscle_fibers",
+   "tint": "green",
+   "cover_frame": "step 4 peak"
+  }
+ },
+ "xray": {
+  "style": "Day 1 v36 approved (https://www.instagram.com/reel/De_Yl9rAYC4/)",
+  "method": "native per-pixel 3D shading: glass cavity 28+135*bone_sharp^1.15, luminous bone ramp tint->hot core, 0.48 window darkening",
+  "bones_are_hero": true,
+  "local_window_only": true,
+  "no_2d_overlays_or_warps": true,
+  "qc_reference_frame": "output/qc/ref/day1_v36_xray_t1.5.jpg"
+ },
+ "quality": {
+  "bloom": "zero",
+  "blur": "zero (mask feather <=1px only)",
+  "halo_max_coloured_px": 150,
+  "ring_lift_p95_max": 12,
+  "qc_role": "final check only; the look is correct by construction"
+ },
+ "ui": {
+  "title": "back-wall Kaushan title; where the mannequin or equipment overlaps it the title stays VISIBLE see-through at overlap_alpha.title (Day 4 rule, never fully hidden)",
+  "preview": "4-slot top preview: frosted glass on the wall; over mannequin/equipment unfrosted (3D stays sharp) and visible at overlap_alpha.preview; equipment keeps (1-alpha) of its pixels = never cut/hidden/distorted",
+  "laser": "crisp 2.8px core, no bloom",
+  "callouts": "never overlap equipment; per-step override allowed",
+  "overlap_alpha": {
+   "title": 0.4,
+   "preview": 0.4,
+   "qc_tolerance": 0.12,
+   "day4_measured": "title over body median 0.30 (p25 0.16 / p75 0.47, soft colour mask), preview >=0.35 (touch_p 0.65); locked to a constant 0.40 so it is identical over body and equipment"
+  }
+ },
+ "equipment": {
+  "types_supported": [
+   "dumbbell",
+   "barbell",
+   "cable",
+   "machine",
+   "bench",
+   "rack"
+  ],
+  "zone_types": [
+   "anchor+radius",
+   "segment+pad",
+   "roi"
+  ],
+  "rule": "never cut, clipped, holed, ghosted or distorted; inside frame; solid on every frame",
+  "detector": "temporal backdrop plate + darker/neutral-chroma/texture differences + plate-disc completion",
+  "qc_min_coverage": 0.985,
+  "qc_max_hole_px": 60
+ },
+ "tempo_s": {
+  "hold_start": 0.3,
+  "concentric": 1.5,
+  "hold_top": 1.3,
+  "eccentric": 1.5,
+  "hold_end": 0.4,
+  "monotonic": true
+ },
+ "pipeline": {
+  "build_threads": 2,
+  "ffmpeg_threads": 2,
+  "nice": 10,
+  "qc_gate": "gymform/qc.py (qc_gate_gymform.py shim)",
+  "max_autofix_loops": 3,
+  "commit": "scripts/config/spec/plates only; never mp4, wav, tmp, caches or secrets",
+  "stages": [
+   "kp",
+   "icons",
+   "composite",
+   "overlays",
+   "tts",
+   "encode",
+   "qc"
+  ],
+  "cache": "_cache_gymform/ keyed on sha1(day-config subset, spec, module sources)"
+ },
+ "caption_rules": {
+  "language": "100% English",
+  "hashtags": 0,
+  "structure": [
+   "EXACTLY 3 lines separated by blank lines (from Day 6)",
+   "line 1: short one-line title statement (no question)",
+   "line 2: ONE personal-experience question ending with ?",
+   "line 3: save line (Save this for your next ... day.)",
+   "NO coaching body (video already explains it)"
+  ],
+  "forbidden": [
+   "DM-reward / comment-keyword-for-DM CTAs",
+   "vote hooks (1 or 2, Comment \"WORD\")",
+   "hashtags"
+  ],
+  "question_examples": [
+   "What weight do you use for lateral raises?",
+   "Where do you feel your pulldowns most right now?"
+  ],
+  "config_format": "configs/dayNN.json caption = {title, question, save} (body forbidden); built + linted by gymform/caption.py",
+  "angles_must_match_on_screen": true,
+  "include_seo_keywords": true,
+  "spoken_question": {
+   "from_day": 6,
+   "rule": "final TTS line = short spoken version of the caption's experience question, appended right after the Step 4 line (inside the top hold / lower / 0.4s bottom), steps 1-3 lines and their breathing gaps unchanged",
+   "config_field": "question_spoken (optional; default = shortest '?' clause of caption.question, pronouns -> 'it', else default)",
+   "default": "Where do you feel it most?",
+   "max_words": 6,
+   "gap_after_step4_s": 0.25,
+   "min_start_s": 17.0,
+   "latest_end_s": 19.85,
+   "step4_line_budget": "Step 4 line (start 15.2s) + 0.25s gap + question must end <= 19.85s -> keep the Step 4 line <= ~11 words",
+   "checks": "run_day.py --check lint (estimate) + tts assert (real durations) + QC (l) from tts timing sidecar"
+  }
+ }
 }
