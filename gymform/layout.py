@@ -1,4 +1,5 @@
-"""LOCKED layout: crisp laser, callouts (text from day config), depth-behind title, translucent 4-slot preview, sheet."""
+"""LOCKED layout: crisp laser, callouts (text from day config), see-through title + translucent 4-slot preview
+(visible at ui.overlap_alpha over mannequin/equipment, Day 4 rule), sheet."""
 import math
 import cv2
 import numpy as np
@@ -63,24 +64,61 @@ def draw_crisp_laser_joint_axis(canvas, main_chains_1x, aux_ext_chains_1x, verte
 p62.draw_demic_laser_joint_axis = draw_crisp_laser_joint_axis
 
 
+_TITLE_A = {}
+
+
+def _title_layer(exercise_name):
+    """Title RGB + full alpha in the title ROI (cached per exercise name)."""
+    if exercise_name not in _TITLE_A:
+        ty0, ty1 = TITLE_ROI
+        blank = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        b4.draw_single_line_kaushan_title(blank, exercise_name)
+        t = np.array(blank.crop((0, ty0, W, ty1)), dtype=np.float32)
+        _TITLE_A[exercise_name] = (t[:, :, :3], t[:, :, 3:4] / 255.0)
+    return _TITLE_A[exercise_name]
+
+
+TITLE_ROI = (410, 565)
+PREV_ROI = (190, 232, 890, 424)   # x0, y0, x1, y1 (= b4 top-bar ROI)
+
+
+def overlap_alpha():
+    """Locked see-through alphas (gymform_spec.json ui.overlap_alpha): opacity of the title / preview where
+    the mannequin or equipment overlaps them (Day 4 measured ~0.30 median title over body, preview >=0.35)."""
+    oa = SPEC["ui"].get("overlap_alpha", {})
+    return float(oa.get("title", 0.40)), float(oa.get("preview", 0.40))
+
+
 def composite_title_and_preview_v4(base_rgb, fg_mask, torso_icons, active_slot, is_wrong, exercise_name):
-    # Title: identical to b4 (depth-behind with fg_front = 0.92 * fg)
-    out = b4.composite_depth_behind_title_and_translucent_preview(
-        base_rgb, fg_mask, torso_icons, active_slot=active_slot, is_wrong=is_wrong, exercise_name=exercise_name
-    )
-    # Preview ROI: wherever the mannequin/dumbbells touch the pill, show them sharp (pre-preview pixels with title).
-    ty0, ty1 = 410, 565
-    titled = base_rgb.copy()
-    t_rgb, t_a = b4._TITLE_ROI_CACHE[exercise_name]
-    eff_a = t_a * (1.0 - np.clip(fg_mask[ty0:ty1, :, None] * 0.92, 0.0, 0.92))
-    titled[ty0:ty1] = np.clip(titled[ty0:ty1].astype(np.float32) * (1.0 - eff_a) + t_rgb * eff_a, 0, 255).astype(np.uint8)
-    py0, py1 = 230, 425
-    touch = np.clip(fg_mask[py0:py1, :, None] * 1.15, 0.0, 0.92)
+    """Day 4 see-through rule: title + 4-slot preview stay VISIBLE (translucent, alpha A) over the mannequin AND
+    the equipment; everywhere else they are drawn exactly as before. Under the overlap the 3D layer stays sharp
+    (no frost) and keeps (1-A) of its own pixels, so equipment is never cut, hidden or distorted."""
+    a_t, a_p = overlap_alpha()
+    occ = fg_mask
     eqm = LAST_MASKS.get("eq_front")
-    if eqm is not None:  # equipment renders fully in front of the preview pill (no preview pixels on it)
-        touch = np.maximum(touch, eqm[py0:py1, :, None])
-    out[py0:py1] = np.clip(out[py0:py1].astype(np.float32) * (1.0 - touch) + titled[py0:py1].astype(np.float32) * touch, 0, 255).astype(np.uint8)
-    return out
+    if eqm is not None:
+        occ = np.maximum(occ, eqm)
+    occ = np.clip(occ, 0.0, 1.0)
+    out = base_rgb.copy()
+    # 1. title (back wall): full alpha on the wall, a_t over mannequin/equipment
+    ty0, ty1 = TITLE_ROI
+    t_rgb, t_a = _title_layer(exercise_name)
+    eff_t = t_a * (1.0 - occ[ty0:ty1, :, None] * (1.0 - a_t))
+    out[ty0:ty1] = np.clip(out[ty0:ty1].astype(np.float32) * (1.0 - eff_t) + t_rgb * eff_t, 0, 255).astype(np.uint8)
+    # 2. preview pill: frosted glass on the wall; over occluders unfrosted (sharp 3D) at alpha a_p
+    rx0, ry0, rx1, ry1 = PREV_ROI
+    under = out[ry0:ry1, rx0:rx1].astype(np.float32)
+    frosted_full = b4.draw_compact_demic_top_preview(out, torso_icons, active_slot=active_slot, is_wrong=is_wrong)
+    _, ov_rgb, ov_a = b4._TOP_BAR_CACHE[(id(torso_icons), active_slot, is_wrong)]
+    frosted = frosted_full[ry0:ry1, rx0:rx1].astype(np.float32)
+    sharp = under * (1.0 - ov_a) + ov_rgb * ov_a
+    w = occ[ry0:ry1, rx0:rx1, None]
+    prev = frosted * (1.0 - w) + sharp * w
+    k = w * (1.0 - a_p)                       # share of the untouched 3D layer kept
+    frosted_full[ry0:ry1, rx0:rx1] = np.clip(prev * (1.0 - k) + under * k, 0, 255).astype(np.uint8)
+    # UI layers for the QC sidecar (full alpha, colour) - QC measures the effective alpha over occluders
+    LAST_MASKS["ui_layers"] = ((ty0, ty1, 0, W, t_rgb, t_a), (ry0, ry1, rx0, rx1, ov_rgb, ov_a))
+    return frosted_full
 
 
 def fg_for_preview(w_fg: np.ndarray) -> np.ndarray:

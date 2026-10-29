@@ -122,6 +122,13 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
         CUR_PLATE["saved"] = (d, step_idx)
     cv2.imwrite(pre + "_preui.png", cv2.cvtColor(LAST_MASKS["pre_ui"], cv2.COLOR_RGB2BGR))
     cv2.imwrite(pre + "_xwin.png", m8(LAST_MASKS.get("xwin", z)))
+    ui_a, ui_rgb = np.zeros((H, W), np.float32), np.zeros((H, W, 3), np.float32)
+    for (y0, y1, x0, x1, l_rgb, l_a) in LAST_MASKS.get("ui_layers", ()):   # title, then preview over it
+        a_ = l_a[:, :, 0]
+        ui_rgb[y0:y1, x0:x1] = ui_rgb[y0:y1, x0:x1] * (1 - a_[:, :, None]) + l_rgb * a_[:, :, None]
+        ui_a[y0:y1, x0:x1] = a_ + ui_a[y0:y1, x0:x1] * (1 - a_)
+    cv2.imwrite(pre + "_uia.png", m8(ui_a))
+    cv2.imwrite(pre + "_uirgb.png", cv2.cvtColor(np.clip(ui_rgb, 0, 255).astype(np.uint8), cv2.COLOR_RGB2BGR))
     cv2.imwrite(pre + "_eqzone.png", m8(LAST_MASKS.get("eq_zone", z)))
     meta_p = os.path.join(d, f"meta_step{step_idx}.json")
     meta = json.load(open(meta_p)) if os.path.exists(meta_p) else {}
@@ -129,7 +136,7 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
     meta.update({
         "exercise_name": CFG["exercise_name"], "studio_bg": CFG["studio_bg"], "equipment": CFG["equipment"],
         "bone_steps": list(CFG["bone_steps"]), "muscle_steps": list(CFG["muscle_steps"]),
-        "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "fps": FPS, "qc_tags": tempo.QC_TAGS,
+        "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "overlap_alpha": SPEC["ui"]["overlap_alpha"], "fps": FPS, "qc_tags": tempo.QC_TAGS,
     })
     json.dump(meta, open(meta_p, "w"), indent=1)
 

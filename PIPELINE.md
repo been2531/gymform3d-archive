@@ -12,7 +12,7 @@ Daily command: `python3 run_day.py --day N`  (prints one JSON line; full log in 
 | `gymform/equipment.py` | generic equipment zones + plate-difference footprint (solid metal, soft edge only near the object), matte metal shading |
 | `gymform/muscle.py` | locked silver skin (dual anchor p75/p90) + target-muscle fibres |
 | `gymform/xray.py` | Day 1 v36 local X-Ray window (crimson / emerald), zero blur |
-| `gymform/layout.py` | laser, callouts, depth-behind title, translucent 4-slot preview, sheet |
+| `gymform/layout.py` | laser, callouts, see-through title + 4-slot preview (Day 4 rule: visible at `ui.overlap_alpha` 0.40 over mannequin AND equipment, 3D layer sharp under it), sheet |
 | `gymform/tempo.py` | 150-frame step tempo, QC frame tags |
 | `gymform/tts.py` | locked edge_tts voice; Day 6+ appends the spoken end question after the Step 4 line, writes `<wav>.timing.json` |
 | `gymform/qc.py` | QC gate (a)-(i); `qc_gate_gymform.py` is a shim |
@@ -35,3 +35,14 @@ The last narration line asks the caption's experience question out loud (e.g. "W
   Step 4 line ends and must end <= 19.85 s (reel stays 20.0 s). Keep the Step 4 line short (~<= 11 words).
 - Checks: `run_day.py --check` lints it (estimated timing, ~0.16 s/syllable); `tts.py` asserts with real durations;
   QC (l) reads `qc_dir/tts_timing.json`. Day <= 5 is unchanged (legacy TTS cache key).
+
+## UI overlap rule (Day 4 see-through, locked 2026-10-29)
+- Where the mannequin or any equipment overlaps the exercise title or the top preview strip, the title/preview stay
+  VISIBLE see-through at `gymform_spec.json` → `ui.overlap_alpha` (title 0.40, preview 0.40). Never fully hidden.
+- Day 4 (RDL, published) measured: title over body median alpha 0.30 (p25 0.16 / p75 0.47, soft colour mask),
+  preview >= 0.35. Locked to a constant 0.40 so it is identical over body and equipment.
+- Under the overlap the preview frost is dropped (3D layer stays sharp) and the equipment keeps (1-alpha) of its own
+  pixels: never cut, hidden or distorted. Off the occluders title/preview are drawn exactly as before.
+- QC: render writes `_uia.png` / `_uirgb.png` sidecars; (b1) fits the effective UI alpha over the solid mannequin,
+  (h) over equipment — both must be within ±0.12 of the spec alpha with a small reconstruction residual (= visible,
+  not opaque, 3D layer intact).
