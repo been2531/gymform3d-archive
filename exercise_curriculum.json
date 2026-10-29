@@ -90,14 +90,15 @@
       "day": 5,
       "title": "DUMBBELL LATERAL RAISE",
       "slug": "dumbbell_lateral_raise",
-      "status": "queued",
+      "status": "published",
       "wrong_deg": "118°",
       "wrong_label_1": "HIGH FLARE",
       "wrong_label_2": "88% JOINT PINCH",
       "right_deg": "30°",
       "right_label_1": "SCAPULAR PLANE",
       "right_label_2": "98% LATERAL DELT",
-      "config": "configs/day05.json"
+      "config": "configs/day05.json",
+      "ig_permalink": "https://www.instagram.com/reel/DfFPS3YFLF3/"
     },
     {
       "day": 6,
