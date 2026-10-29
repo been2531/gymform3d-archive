@@ -12,3 +12,5 @@ output/*_i2v.mp4
 .env
 *token*
 *secret*
+output/logs/
+output/qc/*_status.json

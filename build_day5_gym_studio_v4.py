@@ -17,9 +17,10 @@ Writes a QC sidecar (CFG["qc_dir"]) consumed by qc_gate_gymform.py.
 
 Usage:  python3 build_day5_gym_studio_v4.py            # full render (mp4 + sheet + cover + QC sidecar)
         python3 build_day5_gym_studio_v4.py --peaks    # quick QC frames (start/peak) + sheet, no video
-        python3 qc_gate_gymform.py output/day5_dumbbell_lateral_raise_4step_master_v4c.mp4 --qc-dir output/qc/day5_v4b
+        python3 qc_gate_gymform.py output/day5_dumbbell_lateral_raise_4step_master_v4d.mp4 --qc-dir output/qc/day5_v4b
 """
 import os
+import time
 import sys
 import gc
 import math
@@ -70,15 +71,26 @@ DAY_CONFIGS = {
             {"type": "dumbbell", "anchor": "wr_l", "radius": 250},
         ],
         "bone_steps": (1, 3),
-        "xray_style": "day1_v36",  # reusable X-Ray module (xray_day1_v36) = approved Day 1 v36 native X-Ray look
+        "xray_style": "day1_v36",
+        "callout_ty": {2: 408, 3: 440},  # Step 3 text block fixed above the raised left dumbbell (clear of plates/title)  # reusable X-Ray module (xray_day1_v36) = approved Day 1 v36 native X-Ray look
         "muscle_steps": (2, 4),
-        "out_mp4": os.path.join(OUT_DIR, "day5_dumbbell_lateral_raise_4step_master_v4c.mp4"),
-        "out_sheet": os.path.join(OUT_DIR, "day5_v4c_4step_sheet.jpg"),
-        "out_cover": os.path.join(OUT_DIR, "day5_v4c_cover.jpg"),
-        "qc_dir": os.path.join(OUT_DIR, "qc", "day5_v4c"),
+        "out_mp4": os.path.join(OUT_DIR, "day5_dumbbell_lateral_raise_4step_master_v4d.mp4"),
+        "out_sheet": os.path.join(OUT_DIR, "day5_v4d_4step_sheet.jpg"),
+        "out_cover": os.path.join(OUT_DIR, "day5_v4d_cover.jpg"),
+        "qc_dir": os.path.join(OUT_DIR, "qc", "day5_v4d"),
     },
 }
 CFG = DAY_CONFIGS[5]
+# run_day.py auto-fix loop: JSON overrides (step_scale / step_dy / equipment radius / callout_ty / outputs)
+_ovr_p = os.environ.get("GYMFORM_OVERRIDES")
+if _ovr_p and os.path.exists(_ovr_p):
+    import json as _json
+    _ovr = _json.load(open(_ovr_p))
+    for _k, _v in _ovr.items():
+        if isinstance(_v, dict) and isinstance(CFG.get(_k), dict):
+            CFG[_k].update({int(a) if str(a).isdigit() else a: b for a, b in _v.items()})
+        else:
+            CFG[_k] = _v
 STUDIO_BG_PATH = CFG["studio_bg"]
 OUT_MP4, OUT_SHEET, OUT_COVER = CFG["out_mp4"], CFG["out_sheet"], CFG["out_cover"]
 
@@ -138,6 +150,29 @@ def _seg_dist(p0, p1, x0, y0, x1, y1):
 
 def _ext(p0, p1, t):
     return (p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t)
+
+
+def xray_window(kp: dict, is_wrong: bool) -> np.ndarray:
+    """
+    Local X-Ray window (soft 0..1) around the target bones only: near-side shoulder girdle (clavicle to the
+    midline, scapula/acromion, humeral head) + near upper arm (humerus). Step 1 (wrong posture, both arms
+    overhead, rib cage in the native X-Ray) also opens both upper arms and the upper rib cage.
+    """
+    sh_r, sh_l = kp["sh_r"], kp["sh_l"]
+    sw = abs(sh_l[0] - sh_r[0])
+    sh_mid = (0.5 * (sh_r[0] + sh_l[0]), 0.5 * (sh_r[1] + sh_l[1]))
+    win = np.zeros((H, W), np.float32)
+    soft = 20.0
+    win = np.maximum(win, np.clip((95.0 - np.hypot(_XX - sh_r[0], _YY - sh_r[1])) / soft, 0.0, 1.0))
+    win = np.maximum(win, np.clip((48.0 - _seg_dist(sh_r, (sh_mid[0], sh_mid[1] + 10.0), 0, 0, W, H)) / soft, 0.0, 1.0))
+    win = np.maximum(win, np.clip((62.0 - _seg_dist(sh_r, _ext(sh_r, kp["elb_r"], 1.05), 0, 0, W, H)) / soft, 0.0, 1.0))
+    if is_wrong:
+        win = np.maximum(win, np.clip((95.0 - np.hypot(_XX - sh_l[0], _YY - sh_l[1])) / soft, 0.0, 1.0))
+        win = np.maximum(win, np.clip((48.0 - _seg_dist(sh_l, (sh_mid[0], sh_mid[1] + 10.0), 0, 0, W, H)) / soft, 0.0, 1.0))
+        win = np.maximum(win, np.clip((62.0 - _seg_dist(sh_l, _ext(sh_l, kp["elb_l"], 1.05), 0, 0, W, H)) / soft, 0.0, 1.0))
+        rib = np.hypot((_XX - sh_mid[0]) / max(110.0, 0.42 * sw + 30.0), (_YY - (sh_mid[1] + 150.0)) / 170.0)
+        win = np.maximum(win, np.clip((1.0 - rib) / 0.18, 0.0, 1.0))
+    return win
 
 
 def anatomical_envelope(kp: dict) -> np.ndarray:
@@ -208,6 +243,15 @@ def equipment_soft_zone(kp: dict) -> np.ndarray:
 
 
 LAST_MASKS = {}  # filled by shade_day5_v4 for QC sidecars
+CUR_PLATE = {}   # {"rgb": float32 1080x1920x3 temporal clean plate of the current step}
+
+
+def set_step_plate(seq, kps, step_idx):
+    """Per-step temporal median plate (720p native, then the step's own 1080 transform)."""
+    fn, i0, i1, is_w, v_mode, y_sh = d5.STEP_SPECS_DAY5[step_idx]
+    med = np.median(np.stack(seq).astype(np.uint8), axis=0).astype(np.uint8)
+    CUR_PLATE["rgb"] = b4.transform_frame_and_kp_1080p(med, kps[0], y_sh, step_idx)[0].astype(np.float32)
+    CUR_PLATE["step"] = step_idx
 
 
 def contact_shadow(kp: dict) -> np.ndarray:
@@ -290,7 +334,8 @@ def shorts_polygon(kp: dict, bright_m: np.ndarray, hip_y: float, kn_y: float) ->
     return out
 
 
-def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_mask: np.ndarray, tint: str = "crimson") -> np.ndarray:
+def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_mask: np.ndarray, tint: str = "crimson",
+                  glass_gate: np.ndarray | None = None, glass_floor: float = 0.0) -> np.ndarray:
     """
     Reusable X-Ray module = the APPROVED Day 1 v36 'Step 1 native 3D X-Ray' method
     (gymform_engine.prepare_xray_bone_frame + render_xray_skeletal_frame), generalised to any tint/gate:
@@ -313,11 +358,41 @@ def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_ma
         detail = 0.38 * g + 0.62 * r
         bone_m = np.clip((g - r - 30.0) / 40.0, 0.0, 1.0) * np.clip((g - 120.0) / 70.0, 0.0, 1.0)
     bone_sharp = np.clip((detail + (detail - cv2.GaussianBlur(detail, (0, 0), 1.5)) * 2.1 - 20.0) / 205.0, 0.0, 1.0)
+    # soft, structureless glow (e.g. armpit haze) is not bone: weight the colour-based bone mask by native
+    # high-frequency structure so only crisp 3D bone edges/fills light up
+    hf = np.abs(detail - cv2.GaussianBlur(detail, (0, 0), 2.5))
+    structured = np.clip((hf - 1.5) / 5.0, 0.0, 1.0)
+    bone_m = bone_m * (0.20 + 0.80 * structured)
     # native bright bone edges inside the tinted zone also count as bone (Day 5 sources tint bones less than Day 1)
     bone_m = np.maximum(bone_m, 0.9 * np.clip(t_any * 1.6, 0.0, 1.0) * np.clip((bone_sharp - 0.50) / 0.22, 0.0, 1.0))
-    zone = (t_any * gate * (1.0 - shorts_mask))[:, :, None]
+    if glass_gate is not None and glass_floor > 0.0 and tint != "crimson":
+        # Step 3 source tints only thin bone outlines: the native 3D bone/skeletal relief inside the glass
+        # window (positive high-frequency ridges of the render: clavicle, scapular spine/acromion, humeral head,
+        # humerus, rib arcs) is lit as luminous bone. Per-pixel on the native frame, no drawn shapes, no blur.
+        lum_n = 0.299 * r + 0.587 * g + 0.114 * b
+        ridge = lum_n - cv2.GaussianBlur(lum_n, (0, 0), 3.0)
+        ridge_m = np.clip((ridge - 1.5) / 6.0, 0.0, 1.0)
+        bone_m = np.maximum(bone_m, ridge_m * glass_gate)
+        bone_m = np.maximum(bone_m, np.clip((g - r - 14.0) / 30.0, 0.0, 1.0) * glass_gate)
+        bone_sharp = np.maximum(bone_sharp, np.clip(0.72 + ridge / 25.0, 0.0, 1.0) * ridge_m * glass_gate)
+        # native emerald-tinted bone (clavicle/humeral head outlines) gets the same luminous core as Step 1
+        bone_sharp = np.maximum(bone_sharp, np.clip((g - r - 14.0) / 30.0, 0.0, 1.0) * 0.85 * glass_gate)
+    zone2 = t_any * gate
+    if glass_gate is not None and glass_floor > 0.0:
+        # see-through glass body over the whole shoulder girdle + upper arm (Day 1 look), even where the
+        # native emerald tint is faint; bones stay native structure only
+        zone2 = np.maximum(zone2, glass_floor * glass_gate)
+    zone = (zone2 * (1.0 - shorts_mask))[:, :, None]
 
-    cav = 28.0 + 135.0 * (bone_sharp ** 1.15)
+    if glass_gate is not None and glass_floor > 0.0:
+        # outside the native tint the body detail is plain skin, not bone: the glass there keeps only the native
+        # surface structure (high-pass edges of the 3D render), so the body reads dark and see-through
+        t_w = np.clip(t_any * 1.6, 0.0, 1.0)
+        surf = np.clip((hf - 1.0) / 16.0, 0.0, 1.0) * 0.55
+        bone_sharp_g = t_w * bone_sharp + (1.0 - t_w) * surf
+    else:
+        bone_sharp_g = bone_sharp
+    cav = 28.0 + 135.0 * (bone_sharp_g ** 1.15)
     norm = (cav / 255.0) ** 0.92
     glass = np.stack([30.0 + 202.0 * norm, 32.0 + 204.0 * norm, 36.0 + 206.0 * norm], axis=-1)
     out = mono * (1.0 - zone) + glass * zone
@@ -331,7 +406,7 @@ def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_ma
     if tint == "crimson":   # Day 1 ramp: deep crimson -> orange-gold -> white-hot core
         col = np.stack([95.0 + 160.0 * (bv ** 0.55), 14.0 + hot, 10.0 + 45.0 * (bv ** 1.5) + 135.0 * (bv ** 3.0)], axis=-1)
     else:                   # same ramp mirrored to emerald: deep green -> mint -> white core
-        col = np.stack([10.0 + 0.55 * hot + 70.0 * (bv ** 3.0), 95.0 + 160.0 * (bv ** 0.55), 30.0 + 0.75 * hot + 60.0 * (bv ** 3.0)], axis=-1)
+        col = np.stack([10.0 + 45.0 * (bv ** 1.5) + 135.0 * (bv ** 3.0), 95.0 + 160.0 * (bv ** 0.55), 14.0 + hot], axis=-1)
     a = np.clip((bm ** 0.80) * 0.96, 0.0, 0.96)[:, :, None]
     out = out * (1.0 - a) + np.clip(col, 0, 255) * a
     return out
@@ -382,50 +457,145 @@ def shade_day5_v4(rgb_1080: np.ndarray, step_idx: int, is_wrong: bool, kp: dict,
     # Matte-black dumbbells and shorts are nearly the same luminance as the source backdrop, so a pure
     # luminance key leaves them see-through. Close them with shape priors (wrist zone hole-fill, shorts polygon).
     solid = np.zeros((H, W), dtype=np.float32)
-    # Equipment = metal parts (rims, bevels, highlights brighter than the backdrop, not skin). Each rigid piece
-    # (dumbbell head / plate stack / bar) is convex in silhouette, so its convex hull restores the matte-black
-    # faces that are as dark as the backdrop, without holes and without clipping the outer plates.
-    w_bright = np.clip((bright_diff * floor_gate - 8.5) / 10.5, 0.0, 1.0)
     shorts_poly = shorts_polygon(kp, (bright_diff * floor_gate) > 14.0, hip_y, kn_y)
-    k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    k_big = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (41, 41))
-    # forearm core is skin/shadow, never equipment: keep it out so hulls don't swallow the arm-torso window
-    forearm_d = np.minimum(_seg_dist(kp["elb_r"], kp["wr_r"], 0, 0, W, H), _seg_dist(kp["elb_l"], kp["wr_l"], 0, 0, W, H))
+    # Equipment footprint from a TEMPORAL clean plate: the source backdrop is static while the equipment moves,
+    # so the per-step median plate (CUR_PLATE) is empty backdrop where the dumbbells are. Matte-black plates that
+    # match the backdrop in luminance still differ from the plate (noise p99 ~3), giving solid, complete plates.
+    # Coloured activation glow is excluded (equipment is neutral), and only configured equipment zones are used.
+    foot = np.zeros((H, W), dtype=np.float32)
+    plate = CUR_PLATE.get("rgb")
+    k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
     for x0, y0, x1, y1, zone in equipment_zones(kp):
-        metal = ((w_bright[y0:y1, x0:x1] > 0.3) & (zone > 0) & (lum[y0:y1, x0:x1] < 115.0)
-                 & (shorts_poly[y0:y1, x0:x1] < 0.5) & (forearm_d[y0:y1, x0:x1] > 48.0)).astype(np.uint8)
-        metal = cv2.morphologyEx(metal, cv2.MORPH_CLOSE, k_close)
-        n_c, lab_c, st_c, _ = cv2.connectedComponentsWithStats(metal)
-        hull_m = np.zeros_like(metal)
+        if plate is None:
+            break
+        d = np.abs(rgb_1080[y0:y1, x0:x1].astype(np.float32) - plate[y0:y1, x0:x1]).max(axis=-1)
+        # plate must be backdrop there (dark): where the plate holds the body (arm rest positions) the difference
+        # is a body ghost, not equipment
+        plate_lum = plate[y0:y1, x0:x1].max(axis=-1)
+        # the source backdrop also carries a soft, smooth light halo around the moving arms (+10..25 vs plate):
+        # equipment = differs from the plate AND (strongly, or with native 3D surface texture)
+        lz = lum[y0:y1, x0:x1]
+        tex = cv2.GaussianBlur(np.abs(lz - cv2.GaussianBlur(lz, (0, 0), 2.0)), (0, 0), 1.2)
+        # (matte outer plates can sit only ~8-10 above the plate in max channel but keep crisp 3D texture)
+        # black metal is DARKER than the backdrop plate, while the light halo is brighter: darker-than-plate
+        # pixels are equipment even where the plate face is smooth
+        pl_l = 0.299 * plate[y0:y1, x0:x1, 0] + 0.587 * plate[y0:y1, x0:x1, 1] + 0.114 * plate[y0:y1, x0:x1, 2]
+        # (activation light tints the metal in one channel, so count channels: >=2 of R,G,B darker than plate)
+        dec = plate[y0:y1, x0:x1] - rgb_1080[y0:y1, x0:x1].astype(np.float32)
+        # the source backdrop is a cool blue-grey (B-R ~ +10) while metal/rubber plates are neutral (B-R ~ +2):
+        # the chroma drop vs the plate outlines the full plate discs even where their luminance equals the backdrop
+        cz = rgb_1080[y0:y1, x0:x1].astype(np.float32)
+        # (min of the B-R and B-G drops: a red glow only lowers B-R, a green glow only lowers B-G; neutral metal
+        # lowers both)
+        pz = plate[y0:y1, x0:x1]
+        drop_br = (pz[:, :, 2] - pz[:, :, 0]) - (cz[:, :, 2] - cz[:, :, 0])
+        drop_bg = (pz[:, :, 2] - pz[:, :, 1]) - (cz[:, :, 2] - cz[:, :, 1])
+        chroma_drop = cv2.GaussianBlur(np.minimum(drop_br, drop_bg), (0, 0), 1.5)
+        darker = ((pl_l - lz) > 7.0) | ((dec > 5.5).sum(axis=-1) >= 2)
+        # textured differences are native 3D surface (metal or glow-lit forearm/hand), never the smooth glow
+        # halo, so they carry no tint limit; the smooth neutral/chroma paths keep a strict tint limit
+        m = ((((d > 34.0) & (tex > 2.0)) | ((d > 11.0) & (tex > 4.0))) & (zone > 0) & (plate_lum < 95.0)) | (
+              (((d > 11.0) & (act_dom[y0:y1, x0:x1] < 7.0) & (plate_lum < 52.0))
+               | ((chroma_drop > 4.5) & (d > 3.0) & (act_dom[y0:y1, x0:x1] < 12.0) & (plate_lum < 52.0))) & (zone > 0))
+        # darker-than-backdrop pixels are never glow (glow only brightens): no tint limit, so glow-lit dark
+        # metal and the glow-lit dark underside of the hand/forearm next to the equipment stay solid
+        m = (m | ((d > 6.0) & darker & (plate_lum < 52.0) & (zone > 0))).astype(np.uint8)
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k_close)
+        n_c, lab_c, st_c, _ = cv2.connectedComponentsWithStats(m)
+        keep = np.zeros_like(m)
         for ci in range(1, n_c):
-            if st_c[ci, cv2.CC_STAT_AREA] < 150:
-                continue
-            comp_m = lab_c == ci
-            if float(np.mean(lum[y0:y1, x0:x1][comp_m])) > 85.0:  # skin-dominated blob, not metal
-                continue
-            pts = cv2.findNonZero(comp_m.astype(np.uint8))
+            if st_c[ci, cv2.CC_STAT_AREA] >= 250:
+                keep[lab_c == ci] = 1
+        ff = np.pad(keep, 1).copy()
+        cv2.floodFill(ff, None, (0, 0), 2)
+        filled = (ff[1:-1, 1:-1] != 2)
+        holes = (filled & (keep == 0)).astype(np.uint8)
+        n_h, lab_h, st_h, _ = cv2.connectedComponentsWithStats(holes)
+        for hi in range(1, n_h):  # only small enclosed holes (plate centres / handle gaps), never body windows
+            if st_h[hi, cv2.CC_STAT_AREA] > 2500:
+                filled[lab_h == hi] = False
+        # rigid-object completion: the dark metal parts (plates) of one piece of equipment are convex in
+        # silhouette, so their joint convex hull restores plate rims that fade into the backdrop. Thin glow arcs
+        # are removed by an opening first; the hull is only accepted when it stays compact (not body-sized).
+        metal = (filled & (lum[y0:y1, x0:x1] < 100.0)).astype(np.uint8)
+        metal = cv2.morphologyEx(metal, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11)))
+        n_m, lab_m, st_m, _ = cv2.connectedComponentsWithStats(metal)
+        big = [mi for mi in range(1, n_m) if st_m[mi, cv2.CC_STAT_AREA] >= 1200]
+        if big and CFG.get("equipment_hull", False):
+            pts = np.concatenate([np.column_stack(np.where(lab_m == mi))[:, ::-1] for mi in big]).astype(np.int32)
             hull = cv2.convexHull(pts)
-            h_area = cv2.contourArea(hull)
-            # a rigid equipment piece is compact: reject sprawling blobs (body-edge shading chains)
-            if h_area > CFG.get("equipment_max_hull_area", 42000) or h_area > 3.5 * st_c[ci, cv2.CC_STAT_AREA]:
-                hull_m[comp_m] = 1
-                continue
-            # hull ∩ (closed + hole-filled component): restores dark faces / ragged plate rims, but never
-            # bridges large backdrop wedges between equipment and body edges
             hm = np.zeros_like(metal)
-            cv2.fillConvexPoly(hm, hull, 1, cv2.LINE_AA)
-            cc = cv2.morphologyEx(comp_m.astype(np.uint8), cv2.MORPH_CLOSE, k_big)
-            ffc = np.pad(cc, 1).copy()
-            cv2.floodFill(ffc, None, (0, 0), 2)
-            cc = (ffc[1:-1, 1:-1] != 2).astype(np.uint8)
-            hull_m |= (hm & cc)
-        solid[y0:y1, x0:x1] = np.maximum(solid[y0:y1, x0:x1], (hull_m > 0).astype(np.float32))
+            cv2.fillConvexPoly(hm, hull, 1)
+            area_big = sum(st_m[mi, cv2.CC_STAT_AREA] for mi in big)
+            if hm.sum() <= 2.2 * area_big and hm.sum() < 60000:
+                filled = filled | (hm > 0)
+        # plate completion: dark metal rings (C-shaped where a matte face meets the backdrop) are closed with a
+        # plate-scale kernel and their enclosed faces filled; gaps wider than the kernel (handle span between
+        # left/right plate stacks, arm-to-plate) stay open, so no backdrop slab is added
+        ring = (filled & (lum[y0:y1, x0:x1] - 0.85 * act_dom[y0:y1, x0:x1] < 100.0)).astype(np.uint8)
+        ring = cv2.morphologyEx(ring, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21)))
+        rf = np.pad(ring, 1).copy()
+        cv2.floodFill(rf, None, (0, 0), 2)
+        ring_h = ((rf[1:-1, 1:-1] != 2) & (ring == 0)).astype(np.uint8)
+        n_r, lab_r, st_r, _ = cv2.connectedComponentsWithStats(ring_h)
+        ring_f = ring > 0
+        for ri in range(1, n_r):
+            if st_r[ri, cv2.CC_STAT_AREA] <= 9000:
+                ring_f |= lab_r == ri
+        # per-plate-stack convex completion: break thin handle links, then each plate stack (disc-like blob)
+        # is replaced by its convex hull when it is compact and plate-sized (not a bridge across the hand)
+        rs = cv2.morphologyEx(ring_f.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+        n_s, lab_s, st_s, _ = cv2.connectedComponentsWithStats(rs)
+        for si in range(1, n_s):
+            a_s = st_s[si, cv2.CC_STAT_AREA]
+            if a_s < 600:
+                continue
+            pts = np.column_stack(np.where(lab_s == si))[:, ::-1].astype(np.int32)
+            hull = cv2.convexHull(pts)
+            hm = np.zeros_like(rs)
+            cv2.fillConvexPoly(hm, hull, 1)
+            ha = int(hm.sum())
+            if len(pts) >= 5:
+                (_, _), (ea, eb), _ = cv2.fitEllipse(pts)
+                aspect = max(ea, eb) / max(1.0, min(ea, eb))
+            else:
+                aspect = 9.0
+            if ha <= 22000 and a_s >= 0.33 * ha and aspect <= 3.2:
+                ring_f |= hm > 0
+        # only keep completion additions that are dark (metal-like), never bright body/glow halo
+        add = ring_f & ~filled & ((lum[y0:y1, x0:x1] - 0.85 * act_dom[y0:y1, x0:x1]) < 70.0)
+        # completion pixels must also be neutral (metal), not the cool-blue backdrop beside the arm
+        # (inside activation glow the chroma test is unreliable: there the convex plate completion is trusted)
+        filled = filled | (add & ((chroma_drop > 2.5) | (act_dom[y0:y1, x0:x1] >= 12.0)))
+        # difference-matte alpha (root-cause fix for bloated equipment): motion-blur smear and soft halos around a
+        # moving object differ only weakly from the backdrop plate. Treating them as solid made a fast-moving
+        # dumbbell render as an opaque, oversized blob. Only confident evidence (strong difference / native
+        # texture / clearly darker than the backdrop, plus the faces it encloses) is solid; weak-difference
+        # pixels keep a proportional alpha, so the composite reproduces the source silhouette and size.
+        strong = ((d > 18.0) | ((tex > 4.0) & (d > 8.0)) | ((dec > 10.0).sum(axis=-1) >= 2)) & filled
+        strong = cv2.morphologyEx(strong.astype(np.uint8), cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+        sf = np.pad(strong, 1).copy()
+        cv2.floodFill(sf, None, (0, 0), 2)
+        s_h = ((sf[1:-1, 1:-1] != 2) & (strong == 0)).astype(np.uint8)
+        n_sh, lab_sh, st_sh, _ = cv2.connectedComponentsWithStats(s_h)
+        strong_f = strong > 0
+        for hi in range(1, n_sh):
+            if st_sh[hi, cv2.CC_STAT_AREA] <= 9000:
+                strong_f |= lab_sh == hi
+        alpha = np.where(strong_f, 1.0, np.clip((d - 5.0) / 15.0, 0.0, 1.0)).astype(np.float32)
+        f = ((filled & (zone > 0)) * alpha).astype(np.float32)
+        foot[y0:y1, x0:x1] = np.maximum(foot[y0:y1, x0:x1], f)
+    # skin (hands) inside the footprint is body anyway; the equipment-dark shading only applies to metal
+    solid = np.maximum(solid, foot)
     eq_solid = solid.copy()
 
     solid = np.maximum(solid, shorts_poly)
-    w_fg = cv2.GaussianBlur(np.maximum(w_raw, solid), (0, 0), 0.85)
+    w_fg = cv2.GaussianBlur(np.maximum(w_raw, solid), (0, 0), float(CFG.get("mask_feather", 0.85)))
     LAST_MASKS["eq_solid"] = eq_solid
+    LAST_MASKS["eq_foot"] = foot
     LAST_MASKS["eq_zone"] = near_wrist
+    LAST_MASKS["src"] = rgb_1080
 
     # --- opaque matte-black shorts (lum 10..22) ---
     dark_low_sat = np.clip((68.0 - lum) / 18.0, 0.0, 1.0) * np.clip((0.28 - sat) / 0.14, 0.0, 1.0) * np.clip((18.0 - act_dom) / 12.0, 0.0, 1.0)
@@ -441,14 +611,24 @@ def shade_day5_v4(rgb_1080: np.ndarray, step_idx: int, is_wrong: bool, kp: dict,
     grey = np.clip(48.0 + 143.0 * (hv_silver ** 0.88) + hf_ridge * 0.70 - sulc * 11.0, 44.0, 226.0)
     # Lock skin tone to the Bright Silver-Grey standard (p75~165, p90~191, max 226) with a max-anchored remap.
     skin_q = (w_fg > 0.9) & (shorts_mask < 0.2) & (act_dom < 12.0) & (lum > 46.0)
+    if step_idx in CFG["bone_steps"]:   # colour lock is defined on the body OUTSIDE the X-Ray window
+        skin_q &= cv2.dilate((xray_window(kp, is_wrong) > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) == 0
     if skin_q.sum() > 2000:
         p75_g = float(np.percentile(grey[skin_q], 75))
         k = float(np.clip((226.0 - 165.0) / max(226.0 - p75_g, 1.0), 0.90, 1.30))
         grey = np.clip(226.0 - (226.0 - grey) * k, 44.0, 226.0)
+        # second anchor: highlights locked to p90~191 so every step has the same silver (colour lock)
+        p90_g = float(np.percentile(grey[skin_q], 90))
+        if p90_g > 170.0:
+            k90 = float(np.clip((191.0 - 165.0) / (p90_g - 165.0), 0.75, 1.6))
+            hi = grey > 165.0
+            grey[hi] = np.clip(165.0 + (grey[hi] - 165.0) * k90, 165.0, 226.0)
     shorts_lum = np.clip(lum * 0.30 + 8.0, 10.0, 22.0)
     # Dumbbells keep a matte gunmetal-black look (dark faces stay dark instead of being lifted to grey).
-    dark_t = np.clip((lum - 38.0) / 40.0, 0.0, 1.0)
-    db_lum = np.clip(lum * 0.95 + 9.0, 12.0, 60.0)
+    # (activation light tints the metal: use the tint-discounted luminance so glow-lit plates stay black)
+    lum_eq = np.maximum(lum - 0.85 * act_dom, min_c)
+    dark_t = np.clip((lum_eq - 38.0) / 40.0, 0.0, 1.0)
+    db_lum = np.clip(lum_eq * 0.95 + 9.0, 12.0, 60.0)
     eq_w = cv2.GaussianBlur(eq_solid, (0, 0), 1.5)  # equipment hull only (not skin inside the zone)
     grey = grey * (1.0 - eq_w * (1.0 - dark_t)) + db_lum * eq_w * (1.0 - dark_t)
     matte = grey * (1.0 - shorts_mask) + shorts_lum * shorts_mask
@@ -531,7 +711,21 @@ def shade_day5_v4(rgb_1080: np.ndarray, step_idx: int, is_wrong: bool, kp: dict,
     blend_w = np.clip(core_w + 0.45 * bone_core, 0.0, 0.92) * (1.0 - shorts_mask)
     mannequin = mono * (1.0 - blend_w[:, :, None]) + act_rgb * blend_w[:, :, None]
     if step_idx in CFG["bone_steps"] and CFG.get("xray_style") == "day1_v36":
-        mannequin = xray_day1_v36(rgb_1080, mono, anat, shorts_mask, tint="crimson" if is_wrong else "emerald")
+        # Mannequin colour is LOCKED across all steps: only a local see-through X-Ray window around the target
+        # bones becomes translucent (Day 1 style); the rest of the body keeps the silver-grey standard.
+        win = xray_window(kp, is_wrong) * w_fg
+        # equipment is never part of the X-Ray window (no glassy/ghosted dumbbells)
+        win = win * (1.0 - cv2.GaussianBlur(cv2.dilate(eq_solid, np.ones((9, 9), np.uint8)), (0, 0), 2.0))
+        LAST_MASKS["xwin"] = win
+        if is_wrong:
+            mannequin_x = xray_day1_v36(rgb_1080, mono, anat * win, shorts_mask, tint="crimson")
+        else:
+            mannequin_x = xray_day1_v36(rgb_1080, mono, np.maximum(anat, win) * win, shorts_mask, tint="emerald",
+                                        glass_gate=win, glass_floor=0.80)
+        wv = win[:, :, None]
+        mannequin = mono * (1.0 - wv) + mannequin_x * wv
+    else:
+        LAST_MASKS["xwin"] = np.zeros((H, W), np.float32)
 
     bg = studio_bg() * (1.0 - 0.80 * contact_shadow(kp)[:, :, None])
     wf = w_fg[:, :, None]
@@ -614,6 +808,9 @@ def composite_title_and_preview_v4(base_rgb, fg_mask, torso_icons, active_slot, 
     titled[ty0:ty1] = np.clip(titled[ty0:ty1].astype(np.float32) * (1.0 - eff_a) + t_rgb * eff_a, 0, 255).astype(np.uint8)
     py0, py1 = 230, 425
     touch = np.clip(fg_mask[py0:py1, :, None] * 1.15, 0.0, 0.92)
+    eqm = LAST_MASKS.get("eq_front")
+    if eqm is not None:  # equipment renders fully in front of the preview pill (no preview pixels on it)
+        touch = np.maximum(touch, eqm[py0:py1, :, None])
     out[py0:py1] = np.clip(out[py0:py1].astype(np.float32) * (1.0 - touch) + titled[py0:py1].astype(np.float32) * touch, 0, 255).astype(np.uint8)
     return out
 
@@ -647,14 +844,61 @@ def _tempo_wave(u):
     return 0.0
 
 
+def draw_laser_and_callout_v4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_str, l1_str, l2_str):
+    """d5.draw_day5_laser_and_callout with an optional fixed text block per step (CFG['callout_ty'])."""
+    ov = CFG.get("callout_ty", {}).get(step_idx)
+    if ov is None:
+        return d5.draw_day5_laser_and_callout(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_str, l1_str, l2_str)
+    # laser only (empty callout strings), then our own text block + leader
+    canvas = Image.fromarray(base_rgb).convert("RGBA")
+    sh_r, sh_l, elb_r, wr_r = kp["sh_r"], kp["sh_l"], kp["elb_r"], kp["wr_r"]
+    elb_l, wr_l = kp["elb_l"], kp["wr_l"]
+    _, wr_r_ext = p62._extend_segment(elb_r, wr_r, 0.0, 1.12)
+    _, wr_l_ext = p62._extend_segment(elb_l, wr_l, 0.0, 1.12)
+    sh_r_ext, sh_l_ext = p62._extend_segment(sh_r, sh_l, -0.08, 1.08)
+    clav_mid = (0.52 * sh_r[0] + 0.48 * sh_l[0], 0.52 * sh_r[1] + 0.48 * sh_l[1] + 4.0)
+    if step_idx == 2:   # identical laser chains / targets to d5.draw_day5_laser_and_callout
+        p62.draw_demic_laser_joint_axis(canvas, main_chains_1x=[[sh_r, elb_r, wr_r_ext], [sh_l, elb_l, wr_l_ext]],
+                                        aux_ext_chains_1x=[[sh_r_ext, sh_l_ext]], vertex_pts_1x=[sh_r, elb_r, sh_l, elb_l],
+                                        is_wrong=is_wrong)
+        target_pt = (int(0.65 * sh_r[0] + 0.35 * sh_l[0]), int(sh_r[1] - 22))
+    else:
+        p62.draw_demic_laser_joint_axis(canvas, main_chains_1x=[[sh_r, elb_r, wr_r_ext]], aux_ext_chains_1x=[[sh_r_ext, clav_mid]],
+                                        vertex_pts_1x=[sh_r, elb_r], is_wrong=is_wrong)
+        if step_idx in (1, 3):
+            target_pt = (int(sh_r[0] + 8), int(sh_r[1] + 6))
+        else:
+            target_pt = (int(0.76 * sh_r[0] + 0.24 * elb_r[0]), int(0.76 * sh_r[1] + 0.24 * elb_r[1] + 10))
+    laser_rgb = np.array(canvas.convert("RGB")).astype(np.float32)
+    g = np.clip(shorts_mask_1080 * 0.90, 0.0, 0.90)[:, :, None]
+    blended = np.clip(laser_rgb * (1.0 - g) + base_rgb.astype(np.float32) * g, 0, 255).astype(np.uint8)
+    base_pil = Image.fromarray(blended).convert("RGBA")
+    ovl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    rd = ImageDraw.Draw(ovl)
+    col = (255, 96, 36) if is_wrong else (32, 245, 130)
+    tx, ty = 54, int(ov)
+    elbow_y = ty + 76
+    elbow_x = max(254, min(target_pt[0] - 40, 300))
+    d5.bcd._draw_precision_leader(rd, target_pt, (elbow_x, elbow_y), (242, elbow_y), col)
+    rd.text((tx + 2, ty + 3), deg_str, font=v30.f_pretendard(84, "extrabold"), fill=(0, 0, 0, 210))
+    rd.text((tx, ty), deg_str, font=v30.f_pretendard(84, "extrabold"), fill=(255, 255, 255, 255))
+    rd.text((tx + 2, ty + 90), l1_str, font=v30.f_pretendard(21, "extrabold"), fill=(*col, 255))
+    rd.text((tx + 2, ty + 117), l2_str, font=v30.f_pretendard(16, "bold"), fill=(215, 222, 232, 235))
+    return np.array(Image.alpha_composite(base_pil, ovl).convert("RGB"))
+
+
 def render_pose(step_idx, seq, kps, p_i, icons, qc=False):
     fn, i0, i1, is_w, v_mode, y_sh = d5.STEP_SPECS_DAY5[step_idx]
     n_f = len(seq)
     pose_frac = p_i / float(max(1, n_f - 1))
+    if CUR_PLATE.get("step") != step_idx:
+        set_step_plate(seq, kps, step_idx)
     rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(seq[p_i], kps[p_i], y_sh, step_idx)
     base_rgb, sh_mask, w_fg = shade_day5_v4(rgb_1080, step_idx, is_w, kp_1080, pulse_phase=pose_frac * 0.75)
     slot_i, deg_s, l1_s, l2_s = _callout_for(step_idx, pose_frac)
-    fr = d5.draw_day5_laser_and_callout(base_rgb, sh_mask, step_idx, kp_1080, is_w, deg_s, l1_s, l2_s)
+    fr = draw_laser_and_callout_v4(base_rgb, sh_mask, step_idx, kp_1080, is_w, deg_s, l1_s, l2_s)
+    LAST_MASKS["pre_ui"] = fr
+    LAST_MASKS["eq_front"] = cv2.GaussianBlur(cv2.dilate(LAST_MASKS["eq_foot"], np.ones((5, 5), np.uint8)), (0, 0), 1.0)
     fr = composite_title_and_preview_v4(fr, fg_for_preview(w_fg), icons, slot_i, is_w, CFG["exercise_name"])
     if qc:
         return fr, base_rgb, sh_mask, w_fg, kp_1080
@@ -677,6 +921,7 @@ def build_icons(raw_seqs, kps_seqs):
     icons = []
     for s_idx in [1, 2, 3, 4]:
         fn, i0, i1, is_w, v_mode, y_sh = d5.STEP_SPECS_DAY5[s_idx]
+        set_step_plate(raw_seqs[s_idx], kps_seqs[s_idx], s_idx)
         rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(raw_seqs[s_idx][-1], kps_seqs[s_idx][-1], y_sh, s_idx)
         sh_rgb, sh_m, w_fg = shade_day5_v4(rgb_1080, s_idx, is_w, kp_1080, pulse_phase=0.75)
         lum = 0.299 * sh_rgb[:, :, 0] + 0.587 * sh_rgb[:, :, 1] + 0.114 * sh_rgb[:, :, 2]
@@ -735,6 +980,11 @@ def build_peaks_only():
     print("QC peaks + sheet written to", TMP_DIR, OUT_SHEET)
 
 
+# QC sidecar frames per step (f_local -> tag): start/peak feed every check; the extra mid-motion frames feed the
+# per-frame equipment checks (d)/(h) so equipment is verified across the whole movement, not just two poses
+QC_TAGS = {4: "start", 20: "t20", 35: "t35", 50: "peak", 70: "t70", 100: "t100", 130: "t130"}
+
+
 def save_qc_sidecar(step_idx, tag, frame_idx, fr, base, shorts_m, w_fg, kp):
     """Per-step QC sidecar consumed by qc_gate_gymform.py (masks + pre-UI base + keypoints)."""
     import json
@@ -745,16 +995,76 @@ def save_qc_sidecar(step_idx, tag, frame_idx, fr, base, shorts_m, w_fg, kp):
     cv2.imwrite(pre + "_wfg.png", (np.clip(w_fg, 0, 1) * 255).astype(np.uint8))
     cv2.imwrite(pre + "_shorts.png", (np.clip(shorts_m, 0, 1) * 255).astype(np.uint8))
     cv2.imwrite(pre + "_eq.png", (np.clip(LAST_MASKS.get("eq_solid", np.zeros_like(w_fg)), 0, 1) * 255).astype(np.uint8))
+    cv2.imwrite(pre + "_eqfoot.png", (np.clip(LAST_MASKS.get("eq_foot", np.zeros_like(w_fg)), 0, 1) * 255).astype(np.uint8))
+    # independent inputs for the QC's own expected-equipment detector: the raw (transformed) source frame and
+    # the step's temporal backdrop plate
+    cv2.imwrite(pre + "_src.png", cv2.cvtColor(LAST_MASKS["src"], cv2.COLOR_RGB2BGR))
+    plate_p = os.path.join(d, f"step{step_idx}_plate.png")
+    if not os.path.exists(plate_p) or CUR_PLATE.get("saved") != (d, step_idx):
+        cv2.imwrite(plate_p, cv2.cvtColor(np.clip(CUR_PLATE["rgb"], 0, 255).astype(np.uint8), cv2.COLOR_RGB2BGR))
+        CUR_PLATE["saved"] = (d, step_idx)
+    cv2.imwrite(pre + "_preui.png", cv2.cvtColor(LAST_MASKS["pre_ui"], cv2.COLOR_RGB2BGR))
+    cv2.imwrite(pre + "_xwin.png", (np.clip(LAST_MASKS.get("xwin", np.zeros_like(w_fg)), 0, 1) * 255).astype(np.uint8))
     cv2.imwrite(pre + "_eqzone.png", (np.clip(LAST_MASKS.get("eq_zone", np.zeros_like(w_fg)), 0, 1) * 255).astype(np.uint8))
-    meta_p = os.path.join(d, "meta.json")
+    meta_p = os.path.join(d, f"meta_step{step_idx}.json")   # per-step (parallel workers); merged by merge_qc_meta
     meta = json.load(open(meta_p)) if os.path.exists(meta_p) else {}
     meta.setdefault("frames", {})[f"step{step_idx}_{tag}"] = {"frame_idx": frame_idx, "step": step_idx, "tag": tag, "kp": kp}
     meta.update({
         "exercise_name": CFG["exercise_name"], "studio_bg": CFG["studio_bg"], "equipment": CFG["equipment"],
         "bone_steps": list(CFG["bone_steps"]), "muscle_steps": list(CFG["muscle_steps"]),
-        "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "fps": FPS,
+        "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "fps": FPS, "qc_tags": QC_TAGS,
     })
     json.dump(meta, open(meta_p, "w"), indent=1)
+
+
+N_WORKERS = int(os.environ.get("GYMFORM_WORKERS", "2"))      # modest: Shorts Manager has box priority
+X264_PRESET = os.environ.get("GYMFORM_X264_PRESET", "veryfast")
+_G = {}
+
+
+def render_step_to_mp4(step_idx):
+    """Render one step (150 frames, unique poses cached) straight into an x264 pipe. Runs in a worker."""
+    cv2.setNumThreads(1)
+    seq, kps = _G["raw"][step_idx], _G["kps"][step_idx]
+    icons = _G["icons"][step_idx]
+    n_f = len(seq)
+    out = os.path.join(TMP_DIR, f"_step{step_idx}.mp4")
+    ff = subprocess.Popen(["nice", "-n", "10", "ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+                           "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", X264_PRESET,
+                           "-crf", "17", "-pix_fmt", "yuv420p", "-threads", "1", out], stdin=subprocess.PIPE)
+    cache, peak_p = {}, os.path.join(TMP_DIR, f"_peak{step_idx}.png")
+    for f_local in range(150):
+        p_i = int(round(_tempo_wave(f_local / 150.0) * (n_f - 1)))
+        if f_local in QC_TAGS:
+            fr_q, base_q, shm_q, wfg_q, kp_q = render_pose(step_idx, seq, kps, p_i, icons, qc=True)
+            save_qc_sidecar(step_idx, QC_TAGS[f_local], (step_idx - 1) * 150 + f_local, fr_q, base_q, shm_q, wfg_q, kp_q)
+            cache[p_i] = fr_q
+        if p_i not in cache:
+            cache[p_i] = render_pose(step_idx, seq, kps, p_i, icons)
+        fr = cache[p_i]
+        if f_local == 50:
+            Image.fromarray(fr).save(peak_p)
+        ff.stdin.write(np.ascontiguousarray(fr).tobytes())
+    ff.stdin.close()
+    ff.wait()
+    print(f"   Step {step_idx}/4 done ({len(cache)} unique poses)", flush=True)
+    return step_idx, peak_p
+
+
+def merge_qc_meta():
+    import json
+    d = CFG["qc_dir"]
+    meta = {}
+    for s in [1, 2, 3, 4]:
+        mp_ = os.path.join(d, f"meta_step{s}.json")
+        if os.path.exists(mp_):
+            m = json.load(open(mp_))
+            frames = meta.get("frames", {})
+            frames.update(m.get("frames", {}))
+            meta.update(m)
+            meta["frames"] = frames
+            os.remove(mp_)
+    json.dump(meta, open(os.path.join(d, "meta.json"), "w"), indent=1)
 
 
 def build_all():
@@ -772,46 +1082,64 @@ def build_all():
         (10.20, "Depress your shoulder blades and lock your shoulder joint in a safe groove."),
         (15.20, "Raise thirty degrees forward in the scapular plane to fire your lateral deltoid fibers."),
     ]
-    asyncio.run(d5.synthesize_day5_voiceover_wav(wav_path, vo_lines, DURATION))
+    import threading
+    t_tts = threading.Thread(target=lambda: asyncio.run(d5.synthesize_day5_voiceover_wav(wav_path, vo_lines, DURATION)))
+    t_tts.start()   # TTS runs while frames render
 
-    print("4. Rendering 600 frames...", flush=True)
-    tmp_mp4 = os.path.join(TMP_DIR, "_day5_v4_video_only.mp4")
-    vw = cv2.VideoWriter(tmp_mp4, cv2.VideoWriter_fourcc(*"mp4v"), float(FPS), (W, H))
-    peaks = {}
-    for step_idx in [1, 2, 3, 4]:
-        seq, kps = raw_seqs[step_idx], kps_seqs[step_idx]
-        n_f = len(seq)
-        cache = {}
-        for f_local in range(150):
-            p_i = int(round(_tempo_wave(f_local / 150.0) * (n_f - 1)))
-            if f_local in (4, 50):
-                fr_q, base_q, shm_q, wfg_q, kp_q = render_pose(step_idx, seq, kps, p_i, icons_for_step[step_idx], qc=True)
-                save_qc_sidecar(step_idx, "start" if f_local == 4 else "peak", (step_idx - 1) * 150 + f_local,
-                                fr_q, base_q, shm_q, wfg_q, kp_q)
-                cache[p_i] = fr_q
-            if p_i not in cache:
-                cache[p_i] = render_pose(step_idx, seq, kps, p_i, icons_for_step[step_idx])
-            fr = cache[p_i]
-            if f_local == 50:
-                peaks[step_idx] = Image.fromarray(fr)
-                if step_idx == 4:
-                    peaks[step_idx].save(OUT_COVER, quality=95)
-            vw.write(cv2.cvtColor(fr, cv2.COLOR_RGB2BGR))
-        cache.clear(); gc.collect()
-        print(f"   Step {step_idx}/4 done", flush=True)
-    vw.release()
+    print(f"4. Rendering 600 frames ({N_WORKERS} step workers, x264 {X264_PRESET})...", flush=True)
+    t_r = time.time()
+    steps = [1, 2, 3, 4]
+    # step workers = independent subprocesses (no fork-with-threads deadlocks); icons shared via a pickle
+    with open(os.path.join(TMP_DIR, "_icons.pkl"), "wb") as f:
+        pickle.dump(icons, f)
+    env = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1")
+    pending, running, res = list(steps), [], []
+    while pending or running:
+        while pending and len(running) < N_WORKERS:
+            s_ = pending.pop(0)
+            lf = open(os.path.join(TMP_DIR, f"_step{s_}.log"), "w")
+            running.append((s_, subprocess.Popen(["nice", "-n", "10", sys.executable, os.path.abspath(__file__), "--render-step", str(s_)],
+                                                 stdout=lf, stderr=subprocess.STDOUT, env=env), lf))
+        time.sleep(1.0)
+        for item in list(running):
+            s_, pr, lf = item
+            if pr.poll() is not None:
+                lf.close()
+                running.remove(item)
+                if pr.returncode != 0:
+                    raise RuntimeError(f"step {s_} worker failed (see {TMP_DIR}/_step{s_}.log)")
+                print(f"   Step {s_}/4 done", flush=True)
+                res.append((s_, os.path.join(TMP_DIR, f"_peak{s_}.png")))
+    peaks = {s: Image.open(pk) for s, pk in sorted(res)}
+    peaks[4].save(OUT_COVER, quality=95)
+    merge_qc_meta()
+    print(f"   frames rendered in {time.time() - t_r:.1f}s", flush=True)
+    t_tts.join()
 
-    print("5. Muxing H.264 + AAC (ffmpeg -threads 2)...", flush=True)
-    subprocess.run(["nice", "-n", "10", "ffmpeg", "-y", "-threads", "2", "-i", tmp_mp4, "-i", wav_path,
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "17", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", OUT_MP4],
+    print("5. Concat + mux AAC (stream copy video)...", flush=True)
+    lst = os.path.join(TMP_DIR, "_steps.txt")
+    with open(lst, "w") as f:
+        for s in steps:
+            f.write(f"file '{os.path.join(TMP_DIR, f'_step{s}.mp4')}'\n")
+    subprocess.run(["nice", "-n", "10", "ffmpeg", "-y", "-threads", "2", "-f", "concat", "-safe", "0", "-i", lst, "-i", wav_path,
+                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", OUT_MP4],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    os.remove(tmp_mp4)
+    for s in steps:
+        os.remove(os.path.join(TMP_DIR, f"_step{s}.mp4"))
+    os.remove(lst)
     make_sheet(peaks)
     print("Saved:", OUT_MP4, OUT_SHEET, OUT_COVER, flush=True)
 
 
 if __name__ == "__main__":
+    if "--render-step" in sys.argv:
+        _s = int(sys.argv[sys.argv.index("--render-step") + 1])
+        cv2.setNumThreads(1)
+        _raw, _kps = load_inputs()
+        _ic = pickle.load(open(os.path.join(TMP_DIR, "_icons.pkl"), "rb"))
+        _G.update({"raw": _raw, "kps": _kps, "icons": {k: _ic for k in (1, 2, 3, 4)}})
+        render_step_to_mp4(_s)
+        sys.exit(0)
     if "--peaks" in sys.argv:
         build_peaks_only()
     else:
