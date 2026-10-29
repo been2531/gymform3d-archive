@@ -1,5 +1,7 @@
 # @gymform.3d pipeline (v5, modular)
 
+> Locked rules (enforced by run_day.py guard + QC): see [RULES.md](RULES.md).
+
 Daily command: `python3 run_day.py --day N`  (prints one JSON line; full log in output/logs/)
 
 | file | role |
@@ -8,7 +10,7 @@ Daily command: `python3 run_day.py --day N`  (prints one JSON line; full log in 
 | `configs/dayNN.json` | the ONLY per-day input: exercise, clips, equipment zones, X-Ray bones, target muscles, callouts, TTS lines, caption ({title, question, save} → built + linted by `gymform/caption.py`: EXACTLY 3 lines separated by blank lines — title / ONE experience question ending "?" / save line; no body text, English only, 0 hashtags, no DM or vote CTA), per-step scale/dy |
 | `gymform/ctx.py` | shared state, spec defaults + day config -> CFG |
 | `gymform/bg.py` | studio plate, contact shadow, per-step size/floor transform, cached temporal backdrop median |
-| `gymform/mask.py` | clean fg key, anatomical envelope, shorts polygon/mask |
+| `gymform/mask.py` | clean fg key, anatomical envelope, NATIVE shorts mask (source fabric pixels, pose-aware hem; no 2D polygon) |
 | `gymform/equipment.py` | generic equipment zones + plate-difference footprint (solid metal, soft edge only near the object), matte metal shading |
 | `gymform/muscle.py` | locked silver skin (dual anchor p75/p90) + target-muscle fibres |
 | `gymform/xray.py` | Day 1 v36 local X-Ray window (crimson / emerald), zero blur |

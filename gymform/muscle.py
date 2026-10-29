@@ -31,6 +31,10 @@ def silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong):
             k90 = float(np.clip((191.0 - 165.0) / (p90_g - 165.0), 0.75, 1.6))
             hi = grey > 165.0
             grey[hi] = np.clip(165.0 + (grey[hi] - 165.0) * k90, 165.0, 226.0)
+    # shadow floor: the p75 anchor stretch (k up to 1.3 around 226) crushed native skin shadows below the source
+    # (seated legs: lum 69 -> 49, read as dark patches below the hem). Skin never renders darker than its own
+    # native shadow up to lum 62; highlights / p75 / p90 lock are unaffected.
+    grey = np.maximum(grey, np.minimum(np.maximum(lum - 0.85 * act_dom, F["min_c"]), 62.0))
     shorts_lum = np.clip(lum * 0.30 + 8.0, 10.0, 22.0)
     grey = metal_shade(grey, F, eq_solid)
     matte = grey * (1.0 - shorts_mask) + shorts_lum * shorts_mask

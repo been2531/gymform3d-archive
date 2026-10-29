@@ -72,3 +72,39 @@ def step_spec(s):
     """(clip file, i0, i1, is_wrong, mode, y_shift)."""
     c = CFG["clips"][str(s)]
     return c["file"], int(c["i0"]), int(c["i1"]), bool(c["is_wrong"]), c.get("mode", ""), int(c.get("y_shift", 80))
+
+
+def skeletal_size(kp):
+    """Pose-invariant mannequin size: torso + thigh + shin + upper arm (keypoint segment lengths). The head-top /
+    vertical-extent metric is fooled by overhead arms and seated poses (Day 6: Step 3 rendered 20% larger while
+    the extent metric read equal); bone lengths are the same in every pose."""
+    import math
+    D = lambda a, b: math.hypot(a[0] - b[0], a[1] - b[1])
+    M = lambda a, b: (0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1]))
+    tor = D(M(kp["sh_r"], kp["sh_l"]), M(kp["hip_r"], kp["hip_l"]))
+    th = 0.5 * (D(kp["hip_r"], kp["kn_r"]) + D(kp["hip_l"], kp["kn_l"]))
+    shin = 0.5 * (D(kp["kn_r"], kp["ank_r"]) + D(kp["kn_l"], kp["ank_l"]))
+    ua = 0.5 * (D(kp["sh_r"], kp["elb_r"]) + D(kp["sh_l"], kp["elb_l"]))
+    return tor + th + shin + ua
+
+
+def normalize_scale(kps_seqs):
+    """Per-step scale + floor normalisation from the cached keypoints (all days, standing or seated): every step's
+    on-screen skeletal size = the median of the configured sizes, and every step's feet on one floor line.
+    Overrides step_scale/step_dy (they become the starting point only). Deterministic -> identical in all workers."""
+    if not CFG.get("auto_scale", True):
+        return
+    sizes, ank = {}, {}
+    for s in (1, 2, 3, 4):
+        y_sh = step_spec(s)[5]
+        sz = [skeletal_size(k) for k in kps_seqs[s]]
+        sizes[s] = float(np.median(sz))
+        ank[s] = float(np.median([max(k["ank_r"][1], k["ank_l"][1]) - y_sh for k in kps_seqs[s]]))
+    cur = {s: sizes[s] * float(CFG["step_scale"][str(s)]) for s in sizes}
+    target = float(np.median(list(cur.values())))
+    floor = float(np.median([(ank[s] - H * 0.5) * float(CFG["step_scale"][str(s)]) + H * 0.5 + int(CFG["step_dy"][str(s)]) for s in sizes]))
+    for s in sizes:
+        sc = target / max(sizes[s], 1.0)
+        STEP_SCALE[s] = round(sc, 4)
+        b4.STEP_DY[s] = int(round(floor - ((ank[s] - H * 0.5) * sc + H * 0.5)))
+    CFG["_normalized"] = {"scale": dict(STEP_SCALE), "dy": dict(b4.STEP_DY), "target_size": round(target, 1), "floor_y": round(floor, 1)}

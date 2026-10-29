@@ -55,72 +55,69 @@ def anatomical_envelope(kp: dict) -> np.ndarray:
     return env
 
 
-def shorts_polygon(kp: dict, bright_m: np.ndarray, hip_y: float, kn_y: float) -> np.ndarray:
-    """Opaque boxer-shorts region from body extents at the waist (above) and thighs (below) + crotch notch."""
-    hx = int(0.5 * (kp["hip_r"][0] + kp["hip_l"][0]))
-    xa, xb = max(0, hx - 300), min(W, hx + 300)
-    top = int(hip_y - 125.0)
-    bot = int(hip_y + 0.55 * (kn_y - hip_y))
-    crotch = int(hip_y + 0.36 * (kn_y - hip_y))
+def _torso_len(kp):
+    sh_m = (0.5 * (kp["sh_r"][0] + kp["sh_l"][0]), 0.5 * (kp["sh_r"][1] + kp["sh_l"][1]))
+    hip_m = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), 0.5 * (kp["hip_r"][1] + kp["hip_l"][1]))
+    return max(60.0, math.hypot(sh_m[0] - hip_m[0], sh_m[1] - hip_m[1])), sh_m, hip_m
 
-    # exclude hanging forearms / hands / dumbbells next to the hips from the body-width measurement
-    y_a, y_b = max(0, int(hip_y) - 140), min(H, int(kn_y) + 10)
-    arm_x = np.zeros((y_b - y_a, W), bool)
-    for side in ("r", "l"):
-        el, wr = kp[f"elb_{side}"], kp[f"wr_{side}"]
-        d1 = _seg_dist(el, _ext(el, wr, 1.35), 0, y_a, W, y_b)
-        d2 = np.hypot(_XX[y_a:y_b] - wr[0], _YY[y_a:y_b] - wr[1])
-        arm_x |= (d1 < 55.0) | (d2 < 105.0)
-    bright_m = bright_m.copy()
-    bright_m[y_a:y_b] &= ~arm_x
 
-    def cols(r):
-        return np.where(bright_m[max(0, r - 4) : r + 5, xa:xb].any(axis=0))[0] + xa
-
-    def occ_row(r):
-        o = bright_m[max(0, r - 4) : r + 5, :].any(axis=0).astype(np.uint8)
-        return cv2.morphologyEx(o[None, :], cv2.MORPH_CLOSE, np.ones((1, 7), np.uint8))[0] > 0
-
-    def run_at(o, x):
-        """Contiguous occupied run containing (or nearest to, within 40px) column x."""
-        x = int(np.clip(x, 0, W - 1))
-        if not o[x]:
-            near = np.where(o[max(0, x - 40) : x + 41])[0]
-            if len(near) == 0:
-                return None
-            x = max(0, x - 40) + int(near[np.argmin(np.abs(near - 40))])
-        l = x
-        while l > 0 and o[l - 1]:
-            l -= 1
-        r = x
-        while r < W - 1 and o[r + 1]:
-            r += 1
-        return l, r
-
-    # waist: the skin run through the body centre (arms hanging beside it are separate runs)
-    rt_run = run_at(occ_row(top), hx)
-    ob = occ_row(bot)
-    rl = run_at(ob, kp["hip_r"][0])
-    rr = run_at(ob, kp["hip_l"][0])
-    out = np.zeros((H, W), dtype=np.float32)
-    if rt_run is None or rl is None or rr is None:
-        return out
-    lt, rt = rt_run[0] - 4, rt_run[1] + 4
-    lb, rb = rl[0] - 4, rr[1] + 4
-    pts = [(lt, top), (rt, top), (rb, bot)]
-    occ = bright_m[max(0, bot - 4) : bot + 5, :].any(axis=0)
-    gl = gr = None
-    if not occ[hx]:
-        gl, gr = hx, hx
-        while gl > lb and not occ[gl]:
-            gl -= 1
-        while gr < rb and not occ[gr]:
-            gr += 1
-    if gl is not None and gr - gl > 8:
-        pts += [(gr - 2, bot), (hx, crotch), (gl + 2, bot)]
-    pts += [(lb, bot)]
-    cv2.fillPoly(out, [np.array(pts, dtype=np.int32)], 1.0, cv2.LINE_AA)
-    return out
+def native_shorts(F, kp):
+    """NATIVE 3D shorts (no 2D painting): the matte-black shorts are part of the generated 3D mannequin, so the
+    mask is the source's own fabric pixels (dark, neutral, un-lit) and nothing else. Pose-aware for standing AND
+    seated/bench poses: the search zone is built in thigh-axis coordinates (hip -> knee, any orientation), and each
+    leg's hem is measured along its own thigh axis as the last cross-section where native fabric spans >= 50% of
+    the thigh width. Pixels past the hem are never shorts, so nothing dark can appear below the hem."""
+    lum, act_dom, sat, min_c = F["lum"], F["act_dom"], F["sat"], F["min_c"]
+    lum_eq = np.maximum(lum - 0.85 * act_dom, min_c)
+    fabric = (lum_eq < 62.0) & (sat < 0.30) & (act_dom < 18.0)
+    tl, sh_m, hip_m = _torso_len(kp)
+    r = 0.24 * tl                                    # thigh half-width ~ 0.24 x torso length (measured Day 5/6)
+    P = lambda p: (int(round(p[0])), int(round(p[1])))
+    zone = np.zeros((H, W), np.uint8)
+    # hip block: waistband (0.36 x torso above the hip joints) down to the hip joints, hip-to-hip + thigh width
+    up = (sh_m[0] - hip_m[0], sh_m[1] - hip_m[1])
+    un = math.hypot(*up) or 1.0
+    up = (up[0] / un, up[1] / un)
+    wb = 0.36 * tl
+    hr, hl = kp["hip_r"], kp["hip_l"]
+    side = (hl[0] - hr[0], hl[1] - hr[1]); sn = math.hypot(*side) or 1.0; side = (side[0] / sn, side[1] / sn)
+    e = 0.85 * r
+    quad = [(hr[0] - side[0] * e + up[0] * wb, hr[1] - side[1] * e + up[1] * wb), (hl[0] + side[0] * e + up[0] * wb, hl[1] + side[1] * e + up[1] * wb),
+            (hl[0] + side[0] * e, hl[1] + side[1] * e), (hr[0] - side[0] * e, hr[1] - side[1] * e)]
+    cv2.fillConvexPoly(zone, np.array([P(q) for q in quad], np.int32), 1)
+    hems = {}
+    for sd in ("r", "l"):
+        hip, kn = kp[f"hip_{sd}"], kp[f"kn_{sd}"]
+        L = math.hypot(kn[0] - hip[0], kn[1] - hip[1]) or 1.0
+        ax = ((kn[0] - hip[0]) / L, (kn[1] - hip[1]) / L)
+        nx = (-ax[1], ax[0])
+        hem_t = 0.0
+        for t in np.arange(0.0, 0.80, 0.02):
+            c = (hip[0] + ax[0] * L * t, hip[1] + ax[1] * L * t)
+            xs = np.clip((c[0] + nx[0] * np.linspace(-r, r, 25)).astype(int), 0, W - 1)
+            ys = np.clip((c[1] + nx[1] * np.linspace(-r, r, 25)).astype(int), 0, H - 1)
+            if fabric[ys, xs].mean() >= 0.5:
+                hem_t = t
+            elif t > hem_t + 0.07:
+                break
+        hems[sd] = hem_t
+        end = (hip[0] + ax[0] * L * (hem_t + 0.03), hip[1] + ax[1] * L * (hem_t + 0.03))
+        cv2.line(zone, P(hip), P(end), 1, int(2 * r))
+    LAST_MASKS["shorts_hem_t"] = hems
+    m = (fabric & (zone > 0)).astype(np.uint8)
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(m)
+    keep = np.zeros_like(m)
+    if n > 1:
+        big = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+        for i in range(1, n):   # the fabric body + any sizeable native fabric patch (folds split it)
+            if i == big or st[i, cv2.CC_STAT_AREA] >= 0.08 * st[big, cv2.CC_STAT_AREA]:
+                keep[lab == i] = 1
+    # small enclosed sheen spots inside native fabric are fabric (native highlights, not skin)
+    ff = np.pad(cv2.morphologyEx(keep, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)), 1).copy()
+    cv2.floodFill(ff, None, (0, 0), 2)
+    keep = ((ff[1:-1, 1:-1] != 2) & (zone > 0)).astype(np.uint8)
+    return keep.astype(np.float32), zone.astype(np.float32)
 
 
 def skin_segments(kp):
@@ -197,62 +194,24 @@ def body_key(F, step_idx, kp):
     # Matte-black dumbbells and shorts are nearly the same luminance as the source backdrop, so a pure
     # luminance key leaves them see-through. Close them with shape priors (wrist zone hole-fill, shorts polygon).
     solid = np.zeros((H, W), dtype=np.float32)
-    shorts_poly = shorts_polygon(kp, (bright_diff * floor_gate) > 14.0, hip_y, kn_y)
-    return dict(w_raw=w_raw, shorts_poly=shorts_poly.astype(np.float32), near_wrist=near_wrist, shorts_band=shorts_band, env=env,
+    shorts_native, shorts_zone = native_shorts(F, kp)
+    return dict(w_raw=w_raw, shorts_poly=shorts_native, shorts_zone=shorts_zone, near_wrist=near_wrist, shorts_band=shorts_band, env=env,
                 skin_seg=cv2.GaussianBlur(skin_segments(kp), (0, 0), 1.5))
 
 
 def finalize(F, K, foot):
-    """Union of body key, equipment footprint and shorts prior -> w_fg; opaque matte-black shorts mask."""
-    lum, sat, act_dom = F["lum"], F["sat"], F["act_dom"]
-    shorts_band = K["shorts_band"]
+    """Union of body key, equipment footprint and the NATIVE shorts -> w_fg; shorts mask = native fabric pixels only
+    (no polygon, no fill painting: 2D shorts overpaint is 0 by construction)."""
     solid = foot.copy()
     eq_solid = solid.copy()
-    solid = np.maximum(solid, K["shorts_poly"])
+    native = K["shorts_poly"] * (1.0 - K["skin_seg"])
+    solid = np.maximum(solid, native)
     w_raw = K["w_raw"]
     plate = CUR_PLATE.get("rgb")
     if plate is not None:
-        # faint key pixels identical to the static backdrop plate inside the equipment zones are backdrop light
-        # (arm ghosts held in the median plate), not body: solid body pixels are untouched
         d = np.abs(F["rgb"] - plate).max(axis=-1)
         w_raw = np.where((w_raw < 0.95) & (d < 6.0) & (K["near_wrist"] > 0) & (foot < 0.5), 0.0, w_raw).astype(np.float32)
     w_fg = cv2.GaussianBlur(np.maximum(w_raw, solid), (0, 0), float(CFG.get("mask_feather", 0.85)))
-    dark_low_sat = np.clip((68.0 - lum) / 18.0, 0.0, 1.0) * np.clip((0.28 - sat) / 0.14, 0.0, 1.0) * np.clip((18.0 - act_dom) / 12.0, 0.0, 1.0)
-    shorts_mask = cv2.GaussianBlur((shorts_band * dark_low_sat * (w_fg > 0.25)).astype(np.float32), (0, 0), 2.0)
-    shorts_mask = np.clip(shorts_mask * 1.35, 0.0, 1.0)
-    # equipment beside the hips is never "shorts"; inside the hip-band polygon (which already excludes the hanging
-    # arms/hands/dumbbells) the fabric wins, so a footprint that picked up moving fabric cannot punch holes in it
-    poly_in = cv2.erode((K["shorts_poly"] > 0.5).astype(np.uint8), np.ones((9, 9), np.uint8)).astype(np.float32)
-    shorts_mask = shorts_mask * (1.0 - np.clip(eq_solid * 1.5, 0.0, 1.0) * (1.0 - poly_in))
-    # shorts only inside the hip-band polygon, never on a skin segment (correct by construction)
-    shorts_mask = shorts_mask * np.clip(cv2.GaussianBlur(K["shorts_poly"], (0, 0), 2.0) * 1.5, 0.0, 1.0) * (1.0 - K["skin_seg"])
-    # clean hem: shorts fabric rows are wide horizontal runs; a narrow vertical tongue below the hem is the
-    # shadowed inner thigh, never fabric. A 61px-wide horizontal opening keeps only real fabric rows.
-    fab = cv2.morphologyEx((shorts_mask > 0.5).astype(np.uint8), cv2.MORPH_OPEN, np.ones((1, 61), np.uint8))
-    fab = cv2.morphologyEx(fab, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))   # re-join the fabric body
-    shorts_mask = shorts_mask * cv2.GaussianBlur(cv2.dilate(fab, np.ones((3, 3), np.uint8)).astype(np.float32), (0, 0), 1.0)
-    # fabric highlights (lum > 68) inside the fabric are still fabric: enclosed gaps in the fabric are filled
-    fc = cv2.morphologyEx(fab, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25)))
-    ff = np.pad(fc, 1).copy()
-    cv2.floodFill(ff, None, (0, 0), 2)
-    fill = ((ff[1:-1, 1:-1] != 2) & (K["shorts_poly"] > 0.5)).astype(np.float32)
-    # clean waistband top: the real band starts at the first row where the opened fabric spans >=70% of the
-    # polygon width; anything above (dark fibre texture / shadows on the lower back) is skin, never shorts
-    ys_p = np.where(K["shorts_poly"].max(axis=1) > 0.5)[0]
-    top = np.ones((H, 1), np.float32)
-    if len(ys_p):
-        pw = np.maximum((K["shorts_poly"] > 0.5).sum(axis=1), 1)
-        cov = ((fab > 0) & (K["shorts_poly"] > 0.5)).sum(axis=1) / pw
-        rows = np.where((cov >= 0.70) & (np.arange(H) >= ys_p[0]))[0]
-        if len(rows):
-            band_top = int(rows[0])
-            top[:max(0, band_top - 2)] = 0.0
-            # waistband highlights (shiny elastic, lum < 125) in the top 60px of the band are fabric too, so the
-            # band is never punched by a highlight notch
-            hl = np.zeros((H, W), np.float32)
-            hl[band_top: band_top + 60] = 1.0
-            fill = np.maximum(fill, hl * poly_in * ((lum < 125.0) & (act_dom < 18.0)).astype(np.float32))
-    topm = cv2.GaussianBlur(np.repeat(top, W, 1), (0, 0), 1.2)
-    shorts_mask = np.maximum(shorts_mask, cv2.GaussianBlur(fill, (0, 0), 1.0) * (1.0 - K["skin_seg"]) * (1.0 - np.clip(eq_solid * 1.5, 0, 1) * (1.0 - poly_in)))
-    shorts_mask = shorts_mask * topm
+    shorts_mask = cv2.GaussianBlur(native * (1.0 - np.clip(eq_solid * 1.5, 0.0, 1.0)), (0, 0), 0.8)
+    LAST_MASKS["shorts_native"] = native
     return w_fg, eq_solid, shorts_mask

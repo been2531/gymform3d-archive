@@ -27,7 +27,13 @@ def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0):
     mono = muscle.silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong)
     mannequin, anat = muscle.activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase)
     mannequin = xray.apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, eq_solid, kp, step_idx, is_wrong)
-    mannequin = skin_tone_lock(mannequin, w_fg, shorts_mask, metal, step_idx)
+    stat = equipment.static_equipment(rgb_1080, F, kp, K, shorts_mask)
+    LAST_MASKS["static_eq"] = stat
+    mannequin = skin_tone_lock(mannequin, w_fg, np.maximum(shorts_mask, stat), metal, step_idx)
+    # static equipment (bench) = native source pixels, fully opaque, never faded into the backdrop
+    sw = stat[:, :, None]
+    mannequin = mannequin * (1.0 - sw) + rgb_1080.astype(np.float32) * sw
+    w_fg = np.maximum(w_fg, stat)
     back = bg.studio_bg() * (1.0 - 0.80 * bg.contact_shadow(kp)[:, :, None])
     wf = w_fg[:, :, None]
     return np.clip(back * (1.0 - wf) + mannequin * wf, 0, 255).astype(np.uint8), shorts_mask, w_fg
@@ -90,6 +96,7 @@ def load_inputs():
             dirty = True
     if dirty:
         pickle.dump(kps_seqs, open(CFG["kp_cache"], "wb"))
+    ctx.normalize_scale(kps_seqs)      # same mannequin size + floor line in all 4 steps (any pose)
     return raw_seqs, kps_seqs
 
 
@@ -130,12 +137,14 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
     cv2.imwrite(pre + "_uia.png", m8(ui_a))
     cv2.imwrite(pre + "_uirgb.png", cv2.cvtColor(np.clip(ui_rgb, 0, 255).astype(np.uint8), cv2.COLOR_RGB2BGR))
     cv2.imwrite(pre + "_eqzone.png", m8(LAST_MASKS.get("eq_zone", z)))
+    cv2.imwrite(pre + "_static.png", m8(LAST_MASKS.get("static_eq", z)))
     meta_p = os.path.join(d, f"meta_step{step_idx}.json")
     meta = json.load(open(meta_p)) if os.path.exists(meta_p) else {}
     meta.setdefault("frames", {})[f"step{step_idx}_{tag}"] = {"frame_idx": frame_idx, "step": step_idx, "tag": tag, "kp": kp}
     meta.update({
         "exercise_name": CFG["exercise_name"], "studio_bg": CFG["studio_bg"], "equipment": CFG["equipment"],
         "bone_steps": list(CFG["bone_steps"]), "muscle_steps": list(CFG["muscle_steps"]),
+        "source": CFG.get("source", {}), "day": CFG.get("day"), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
         "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "overlap_alpha": SPEC["ui"]["overlap_alpha"], "fps": FPS, "qc_tags": tempo.QC_TAGS,
     })
     json.dump(meta, open(meta_p, "w"), indent=1)

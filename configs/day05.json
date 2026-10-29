@@ -174,5 +174,19 @@
   "xray_full_steps": [
     1,
     3
-  ]
+  ],
+  "source": {
+    "type": "native_3d_clip",
+    "generator": "grok_imagine_i2v",
+    "native": [
+      "mannequin",
+      "shorts",
+      "equipment",
+      "xray",
+      "muscle"
+    ],
+    "note": "3D mannequin with real 3D matte-black shorts, equipment and anatomy are rendered inside the source clip; the pipeline only regrades native pixels",
+    "overpaint_2d": {}
+  },
+  "auto_scale": true
 }

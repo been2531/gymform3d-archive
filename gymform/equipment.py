@@ -213,3 +213,78 @@ def metal_shade(grey, F, eq_solid):
     metal = np.clip(lum_eq * 1.0 + 6.0, 12.0, 118.0)          # source tone kept (no flattening to a dark blob)
     eq_w = cv2.GaussianBlur(eq_solid, (0, 0), 1.5) * (1.0 - skin_t)
     return grey * (1.0 - eq_w) + metal * eq_w
+
+
+def _static_objects(plate):
+    """Static objects in the step's temporal backdrop plate (bench, rack, machine frame, and the seated body).
+    Returns (component mask uint8, alpha float32): hard = native 3D texture or clearly darker than an object-free
+    (inpainted) backdrop model, with enclosed smooth faces filled; soft = proportional darker-than-backdrop alpha
+    (smooth bench faces, native contact shadow) so nothing is cut at a threshold. Cached per step."""
+    if CUR_PLATE.get("static_for") == id(plate):
+        return CUR_PLATE["static"]
+    l = 0.299 * plate[:, :, 0] + 0.587 * plate[:, :, 1] + 0.114 * plate[:, :, 2]
+    tex = cv2.GaussianBlur(np.abs(l - cv2.GaussianBlur(l, (0, 0), 2.0)), (0, 0), 1.5)
+    sm = cv2.resize(l, (W // 8, H // 8), interpolation=cv2.INTER_AREA).astype(np.uint8)
+    bgm = cv2.medianBlur(sm, 31)
+    for _ in range(2):    # object-free backdrop: inpaint detected objects, re-detect
+        full = cv2.resize(bgm.astype(np.float32), (W, H), interpolation=cv2.INTER_CUBIC)
+        obj = ((np.abs(l - full) > 7.0) | (tex > 2.5)).astype(np.uint8)
+        obj_s = cv2.dilate(cv2.resize(obj, (W // 8, H // 8), interpolation=cv2.INTER_AREA), np.ones((3, 3), np.uint8))
+        bgm = cv2.GaussianBlur(cv2.inpaint(sm, obj_s, 6, cv2.INPAINT_TELEA), (0, 0), 2.0)
+    full = cv2.resize(bgm.astype(np.float32), (W, H), interpolation=cv2.INTER_CUBIC)
+    hard = ((np.abs(l - full) > 7.0) | (tex > 2.5)).astype(np.uint8)
+    hard = cv2.morphologyEx(hard, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+    hard = cv2.morphologyEx(hard, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    ff = np.pad(hard, 1).copy()
+    cv2.floodFill(ff, None, (0, 0), 2)
+    holes = ((ff[1:-1, 1:-1] != 2) & (hard == 0)).astype(np.uint8)
+    n_h, lab_h, st_h, _ = cv2.connectedComponentsWithStats(holes)
+    for i in range(1, n_h):    # smooth faces enclosed by the object's own edges are the object
+        if st_h[i, cv2.CC_STAT_AREA] <= 25000:
+            hard[(lab_h == i) & (l < 80.0)] = 1
+    soft = np.clip((full - l - 4.0) / 12.0, 0.0, 1.0)
+    # never the transformed clip border seam (canvas fill / feather of the downscaled 720p frame)
+    sc = STEP_SCALE.get(CUR_PLATE.get("step"), b4.SCALE)
+    nw, nh = int(round(W * sc)), int(round(H * sc))
+    x0 = (W - nw) // 2
+    y0 = (H - nh) // 2 + b4.STEP_DY.get(CUR_PLATE.get("step"), 0)
+    inner = np.zeros((H, W), np.float32)
+    inner[max(0, y0 + 44):min(H, y0 + nh - 44), max(0, x0 + 44):min(W, x0 + nw - 44)] = 1.0
+    inner = cv2.GaussianBlur(inner, (0, 0), 8.0)
+    alpha = np.maximum(hard.astype(np.float32), soft) * inner
+    comp = ((alpha > 0.25)).astype(np.uint8)
+    CUR_PLATE["static"], CUR_PLATE["static_for"] = (comp, alpha.astype(np.float32)), id(plate)
+    return CUR_PLATE["static"]
+
+
+def static_equipment(rgb_1080, F, kp, K, shorts_mask):
+    """STATIC equipment layer (bench / machine frame that never moves). The moving-equipment footprint is a
+    plate difference, so a static bench is invisible to it and used to fade into the studio backdrop (root
+    cause of the Day 6 faded bench). Here the static object is taken from the plate itself and kept as the
+    NATIVE source pixels (never re-shaded, never cut): the connected static object touching the body, minus body
+    skin, minus the native shorts, only where the frame currently shows it (a moving arm passing in front wins)."""
+    if not any(e.get("static") for e in CFG.get("equipment", [])):
+        return np.zeros((H, W), np.float32)
+    plate = CUR_PLATE.get("rgb")
+    if plate is None:
+        return np.zeros((H, W), np.float32)
+    st, st_alpha = _static_objects(plate)
+    # the static object attached to the mannequin (bench under/behind it): component(s) touching the hip region
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(st)
+    hip_m = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), 0.5 * (kp["hip_r"][1] + kp["hip_l"][1]))
+    probe = np.zeros_like(st)
+    cv2.circle(probe, (int(hip_m[0]), int(hip_m[1])), 140, 1, -1)
+    ids = set(np.unique(lab[(probe > 0) & (st > 0)]).tolist()) - {0}
+    obj = np.isin(lab, list(ids)) if ids else np.zeros_like(st, bool)
+    lum_eq = np.maximum(F["lum"] - 0.85 * F["act_dom"], F["min_c"])
+    same = np.abs(F["rgb"] - plate).max(axis=-1) < 10.0          # the frame shows the static object right now
+    skin = cv2.dilate((K["skin_seg"] > 0.3).astype(np.uint8), np.ones((15, 15), np.uint8)) > 0
+    body_bright = (K["w_raw"] > 0.5) & (lum_eq > 78.0)               # silver skin is bright; bench metal is dark
+    keep = obj & same & ~skin & ~body_bright & (shorts_mask < 0.3) & (F["act_dom"] < 20.0)
+    keep = cv2.morphologyEx(keep.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n2, lab2, st2, _ = cv2.connectedComponentsWithStats(keep)
+    out = np.zeros((H, W), np.float32)
+    for i in range(1, n2):
+        if st2[i, cv2.CC_STAT_AREA] >= 120:
+            out[lab2 == i] = 1.0
+    return cv2.GaussianBlur(out, (0, 0), 0.7) * st_alpha
