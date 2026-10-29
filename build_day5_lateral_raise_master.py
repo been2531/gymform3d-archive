@@ -46,9 +46,9 @@ TOTAL_FRAMES = int(FPS * DURATION)  # 600 frames
 
 STEP_SPECS_DAY5 = {
     1: ("day5_lat_step1_bone_720p.mp4",   4, 102, True,  "bone_blood",   80),
-    2: ("day5_lat_step2_muscle_720p.mp4", 3,  96, True,  "muscle_blood", 85),
-    3: ("day5_lat_step3_bone_720p.mp4",   0,  72, False, "bone_blood",   80),
-    4: ("day5_lat_step4_muscle_720p.mp4", 2,  92, False, "muscle_blood", 80),
+    2: ("day5_lat_step2_muscle_720p.mp4", 2, 116, True,  "muscle_blood", 80),
+    3: ("day5_lat_step3_bone_720p.mp4",   2, 116, False, "bone_blood",   80),
+    4: ("day5_lat_step4_muscle_720p.mp4", 2, 116, False, "muscle_blood", 80),
 }
 
 b4.STEP_DY = {1: 80, 2: 85, 3: 80, 4: 80}
@@ -230,9 +230,10 @@ def shade_day5_3d_frame_1080p(
     vol_3d   = np.clip((0.58 * act_ch + 0.42 * gb_ch) / 170.0, 0.18, 1.20)
     fiber_mod = np.clip(vol_3d + 0.54 * ridge_3d - 0.58 * sulc_3d + 0.004 * fiber_bundle, 0.12, 1.42)
 
-    # Smooth bone core for Steps 1 & 3 (erases outer muscle grain inside the X-Ray bone)
-    bone_lum = cv2.GaussianBlur(lum, (0, 0), 4.5)
-    L_bone = np.clip((bone_lum - 24.0) / 145.0, 0.0, 1.0)
+    # Crisp 3D skeletal bone structure for Steps 1 & 3 (preserves clavicle, scapula & humeral head bone edges)
+    bone_edge = np.clip(lum - cv2.GaussianBlur(lum, (0, 0), 5.0), -24.0, 38.0)
+    bone_lum = np.clip(cv2.GaussianBlur(lum, (0, 0), 1.1) + 0.85 * bone_edge, 0.0, 255.0)
+    L_bone = np.clip((bone_lum - 24.0) / 140.0, 0.0, 1.0)
     bone_core = (np.clip((bone_lum - 115.0) / 55.0, 0.0, 1.0) * np.clip((act_dom - 12.0) / 26.0, 0.0, 1.0) * anat_gate) if step_idx in (1, 3) else 0.0
 
     if is_wrong:
@@ -284,13 +285,23 @@ def draw_day5_laser_and_callout(
     _, wr_l_ext = p62._extend_segment(elb_l, wr_l, 0.0, 1.12)
     sh_r_ext, sh_l_ext = p62._extend_segment(sh_r, sh_l, -0.08, 1.08)
 
-    p62.draw_demic_laser_joint_axis(
-        canvas,
-        main_chains_1x=[[sh_r, elb_r, wr_r_ext], [sh_l, elb_l, wr_l_ext]],
-        aux_ext_chains_1x=[[sh_r_ext, sh_l_ext]],
-        vertex_pts_1x=[sh_r, elb_r, sh_l, elb_l],
-        is_wrong=is_wrong,
-    )
+    clav_mid = (0.52 * sh_r[0] + 0.48 * sh_l[0], 0.52 * sh_r[1] + 0.48 * sh_l[1] + 4.0)
+    if step_idx == 2:
+        p62.draw_demic_laser_joint_axis(
+            canvas,
+            main_chains_1x=[[sh_r, elb_r, wr_r_ext], [sh_l, elb_l, wr_l_ext]],
+            aux_ext_chains_1x=[[sh_r_ext, sh_l_ext]],
+            vertex_pts_1x=[sh_r, elb_r, sh_l, elb_l],
+            is_wrong=is_wrong,
+        )
+    else:
+        p62.draw_demic_laser_joint_axis(
+            canvas,
+            main_chains_1x=[[sh_r, elb_r, wr_r_ext]],
+            aux_ext_chains_1x=[[sh_r_ext, clav_mid]],
+            vertex_pts_1x=[sh_r, elb_r],
+            is_wrong=is_wrong,
+        )
 
     if step_idx == 2:
         # Point directly to the overloaded upper trapezius ridge on screen-left shoulder
