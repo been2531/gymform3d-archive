@@ -73,6 +73,44 @@ def read_frames(mp4, idxs):
     return out
 
 
+def expected_equipment(src, plate, zone):
+    """
+    QC's OWN expected equipment footprint for one frame, independent of the renderer's fg mask: dark/neutral
+    pixels of the raw source frame that differ from the step's temporal backdrop plate (the backdrop is static,
+    the equipment moves), inside the configured equipment zone. Holes enclosed by metal (plate faces) are filled.
+    Bright body pixels (hand/arm) and activation glow are excluded: this is the equipment itself.
+    """
+    f = src.astype(np.float32)
+    p = plate.astype(np.float32)
+    lum = lum_of(f)
+    act = act_of(f)
+    d = np.abs(f - p).max(axis=-1)
+    tex = cv2.GaussianBlur(np.abs(lum - cv2.GaussianBlur(lum, (0, 0), 2.0)), (0, 0), 1.2)
+    p_max = p.max(axis=-1)
+    drop = np.minimum((p[:, :, 2] - p[:, :, 0]) - (f[:, :, 2] - f[:, :, 0]), (p[:, :, 2] - p[:, :, 1]) - (f[:, :, 2] - f[:, :, 1]))
+    drop = cv2.GaussianBlur(drop, (0, 0), 1.5)
+    darker = ((p - f) > 5.5).sum(axis=-1) >= 2
+    lum_eq = np.maximum(lum - 0.85 * act, f.min(axis=-1))
+    cand = (((d > 12.0) & (tex > 3.0)) | ((drop > 5.0) & (d > 3.0) & (act < 12.0)) | ((d > 6.0) & darker))
+    cand &= (zone > 0.5) & (p_max < 52.0) & (lum_eq < 90.0)
+    cand = cv2.morphologyEx(cand.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    cand = cv2.morphologyEx(cand, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(cand)
+    keep = np.zeros_like(cand)
+    for i in range(1, n):
+        if st[i, cv2.CC_STAT_AREA] >= 300:
+            keep[lab == i] = 1
+    ff = np.pad(keep, 1).copy()
+    cv2.floodFill(ff, None, (0, 0), 2)
+    holes = ((ff[1:-1, 1:-1] != 2) & (keep == 0)).astype(np.uint8)
+    n, lab, st, _ = cv2.connectedComponentsWithStats(holes)
+    out = keep > 0
+    for i in range(1, n):
+        if st[i, cv2.CC_STAT_AREA] <= 2500:
+            out |= lab == i
+    return out & (zone > 0.5)
+
+
 def load_mask(path):
     m = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
     return None if m is None else m.astype(np.float32) / 255.0
@@ -81,7 +119,7 @@ def load_mask(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mp4")
-    ap.add_argument("--qc-dir", default="/workspace/daily_info_reels/output/qc/day5_v4c")
+    ap.add_argument("--qc-dir", default="/workspace/daily_info_reels/output/qc/day5_v4d")
     ap.add_argument("--xray-ref", default="/workspace/daily_info_reels/output/qc/ref/day1_v36_xray_t1.5.jpg",
                     help="approved Day 1 v36 X-Ray reference frame (extracted from output/day1_v36_master_reel.mp4 @1.5s)")
     args = ap.parse_args()
@@ -101,7 +139,7 @@ def main():
     px0, py0, px1, py1 = meta["preview_roi"]
 
     heights = {}
-    halo_bad, title_bad, prev_bad, eq_fail, skin_fail = [], [], [], [], []
+    halo_bad, title_bad, prev_bad, eq_fail, skin_fail, ui_fail = [], [], [], [], [], []
     eq_area = {}
     for key, fm in sorted(frames_meta.items()):
         fr = vids.get(fm["frame_idx"])
@@ -110,6 +148,109 @@ def main():
         wfg, shorts, eq = load_mask(pre + "_wfg.png"), load_mask(pre + "_shorts.png"), load_mask(pre + "_eq.png")
         kp = fm["kp"]
         s = fm["step"]
+        main_frame = fm["tag"] in ("start", "peak")
+
+        # (d) equipment vs the QC's own per-frame expected footprint (every sidecar frame, whole movement)
+        zone = load_mask(pre + "_eqzone.png")
+        src_p, plate_p = pre + "_src.png", os.path.join(args.qc_dir, f"step{s}_plate.png")
+        if zone is not None and os.path.exists(src_p) and os.path.exists(plate_p):
+            src = cv2.cvtColor(cv2.imread(src_p), cv2.COLOR_BGR2RGB)
+            plate = cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB)
+            exp = expected_equipment(src, plate, zone)
+            n_exp = int(exp.sum())
+            if n_exp < 1500:
+                eq_fail.append(f"{key}: expected equipment footprint too small ({n_exp}px) - detector/zone problem")
+            else:
+                # coverage: every expected equipment pixel must be solid foreground (no see-through, no thinning)
+                core = cv2.erode(exp.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+                cov = float((wfg[core] > 0.5).mean())
+                # holes: background-coloured gaps inside the equipment in the rendered composite
+                # (a hole = an interior gap: measured on the 5px-eroded footprint so 1-2px silhouette slivers
+                # along the expected boundary are not counted as holes; coverage above uses the 3px core)
+                miss = (cv2.erode(exp.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0) & (wfg < 0.5)
+                n_m, lab_m, st_m, _ = cv2.connectedComponentsWithStats(miss.astype(np.uint8))
+                big_hole = max([st_m[i, cv2.CC_STAT_AREA] for i in range(1, n_m)] or [0])
+                ys, xs = np.where(exp)
+                edge = xs.min() <= 3 or ys.min() <= 3 or xs.max() >= W - 4 or ys.max() >= H - 4
+                # zone clipping: the expected equipment must not run along the zone border
+                border = (zone > 0) & (cv2.erode((zone > 0).astype(np.uint8), np.ones((5, 5), np.uint8)) == 0)
+                touch = float((exp & border).sum()) / max(1.0, float(border.sum()))
+                # bloat / shape vs source: foreground where the raw source shows plain backdrop (src == plate on a
+                # dark backdrop) inside the equipment zone means an over-filled / doubled / oversized object
+                fs, fp = src.astype(np.float32), plate.astype(np.float32)
+                shd = cv2.dilate((shorts > 0.1).astype(np.uint8), np.ones((15, 15), np.uint8)) > 0
+                backdrop = (np.abs(fs - fp).max(axis=-1) < 6.0) & (fp.max(axis=-1) < 52.0) & (zone > 0.5) & ~shd
+                # (sensitivity verified: inflating one dumbbell by 15/31px gives 8%/28% on step2_peak)
+                bloat = float(((wfg > 0.5) & cv2.erode(backdrop.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)).sum()) / n_exp
+                # per-object size: rendered dark-equipment area vs the expected (source) area, per connected object
+                # per-side (left / right object) bloat: each dumbbell separately must not cover backdrop pixels of
+                # the source, so neither can be inflated or doubled relative to its true shape/size
+                mid_x = int(0.5 * (kp["sh_r"][0] + kp["sh_l"][0]))
+                side = np.zeros((H, W), bool); side[:, :mid_x] = True
+                bk = (wfg > 0.5) & cv2.erode(backdrop.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+                ratios = []
+                for sd in (side, ~side):
+                    e_s = float((exp & sd).sum())
+                    if e_s > 800:
+                        ratios.append(float((bk & sd).sum()) / e_s)
+                # per-item bbox/area vs the source footprint (left / right item), dark-metal pixels only on both
+                # sides so hand/forearm never count: fail if bbox w/h or area is >8% off; symmetry = both items
+                foot = load_mask(pre + "_eqfoot.png")
+                sz_rows = []
+                if foot is not None:
+                    dark_src = np.maximum(lum_of(fs) - 0.85 * act_of(fs), fs.min(axis=-1)) < 90.0
+                    rend = (foot > 0.5) & dark_src & (zone > 0.5)
+                    for nm_, sd in (("L", side), ("R", ~side)):
+                        e_m, r_m = exp & sd, rend & sd
+                        if e_m.sum() < 800 or r_m.sum() < 200:
+                            continue
+                        ey, ex = np.where(e_m); ry, rx = np.where(r_m)
+                        # robust bbox (1st..99th percentile) so single stray pixels do not dominate
+                        ew, eh = np.percentile(ex, 99) - np.percentile(ex, 1), np.percentile(ey, 99) - np.percentile(ey, 1)
+                        rw, rh = np.percentile(rx, 99) - np.percentile(rx, 1), np.percentile(ry, 99) - np.percentile(ry, 1)
+                        dw, dh, da = rw / max(ew, 1) - 1, rh / max(eh, 1) - 1, r_m.sum() / max(e_m.sum(), 1) - 1
+                        sz_rows.append(f"{nm_} w{100 * dw:+.0f}% h{100 * dh:+.0f}% a{100 * da:+.0f}%")
+                        if max(abs(dw), abs(dh), abs(da)) > 0.08:
+                            eq_fail.append(f"{key}: {nm_} equipment size off vs source (w {100 * dw:+.0f}%, h {100 * dh:+.0f}%, area {100 * da:+.0f}%)")
+                EQ_ROWS.append(f"{key}: size[{', '.join(sz_rows)}]")
+                EQ_ROWS.append(f"{key}: exp={n_exp}px cov={100 * cov:.1f}% maxhole={big_hole}px bloat={100 * bloat:.1f}% bloatLR={'/'.join(f'{100 * r:.1f}%' for r in ratios)}")
+                if bloat > 0.03:
+                    eq_fail.append(f"{key}: equipment bloated beyond its source shape ({100 * bloat:.1f}% extra)")
+                if any(r > 0.04 for r in ratios):
+                    eq_fail.append(f"{key}: one dumbbell bloated beyond its source shape (L/R bloat {['%.1f%%' % (100 * r) for r in ratios]})")
+                if cov < 0.985:
+                    eq_fail.append(f"{key}: only {100 * cov:.1f}% of expected equipment is solid fg")
+                if big_hole > 60:
+                    eq_fail.append(f"{key}: equipment hole of {big_hole}px")
+                if edge:
+                    eq_fail.append(f"{key}: equipment touches frame edge")
+                if touch > 0.10:
+                    eq_fail.append(f"{key}: equipment reaches its zone border on {100 * touch:.0f}% (zone clips it)")
+                # (h) equipment fully IN FRONT of UI overlays (preview pill / title): in the final frame the
+                # equipment pixels must be the pre-UI composite, with no preview/title pixels over them
+                pre_ui_p = pre + "_preui.png"
+                ref_ui = cv2.cvtColor(cv2.imread(pre_ui_p), cv2.COLOR_BGR2RGB) if os.path.exists(pre_ui_p) else base
+                if fr is not None:
+                    px0, py0, px1, py1 = meta["preview_roi"]
+                    ui = np.zeros((H, W), bool)
+                    ui[py0:py1, px0:px1] = True
+                    ui[meta["title_roi"][1]:meta["title_roi"][3]] = True
+                    over = core & ui
+                    # laser/callout lines are drawn on the 3D layer before the UI: exclude their pixels
+                    free = core & ~ui
+                    if over.sum() > 50:
+                        # vs the frame just before the UI pass (3D layer + laser), so only UI pixels count;
+                        # H.264 noise floor measured on the same equipment outside the UI regions
+                        dd = np.abs(fr[over].astype(np.float32) - ref_ui[over].astype(np.float32)).max(axis=-1)
+                        mean_d, p99 = float(dd.mean()), float(np.percentile(dd, 99))
+                        noise = float(np.abs(fr[free].astype(np.float32) - ref_ui[free].astype(np.float32)).max(axis=-1).mean()) if free.sum() > 200 else 3.0
+                        H_ROWS.append(f"{key}: {int(over.sum())}px under UI, mean|frame-preUI|={mean_d:.1f} (codec floor {noise:.1f}), p99={p99:.0f}")
+                        if mean_d > noise + 2.0 or p99 > 40.0:
+                            ui_fail.append(H_ROWS[-1])
+        else:
+            eq_fail.append(f"{key}: no equipment sidecar (config: {[e['type'] for e in meta['equipment']]})")
+        if not main_frame:
+            continue
 
         # (a) halo: on the pre-UI composite, coloured pixels outside the dilated body mask that differ from the plate
         body_d = cv2.dilate((wfg > 0.02).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
@@ -147,33 +288,6 @@ def main():
         if len(ys):
             heights[key] = max(kp["ank_r"][1], kp["ank_l"][1]) - ys.min()
 
-        # (d) equipment: in frame, no holes, area stable start vs peak
-        if eq is not None and eq.sum() > 50:
-            n_lab, lab, stats, _ = cv2.connectedComponentsWithStats((eq > 0.5).astype(np.uint8))
-            for li in range(1, n_lab):
-                x, y, ww, hh, area = stats[li]
-                if area < 300:
-                    continue
-                if x <= 3 or y <= 3 or x + ww >= W - 3 or y + hh >= H - 3:
-                    eq_fail.append(f"{key}: equipment blob {li} touches frame edge (bbox {x},{y},{ww},{hh})")
-                comp = lab == li
-                holes = float(((wfg < 0.5) & comp).sum()) / area
-                if holes > 0.02:
-                    eq_fail.append(f"{key}: equipment blob {li} mask holes {100 * holes:.1f}%")
-            # zone clipping: equipment pixels touching the zone border means the zone cut the object
-            zone = load_mask(pre + "_eqzone.png")
-            # equipment area = hull-filled parts + dark metal already solid in the clean mask inside the zones
-            eq_px = (eq > 0.5) | ((wfg > 0.5) & (zone > 0.5) & (lum_of(base) < 70.0) & (shorts < 0.3))
-            eq_area.setdefault(s, {})[fm["tag"]] = float(eq_px.sum())
-            if zone is not None:
-                border = (zone > 0) & (cv2.erode((zone > 0).astype(np.uint8), np.ones((5, 5), np.uint8)) == 0)
-                dark_eq = (eq > 0.5) & (lum_of(base) < 70.0) & (shorts < 0.3)  # equipment proper (dark metal), not skin/shorts
-                touch = float((dark_eq & border).sum()) / max(1.0, float(border.sum()))
-                if touch > 0.12:
-                    eq_fail.append(f"{key}: equipment reaches its zone border on {100 * touch:.0f}% of border (zone may clip it)")
-        else:
-            eq_fail.append(f"{key}: no equipment mask found (config: {[e['type'] for e in meta['equipment']]})")
-
         # (e) bone vs muscle on peak frames (pre-UI composite, inside body)
         if fm["tag"] == "peak":
             a = act_of(base)
@@ -185,8 +299,14 @@ def main():
             ok = ncol > 2500 and detail > 6.0
             RESULTS_E.append((key, is_bone, ncol, detail, ok))
 
-        # (f) skin + shorts
+        # (i) colour lock: whole-body skin outside the X-Ray window, per step (compared across steps below)
         l = lum_of(base)
+        xw = load_mask(pre + "_xwin.png")
+        xw_d = (cv2.dilate((xw > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) > 0) if xw is not None else np.zeros((H, W), bool)
+        sk_o = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
+        if sk_o.sum() > 2000:
+            LOCK.setdefault(s, []).append((float(np.percentile(l[sk_o], 75)), float(np.percentile(l[sk_o], 90))))
+        # (f) skin + shorts
         skin = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5)
         if skin.sum() > 2000:
             p75, p90, mx = np.percentile(l[skin], 75), np.percentile(l[skin], 90), l[skin].max()
@@ -207,15 +327,20 @@ def main():
         spread = (max(hs.values()) - min(hs.values())) / max(hs.values())
         report("(c) head-to-ankle height equal across steps (<=4%)", spread <= 0.04,
                ", ".join(f"{k}={v:.0f}px" for k, v in sorted(hs.items())) + f" | spread {100 * spread:.1f}%")
-    for s, d in sorted(eq_area.items()):
-        if "start" in d and "peak" in d:
-            r = d["peak"] / max(d["start"], 1.0)
-            if not (0.5 <= r <= 2.0):
-                eq_fail.append(f"step{s}: equipment area peak/start ratio {r:.2f} (distortion?)")
-    report("(d) equipment in frame, no holes, not clipped/distorted", not eq_fail, "; ".join(eq_fail) or f"types={[e['type'] for e in meta['equipment']]}")
+    report("(d) equipment = per-frame expected footprint: solid, no holes, in frame, not clipped", not eq_fail,
+           "; ".join(eq_fail) or f"types={[e['type'] for e in meta['equipment']]} | " + " | ".join(EQ_ROWS))
+    report("(h) equipment fully in front of preview/title (no UI pixels over it)", not ui_fail,
+           "; ".join(ui_fail) or (" | ".join(H_ROWS) if H_ROWS else "no equipment under UI in sampled frames"))
     for key, is_bone, ncol, detail, ok in RESULTS_E:
         report(f"(e) {key} {'bone X-Ray' if is_bone else 'muscle fibers'} present/readable", ok, f"coloured px={ncol}, edge detail={detail:.1f}")
     report("(f) skin p75~165/p90~191, shorts 10..22", not skin_fail, " | ".join(SKIN))
+    if LOCK:
+        p75s = {k: float(np.mean([v[0] for v in vs])) for k, vs in LOCK.items()}
+        p90s = {k: float(np.mean([v[1] for v in vs])) for k, vs in LOCK.items()}
+        r75 = max(p75s.values()) / max(1.0, min(p75s.values()))
+        r90 = max(p90s.values()) / max(1.0, min(p90s.values()))
+        report("(i) mannequin colour locked across steps outside X-Ray window (p75/p90 within 5%)", r75 <= 1.05 and r90 <= 1.05,
+               ", ".join(f"step{k} p75={p75s[k]:.0f}/p90={p90s[k]:.0f}" for k in sorted(p75s)) + f" | spread p75 {100 * (r75 - 1):.1f}%, p90 {100 * (r90 - 1):.1f}%")
 
     # (g) X-Ray look vs approved Day 1 v36 reference: luminous bone ramp (tint -> hot core), glassy darkened body
     if os.path.exists(args.xray_ref):
@@ -243,7 +368,7 @@ def main():
     sys.exit(0 if all(RESULTS) else 1)
 
 
-RESULTS_E, SKIN = [], []
+RESULTS_E, SKIN, EQ_ROWS, H_ROWS, LOCK = [], [], [], [], {}
 
 if __name__ == "__main__":
     main()

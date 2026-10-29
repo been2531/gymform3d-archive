@@ -1,0 +1,55 @@
+{
+  "spec_version": "gymform-v4d",
+  "locked": true,
+  "description": "Locked @gymform.3d 4-step reel rules. Every day inherits these defaults; per-day config may only set assets, equipment zones, scale/dy alignment and callout positions.",
+  "format": {"width": 1080, "height": 1920, "fps": 30, "duration_s": 20.0, "audio": "aac, edge_tts en-US-ChristopherNeural", "steps": 4, "frames_per_step": 150},
+  "background": {
+    "style": "minimal dark charcoal studio, no props (no racks, slats, equipment in bg)",
+    "plate": "output/assets/private_gym_studio_minimal_graded_1080p.jpg",
+    "floor_contact_shadow": true
+  },
+  "mannequin": {
+    "skin_lock_all_steps": {"p75": 165, "p90": 191, "max": 226, "qc_p75_range": [155, 175], "qc_p90_range": [181, 201], "qc_max": 228},
+    "skin_lock_cross_step_tolerance": 0.05,
+    "skin_lock_excludes": "only the local X-Ray window",
+    "shorts_lum_range": [10, 22],
+    "equal_height_tolerance": 0.04,
+    "feet_on_same_floor_line": true,
+    "camera_angle": "3/4 views (front-3/4 and back-3/4), same framing every step"
+  },
+  "steps": {
+    "1": {"role": "WRONG posture", "render": "bone_xray", "tint": "crimson", "xray_window": "local: both shoulder girdles, upper arms, upper rib cage"},
+    "2": {"role": "WRONG posture", "render": "muscle_fibers", "tint": "red"},
+    "3": {"role": "RIGHT posture", "render": "bone_xray", "tint": "emerald", "xray_window": "local: near shoulder girdle (clavicle, scapula/acromion, humeral head) + near upper arm (humerus)"},
+    "4": {"role": "RIGHT posture", "render": "muscle_fibers", "tint": "green", "cover_frame": "step 4 peak"}
+  },
+  "xray": {
+    "style": "Day 1 v36 approved (https://www.instagram.com/reel/De_Yl9rAYC4/)",
+    "method": "native per-pixel 3D shading: glass cavity 28+135*bone_sharp^1.15, luminous bone ramp tint->hot core, 0.48 window darkening",
+    "bones_are_hero": true,
+    "local_window_only": true,
+    "no_2d_overlays_or_warps": true,
+    "qc_reference_frame": "output/qc/ref/day1_v36_xray_t1.5.jpg"
+  },
+  "quality": {"bloom": "zero", "blur": "zero (mask feather <=1px only)", "halo_max_coloured_px": 150, "ring_lift_p95_max": 12},
+  "ui": {
+    "title": "depth-behind the mannequin (fg_front ~0.92 over clean mask)",
+    "preview": "4-slot top preview, translucent over mannequin (no frost), equipment fully in front of it",
+    "laser": "crisp 2.8px core, no bloom",
+    "callouts": "never overlap equipment; per-step override allowed"
+  },
+  "equipment": {
+    "types_supported": ["dumbbell", "barbell", "cable", "machine", "bench", "rack"],
+    "zone_types": ["anchor+radius", "segment+pad", "roi"],
+    "rule": "never cut, clipped, holed, ghosted or distorted; inside frame; solid on every frame",
+    "detector": "temporal backdrop plate + darker/neutral-chroma/texture differences + plate-disc completion",
+    "qc_min_coverage": 0.985,
+    "qc_max_hole_px": 60
+  },
+  "tempo_s": {"hold_start": 0.3, "concentric": 1.5, "hold_top": 1.3, "eccentric": 1.5, "hold_end": 0.4, "monotonic": true},
+  "pipeline": {
+    "build_threads": 2, "ffmpeg_threads": 2, "nice": 10,
+    "qc_gate": "qc_gate_gymform.py", "max_autofix_loops": 3,
+    "commit": "scripts/config/spec/plates only; never mp4, wav, tmp, caches or secrets"
+  }
+}
