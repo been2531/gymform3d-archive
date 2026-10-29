@@ -139,7 +139,10 @@ def skin_segments(kp):
         kn, an = kp[f"kn_{side}"], kp[f"ank_{side}"]
         hip = kp[f"hip_{side}"]
         cv2.line(m, P(_ext(hip, kn, 0.78)), P(an), 1, 30)      # knee..ankle (below the shorts)
-    cv2.line(m, P(sh_m), P(hip_m), 1, int(max(40, 0.45 * sw)))  # torso core above the hip band
+    t = np.zeros((H, W), np.uint8)
+    cv2.line(t, P(sh_m), P(hip_m), 1, int(max(40, 0.45 * sw)))  # torso core above the hip band
+    t[max(0, int(hip_y - 135.0)):] = 0                             # never reaches into the shorts (no round cap on the waistband)
+    m |= t
     return m.astype(np.float32)
 
 
@@ -217,7 +220,39 @@ def finalize(F, K, foot):
     dark_low_sat = np.clip((68.0 - lum) / 18.0, 0.0, 1.0) * np.clip((0.28 - sat) / 0.14, 0.0, 1.0) * np.clip((18.0 - act_dom) / 12.0, 0.0, 1.0)
     shorts_mask = cv2.GaussianBlur((shorts_band * dark_low_sat * (w_fg > 0.25)).astype(np.float32), (0, 0), 2.0)
     shorts_mask = np.clip(shorts_mask * 1.35, 0.0, 1.0)
-    shorts_mask = shorts_mask * (1.0 - np.clip(eq_solid * 1.5, 0.0, 1.0))   # equipment beside the hips is never "shorts"
+    # equipment beside the hips is never "shorts"; inside the hip-band polygon (which already excludes the hanging
+    # arms/hands/dumbbells) the fabric wins, so a footprint that picked up moving fabric cannot punch holes in it
+    poly_in = cv2.erode((K["shorts_poly"] > 0.5).astype(np.uint8), np.ones((9, 9), np.uint8)).astype(np.float32)
+    shorts_mask = shorts_mask * (1.0 - np.clip(eq_solid * 1.5, 0.0, 1.0) * (1.0 - poly_in))
     # shorts only inside the hip-band polygon, never on a skin segment (correct by construction)
     shorts_mask = shorts_mask * np.clip(cv2.GaussianBlur(K["shorts_poly"], (0, 0), 2.0) * 1.5, 0.0, 1.0) * (1.0 - K["skin_seg"])
+    # clean hem: shorts fabric rows are wide horizontal runs; a narrow vertical tongue below the hem is the
+    # shadowed inner thigh, never fabric. A 61px-wide horizontal opening keeps only real fabric rows.
+    fab = cv2.morphologyEx((shorts_mask > 0.5).astype(np.uint8), cv2.MORPH_OPEN, np.ones((1, 61), np.uint8))
+    fab = cv2.morphologyEx(fab, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))   # re-join the fabric body
+    shorts_mask = shorts_mask * cv2.GaussianBlur(cv2.dilate(fab, np.ones((3, 3), np.uint8)).astype(np.float32), (0, 0), 1.0)
+    # fabric highlights (lum > 68) inside the fabric are still fabric: enclosed gaps in the fabric are filled
+    fc = cv2.morphologyEx(fab, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25)))
+    ff = np.pad(fc, 1).copy()
+    cv2.floodFill(ff, None, (0, 0), 2)
+    fill = ((ff[1:-1, 1:-1] != 2) & (K["shorts_poly"] > 0.5)).astype(np.float32)
+    # clean waistband top: the real band starts at the first row where the opened fabric spans >=70% of the
+    # polygon width; anything above (dark fibre texture / shadows on the lower back) is skin, never shorts
+    ys_p = np.where(K["shorts_poly"].max(axis=1) > 0.5)[0]
+    top = np.ones((H, 1), np.float32)
+    if len(ys_p):
+        pw = np.maximum((K["shorts_poly"] > 0.5).sum(axis=1), 1)
+        cov = ((fab > 0) & (K["shorts_poly"] > 0.5)).sum(axis=1) / pw
+        rows = np.where((cov >= 0.70) & (np.arange(H) >= ys_p[0]))[0]
+        if len(rows):
+            band_top = int(rows[0])
+            top[:max(0, band_top - 2)] = 0.0
+            # waistband highlights (shiny elastic, lum < 125) in the top 60px of the band are fabric too, so the
+            # band is never punched by a highlight notch
+            hl = np.zeros((H, W), np.float32)
+            hl[band_top: band_top + 60] = 1.0
+            fill = np.maximum(fill, hl * poly_in * ((lum < 125.0) & (act_dom < 18.0)).astype(np.float32))
+    topm = cv2.GaussianBlur(np.repeat(top, W, 1), (0, 0), 1.2)
+    shorts_mask = np.maximum(shorts_mask, cv2.GaussianBlur(fill, (0, 0), 1.0) * (1.0 - K["skin_seg"]) * (1.0 - np.clip(eq_solid * 1.5, 0, 1) * (1.0 - poly_in)))
+    shorts_mask = shorts_mask * topm
     return w_fg, eq_solid, shorts_mask

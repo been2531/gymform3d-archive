@@ -217,6 +217,37 @@ def arm_skin_check(base, wfg, eq, xw, kp):
     return out
 
 
+def leg_below_hem_check(base, wfg, shorts, kp, eqfoot=None, src=None):
+    """(k) leg skin segments below the shorts hem: no dark (lum < 60) pixels. The hem of each leg is the last row
+    where the shorts cover >= 60% of a band around the thigh line (a narrow tongue below the hem does not move it)."""
+    l = lum_of(base.astype(np.float32))
+    out = {}
+    P = lambda p: (int(round(p[0])), int(round(p[1])))
+    for side in ("r", "l"):
+        hip, kn, an = kp[f"hip_{side}"], kp[f"kn_{side}"], kp[f"ank_{side}"]
+        hem = int(hip[1])
+        for y in range(int(hip[1]), int(kn[1])):
+            t = (y - hip[1]) / max(1.0, kn[1] - hip[1])
+            x = int(hip[0] + t * (kn[0] - hip[0]))
+            band = shorts[y, max(0, x - 40):x + 41]
+            if band.size and (band > 0.5).mean() >= 0.6:
+                hem = y
+        m = np.zeros((H, W), np.uint8)
+        cv2.line(m, P(hip), P(kn), 1, 70); cv2.line(m, P(kn), P(an), 1, 50)
+        m[:hem + 5] = 0
+        sel = (m > 0) & (wfg > 0.9)
+        if eqfoot is not None:   # hands/dumbbells resting beside the thigh are not leg skin
+            sel &= ~(cv2.dilate((eqfoot > 0.3).astype(np.uint8), np.ones((41, 41), np.uint8)) > 0)
+        dark = (l < 60.0) & sel
+        if src is not None:   # a FILL = rendered dark where the source is not (held-still dumbbells/creases are dark in the source too)
+            dark &= lum_of(src.astype(np.float32)) - l > 12.0
+        dk = cv2.morphologyEx(dark.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        n_, _, st_, _ = cv2.connectedComponentsWithStats(dk)
+        blob = int(max([st_[i, cv2.CC_STAT_AREA] for i in range(1, n_)] or [0]))   # largest dark blob (creases are tiny)
+        out[side] = (hem, blob, int(sel.sum()))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mp4")
@@ -348,6 +379,11 @@ def main():
             # silver range: shaded silver .. highlight (spec curve 46..226); a black fill sits far below it
             if blob > 250 or (npx > 800 and not (100.0 <= p75a <= 215.0)):
                 arm_fail.append(ARM_ROWS[-1])
+        # (k) legs below the shorts hem: silver skin, no dark leak
+        for side, (hem, ndk, npx) in leg_below_hem_check(base, wfg, shorts, kp, load_mask(pre + "_eqfoot.png"), cv2.cvtColor(cv2.imread(pre + "_src.png"), cv2.COLOR_BGR2RGB)).items():
+            LEG_ROWS.append(f"{key} {side}: hem y={hem} dark={ndk}px/{npx}px")
+            if ndk > 40:
+                leg_fail.append(LEG_ROWS[-1])
         # (f) skin + shorts
         # (spec: the skin lock excludes only the local X-Ray window, same mask as (i))
         skin = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
@@ -376,6 +412,7 @@ def main():
            "; ".join(ui_fail) or (" | ".join(H_ROWS) if H_ROWS else "no equipment under UI in sampled frames"))
     report("(j) both arms silver skin, no dark fill (keypoint segments)", not arm_fail,
            "; ".join(arm_fail) or " | ".join(ARM_ROWS))
+    report("(k) no dark pixels in leg skin below the shorts hem", not leg_fail, "; ".join(leg_fail) or " | ".join(LEG_ROWS[:8]))
     for key, is_bone, ncol, detail, ok in RESULTS_E:
         report(f"(e) {key} {'bone X-Ray' if is_bone else 'muscle fibers'} present/readable", ok, f"coloured px={ncol}, edge detail={detail:.1f}")
     report("(f) skin p75~165/p90~191, shorts 10..22", not skin_fail, " | ".join(SKIN))
@@ -413,7 +450,7 @@ def main():
     sys.exit(0 if all(RESULTS) else 1)
 
 
-RESULTS_E, SKIN, EQ_ROWS, H_ROWS, LOCK, ARM_ROWS, arm_fail = [], [], [], [], {}, [], []
+RESULTS_E, SKIN, EQ_ROWS, H_ROWS, LOCK, ARM_ROWS, arm_fail, LEG_ROWS, leg_fail = [], [], [], [], {}, [], [], [], []
 
 if __name__ == "__main__":
     main()
