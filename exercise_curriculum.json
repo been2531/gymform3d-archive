@@ -40,7 +40,7 @@
       "day": 3,
       "title": "BARBELL BACK SQUAT",
       "slug": "barbell_back_squat",
-      "status": "ready_for_approval",
+      "status": "published",
       "reference_reels": [
         "DevEQskCa2g",
         "DetEDALjRgE"
@@ -70,19 +70,21 @@
         "top_preview_translucent_glass": true,
         "shorts_style": "3D_femur_aligned_short_square_trunks",
         "layout": "Simple_2_single_left_callout"
-      }
+      },
+      "ig_permalink": "https://www.instagram.com/reel/DfCpKW4IIV8/"
     },
     {
       "day": 4,
       "title": "ROMANIAN DEADLIFT",
       "slug": "romanian_deadlift",
-      "status": "queued",
+      "status": "published",
       "wrong_deg": "24°",
       "wrong_label_1": "SPINE ROUND",
       "wrong_label_2": "88% DISC RISK",
       "right_deg": "0°",
       "right_label_1": "HIP HINGE LOCK",
-      "right_label_2": "95% HAMSTRING LOAD"
+      "right_label_2": "95% HAMSTRING LOAD",
+      "ig_permalink": "https://www.instagram.com/gymform.3d/reel/DfC8EifoxFa/"
     },
     {
       "day": 5,
