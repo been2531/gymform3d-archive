@@ -1,14 +1,14 @@
 {
  "day": 6,
  "exercise": "Incline Dumbbell Press",
- "status": "pending",
- "approved_by": null,
- "approved_at": null,
- "publish_at": null,
+ "status": "approved",
+ "approved_by": "중현 님",
+ "approved_at": "2026-10-30T08:05+09:00",
+ "publish_at": "2026-10-30T10:00+09:00",
  "mp4": "output/day6_incline_dumbbell_press_4step_master.mp4",
  "cover": "output/day6_cover.jpg",
  "sheet": "output/day6_4step_sheet.jpg",
  "caption": "output/day6_caption.txt",
  "qc": "22/22 PASS (output/logs/day06_20261030_074029.log)",
- "note": "Awaiting 중현 님 approval. Do not publish until status=approved."
+ "note": "Approved by 중현 님 (t514u) for 10:00 KST publish."
 }
