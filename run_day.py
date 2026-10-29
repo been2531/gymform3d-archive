@@ -270,8 +270,14 @@ def main():
             break
     ok = bool(rows) and not [r for r in rows if r[0] == "FAIL"]
     if ok:
-        cap = A(f"output/day{a.day}_caption.txt")
-        open(cap, "w").write(c.get("caption", ""))
+        sys.path.insert(0, ROOT)
+        from gymform.caption import build as cap_build, lint as cap_lint
+        cap_txt = cap_build(c.get("caption", ""))
+        cap_err = cap_lint(cap_txt)
+        if cap_err:
+            status["caption_lint"] = cap_err
+            log("caption lint: " + "; ".join(cap_err))
+        open(A(f"output/day{a.day}_caption.txt"), "w").write(cap_txt)
     T["total"] = round(time.time() - t0, 1)
     status.update({"ok": ok, "mp4": os.path.relpath(A(c["out_mp4"]), ROOT), "t": T, "log": os.path.relpath(LOG, ROOT)})
     json.dump(status, open(os.path.join(ROOT, "output", "qc", f"day{a.day}_status.json"), "w"), indent=1)
