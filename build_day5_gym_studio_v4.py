@@ -17,7 +17,7 @@ Writes a QC sidecar (CFG["qc_dir"]) consumed by qc_gate_gymform.py.
 
 Usage:  python3 build_day5_gym_studio_v4.py            # full render (mp4 + sheet + cover + QC sidecar)
         python3 build_day5_gym_studio_v4.py --peaks    # quick QC frames (start/peak) + sheet, no video
-        python3 qc_gate_gymform.py output/day5_dumbbell_lateral_raise_4step_master_v4b.mp4 --qc-dir output/qc/day5_v4b
+        python3 qc_gate_gymform.py output/day5_dumbbell_lateral_raise_4step_master_v4c.mp4 --qc-dir output/qc/day5_v4b
 """
 import os
 import sys
@@ -70,11 +70,12 @@ DAY_CONFIGS = {
             {"type": "dumbbell", "anchor": "wr_l", "radius": 250},
         ],
         "bone_steps": (1, 3),
+        "xray_style": "day1_v36",  # reusable X-Ray module (xray_day1_v36) = approved Day 1 v36 native X-Ray look
         "muscle_steps": (2, 4),
-        "out_mp4": os.path.join(OUT_DIR, "day5_dumbbell_lateral_raise_4step_master_v4b.mp4"),
-        "out_sheet": os.path.join(OUT_DIR, "day5_v4b_4step_sheet.jpg"),
-        "out_cover": os.path.join(OUT_DIR, "day5_v4b_cover.jpg"),
-        "qc_dir": os.path.join(OUT_DIR, "qc", "day5_v4b"),
+        "out_mp4": os.path.join(OUT_DIR, "day5_dumbbell_lateral_raise_4step_master_v4c.mp4"),
+        "out_sheet": os.path.join(OUT_DIR, "day5_v4c_4step_sheet.jpg"),
+        "out_cover": os.path.join(OUT_DIR, "day5_v4c_cover.jpg"),
+        "qc_dir": os.path.join(OUT_DIR, "qc", "day5_v4c"),
     },
 }
 CFG = DAY_CONFIGS[5]
@@ -289,6 +290,53 @@ def shorts_polygon(kp: dict, bright_m: np.ndarray, hip_y: float, kn_y: float) ->
     return out
 
 
+def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_mask: np.ndarray, tint: str = "crimson") -> np.ndarray:
+    """
+    Reusable X-Ray module = the APPROVED Day 1 v36 'Step 1 native 3D X-Ray' method
+    (gymform_engine.prepare_xray_bone_frame + render_xray_skeletal_frame), generalised to any tint/gate:
+      1. inside the tinted X-Ray zone the body luminance is replaced by a dark glassy cavity whose only bright
+         structure is the native bone detail (xray_cavity_lum = 28 + 135 * bone_sharp^1.15) -> see-through body;
+      2. bone pixels (strongly tinted + bright in the native render) are filled with the Day 1 luminous bone ramp
+         (tint -> hot core) at alpha bone_mask^0.8 * 0.96, with the Day 1 0.48 X-Ray window darkening around them.
+    Pure per-pixel shading of the native 3D frame: no warps, no drawn shapes. Window/bone-mask blur kept tiny.
+    """
+    r = rgb[:, :, 0].astype(np.float32)
+    g = rgb[:, :, 1].astype(np.float32)
+    b = rgb[:, :, 2].astype(np.float32)
+    if tint == "crimson":
+        t_any = np.clip((r - b - 12.0) / 95.0, 0.0, 1.0)
+        detail = 0.38 * r + 0.62 * g
+        bone_m = np.clip((r - b - 82.0) / 95.0, 0.0, 1.0) * np.clip((r - 130.0) / 75.0, 0.0, 1.0)
+    else:
+        # emerald source glow is ~2x weaker than the crimson one (g-r p50~52 vs r-b p50~74): thresholds rescaled
+        t_any = np.clip((g - r - 8.0) / 50.0, 0.0, 1.0)
+        detail = 0.38 * g + 0.62 * r
+        bone_m = np.clip((g - r - 30.0) / 40.0, 0.0, 1.0) * np.clip((g - 120.0) / 70.0, 0.0, 1.0)
+    bone_sharp = np.clip((detail + (detail - cv2.GaussianBlur(detail, (0, 0), 1.5)) * 2.1 - 20.0) / 205.0, 0.0, 1.0)
+    # native bright bone edges inside the tinted zone also count as bone (Day 5 sources tint bones less than Day 1)
+    bone_m = np.maximum(bone_m, 0.9 * np.clip(t_any * 1.6, 0.0, 1.0) * np.clip((bone_sharp - 0.50) / 0.22, 0.0, 1.0))
+    zone = (t_any * gate * (1.0 - shorts_mask))[:, :, None]
+
+    cav = 28.0 + 135.0 * (bone_sharp ** 1.15)
+    norm = (cav / 255.0) ** 0.92
+    glass = np.stack([30.0 + 202.0 * norm, 32.0 + 204.0 * norm, 36.0 + 206.0 * norm], axis=-1)
+    out = mono * (1.0 - zone) + glass * zone
+
+    bm = cv2.GaussianBlur(bone_m.astype(np.float32), (0, 0), 1.0) * gate * (1.0 - shorts_mask)
+    window = np.clip(cv2.GaussianBlur(bm, (0, 0), 6.0) * 1.1, 0.0, 0.65)
+    out = out * (1.0 - window[:, :, None] * 0.48)
+
+    bv = np.clip((bone_sharp - 0.12) / 0.78, 0.0, 1.0)
+    hot = 110.0 * (bv ** 1.25) + 120.0 * (bv ** 2.6)
+    if tint == "crimson":   # Day 1 ramp: deep crimson -> orange-gold -> white-hot core
+        col = np.stack([95.0 + 160.0 * (bv ** 0.55), 14.0 + hot, 10.0 + 45.0 * (bv ** 1.5) + 135.0 * (bv ** 3.0)], axis=-1)
+    else:                   # same ramp mirrored to emerald: deep green -> mint -> white core
+        col = np.stack([10.0 + 0.55 * hot + 70.0 * (bv ** 3.0), 95.0 + 160.0 * (bv ** 0.55), 30.0 + 0.75 * hot + 60.0 * (bv ** 3.0)], axis=-1)
+    a = np.clip((bm ** 0.80) * 0.96, 0.0, 0.96)[:, :, None]
+    out = out * (1.0 - a) + np.clip(col, 0, 255) * a
+    return out
+
+
 def shade_day5_v4(rgb_1080: np.ndarray, step_idx: int, is_wrong: bool, kp: dict, pulse_phase: float = 0.0):
     """Returns (composited_rgb_uint8, shorts_mask, w_fg)."""
     r_ch = rgb_1080[:, :, 0].astype(np.float32)
@@ -482,6 +530,8 @@ def shade_day5_v4(rgb_1080: np.ndarray, step_idx: int, is_wrong: bool, kp: dict,
         bone_core = np.clip(1.8 * bone_core, 0.0, 1.0)
     blend_w = np.clip(core_w + 0.45 * bone_core, 0.0, 0.92) * (1.0 - shorts_mask)
     mannequin = mono * (1.0 - blend_w[:, :, None]) + act_rgb * blend_w[:, :, None]
+    if step_idx in CFG["bone_steps"] and CFG.get("xray_style") == "day1_v36":
+        mannequin = xray_day1_v36(rgb_1080, mono, anat, shorts_mask, tint="crimson" if is_wrong else "emerald")
 
     bg = studio_bg() * (1.0 - 0.80 * contact_shadow(kp)[:, :, None])
     wf = w_fg[:, :, None]

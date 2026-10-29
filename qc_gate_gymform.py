@@ -42,6 +42,25 @@ def act_of(rgb):
     return np.maximum(f[..., 0] - 0.5 * (f[..., 1] + f[..., 2]), f[..., 1] - 0.5 * (f[..., 0] + f[..., 2]))
 
 
+def xray_signature(rgb, mask, tint):
+    """Colour/structure signature of luminous X-Ray bone pixels: primary channel = tint (R for crimson, G for
+    emerald), hot channel = the secondary channel that rises toward the white-hot core in the Day 1 ramp."""
+    f = rgb.astype(np.float32)
+    r, g, b = f[..., 0], f[..., 1], f[..., 2]
+    if tint == "crimson":
+        prim, sec, oth = r, g, b
+    else:
+        prim, sec, oth = g, b, r
+    bone = (prim - oth > 60.0) & (prim > 150.0) & (mask > 0.5)
+    n = int(bone.sum())
+    if n == 0:
+        return {"n": 0, "hot_ratio": 0.0, "core_ratio": 0.0, "detail": 0.0}
+    hot_ratio = float(np.median(sec[bone] / np.maximum(prim[bone], 1.0)))
+    core_ratio = float(np.mean((sec[bone] > 0.75 * prim[bone])))
+    lap = np.abs(cv2.Laplacian(0.299 * r + 0.587 * g + 0.114 * b, cv2.CV_32F))
+    return {"n": n, "hot_ratio": hot_ratio, "core_ratio": max(core_ratio, 1e-3), "detail": float(np.mean(lap[bone]))}
+
+
 def read_frames(mp4, idxs):
     cap = cv2.VideoCapture(mp4)
     out = {}
@@ -62,7 +81,9 @@ def load_mask(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mp4")
-    ap.add_argument("--qc-dir", default="/workspace/daily_info_reels/output/qc/day5_v4b")
+    ap.add_argument("--qc-dir", default="/workspace/daily_info_reels/output/qc/day5_v4c")
+    ap.add_argument("--xray-ref", default="/workspace/daily_info_reels/output/qc/ref/day1_v36_xray_t1.5.jpg",
+                    help="approved Day 1 v36 X-Ray reference frame (extracted from output/day1_v36_master_reel.mp4 @1.5s)")
     args = ap.parse_args()
 
     meta = json.load(open(os.path.join(args.qc_dir, "meta.json")))
@@ -139,9 +160,11 @@ def main():
                 holes = float(((wfg < 0.5) & comp).sum()) / area
                 if holes > 0.02:
                     eq_fail.append(f"{key}: equipment blob {li} mask holes {100 * holes:.1f}%")
-            eq_area.setdefault(s, {})[fm["tag"]] = float((eq > 0.5).sum())
             # zone clipping: equipment pixels touching the zone border means the zone cut the object
             zone = load_mask(pre + "_eqzone.png")
+            # equipment area = hull-filled parts + dark metal already solid in the clean mask inside the zones
+            eq_px = (eq > 0.5) | ((wfg > 0.5) & (zone > 0.5) & (lum_of(base) < 70.0) & (shorts < 0.3))
+            eq_area.setdefault(s, {})[fm["tag"]] = float(eq_px.sum())
             if zone is not None:
                 border = (zone > 0) & (cv2.erode((zone > 0).astype(np.uint8), np.ones((5, 5), np.uint8)) == 0)
                 dark_eq = (eq > 0.5) & (lum_of(base) < 70.0) & (shorts < 0.3)  # equipment proper (dark metal), not skin/shorts
@@ -193,6 +216,28 @@ def main():
     for key, is_bone, ncol, detail, ok in RESULTS_E:
         report(f"(e) {key} {'bone X-Ray' if is_bone else 'muscle fibers'} present/readable", ok, f"coloured px={ncol}, edge detail={detail:.1f}")
     report("(f) skin p75~165/p90~191, shorts 10..22", not skin_fail, " | ".join(SKIN))
+
+    # (g) X-Ray look vs approved Day 1 v36 reference: luminous bone ramp (tint -> hot core), glassy darkened body
+    if os.path.exists(args.xray_ref):
+        ref = cv2.cvtColor(cv2.imread(args.xray_ref), cv2.COLOR_BGR2RGB)
+        ref_m = np.zeros(ref.shape[:2], np.float32)
+        ref_m[600:1500, 600:1000] = 1.0  # Day 1 X-Ray arm region (excludes red UI text/arc)
+        ref_sig = xray_signature(ref, ref_m, "crimson")
+        for key, fm in sorted(frames_meta.items()):
+            if fm["tag"] != "peak" or fm["step"] not in meta["bone_steps"]:
+                continue
+            base = cv2.cvtColor(cv2.imread(os.path.join(args.qc_dir, key) + "_base.png"), cv2.COLOR_BGR2RGB)
+            wfg = load_mask(os.path.join(args.qc_dir, key) + "_wfg.png")
+            tint = "crimson" if fm["step"] == meta["bone_steps"][0] else "emerald"
+            sig = xray_signature(base, wfg, tint)
+            ok = (sig["n"] > 1500 and abs(sig["hot_ratio"] - ref_sig["hot_ratio"]) < 0.30
+                  and sig["core_ratio"] > 0.5 * ref_sig["core_ratio"] and sig["detail"] > 0.55 * ref_sig["detail"])
+            report(f"(g) {key} X-Ray matches Day 1 v36 look ({tint})", ok,
+                   f"bone px={sig['n']} hot/primary={sig['hot_ratio']:.2f} (ref {ref_sig['hot_ratio']:.2f}) "
+                   f"hot-core share={sig['core_ratio']:.2f} (ref {ref_sig['core_ratio']:.2f}) "
+                   f"detail={sig['detail']:.1f} (ref {ref_sig['detail']:.1f})")
+    else:
+        report("(g) X-Ray vs Day 1 reference", False, f"reference frame missing: {args.xray_ref}")
 
     print(f"\nQC GATE: {'PASS' if all(RESULTS) else 'FAIL'} ({sum(RESULTS)}/{len(RESULTS)} items)")
     sys.exit(0 if all(RESULTS) else 1)
