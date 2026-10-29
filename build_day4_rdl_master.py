@@ -88,13 +88,7 @@ def shade_day4_3d_frame_1080p(
     fg_diff = np.abs(lum - bg_lum) + 0.95 * act_dom
     w_fg = cv2.GaussianBlur(np.clip((fg_diff - 6.0) / 14.0, 0.0, 1.0).astype(np.float32), (0, 0), 2.0)
 
-    # 1. Unified Upper-Back Sculpted Grey Base (grey_back_exact) across entire body
-    hv_cool = np.clip((lum - 18.0) / 172.0, 0.0, 1.35)
-    blur_med = cv2.GaussianBlur(lum, (0, 0), 2.8)
-    sulc = np.clip((blur_med - lum) / 14.0, 0.0, 1.0)
-    hf_ridge = lum - cv2.GaussianBlur(lum, (0, 0), 1.6)
-    grey_back_exact = np.clip(32.0 + 108.0 * (hv_cool ** 0.95) + hf_ridge * 0.55 - sulc * 14.0, 20.0, 168.0)
-
+    # 1. Bright Silver-Grey Studio Mannequin Base (@demicstory & Day 1-2 standard: p75 ~ 165, p90 ~ 191, max 226)
     yy = np.arange(H, dtype=np.float32)[:, None]
     hip_y = 0.5 * (kp["hip_r"][1] + kp["hip_l"][1])
     kn_y = 0.5 * (kp["kn_r"][1] + kp["kn_l"][1])
@@ -103,9 +97,17 @@ def shade_day4_3d_frame_1080p(
     dark_low_sat = np.clip((64.0 - lum) / 20.0, 0.0, 1.0) * np.clip((0.26 - sat) / 0.14, 0.0, 1.0) * np.clip((18.0 - act_dom) / 12.0, 0.0, 1.0)
     shorts_mask_1080 = cv2.GaussianBlur((shorts_band * dark_low_sat * w_fg).astype(np.float32), (0, 0), 2.0)
 
-    # Crisp opaque matte jet-black drawers (@demicstory standard: lum ~ 14..22)
-    shorts_jet_lum = np.clip(lum * 0.46 + 3.0, 10.0, 24.0)
-    matte_lum = grey_back_exact * (1.0 - 0.88 * shorts_mask_1080) + shorts_jet_lum * (0.88 * shorts_mask_1080)
+    skin_m = (w_fg > 0.5) & (shorts_mask_1080 < 0.2) & (act_dom < 15.0)
+    p92 = float(np.percentile(lum[skin_m], 92)) if skin_m.sum() > 500 else 135.0
+    hv_silver = np.clip((lum - 14.0) / max(p92 - 14.0, 75.0), 0.0, 1.35)
+    blur_med = cv2.GaussianBlur(lum, (0, 0), 2.8)
+    sulc = np.clip((blur_med - lum) / 14.0, 0.0, 1.0)
+    hf_ridge = lum - cv2.GaussianBlur(lum, (0, 0), 1.6)
+    grey_back_exact = np.clip(48.0 + 148.0 * (hv_silver ** 0.78) + hf_ridge * 0.75 - sulc * 12.0, 42.0, 226.0)
+
+    # Crisp opaque matte jet-black drawers (@demicstory standard: lum ~ 10..22)
+    shorts_jet_lum = np.clip(lum * 0.42 + 2.0, 10.0, 22.0)
+    matte_lum = grey_back_exact * (1.0 - 0.90 * shorts_mask_1080) + shorts_jet_lum * (0.90 * shorts_mask_1080)
 
     mono_r = 38.0 * (1.0 - w_fg) + (matte_lum - 1.5) * w_fg
     mono_g = 40.0 * (1.0 - w_fg) + (matte_lum + 0.5) * w_fg
