@@ -1,0 +1,170 @@
+{
+  "day": 6,
+  "exercise_name": "Incline Dumbbell Press",
+  "assets_dir": "output/assets",
+  "kp_cache": "_cache_day6_idp_720p_kps.pkl",
+  "clips": {
+    "1": {
+      "file": "day6_idp_step1_bone_720p.mp4",
+      "i0": 2,
+      "i1": 64,
+      "is_wrong": true,
+      "mode": "bone_blood",
+      "y_shift": 80
+    },
+    "2": {
+      "file": "day6_idp_step2_muscle_720p.mp4",
+      "i0": 2,
+      "i1": 62,
+      "is_wrong": true,
+      "mode": "muscle_blood",
+      "y_shift": 80
+    },
+    "3": {
+      "file": "day6_idp_step3_bone_720p.mp4",
+      "i0": 2,
+      "i1": 62,
+      "is_wrong": false,
+      "mode": "bone_blood",
+      "y_shift": 80
+    },
+    "4": {
+      "file": "day6_idp_step4_muscle_720p.mp4",
+      "i0": 2,
+      "i1": 58,
+      "is_wrong": false,
+      "mode": "muscle_blood",
+      "y_shift": 80
+    }
+  },
+  "step_scale": {
+    "1": 0.782,
+    "2": 0.841,
+    "3": 0.924,
+    "4": 0.81
+  },
+  "step_dy": {
+    "1": 230,
+    "2": 230,
+    "3": 230,
+    "4": 230
+  },
+  "equipment": [
+    {
+      "type": "dumbbell",
+      "anchor": "wr_r",
+      "radius": 250
+    },
+    {
+      "type": "dumbbell",
+      "anchor": "wr_l",
+      "radius": 250
+    }
+  ],
+  "bone_steps": [
+    1,
+    3
+  ],
+  "xray_bones": {
+    "1": "both clavicles, scapulae/acromion, humeral heads, humeri, upper rib cage (crimson)",
+    "3": "both clavicles, scapulae/acromion, humeral heads, humeri, upper rib cage (emerald)"
+  },
+  "muscle_steps": [
+    2,
+    4
+  ],
+  "target_muscles": {
+    "2": "anterior deltoid (overload, red)",
+    "4": "upper (clavicular) pectoralis major (green)"
+  },
+  "callouts": {
+    "1": {
+      "slot": 0,
+      "deg": [
+        45,
+        78
+      ],
+      "l1": "ELBOW FLARE",
+      "l2": [
+        "SHOULDER RISK",
+        82,
+        10
+      ]
+    },
+    "2": {
+      "slot": 1,
+      "deg": [
+        10,
+        24
+      ],
+      "l1": "SHOULDER ROLL",
+      "l2": [
+        "FRONT DELT OVERLOAD",
+        74,
+        8
+      ]
+    },
+    "3": {
+      "slot": 2,
+      "deg": "45\u00b0",
+      "l1": "SCAPULAR TUCK",
+      "l2": [
+        "JOINT SAFE",
+        92,
+        6
+      ]
+    },
+    "4": {
+      "slot": 3,
+      "deg": [
+        30,
+        45
+      ],
+      "l1": "ELBOWS 45\u00b0",
+      "l2": [
+        "UPPER PEC LOAD",
+        96,
+        4
+      ]
+    }
+  },
+  "tts_lines": [
+    [
+      0.2,
+      "Incline dumbbell press. Flaring your elbows wide jams the front of your shoulder joint."
+    ],
+    [
+      5.2,
+      "Rolling your shoulders forward hands the work to your front delts, not your chest."
+    ],
+    [
+      10.2,
+      "Pin your shoulder blades back and down, and tuck your elbows to forty-five degrees."
+    ],
+    [
+      15.2,
+      "Press up and slightly in to load your upper chest."
+    ]
+  ],
+  "caption": {
+    "title": "Your incline press is hitting your shoulders, not your upper chest.",
+    "question": "Where do you feel your incline press most, chest or shoulders?",
+    "save": "Save this for your next chest day."
+  },
+  "sheet_title": "Day 6 Incline Dumbbell Press \u2014 gymform modular pipeline \u00b7 locked studio \u00b7 local Day-1 X-Ray",
+  "sheet_labels": [
+    "Step 1: wrong \u00b7 bone X-Ray",
+    "Step 2: wrong \u00b7 front delt fibres",
+    "Step 3: right \u00b7 bone X-Ray",
+    "Step 4: right \u00b7 upper pec fibres"
+  ],
+  "out_mp4": "output/day6_incline_dumbbell_press_4step_master.mp4",
+  "out_sheet": "output/day6_4step_sheet.jpg",
+  "out_cover": "output/day6_cover.jpg",
+  "qc_dir": "output/qc/day6",
+  "xray_full_steps": [
+    1,
+    3
+  ],
+  "question_spoken": "Where do you feel it most?"
+}
