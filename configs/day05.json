@@ -1,0 +1,43 @@
+{
+  "day": 5,
+  "exercise_name": "Dumbbell Lateral Raise",
+  "assets_dir": "output/assets",
+  "kp_cache": "_cache_day5_lat_720p_kps.pkl",
+  "clips": {
+    "1": {"file": "day5_lat_step1_bone_720p.mp4",   "i0": 2, "i1": 71,  "is_wrong": true,  "mode": "bone_blood",   "y_shift": 80},
+    "2": {"file": "day5_lat_step2_muscle_720p.mp4", "i0": 2, "i1": 55,  "is_wrong": true,  "mode": "muscle_blood", "y_shift": 80},
+    "3": {"file": "day5_lat_step3_bone_720p.mp4",   "i0": 2, "i1": 106, "is_wrong": false, "mode": "bone_blood",   "y_shift": 80},
+    "4": {"file": "day5_lat_step4_muscle_720p.mp4", "i0": 2, "i1": 64,  "is_wrong": false, "mode": "muscle_blood", "y_shift": 80}
+  },
+  "step_scale": {"1": 0.90, "2": 0.938, "3": 0.789, "4": 0.797},
+  "step_dy": {"1": 80, "2": 87, "3": 157, "4": 148},
+  "equipment": [
+    {"type": "dumbbell", "anchor": "wr_r", "radius": 250},
+    {"type": "dumbbell", "anchor": "wr_l", "radius": 250}
+  ],
+  "bone_steps": [1, 3],
+  "xray_bones": {"1": "both clavicles, scapulae/acromion, humeral heads, humeri, upper rib cage (crimson)",
+                 "3": "near clavicle, scapula, humeral head, humerus shaft (emerald)"},
+  "muscle_steps": [2, 4],
+  "target_muscles": {"2": "upper trapezius (overload, red)", "4": "lateral deltoid (green)"},
+  "callouts": {
+    "1": {"slot": 0, "deg": [18, 100], "l1": "HIGH FLARE",     "l2": ["JOINT PINCH", 76, 12]},
+    "2": {"slot": 1, "deg": [8, 20],   "l1": "TRAP SHRUG",     "l2": ["TRAP OVERLOAD", 68, 8]},
+    "3": {"slot": 2, "deg": "0\u00b0", "l1": "SCAPULA LOCK",   "l2": ["JOINT SAFE", 90, 6]},
+    "4": {"slot": 3, "deg": [12, 18],  "l1": "SCAPULAR PLANE", "l2": ["LATERAL DELT", 91, 7]}
+  },
+  "callout_ty": {"2": 408, "3": 440},
+  "tts_lines": [
+    [0.20, "Dumbbell lateral raise. Avoid flaring straight out and pinching your shoulder joint."],
+    [5.20, "Shrugging the weights up overloads your upper traps instead of your side delts."],
+    [10.20, "Depress your shoulder blades and lock your shoulder joint in a safe groove."],
+    [15.20, "Raise thirty degrees forward in the scapular plane to fire your lateral deltoid fibers."]
+  ],
+  "caption": "Dumbbell lateral raise: wrong vs right in 20 seconds.\nWRONG: flaring straight up to 118\u00b0 pinches the shoulder joint and shrugs the traps.\nRIGHT: shoulder blades down, raise 30\u00b0 forward in the scapular plane to load the side delts.\nSave this for your next shoulder day.\n#gymform #formcheck #lateralraise #shoulders #anatomy #3d",
+  "sheet_title": "Day 5 Dumbbell Lateral Raise \u2014 gymform modular pipeline \u00b7 locked studio \u00b7 local Day-1 X-Ray",
+  "sheet_labels": ["Step 1: wrong \u00b7 bone X-Ray", "Step 2: wrong \u00b7 trap fibres", "Step 3: right \u00b7 bone X-Ray", "Step 4: right \u00b7 lateral delt fibres"],
+  "out_mp4": "output/day5_dumbbell_lateral_raise_4step_master_v5.mp4",
+  "out_sheet": "output/day5_v5_4step_sheet.jpg",
+  "out_cover": "output/day5_v5_cover.jpg",
+  "qc_dir": "output/qc/day5_v5"
+}

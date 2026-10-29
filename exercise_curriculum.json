@@ -88,6 +88,19 @@
     },
     {
       "day": 5,
+      "title": "DUMBBELL LATERAL RAISE",
+      "slug": "dumbbell_lateral_raise",
+      "status": "queued",
+      "wrong_deg": "118°",
+      "wrong_label_1": "HIGH FLARE",
+      "wrong_label_2": "88% JOINT PINCH",
+      "right_deg": "30°",
+      "right_label_1": "SCAPULAR PLANE",
+      "right_label_2": "98% LATERAL DELT",
+      "config": "configs/day05.json"
+    },
+    {
+      "day": 6,
       "title": "INCLINE DUMBBELL PRESS",
       "slug": "incline_dumbbell_press",
       "status": "queued",
@@ -99,7 +112,7 @@
       "right_label_2": "96% UPPER PEC LOAD"
     },
     {
-      "day": 6,
+      "day": 7,
       "title": "SEATED CABLE ROW",
       "slug": "seated_cable_row",
       "status": "queued",
@@ -111,7 +124,7 @@
       "right_label_2": "94% MID-BACK LOAD"
     },
     {
-      "day": 7,
+      "day": 8,
       "title": "BULGARIAN SPLIT SQUAT",
       "slug": "bulgarian_split_squat",
       "status": "queued",
