@@ -175,6 +175,11 @@ def main():
     # HARD GUARD (RULES.md #1): native 3D source only, no 2D overpaint stage -> fail before any rendering
     sys.path.insert(0, ROOT)
     from gymform.qc import native_source_ok
+    from gymform.layout import callout_lint
+    co_err = callout_lint(day_cfg)
+    if co_err:   # numbers / labels / TTS must agree before anything is rendered
+        print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "callout: " + "; ".join(co_err)}))
+        sys.exit(3)
     ok_src, why = native_source_ok(day_cfg.get("source", {}))
     if not ok_src:
         print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "native_3d_source: " + why, "rules": "RULES.md"}))

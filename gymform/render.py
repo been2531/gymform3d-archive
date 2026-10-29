@@ -140,11 +140,12 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
     cv2.imwrite(pre + "_static.png", m8(LAST_MASKS.get("static_eq", z)))
     meta_p = os.path.join(d, f"meta_step{step_idx}.json")
     meta = json.load(open(meta_p)) if os.path.exists(meta_p) else {}
-    meta.setdefault("frames", {})[f"step{step_idx}_{tag}"] = {"frame_idx": frame_idx, "step": step_idx, "tag": tag, "kp": kp}
+    meta.setdefault("frames", {})[f"step{step_idx}_{tag}"] = {"frame_idx": frame_idx, "step": step_idx, "tag": tag, "kp": kp,
+                                                              "callout": LAST_MASKS.get("callout")}
     meta.update({
         "exercise_name": CFG["exercise_name"], "studio_bg": CFG["studio_bg"], "equipment": CFG["equipment"],
         "bone_steps": list(CFG["bone_steps"]), "muscle_steps": list(CFG["muscle_steps"]),
-        "source": CFG.get("source", {}), "day": CFG.get("day"), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
+        "source": CFG.get("source", {}), "callouts": CFG.get("callouts"), "tts_lines": CFG.get("tts_lines"), "day": CFG.get("day"), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
         "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "overlap_alpha": SPEC["ui"]["overlap_alpha"], "fps": FPS, "qc_tags": tempo.QC_TAGS,
     })
     json.dump(meta, open(meta_p, "w"), indent=1)

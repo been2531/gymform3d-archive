@@ -126,12 +126,70 @@ def fg_for_preview(w_fg: np.ndarray) -> np.ndarray:
 
 
 def callout_for(step_idx, pose_frac):
-    """Callout text from the day config: deg [a, b] -> round(a + b*frac) deg (or fixed string);
+    """Callout text from the day config.
+    deg: "N\u00b0" (fixed coaching angle) or {"from": a, "to": b} (animated from a at the start pose to b at the peak).
+    The number is the joint angle the label names, as coached for the shown pose (2D keypoint angles in a 3/4 view
+    are projection artefacts, never displayed). A bare list [a, b] is rejected: it was read as start + b*frac while
+    configs wrote it as a range (Day 6: [45, 78] rendered 121\u00b0, [30, 45] rendered 74\u00b0 under 'ELBOWS 45\u00b0').
     l2 [label, a, b] -> 'round(a + b*frac)% label'."""
     c = CFG["callouts"][str(step_idx)]
-    deg = c["deg"] if isinstance(c["deg"], str) else f"{int(round(c['deg'][0] + c['deg'][1] * pose_frac))}\u00b0"
+    deg = c["deg"]
+    if isinstance(deg, dict):
+        deg = f"{int(round(deg['from'] + (deg['to'] - deg['from']) * pose_frac))}\u00b0"
+    elif not isinstance(deg, str):
+        raise ValueError(f"callouts.{step_idx}.deg must be 'N\u00b0' or {{'from','to'}}, got {deg!r}")
     l2 = c["l2"] if isinstance(c["l2"], str) else f"{int(round(c['l2'][1] + c['l2'][2] * pose_frac))}% {c['l2'][0]}"
+    LAST_MASKS["callout"] = {"deg": deg, "l1": c["l1"], "l2": l2}
     return int(c["slot"]), deg, c["l1"], l2
+
+
+_NUM = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+                                   "fifteen sixteen seventeen eighteen nineteen".split())}
+_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+
+
+def spoken_degrees(text):
+    """Angles spoken in a TTS line ('forty-five degrees', '45 degrees', 'ninety degree')."""
+    import re
+    out = []
+    for m in re.finditer(r"([a-z0-9\- ]+?)\s+degrees?\b", text.lower()):
+        words = m.group(1).replace("-", " ").split()[-2:]
+        if words and words[-1].isdigit():
+            out.append(int(words[-1])); continue
+        v = 0
+        for w in words:
+            if w in _TENS: v = _TENS[w] if v == 0 else v
+            elif w in _NUM: v += _NUM[w]
+        if v or "zero" in words:
+            out.append(v)
+    return out
+
+
+def callout_lint(cfg):
+    """Displayed numbers, labels and TTS must agree. Returns a list of errors (empty = OK)."""
+    import re
+    errs = []
+    tts = [t for _, t in cfg.get("tts_lines", [])]
+    for s in ("1", "2", "3", "4"):
+        c = cfg["callouts"][s]
+        d = c["deg"]
+        if isinstance(d, dict):
+            lo, hi = sorted((float(d["from"]), float(d["to"])))
+            peak = float(d["to"])
+        elif isinstance(d, str) and re.fullmatch(r"\d+\u00b0", d):
+            lo = hi = peak = float(d[:-1])
+        else:
+            errs.append(f"step{s}: deg {d!r} is ambiguous (use 'N\u00b0' or {{'from','to'}})"); continue
+        lab = [int(x) for x in re.findall(r"(\d+)\u00b0", c["l1"])]
+        if lab and (lo != hi or lab[0] != peak):
+            errs.append(f"step{s}: label '{c['l1']}' says {lab[0]}\u00b0 but the number shows {lo:g}-{hi:g}\u00b0")
+        if int(s) - 1 < len(tts):
+            for v in spoken_degrees(tts[int(s) - 1]):
+                if not (lo <= v <= hi):
+                    errs.append(f"step{s}: TTS says {v} degrees but the number shows {lo:g}-{hi:g}\u00b0")
+        if not (0 <= lo <= 180 and 0 <= hi <= 180):
+            errs.append(f"step{s}: angle {lo:g}-{hi:g}\u00b0 outside 0-180")
+    return errs
 
 
 def draw_laser_and_callout_v4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_str, l1_str, l2_str):
