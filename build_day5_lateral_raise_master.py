@@ -45,10 +45,10 @@ DURATION = 20.0
 TOTAL_FRAMES = int(FPS * DURATION)  # 600 frames
 
 STEP_SPECS_DAY5 = {
-    1: ("day5_lat_step1_bone_720p.mp4",   4, 102, True,  "bone_blood",   80),
-    2: ("day5_lat_step2_muscle_720p.mp4", 2, 116, True,  "muscle_blood", 80),
-    3: ("day5_lat_step3_bone_720p.mp4",   2, 116, False, "bone_blood",   80),
-    4: ("day5_lat_step4_muscle_720p.mp4", 2, 116, False, "muscle_blood", 80),
+    1: ("day5_lat_step1_bone_720p.mp4",   2, 71, True,  "bone_blood",   80),
+    2: ("day5_lat_step2_muscle_720p.mp4", 2,  55, True,  "muscle_blood", 80),
+    3: ("day5_lat_step3_bone_720p.mp4",   2, 106, False, "bone_blood",   80),
+    4: ("day5_lat_step4_muscle_720p.mp4", 2,  64, False, "muscle_blood", 80),
 }
 
 b4.STEP_DY = {1: 80, 2: 85, 3: 80, 4: 80}
@@ -476,42 +476,52 @@ def build_all():
 
         for f_local in range(150):
             u = f_local / 150.0
-            wave_p = 0.5 - 0.5 * math.cos(2.0 * math.pi * (u * 1.5))
+            # Controlled 1-Rep Coaching Tempo: 0.3s start -> 1.5s raise -> 1.3s isometric peak hold -> 1.5s lower -> 0.4s bottom
+            if u < 0.06:
+                wave_p = 0.0
+            elif u < 0.36:
+                wave_p = 0.5 - 0.5 * math.cos(math.pi * ((u - 0.06) / 0.30))
+            elif u < 0.62:
+                wave_p = 1.0
+            elif u < 0.92:
+                wave_p = 0.5 + 0.5 * math.cos(math.pi * ((u - 0.62) / 0.30))
+            else:
+                wave_p = 0.0
             p_i = int(round(wave_p * (n_f - 1)))
 
+            pose_frac = p_i / float(max(1, n_f - 1))
             if p_i not in step_cache:
                 rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(seq[p_i], kps[p_i], y_sh, step_idx)
-                pulse_ph = (p_i / float(max(1, n_f - 1))) * 0.75
-                sh_rgb, sh_mask = shade_day5_3d_frame_1080p(rgb_1080, step_idx, is_w, kp_1080, pulse_phase=pulse_ph)
-                step_cache[p_i] = (sh_rgb, sh_mask, kp_1080)
+                pulse_ph = pose_frac * 0.75
+                base_rgb, sh_mask = shade_day5_3d_frame_1080p(rgb_1080, step_idx, is_w, kp_1080, pulse_phase=pulse_ph)
+                if step_idx == 1:
+                    slot_i = 0
+                    deg_v = int(round(18 + 100 * pose_frac))
+                    pct_v = int(round(76 + 12 * pose_frac))
+                    deg_s, l1_s, l2_s = f"{deg_v}°", "HIGH FLARE", f"{pct_v}% JOINT PINCH"
+                elif step_idx == 2:
+                    slot_i = 1
+                    deg_v = int(round(8 + 20 * pose_frac))
+                    pct_v = int(round(68 + 8 * pose_frac))
+                    deg_s, l1_s, l2_s = f"{deg_v}°", "TRAP SHRUG", f"{pct_v}% TRAP OVERLOAD"
+                elif step_idx == 3:
+                    slot_i = 2
+                    pct_v = int(round(90 + 6 * pose_frac))
+                    deg_s, l1_s, l2_s = "0°", "SCAPULA LOCK", f"{pct_v}% JOINT SAFE"
+                else:
+                    slot_i = 3
+                    deg_v = int(round(12 + 18 * pose_frac))
+                    pct_v = int(round(91 + 7 * pose_frac))
+                    deg_s, l1_s, l2_s = f"{deg_v}°", "SCAPULAR PLANE", f"{pct_v}% LATERAL DELT"
 
-            base_rgb, sh_mask, kp = step_cache[p_i]
+                fr_comp = draw_day5_laser_and_callout(base_rgb, sh_mask, step_idx, kp_1080, is_w, deg_s, l1_s, l2_s)
+                fg_m = b4.get_mannequin_fg_mask_1080p(base_rgb)
+                fr_comp = b4.composite_depth_behind_title_and_translucent_preview(
+                    fr_comp, fg_m, icons_for_step[step_idx], active_slot=slot_i, is_wrong=is_w, exercise_name="Dumbbell Lateral Raise"
+                )
+                step_cache[p_i] = fr_comp
 
-            if step_idx == 1:
-                slot_i = 0
-                deg_v = int(round(18 + 72 * wave_p))
-                pct_v = int(round(76 + 8 * wave_p))
-                deg_s, l1_s, l2_s = f"{deg_v}°", "ARM FLARE", f"{pct_v}% JOINT PINCH"
-            elif step_idx == 2:
-                slot_i = 1
-                deg_v = int(round(8 + 20 * wave_p))
-                pct_v = int(round(68 + 8 * wave_p))
-                deg_s, l1_s, l2_s = f"{deg_v}°", "TRAP SHRUG", f"{pct_v}% TRAP OVERLOAD"
-            elif step_idx == 3:
-                slot_i = 2
-                pct_v = int(round(90 + 6 * wave_p))
-                deg_s, l1_s, l2_s = "0°", "SCAPULA LOCK", f"{pct_v}% JOINT SAFE"
-            else:
-                slot_i = 3
-                deg_v = int(round(12 + 18 * wave_p))
-                pct_v = int(round(91 + 7 * wave_p))
-                deg_s, l1_s, l2_s = f"{deg_v}°", "SCAPULAR PLANE", f"{pct_v}% LATERAL DELT"
-
-            fr = draw_day5_laser_and_callout(base_rgb, sh_mask, step_idx, kp, is_w, deg_s, l1_s, l2_s)
-            fg_m = b4.get_mannequin_fg_mask_1080p(base_rgb)
-            fr = b4.composite_depth_behind_title_and_translucent_preview(
-                fr, fg_m, icons_for_step[step_idx], active_slot=slot_i, is_wrong=is_w, exercise_name="Dumbbell Lateral Raise"
-            )
+            fr = step_cache[p_i]
             rgb_out = Image.fromarray(fr)
 
             if f_local == 4:
@@ -566,7 +576,7 @@ def build_all():
         fill=(185, 225, 255),
     )
     step_titles = [
-        (1, True,  "Step 1: 오자세 뼈 X-Ray (90° ARM FLARE · 관절 충돌)"),
+        (1, True,  "Step 1: 오자세 뼈 X-Ray (118° HIGH FLARE · 과거상 관절 충돌)"),
         (2, True,  "Step 2: 오자세 근육결 (28° TRAP SHRUG · 승모 과부하)"),
         (3, False, "Step 3: 정자세 뼈 X-Ray (0° SCAPULA LOCK · 견갑 고정)"),
         (4, False, "Step 4: 정자세 근육결 (30° SCAPULAR PLANE · 측면삼각근)"),
