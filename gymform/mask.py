@@ -123,6 +123,26 @@ def shorts_polygon(kp: dict, bright_m: np.ndarray, hip_y: float, kn_y: float) ->
     return out
 
 
+def skin_segments(kp):
+    """Keypoint body segments that are ALWAYS skin (arms to just before the hand, torso above the hip band,
+    shins/calves below the shorts). Equipment and shorts can never paint these pixels dark."""
+    m = np.zeros((H, W), np.uint8)
+    hip_y = 0.5 * (kp["hip_r"][1] + kp["hip_l"][1])
+    sh_m = (0.5 * (kp["sh_r"][0] + kp["sh_l"][0]), 0.5 * (kp["sh_r"][1] + kp["sh_l"][1]))
+    hip_m = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), hip_y - 150.0)
+    sw = abs(kp["sh_l"][0] - kp["sh_r"][0])
+    P = lambda p: (int(round(p[0])), int(round(p[1])))
+    for side in ("r", "l"):
+        sh, el, wr = kp[f"sh_{side}"], kp[f"elb_{side}"], kp[f"wr_{side}"]
+        cv2.line(m, P(sh), P(el), 1, 30)                       # upper arm core
+        cv2.line(m, P(el), P(_ext(el, wr, 0.80)), 1, 22)        # forearm core, stops before hand/handle
+        kn, an = kp[f"kn_{side}"], kp[f"ank_{side}"]
+        hip = kp[f"hip_{side}"]
+        cv2.line(m, P(_ext(hip, kn, 0.78)), P(an), 1, 30)      # knee..ankle (below the shorts)
+    cv2.line(m, P(sh_m), P(hip_m), 1, int(max(40, 0.45 * sw)))  # torso core above the hip band
+    return m.astype(np.float32)
+
+
 def features(rgb_1080):
     """Per-pixel colour features shared by every module."""
     r_ch = rgb_1080[:, :, 0].astype(np.float32)
@@ -175,7 +195,8 @@ def body_key(F, step_idx, kp):
     # luminance key leaves them see-through. Close them with shape priors (wrist zone hole-fill, shorts polygon).
     solid = np.zeros((H, W), dtype=np.float32)
     shorts_poly = shorts_polygon(kp, (bright_diff * floor_gate) > 14.0, hip_y, kn_y)
-    return dict(w_raw=w_raw, shorts_poly=shorts_poly, near_wrist=near_wrist, shorts_band=shorts_band, env=env)
+    return dict(w_raw=w_raw, shorts_poly=shorts_poly.astype(np.float32), near_wrist=near_wrist, shorts_band=shorts_band, env=env,
+                skin_seg=cv2.GaussianBlur(skin_segments(kp), (0, 0), 1.5))
 
 
 def finalize(F, K, foot):
@@ -197,4 +218,6 @@ def finalize(F, K, foot):
     shorts_mask = cv2.GaussianBlur((shorts_band * dark_low_sat * (w_fg > 0.25)).astype(np.float32), (0, 0), 2.0)
     shorts_mask = np.clip(shorts_mask * 1.35, 0.0, 1.0)
     shorts_mask = shorts_mask * (1.0 - np.clip(eq_solid * 1.5, 0.0, 1.0))   # equipment beside the hips is never "shorts"
+    # shorts only inside the hip-band polygon, never on a skin segment (correct by construction)
+    shorts_mask = shorts_mask * np.clip(cv2.GaussianBlur(K["shorts_poly"], (0, 0), 2.0) * 1.5, 0.0, 1.0) * (1.0 - K["skin_seg"])
     return w_fg, eq_solid, shorts_mask
