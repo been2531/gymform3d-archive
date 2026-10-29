@@ -159,6 +159,18 @@
   ],
   "config_format": "configs/dayNN.json caption = {title, body[], question, save}; built + linted by gymform/caption.py",
   "angles_must_match_on_screen": true,
-  "include_seo_keywords": true
+  "include_seo_keywords": true,
+  "spoken_question": {
+   "from_day": 6,
+   "rule": "final TTS line = short spoken version of the caption's experience question, appended right after the Step 4 line (inside the top hold / lower / 0.4s bottom), steps 1-3 lines and their breathing gaps unchanged",
+   "config_field": "question_spoken (optional; default = shortest '?' clause of caption.question, pronouns -> 'it', else default)",
+   "default": "Where do you feel it most?",
+   "max_words": 6,
+   "gap_after_step4_s": 0.25,
+   "min_start_s": 17.0,
+   "latest_end_s": 19.85,
+   "step4_line_budget": "Step 4 line (start 15.2s) + 0.25s gap + question must end <= 19.85s -> keep the Step 4 line <= ~11 words",
+   "checks": "run_day.py --check lint (estimate) + tts assert (real durations) + QC (l) from tts timing sidecar"
+  }
  }
 }

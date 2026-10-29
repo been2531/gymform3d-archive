@@ -446,6 +446,20 @@ def main():
     else:
         report("(g) X-Ray vs Day 1 reference", False, f"reference frame missing: {args.xray_ref}")
 
+    # (l) spoken end question (Day 6+): present, short, after the Step 4 line, inside the 20.0s reel
+    spec = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gymform_spec.json")))
+    sq = spec["caption_rules"].get("spoken_question", {})
+    tp = os.path.join(args.qc_dir, "tts_timing.json")
+    if sq and int(meta.get("day", 0) or 0) >= int(sq.get("from_day", 6)) or os.path.exists(tp):
+        segs = json.load(open(tp))["segments"] if os.path.exists(tp) else []
+        q = [g for g in segs if g["role"] == "question"]
+        s4 = [g for g in segs if g["role"] == "step4"]
+        ok = bool(q and s4) and q[0]["text"].strip().endswith("?") and len(q[0]["text"].split()) <= int(sq.get("max_words", 6)) \
+            and q[0]["start"] >= s4[0]["end"] + 0.15 and q[0]["end"] <= float(sq.get("latest_end_s", 19.85)) and n / max(fps, 1) >= 19.95
+        report("(l) spoken end question after Step 4 line, ends inside 20.0s", ok,
+               (f"{q[0]['text']!r} {q[0]['start']:.2f}-{q[0]['end']:.2f}s (step4 ends {s4[0]['end']:.2f}s)" if q and s4
+                else "no question segment in tts_timing.json"))
+
     print(f"\nQC GATE: {'PASS' if all(RESULTS) else 'FAIL'} ({sum(RESULTS)}/{len(RESULTS)} items)")
     sys.exit(0 if all(RESULTS) else 1)
 

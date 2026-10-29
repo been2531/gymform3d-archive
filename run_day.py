@@ -171,9 +171,19 @@ def main():
     day_cfg = json.load(open(cfg_p))
     clips = [os.path.join(ROOT, day_cfg["assets_dir"], v["file"]) for v in day_cfg["clips"].values()]
     missing = [os.path.basename(p) for p in clips if not os.path.exists(p)]
+    sys.path.insert(0, ROOT)
+    from gymform import caption as _cap
+    lint = {"caption": _cap.lint(_cap.build(day_cfg.get("caption", ""))), "spoken_question": _cap.lint_spoken(day_cfg, spec)}
+    lint = {k: v for k, v in lint.items() if v}
     if a.check or missing:
-        print(json.dumps({"day": a.day, "mode": "check", "ok": not missing, "missing_clips": missing}))
-        sys.exit(0 if not missing else 2)
+        sq = spec["caption_rules"].get("spoken_question", {})
+        plan = _cap.spoken_plan(day_cfg, spec) if sq and a.day >= int(sq.get("from_day", 6)) else None
+        print(json.dumps({"day": a.day, "mode": "check", "ok": not missing and not lint, "missing_clips": missing,
+                          "lint": lint, "spoken_question": plan}))
+        sys.exit(0 if not missing and not lint else 2)
+    if lint.get("spoken_question"):
+        print(json.dumps({"day": a.day, "ok": False, "stage": "lint", "lint": lint}))
+        sys.exit(2)
     A = lambda p: p if os.path.isabs(p) else os.path.join(ROOT, p)
     ovr_p = os.path.join(CACHE, f"overrides_day{a.day:02d}.json")
     ovr = json.load(open(ovr_p)) if os.path.exists(ovr_p) else {}
@@ -231,9 +241,13 @@ def main():
             fr.update(m["frames"])
             merge.update(m)
             merge["frames"] = fr
+        merge["day"] = a.day
         json.dump(merge, open(os.path.join(qc_dir_g, "meta.json"), "w"), indent=1)
         # tts stage (cached on lines + voice spec)
-        tk = h(c["tts_lines"], spec["format"])
+        sq_from = int(spec["caption_rules"].get("spoken_question", {}).get("from_day", 6))
+        tk = (h(c["tts_lines"], spec["format"]) if a.day < sq_from else      # Day <= 5: legacy key, no spoken question
+              h(c["tts_lines"], spec["format"], _cap.spoken_question(c, spec), spec["caption_rules"]["spoken_question"],
+                src_hash([os.path.join(ROOT, "gymform", "tts.py")])))
         wav = os.path.join(CACHE, f"tts_day{a.day:02d}_{tk}.wav")
         if not os.path.exists(wav) or (si == STAGES.index("tts") and attempt == 1):
             tt = time.time()
@@ -241,6 +255,10 @@ def main():
                     f"ctx.configure(json.load(open({cfg_p!r})));from gymform import tts;tts.synth({wav!r})"]):
                 raise SystemExit(json.dumps({"day": a.day, "ok": False, "stage": "tts", "log": LOG}))
             T["tts"] = round(time.time() - tt, 1)
+        if os.path.exists(wav + ".timing.json"):
+            shutil.copy(wav + ".timing.json", os.path.join(qc_dir_g, "tts_timing.json"))
+        elif os.path.exists(os.path.join(qc_dir_g, "tts_timing.json")):
+            os.remove(os.path.join(qc_dir_g, "tts_timing.json"))
         # encode stage: concat cached step streams (stream copy) + AAC mux
         if si <= STAGES.index("encode") or attempt > 1:
             tt = time.time()
