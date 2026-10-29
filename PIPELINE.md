@@ -5,7 +5,7 @@ Daily command: `python3 run_day.py --day N`  (prints one JSON line; full log in 
 | file | role |
 |---|---|
 | `gymform_spec.json` | locked rules (format, silver skin lock, shorts, studio, X-Ray style, QC thresholds) |
-| `configs/dayNN.json` | the ONLY per-day input: exercise, clips, equipment zones, X-Ray bones, target muscles, callouts, TTS lines, caption ({title, body[], question, save} → built + linted by `gymform/caption.py`: 0 hashtags, no DM CTA, no vote hook, ONE experience question), per-step scale/dy |
+| `configs/dayNN.json` | the ONLY per-day input: exercise, clips, equipment zones, X-Ray bones, target muscles, callouts, TTS lines, caption ({title, question, save} → built + linted by `gymform/caption.py`: EXACTLY 3 lines separated by blank lines — title / ONE experience question ending "?" / save line; no body text, English only, 0 hashtags, no DM or vote CTA), per-step scale/dy |
 | `gymform/ctx.py` | shared state, spec defaults + day config -> CFG |
 | `gymform/bg.py` | studio plate, contact shadow, per-step size/floor transform, cached temporal backdrop median |
 | `gymform/mask.py` | clean fg key, anatomical envelope, shorts polygon/mask |

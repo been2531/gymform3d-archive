@@ -2,9 +2,9 @@
 
 Config "caption" may be a dict (preferred) or a legacy string:
   {"title": "one-line hook statement",
-   "body": ["Mistake 1: ...", "Mistake 2: ...", "The fix: ..."],
    "question": "ONE personal-experience question ending with ?",
    "save": "Save this for your next shoulder day."}
+Format (Day 6+): EXACTLY 3 lines separated by blank lines: title / question? / save. No body.
 Rules: 100% English, 0 hashtags, no DM-reward CTAs, no vote hooks (1/2, Comment "X").
 """
 import re
@@ -16,10 +16,9 @@ DM = re.compile(r"\bDM\b|direct message|I'?ll send you|link in bio", re.I)
 def build(cap):
     if isinstance(cap, str):
         return cap.strip() + "\n"
-    parts = [cap["title"].strip(), "\n".join(b.strip() for b in cap.get("body", [])), cap["question"].strip()]
-    if cap.get("save"):
-        parts.append(cap["save"].strip())
-    return "\n\n".join(p for p in parts if p) + "\n"
+    if cap.get("body"):
+        raise ValueError("caption body not allowed: 3-line format (title / question / save)")
+    return "\n\n".join([cap["title"].strip(), cap["question"].strip(), cap["save"].strip()]) + "\n"
 
 
 def lint(text):
@@ -39,6 +38,13 @@ def lint(text):
         errs.append("title too long")
     if text.count("?") != 1:
         errs.append(f"need exactly 1 experience question (found {text.count('?')})")
+    blocks = text.strip().split("\n\n")
+    if len(blocks) != 3 or any("\n" in b or not b.strip() for b in blocks):
+        errs.append("must be exactly 3 lines separated by blank lines: title / question / save (no body text)")
+    elif not blocks[1].strip().endswith("?"):
+        errs.append("line 2 must be the experience question ending with ?")
+    elif not blocks[2].strip().lower().startswith("save"):
+        errs.append("line 3 must be the save line")
     return errs
 
 
