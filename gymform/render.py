@@ -15,18 +15,73 @@ from gymform.ctx import CFG, LAST_MASKS, CUR_PLATE, W, H, FPS, d5, b4, SPEC
 from gymform import bg, mask, equipment, xray, muscle, layout, tempo
 
 
-def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0):
-    """Returns (composited_rgb_uint8, shorts_mask, w_fg)."""
+def edit_base(step_idx):
+    """Pair step whose clip is the motion base of this step's motion-preserving edit (edit_of), else None."""
+    c = CFG["clips"][str(step_idx)]
+    partner = ctx.PAIRS.get(step_idx) or next((a for a, b in ctx.PAIRS.items() if b == step_idx), None)
+    if not c.get("edit_of") or partner is None or CFG["clips"][str(partner)]["file"] != c["edit_of"]:
+        return None
+    return partner if partner in SEQS else None
+
+
+def geo_frame(step_idx, p_i):
+    """ROOT CAUSE fix for Day 6+ X-Ray video edits: the edit keeps geometry, camera and motion of its base clip but
+    renders the body as dark see-through glass with glowing bones (and cyan/emerald glow spill), so keys computed
+    on the edit read the X-Ray cavity as backdrop, the glass as bench and the glow as equipment. For an edit, ALL
+    geometry (body key, equipment footprint, static bench, shorts) is taken from the base frame of the same pose;
+    only the colour/anatomy pixels come from the edit."""
+    pb = edit_base(step_idx)
+    if pb is None or p_i >= len(SEQS[pb]):
+        return None
+    y_sh = ctx.step_spec(step_idx)[5]
+    return b4.transform_frame_and_kp_1080p(SEQS[pb][p_i], KPS[step_idx][p_i], y_sh, step_idx)[0]
+
+
+SEQS, KPS, GEO_PLATE = {}, {}, {}
+
+
+def _with_geo_plate(step_idx, fn):
+    """Run fn with the BASE clip's backdrop plate (same transform) as the current plate, then restore."""
+    own = dict(CUR_PLATE)
+    if step_idx not in GEO_PLATE:
+        pb = edit_base(step_idx)
+        bg.set_step_plate(SEQS[pb], KPS[step_idx], step_idx, src=CFG["clips"][str(pb)]["file"])
+        GEO_PLATE[step_idx] = dict(CUR_PLATE)
+    CUR_PLATE.clear(); CUR_PLATE.update(GEO_PLATE[step_idx])
+    try:
+        return fn()
+    finally:
+        GEO_PLATE[step_idx] = dict(CUR_PLATE)
+        CUR_PLATE.clear(); CUR_PLATE.update(own)
+
+
+def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0, geo=None):
+    """Returns (composited_rgb_uint8, shorts_mask, w_fg). geo = base frame of a motion-preserving edit (geometry)."""
     F = mask.features(rgb_1080)
     K = mask.body_key(F, step_idx, kp)
     foot = equipment.footprint(rgb_1080, kp, F)
+    inner = None
+    if geo is not None:
+        # body silhouette: the base frame's key (eroded 3px) is body; the edit's own key only within 4px of it
+        # (drops the X-Ray glow spill). Equipment: the edit's own footprint clamped to the base footprint +3px
+        # (computed against the BASE plate), with the base core filled (bone glow over the handles neither
+        # bloats nor holes the dumbbells). Bench/static: the edit's own, never on the base body core.
+        Fg = mask.features(geo)
+        kb = (mask.body_key(Fg, edit_base(step_idx), kp)["w_raw"] > 0.5).astype(np.uint8)   # base = muscle key
+        fb = (_with_geo_plate(step_idx, lambda: equipment.footprint(geo, kp, Fg)) > 0.5).astype(np.uint8)
+        el = lambda r: cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+        inner = cv2.erode(kb, el(3)).astype(np.float32)
+        K["w_raw"] = np.maximum(K["w_raw"] * cv2.dilate(kb, el(4)), inner).astype(np.float32)
+        foot = np.maximum(foot * cv2.dilate(fb, el(3)), cv2.erode(fb, el(2))).astype(np.float32)
     w_fg, eq_solid, shorts_mask = mask.finalize(F, K, foot)
     metal = equipment.metal_mask(F, foot) * (1.0 - K["skin_seg"])   # metal only, never on a skin segment
-    LAST_MASKS.update(eq_solid=metal, eq_foot=foot, eq_zone=K["near_wrist"], src=rgb_1080)
+    LAST_MASKS.update(eq_solid=metal, eq_foot=foot, eq_zone=K["near_wrist"], src=rgb_1080, geo=geo)
     eq_solid = metal
     mono = muscle.silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong)
     mannequin, anat = muscle.activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase)
     stat = equipment.static_equipment(rgb_1080, F, kp, K, shorts_mask)
+    if inner is not None:   # X-Ray glass of the edit is body, never bench
+        stat = stat * (1.0 - inner)
     LAST_MASKS["static_eq"] = stat
     # X-Ray glass never tints the bench (static equipment is excluded from the X-Ray window like the dumbbells)
     mannequin = xray.apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, np.maximum(eq_solid, stat), kp, step_idx, is_wrong)
@@ -68,7 +123,8 @@ def render_pose(step_idx, seq, kps, p_i, icons, qc=False):
     if CUR_PLATE.get("step") != step_idx:
         bg.set_step_plate(seq, kps, step_idx)
     rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(seq[p_i], kps[p_i], y_sh, step_idx)
-    base_rgb, sh_mask, w_fg = shade(rgb_1080, step_idx, is_w, kp_1080, pulse_phase=pose_frac * 0.75)
+    base_rgb, sh_mask, w_fg = shade(rgb_1080, step_idx, is_w, kp_1080, pulse_phase=pose_frac * 0.75,
+                                    geo=geo_frame(step_idx, p_i))
     slot_i, deg_s, l1_s, l2_s = layout.callout_for(step_idx, pose_frac)
     fr = layout.draw_laser_and_callout_v4(base_rgb, sh_mask, step_idx, kp_1080, is_w, deg_s, l1_s, l2_s)
     LAST_MASKS["pre_ui"] = fr
@@ -114,6 +170,8 @@ def load_inputs():
     if dirty:
         pickle.dump(kps_seqs, open(CFG["kp_cache"], "wb"))
     ctx.normalize_scale(kps_seqs)      # same mannequin size + floor line in all 4 steps (any pose)
+    SEQS.update(raw_seqs)
+    KPS.update({s: kps_seqs[s] for s in (1, 2, 3, 4)})
     return raw_seqs, kps_seqs
 
 
@@ -123,7 +181,8 @@ def build_icons(raw_seqs, kps_seqs):
         fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(s)
         bg.set_step_plate(raw_seqs[s], kps_seqs[s], s)
         rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(raw_seqs[s][-1], kps_seqs[s][-1], y_sh, s)
-        sh_rgb, sh_m, w_fg = shade(rgb_1080, s, is_w, kp_1080, pulse_phase=0.75)
+        sh_rgb, sh_m, w_fg = shade(rgb_1080, s, is_w, kp_1080, pulse_phase=0.75,
+                                   geo=geo_frame(s, len(raw_seqs[s]) - 1))
         icons.append(b4._make_icon_pair(sh_rgb, kp_1080))
     return icons
 
@@ -140,6 +199,10 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
     cv2.imwrite(pre + "_eq.png", m8(LAST_MASKS.get("eq_solid", z)))
     cv2.imwrite(pre + "_eqfoot.png", m8(LAST_MASKS.get("eq_foot", z)))
     cv2.imwrite(pre + "_src.png", cv2.cvtColor(LAST_MASKS["src"], cv2.COLOR_RGB2BGR))
+    if LAST_MASKS.get("geo") is not None:   # base frame of a motion-preserving edit (QC geometry reference)
+        cv2.imwrite(pre + "_geo.png", cv2.cvtColor(LAST_MASKS["geo"], cv2.COLOR_RGB2BGR))
+    elif os.path.exists(pre + "_geo.png"):
+        os.remove(pre + "_geo.png")
     plate_p = os.path.join(d, f"step{step_idx}_plate.png")
     if CUR_PLATE.get("saved") != (d, step_idx):
         cv2.imwrite(plate_p, cv2.cvtColor(np.clip(CUR_PLATE["rgb"], 0, 255).astype(np.uint8), cv2.COLOR_RGB2BGR))

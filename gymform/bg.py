@@ -68,9 +68,11 @@ def transform(bgr_720p, kp_cached, y_sh, step_idx):
 b4.transform_frame_and_kp_1080p = transform
 
 
-def set_step_plate(seq, kps, step_idx):
-    """Per-step temporal median backdrop plate (720p native -> the step's own 1080 transform), cached on disk."""
+def set_step_plate(seq, kps, step_idx, src=None):
+    """Per-step temporal median backdrop plate (720p native -> the step's own 1080 transform), cached on disk.
+    src = clip that seq comes from when it is not the step's own clip (motion base of an X-Ray edit)."""
     fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(step_idx)
+    fn = src or fn
     key = hashlib.md5(repr((fn, i0, i1)).encode()).hexdigest()[:10]
     cp = os.path.join(ctx.CACHE_DIR, f"median_{CFG['day']:02d}_s{step_idx}_{key}.npy")   # exact 720p median (uint8)
     if os.path.exists(cp):

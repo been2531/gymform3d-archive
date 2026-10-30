@@ -494,6 +494,13 @@ def main():
         # (d) equipment vs the QC's own per-frame expected footprint (every sidecar frame, whole movement)
         zone = load_mask(pre + "_eqzone.png")
         src_p, plate_p = pre + "_src.png", os.path.join(args.qc_dir, f"step{s}_plate.png")
+        # motion-preserving X-Ray edit (edit_of = the pair's base clip): the edit renders arms/torso as dark
+        # see-through glass that the colour model of the expected footprint reads as metal, so the expected
+        # equipment GEOMETRY comes from the base frame of the same pose (_geo.png) and the base step's plate
+        # (pair steps share keypoints, scale and offset, so its plate is in this step's transform)
+        geo_p = pre + "_geo.png"
+        if os.path.exists(geo_p):
+            src_p, plate_p = geo_p, os.path.join(args.qc_dir, f"step{ {1: 3, 2: 4, 3: 1, 4: 2}[s]}_plate.png")
         if zone is not None and os.path.exists(src_p) and os.path.exists(plate_p):
             src = cv2.cvtColor(cv2.imread(src_p), cv2.COLOR_BGR2RGB)
             plate = cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB)
@@ -519,6 +526,7 @@ def main():
                             ui_fail.append(H_ROWS[-1])
         else:
             eq_fail.append(f"{key}: no equipment sidecar (config: {[e['type'] for e in meta['equipment']]})")
+        plate_p = os.path.join(args.qc_dir, f"step{s}_plate.png")
         # (c) mannequin size: pose-invariant skeletal size (torso+thigh+shin+upper arm) on EVERY sidecar frame;
         # the old head-top extent was fooled by overhead arms / seated poses (Day 6 Step 3 rendered 20% larger)
         heights[key] = skeletal_size(kp)

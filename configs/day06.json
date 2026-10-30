@@ -180,7 +180,9 @@
         "bone": {
           "file": "day6_idp_wrong_bone_720p.mp4",
           "edit_of": "day6_idp_step2_muscle_720p.mp4",
-          "status": "NEEDS GENERATION (Grok Imagine video edit of the base: same motion, crimson X-Ray skeleton)"
+          "edit": {
+            "color": "crimson"
+          }
         }
       }
     },
@@ -197,7 +199,9 @@
         "bone": {
           "file": "day6_idp_right_bone_720p.mp4",
           "edit_of": "day6_idp_step4_muscle_720p.mp4",
-          "status": "NEEDS GENERATION (Grok Imagine video edit of the base: same motion, emerald X-Ray skeleton)"
+          "edit": {
+            "color": "emerald"
+          }
         }
       }
     }
