@@ -218,6 +218,8 @@ def prepare(step, seq, kps, y_sh):
         trk.append(out)
         pts = np.array(newp, np.float32).reshape(-1, 1, 2)
     _ST[step] = dict(den=den, G=G, B0=B0, wm=wm * (1.0 - wb), xs=xs, ys=ys, A95=A95, kp=trk, raw_kp=kp_t)
+    from gymform import plates as _pl   # t605 plate recolour (flagged): soft tracked matte per source frame
+    _ST[step]["plate"] = _pl.build(_ST[step], _lumx, _act, _flow_full, _warp, small)
     return _ST[step]
 
 
@@ -244,6 +246,10 @@ def grade(step, p_i, is_wrong):
     else:
         col = np.stack([8.0 + 0.32 * Lg, 30.0 + 1.38 * Lg, 14.0 + 0.72 * Lg], -1)
     base = grey * (1.0 - w) + np.clip(col, 0, 255) * w
+    pm = S["plate"][p_i] if S.get("plate") is not None else None
+    if pm is not None:   # t605: plate colour remap (soft matte, the glow never sits on plates: act-gated matte)
+        from gymform import plates as _pl
+        base = _pl.apply(base, Lg, pm)
     wm = S["wm"][..., None]
     ref = np.clip(grey * wm + BG_RGB * (1.0 - wm), 0, 255).astype(np.uint8)   # global tone map only (QC (m) reference)
     base = np.clip(base * wm + BG_RGB * (1.0 - wm), 0, 255).astype(np.uint8)
@@ -256,5 +262,5 @@ def grade(step, p_i, is_wrong):
     evid = (np.abs(cv2.GaussianBlur(L1, (0, 0), 4.0) - S["B0"]) > float(CFG.get("shorts_evidence_lum", 3.5))).astype(np.uint8)
     sm = cv2.morphologyEx((fab > 0.5).astype(np.uint8) & evid, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)) & evid
     shorts = cv2.GaussianBlur(sm.astype(np.float32), (0, 0), 0.8)
-    LAST_MASKS["native"] = dict(L1=L1, B0=S["B0"], ref=ref)
+    LAST_MASKS["native"] = dict(L1=L1, B0=S["B0"], ref=ref, plate=pm if pm is not None else np.zeros((H, W), np.float32))
     return base, shorts, w_fg, src, kp

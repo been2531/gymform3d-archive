@@ -185,5 +185,20 @@
   ],
   "native_sep_dx": 8.0,
   "native_sep_dy": 10.0,
-  "native_dark_floor": 18.0
+  "native_dark_floor": 18.0,
+  "plate_recolour": {
+    "base_rgb": [
+      45,
+      75,
+      170
+    ],
+    "rim_rgb": [
+      190,
+      160,
+      95
+    ],
+    "rim_px": 5,
+    "accent_rgb": null,
+    "_note": "palette A (owner pick t605u+): matte cobalt plates, thin brushed-gold rim, no logo; ref docs/plate_palette_A_reference.jpg"
+  }
 }
