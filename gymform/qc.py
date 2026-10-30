@@ -480,6 +480,54 @@ def leg_below_hem_check(base, wfg, shorts, kp, eqfoot=None, src=None):
 DAY4_MUSCLE_PX = {"wrong": (50145, 62472), "right": (21053, 35179)}   # Day 4 master act>40 px (peak / start), t567u
 
 
+def flat_look_checks(meta, frames_meta, vids, qc_dir):
+    """t592u (shading came back in Day 6 v2/v3): Day 4 = flat 35/39/43 backdrop and one even body tone.
+    (bg) backdrop flat: 120x120 block medians of pure-backdrop pixels (below the UI, no body/equipment/callout)
+         span <= 4 lum (Day 4: 0; the vignetted plate of v3: 23)
+    (sh) body shading: skin (no shorts/equipment/static/glow) darker than lum 46 <= 6% and p5 >= 44
+         (Day 4 floors its body at 42-48; v3 had a dark shaded side with lum 15-45)"""
+    b_bad, b_rows, s_bad, s_rows = [], [], [], []
+    for key, fm in sorted(frames_meta.items()):
+        pre = os.path.join(qc_dir, key)
+        fr = vids.get(fm["frame_idx"])
+        wfg, st, sh, eq = (load_mask(pre + f"_{n}.png") for n in ("wfg", "static", "shorts", "eq"))
+        if fr is None or wfg is None:
+            continue
+        f = fr.astype(np.float32)
+        l = lum_of(f)
+        occ = (wfg > 0.02) | ((st if st is not None else 0) > 0.02) | ((eq if eq is not None else 0) > 0.02)
+        occ = cv2.dilate(occ.astype(np.uint8), np.ones((25, 25), np.uint8)) > 0
+        bgm = ~occ
+        bgm[:620] = False                                     # title / preview capsule
+        bgm[:1300, :320] = False                              # callout text block
+        meds = []
+        for y in range(620, H - 60, 120):
+            for x in range(0, W, 120):
+                blk = bgm[y:y + 120, x:x + 120]
+                if blk.sum() > 3000:
+                    meds.append(float(np.median(l[y:y + 120, x:x + 120][blk])))
+        if len(meds) >= 6:
+            span = max(meds) - min(meds)
+            b_rows.append(f"{key}: span {span:.1f} ({min(meds):.0f}-{max(meds):.0f}, {len(meds)} blocks)")
+            if span > 4.0:
+                b_bad.append(b_rows[-1])
+        skin = (wfg > 0.9) & (act_of(f) < 12.0)
+        for m_ in (st, sh, eq):
+            if m_ is not None:
+                skin &= m_ < 0.2 if m_ is sh else m_ < 0.5
+        skin[:620] = False
+        if skin.sum() > 2000:
+            dark = float((l[skin] < 46.0).mean())
+            p5 = float(np.percentile(l[skin], 5))
+            s_rows.append(f"{key}: dark<46 {100 * dark:.1f}% p5 {p5:.0f}")
+            if dark > 0.06 or p5 < 44.0:
+                s_bad.append(s_rows[-1])
+    report("(bg) backdrop flat like Day 4 (block span <= 4 lum, no vignette / spotlight / floor shadow)", not b_bad,
+           "; ".join(b_bad[:4]) or " | ".join(b_rows[:4]))
+    report("(sh) body evenly lit like Day 4 (skin < lum 46 <= 6%, p5 >= 44: no dark shaded side)", not s_bad,
+           "; ".join(s_bad[:4]) or " | ".join(s_rows[:4]))
+
+
 def t567_checks(meta, frames_meta, vids, qc_dir):
     """t567u checks for the t558 diagnosis fixes (muscle-only day):
     (mf) muscle fibre colour = the Day 4 shader with the Day 4/5 look (t572u: no speckle, Day 4/5 colour strength)
@@ -840,6 +888,8 @@ def main():
         report("(z) paired steps show the same callout angle (+-5 deg) and label", not z_bad, "; ".join(z_bad[:6]) or " | ".join(z_rows))
     if int(meta.get("n_steps", 4)) == 2:
         t567_checks(meta, frames_meta, vids, args.qc_dir)
+    if int(meta.get("day") or 0) >= 6:
+        flat_look_checks(meta, frames_meta, vids, args.qc_dir)
     sq_bad = [f"{k}: {msg}" for k, ok, msg in STRAY if not ok]
     report("(q) no stray / unanchored overlay lines or blobs", not sq_bad,
            "; ".join(sq_bad) or f"{len(STRAY)} frames: all fg components attached to mannequin/equipment")

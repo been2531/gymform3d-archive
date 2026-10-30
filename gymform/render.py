@@ -147,7 +147,9 @@ def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0, geo=None, geo_masks
     sw = stat[:, :, None]
     mannequin = mannequin * (1.0 - sw) + rgb_1080.astype(np.float32) * sw
     w_fg = np.maximum(w_fg, stat)
-    back = bg.studio_bg() * (1.0 - 0.80 * bg.contact_shadow(kp)[:, :, None])
+    # t592u: Day 4 has a flat 35/39/43 backdrop and no floor shadow; configs with flat_look keep it that way
+    shadow = 0.0 if CFG.get("flat_look") else 0.80 * bg.contact_shadow(kp)[:, :, None]
+    back = bg.studio_bg() * (1.0 - shadow)
     wf = w_fg[:, :, None]
     return np.clip(back * (1.0 - wf) + mannequin * wf, 0, 255).astype(np.uint8), shorts_mask, w_fg
 
@@ -165,6 +167,8 @@ def skin_tone_lock(rgb, w_fg, shorts_mask, metal, step_idx):
     skin = (w_fg > 0.9) & (keep_out < 0.05) & (act < 12.0) & (L > 46.0)
     if xw is not None:   # statistics on the same skin as QC (f)/(i): 25 px clear of the X-Ray window (glow spill)
         skin &= cv2.dilate((xw > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) == 0
+    if CFG.get("flat_look"):
+        return _flat_skin_lock(f, L, act, w_fg, keep_out, lk)
     if skin.sum() < 2000:
         return rgb
     p75, p90, pmx = (float(np.percentile(L[skin], q)) for q in (75, 90, 99.9))
@@ -172,6 +176,26 @@ def skin_tone_lock(rgb, w_fg, shorts_mask, metal, step_idx):
     ys = [0.0, 46.0, float(lk["p75"]), float(lk["p90"]), float(lk["max"]), float(lk["max"])]
     gain = np.interp(L, xs, ys) / np.maximum(L, 1.0)
     # full lock on every solid-body pixel (w_fg >= 0.9 is skin for QC (f)); only the soft matte edge blends
+    w = np.clip((w_fg - 0.5) / 0.4, 0, 1) * (1.0 - np.clip(keep_out * 4, 0, 1)) * np.clip((12.0 - act) / 6.0, 0.0, 1.0)
+    g = 1.0 + (gain - 1.0) * w
+    return np.clip(f * g[:, :, None], 0, 255)
+
+
+def _flat_skin_lock(f, L, act, w_fg, keep_out, lk):
+    """t592u ROOT CAUSE (shading back in Day 6 v2/v3): the lock only remaps skin above lum 46, so the dark shaded
+    side of the Day 4-tone charcoal clips (lum 15-45) passed through untouched. Day 4's own shader floors the body
+    at 42-48 and lifts shadows with a 0.78 gamma (build_day4_rdl_master grey_back_exact). Same idea here: one
+    monotonic curve over ALL skin (no lum gate) p5 -> 52, p50 -> spec p50, p75/p90/max -> spec, so the body reads
+    as one even matte tone without a dark side, while 3D ridges keep their order."""
+    skin = (w_fg > 0.9) & (keep_out < 0.05) & (act < 12.0) & (L > 6.0)
+    if skin.sum() < 2000:
+        return f
+    q = [float(np.percentile(L[skin], x)) for x in (5, 50, 75, 90, 99.9)]
+    for i in range(1, len(q)):
+        q[i] = max(q[i], q[i - 1] + 1.0)
+    xs = [0.0] + q + [max(255.0, q[-1] + 1.0)]
+    ys = [0.0, 52.0, float(lk["p50"]), float(lk["p75"]), float(lk["p90"]), float(lk["max"]), float(lk["max"])]
+    gain = np.interp(L, xs, ys) / np.maximum(L, 1.0)
     w = np.clip((w_fg - 0.5) / 0.4, 0, 1) * (1.0 - np.clip(keep_out * 4, 0, 1)) * np.clip((12.0 - act) / 6.0, 0.0, 1.0)
     g = 1.0 + (gain - 1.0) * w
     return np.clip(f * g[:, :, None], 0, 255)

@@ -26,3 +26,8 @@ Day 6 shipped as `configs/day06_muscle2.json`: muscle-only, 2 steps, 10 s, QC 28
 14. Before the preflight, compare the muscle colouring against Day 4 with a side-by-side crop (`tools/preflight_sheet.py --compare`). If it doesn't look like Day 4, stop and fix it before rendering.
 15. Caption: 3 lines (title / experience question / save line), English only, 0 hashtags, no DM-reward CTA. The TTS ends with the spoken experience question.
 16. No paid xAI API and no `XAI_API_KEY`. No grok.com generation (shared quota). Run under `nice` with ≤2 workers. No publishing without 중현 님's approval.
+
+## 17. Flat Day 4 look is mandatory (t591u/t592u, Day 6 v4)
+- The backdrop is a flat 35/39/43 (`flat_look: true` + `studio_bg: output/assets/studio_flat_day4_1080p.png`). No vignetted plate and no floor contact shadow. Day 4 did this with a constant (38,40,44).
+- The skin lock under `flat_look` remaps ALL skin (no lum>46 gate), p5 -> 52, so the clip's dark shaded side is lifted to one even matte tone.
+- QC gates (bg) (backdrop block span <= 4 lum) and (sh) (skin < 46 <= 6%, p5 >= 44) run for day >= 6. v3 measured span 44.5, dark 13-16%, p5 43 (FAIL). v4 measures span 0.0, dark 0.4-0.9%, p5 50 (PASS).
