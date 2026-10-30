@@ -10,8 +10,8 @@ day starts from these references. Media files are local (not in git); configs/do
 | 2 | Day 1 v36 X-Ray bones (posted De_Yl9rAYC4) | `output/day1_v36_master_reel.mp4` @ 1.5 s; QC ref `output/qc/ref/day1_v36_xray_t1.5.jpg` | Bone BRIGHTNESS only: near-white luminous, soft tint (t530u), QC (g)/(u). Scope is now t552u: only the target bones, no glass window, skin untouched. |
 | 3 | Day 5 v5 master (posted DfFPS3YFLF3) | `output/day5_dumbbell_lateral_raise_4step_master_v5.mp4`, `configs/day05.json` (3b584ad) | **Mechanics only**: one-pass modular pipeline, auto QC gates, native-fabric shorts masking, spoken experience-question caption. Its silver skin, tempo and arm-laser callout are superseded by Day 4. |
 | 4–5 | Day 5 native clips | `output/assets/day5_lat_step1_bone_720p.mp4`, `…step3_bone_v3…`, `…step2_muscle…`, `…step4_muscle…` | Clip-generation template: native i2v, anatomy baked in, bones over OPAQUE skin. |
-| 6 | Day 6 wrong pair (candidate) | `day6_idp_step3_bone_720p.mp4` f23–59 ↔ `day6_idp_step2_muscle_720p.mp4` f2–62 | Joint 5.6 % / elbow 11.6° / shoulder 8.8° / view 6.8 % (noise 2.8 %). Promote after the owner approves the sample sheet. |
-| 7 | Day 6 right pair (candidate, weaker) | `day6_idp_step1_bone_720p.mp4` f20–47 ↔ `day6_idp_step4_muscle_720p.mp4` f2–58 (both mirrored to the Day 4 camera side) | Joint 14.6 % / 14.5° / 12.9° / view 7.1 % — inside the 15 tolerance but at the limit. |
+| 6 | Day 6 wrong pair (candidate) | `day6_idp_step3_bone_720p.mp4` f23–60 ↔ `day6_idp_step2_muscle_720p.mp4` f15–64 (t557u) | As rendered: joint 4.9 % / elbow 14.4° / shoulder 7.9° / view 6.0 % (was 6.9 % on f2–62). Steps 1/3 both 90° ELBOW FLARE. Promote after the owner approves the sample sheet. |
+| 7 | Day 6 right pair (candidate, weaker) | `day6_idp_step1_bone_720p.mp4` f24–47 ↔ `day6_idp_step4_muscle_720p.mp4` f9–58 (both mirrored to the Day 4 camera side; t557u) | As rendered: joint 14.9 % / 14.7° / 12.3° (was 15.2 %); steps 2/4 both 45° ELBOW TUCK; / view 7.1 % — inside the 15 tolerance but at the limit. |
 
 **Never use**: `output/assets/day6_idp_{wrong,right}_bone_720p.mp4` (xAI edits, rejected t529u).
 

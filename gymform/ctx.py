@@ -99,6 +99,15 @@ def expand_motions(cfg: dict) -> dict:
                          "edit_of": r.get("edit_of"), "mirror": bool(r.get("mirror", m.get("mirror", False))),
                          "camera": r.get("camera", cam if cam in m["renders"] else "unlabelled"), "camera_slot": cam}
     cfg["clips"] = clips
+    # t557u: the callout belongs to the MOTION (form), not the step: both steps of a pair show the same coached
+    # angle + label (only the consequence line l2 may differ per anatomy layer: bone vs muscle)
+    if all("callout" in cfg["motions"][f] for f in ("wrong", "right")):
+        cos = {}
+        for s, (form, cam, kind) in step_plan(mt).items():
+            mc_ = cfg["motions"][form]["callout"]
+            l2 = mc_["l2"].get(kind) if isinstance(mc_["l2"], dict) else mc_["l2"]
+            cos[str(s)] = {"slot": s - 1, "deg": mc_["deg"], "l1": mc_["l1"], "l2": l2, "motion": form}
+        cfg["callouts"] = cos
     cfg["mistake_type"] = mt
     cfg["bone_steps"] = [int(k) for k, (_, _, kd) in step_plan(mt).items() if kd == "bone"]
     cfg["muscle_steps"] = [int(k) for k, (_, _, kd) in step_plan(mt).items() if kd == "muscle"]

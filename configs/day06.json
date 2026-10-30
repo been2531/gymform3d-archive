@@ -70,11 +70,8 @@
   },
   "3": {
    "slot": 2,
-   "deg": {
-    "from": 10,
-    "to": 25
-   },
-   "l1": "SHOULDER ROLL",
+   "deg": "90°",
+   "l1": "ELBOW FLARE",
    "l2": [
     "FRONT DELT OVERLOAD",
     74,
@@ -84,7 +81,7 @@
   "4": {
    "slot": 3,
    "deg": "45°",
-   "l1": "ELBOWS 45°",
+   "l1": "ELBOW TUCK 45°",
    "l2": [
     "UPPER PEC LOAD",
     96,
@@ -103,11 +100,11 @@
   ],
   [
    10.2,
-   "Rolling your shoulders forward dumps the load onto your front delts."
+   "Flared elbows also dump the load onto your front delts."
   ],
   [
    15.2,
-   "Press up and slightly in to load your upper chest."
+   "At forty-five degrees the load moves onto your upper chest."
   ]
  ],
  "caption": {
@@ -145,7 +142,7 @@
   "overpaint_2d": {}
  },
  "auto_scale": true,
- "callout_note": "deg = coached joint angle for the pair's shared motion: wrong (Steps 1/3) elbow flare 90 deg + shoulder roll; right (Steps 2/4) elbows tucked 45 deg = TTS 'forty-five degrees'; not 2D-measured",
+ "callout_note": "t557u: deg/l1 = coached angle of the pair's shared motion (motions.*.callout): wrong 1/3 elbow flare 90 deg, right 2/4 elbow tuck 45 deg (TTS 'forty-five degrees'); not 2D-measured. Top-level callouts are regenerated from motions.*.callout.",
  "target_zoom": {
   "region": "upper_body",
   "focus": "shoulder midpoint (upper chest / shoulders)",
@@ -160,8 +157,8 @@
  "motions": {
   "wrong": {
    "base": "day6_idp_step2_muscle_720p.mp4",
-   "i0": 2,
-   "i1": 62,
+   "i0": 15,
+   "i1": 64,
    "y_shift": 80,
    "why": "clearest wrong form: elbows flared ~90 deg AND shoulders rolled forward off the bench, 3/4 view",
    "renders": {
@@ -172,24 +169,50 @@
     "bone": {
      "file": "day6_idp_step3_bone_720p.mp4",
      "i0": 23,
-     "i1": 59,
+     "i1": 60,
      "pair_match": {
-      "joint_dev_pct": 5.6,
-      "elbow_deg": 11.6,
-      "shoulder_deg": 8.8,
-      "view_dev_pct": 6.8,
-      "noise_floor_pct": 2.8,
-      "method": "DTW keypoints vs base slice (_tmp scorer, t541u)"
+      "joint_dev_pct": 4.9,
+      "elbow_deg": 14.4,
+      "shoulder_deg": 7.9,
+      "view_dev_pct": 6.0,
+      "method": "t557u: windows chosen as RENDERED (both slices on the same tempo wave, 21 phases), not DTW",
+      "before": {
+       "win": [
+        2,
+        62,
+        23,
+        59
+       ],
+       "joint_dev_pct": 6.9,
+       "elbow_deg": 9.2,
+       "shoulder_deg": 10.6
+      }
      },
      "why": "native bone clip over solid silver skin; its motion/angle matches the WRONG muscle clip (the old 4-clip version had the two bone clips on swapped steps)",
      "native_tint": "emerald",
      "camera": "3q_high (same camera for all 4 clips)"
     }
+   },
+   "callout": {
+    "deg": "90°",
+    "l1": "ELBOW FLARE",
+    "l2": {
+     "bone": [
+      "SHOULDER RISK",
+      82,
+      10
+     ],
+     "muscle": [
+      "FRONT DELT OVERLOAD",
+      74,
+      8
+     ]
+    }
    }
   },
   "right": {
    "base": "day6_idp_step4_muscle_720p.mp4",
-   "i0": 2,
+   "i0": 9,
    "i1": 58,
    "y_shift": 80,
    "why": "elbows tucked ~45 deg, blades pinned, 3/4 view = Step 4 cover",
@@ -200,15 +223,26 @@
     },
     "bone": {
      "file": "day6_idp_step1_bone_720p.mp4",
-     "i0": 20,
+     "i0": 24,
      "i1": 47,
      "pair_match": {
-      "joint_dev_pct": 14.6,
-      "elbow_deg": 14.5,
-      "shoulder_deg": 12.9,
-      "view_dev_pct": 7.1,
-      "noise_floor_pct": 1.5,
-      "method": "DTW keypoints vs base slice (_tmp scorer, t541u)"
+      "joint_dev_pct": 14.9,
+      "elbow_deg": 14.7,
+      "shoulder_deg": 12.3,
+      "view_dev_pct": 8.5,
+      "method": "t557u: windows chosen as RENDERED (both slices on the same tempo wave, 21 phases), not DTW",
+      "before": {
+       "win": [
+        2,
+        58,
+        20,
+        47
+       ],
+       "joint_dev_pct": 15.2,
+       "elbow_deg": 13.4,
+       "shoulder_deg": 13.6
+      },
+      "note": "t557u: bone end kept at 47 (frames 48-50 carry a broad native glass glow that drops bone contrast (u) to 15); 24-50 scored 14.9/13.5/11.8"
      },
      "why": "native bone clip; matches the RIGHT muscle clip (weaker match than wrong: eyeball)",
      "native_tint": "crimson",
@@ -216,7 +250,23 @@
     }
    },
    "mirror": true,
-   "mirror_why": "t543u Day 4 locked camera side: the right-form clips are the mirrored camera side of the wrong-form clips (wrong vs mirrored right muscle: 8.3% joint dev)"
+   "mirror_why": "t543u Day 4 locked camera side: the right-form clips are the mirrored camera side of the wrong-form clips (wrong vs mirrored right muscle: 8.3% joint dev)",
+   "callout": {
+    "deg": "45°",
+    "l1": "ELBOW TUCK 45°",
+    "l2": {
+     "bone": [
+      "JOINT SAFE",
+      92,
+      6
+     ],
+     "muscle": [
+      "UPPER PEC LOAD",
+      96,
+      4
+     ]
+    }
+   }
   }
  },
  "rejected_clips": {
@@ -229,5 +279,6 @@
  "motion_standard": "incline_dumbbell_press",
  "mistake_type": "joint",
  "mistake_type_why": "elbow flare ~90 deg loads the glenohumeral joint (humeral head vs acromion: impingement / anterior shoulder stress) - a joint mistake; anterior-delt overload is secondary (t554u)",
- "camera_plan_note": "t556u plan (1/2 front, 3/4 side) NOT met: all existing Day 6 clips share one elevated 3/4 camera. Needs 2 motions x front/side native clips (new generation, not approved)."
+ "camera_plan_note": "t556u plan (1/2 front, 3/4 side) NOT met: all existing Day 6 clips share one elevated 3/4 camera. Needs 2 motions x front/side native clips (new generation, not approved).",
+ "callouts_note": "t557u: callouts are derived per motion (motions.*.callout) - steps 1/3 and 2/4 share angle + label"
 }
