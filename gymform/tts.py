@@ -12,7 +12,8 @@ import wave
 
 import numpy as np
 
-from gymform.ctx import CFG, DURATION, SPEC, TMP
+from gymform.ctx import CFG, SPEC, TMP
+from gymform import ctx as _ctx
 from gymform import caption
 
 SR = 44100
@@ -40,12 +41,21 @@ async def _say(text, i):
         return np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
 
 
+def q_window(r, dur):
+    """Spoken-question window shifted with the reel length (spec values are written for the 20 s / 4-step reel)."""
+    sh = dur - 20.0
+    return float(r.get("min_start_s", 0.0)) + sh if r.get("min_start_s") is not None else 0.0, \
+        float(r.get("latest_end_s", 19.9)) + sh
+
+
 async def _synth(wav_path):
+    DURATION = _ctx.duration()
+    last = f"step{_ctx.n_steps()}"
     n = int(SR * DURATION)
     t = np.arange(n, dtype=np.float32) / SR
     beat = 0.45 + 0.55 * (np.sin(2.0 * math.pi * (100.0 / 60.0) * t) > 0.72).astype(np.float32)
     master = 0.040 * np.sin(2.0 * math.pi * 55.0 * t) * beat
-    for k, ts in enumerate([0.05, 5.0, 10.0, 15.0]):
+    for k, ts in enumerate([0.05, 5.0, 10.0, 15.0][:_ctx.n_steps()]):
         s0, dc = int(ts * SR), int(0.24 * SR)
         tc = np.linspace(0.0, 0.24, dc, endpoint=False)
         master[s0:s0 + dc] += 0.085 * np.sin(2.0 * math.pi * (220.0 if k < 2 else 528.0) * tc) * np.exp(-tc * 13.0)
@@ -55,10 +65,11 @@ async def _synth(wav_path):
         raw = await _say(text, i)
         dur = len(raw) / SR
         if ts is None:
-            ts = max(prev_end + float(r.get("gap_after_step4_s", 0.25)), float(r.get("min_start_s", 0.0)))
-            limit = float(r.get("latest_end_s", DURATION - 0.1))
+            q0, q1 = q_window(r, DURATION)
+            ts = max(prev_end + float(r.get("gap_after_step4_s", 0.25)), q0)
+            limit = q1
         else:
-            limit = (int(role[4:])) * 5.0 - 0.85 if role != "step4" or not r else DURATION - 0.1
+            limit = (int(role[4:])) * 5.0 - 0.85 if role != last or not r else DURATION - 0.1
         end = ts + dur
         out.append({"role": role, "text": text, "start": round(ts, 3), "dur": round(dur, 3), "end": round(end, 3),
                     "gap_from_prev": round(ts - prev_end, 3)})
@@ -73,7 +84,7 @@ async def _synth(wav_path):
         wf.setsampwidth(2)
         wf.setframerate(SR)
         wf.writeframes(np.repeat(pcm, 2).tobytes())
-    json.dump({"day": CFG.get("day"), "duration_s": DURATION, "segments": out}, open(wav_path + ".timing.json", "w"), indent=1)
+    json.dump({"day": CFG.get("day"), "duration_s": DURATION, "n_steps": _ctx.n_steps(), "segments": out}, open(wav_path + ".timing.json", "w"), indent=1)
     return wav_path
 
 

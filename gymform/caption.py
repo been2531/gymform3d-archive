@@ -88,9 +88,10 @@ def spoken_plan(cfg, spec):
     q = spoken_question(cfg, spec)
     t4, l4 = [(float(t), s) for t, s in cfg["tts_lines"]][-1]
     end4 = t4 + est_speech_s(l4)
-    qs = max(end4 + float(r["gap_after_step4_s"]), float(r.get("min_start_s", 0)))
+    sh = 5.0 * int(cfg.get("n_steps", 4)) - 20.0   # t568u: window moves with the reel length (2 steps = 10 s)
+    qs = max(end4 + float(r["gap_after_step4_s"]), float(r.get("min_start_s", 0)) + sh)
     return {"question": q, "step4_end_est": round(end4, 2), "q_start_est": round(qs, 2),
-            "q_end_est": round(qs + est_speech_s(q), 2), "latest_end_s": float(r["latest_end_s"])}
+            "q_end_est": round(qs + est_speech_s(q), 2), "latest_end_s": float(r["latest_end_s"]) + sh}
 
 
 def lint_spoken(cfg, spec):
