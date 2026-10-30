@@ -1,5 +1,7 @@
 # @gymform.3d BASELINE TEMPLATE (t530u–t547u)
 
+> **Every day:** problem → fix definitions are in [`DEFECT_PLAYBOOK.md`](DEFECT_PLAYBOOK.md) (root-cause evidence: [`ROOTCAUSE_DAY6.md`](ROOTCAUSE_DAY6.md)); `run_day.py` prints it and from Day 7 requires its sha in the config.
+>
 > **Day 7+:** read [`DAY7_IMPROVEMENTS.md`](DAY7_IMPROVEMENTS.md) first (Day 6 lessons: one dumbbell type, full ROM, Day 4-size glow, real front/side cameras, Day 4 fibre shader only, 2-step muscle-only OK, no studio3d mannequin).
 
 Owner (t530u–t532u): Day 6 fell apart because too much changed at once. **Build from what already worked in the

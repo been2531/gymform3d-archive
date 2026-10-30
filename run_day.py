@@ -339,6 +339,20 @@ def main():
     if lint.get("spoken_question"):
         print(json.dumps({"day": a.day, "ok": False, "stage": "lint", "lint": lint}))
         sys.exit(2)
+    # t598u/t599u: problem -> fix definitions are decided up front in docs/DEFECT_PLAYBOOK.md. Printed at every
+    # run; from Day 7 the config must carry the playbook's current sha (proof it was read after its last change).
+    import hashlib as _hl
+    _pb = os.path.join(ROOT, "docs", "DEFECT_PLAYBOOK.md")
+    _pb_sha = _hl.sha1(open(_pb, "rb").read()).hexdigest()[:8]
+    print(f"DEFECT PLAYBOOK (docs/DEFECT_PLAYBOOK.md, sha {_pb_sha}): fix every on-screen defect by its row:", flush=True)
+    for _ln in open(_pb, encoding="utf-8"):
+        if _ln.startswith("| D"):
+            _c = [x.strip() for x in _ln.strip().strip("|").split("|")]
+            print(f"  {_c[0]} {_c[1]} -> fix: {_c[4][:110]} | check: {_c[6]}", flush=True)
+    if a.day >= 7 and day_cfg.get("defect_playbook_sha") != _pb_sha:
+        print(json.dumps({"day": a.day, "ok": False, "stage": "playbook",
+                          "error": f"read docs/DEFECT_PLAYBOOK.md, then set \"defect_playbook_sha\": \"{_pb_sha}\" in the day config"}))
+        sys.exit(2)
     A = lambda p: p if os.path.isabs(p) else os.path.join(ROOT, p)
     VAR = os.path.splitext(os.path.basename(cfg_p))[0]   # day06 | day06_muscle2 (variants keep their own overrides)
     ovr_p = os.path.join(CACHE, f"overrides_{VAR}.json")

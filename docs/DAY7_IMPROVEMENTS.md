@@ -1,5 +1,7 @@
 # Day 7 build: improvement points learned from Day 6 (t558u–t573u)
 
+> **Read first:** [`DEFECT_PLAYBOOK.md`](DEFECT_PLAYBOOK.md) (one row per defect: symptom → root cause → defined fix → QC check) and [`ROOTCAUSE_DAY6.md`](ROOTCAUSE_DAY6.md). The Day 6 v4 look path (cut-out over a replaced backdrop) is the root cause of the morph, ghost and flicker defects; Day 7 must not render on it unchanged.
+
 Read this before generating clips or touching configs for Day 7. Day 4 (RDL) stays the gold standard.
 Day 6 shipped as `configs/day06_muscle2.json`: muscle-only, 2 steps, 10 s, QC 28/28.
 
