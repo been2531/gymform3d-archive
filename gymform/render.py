@@ -87,7 +87,23 @@ def load_inputs():
         fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(s)
         seq = d5.load_native_slice_720p(os.path.join(CFG["assets_dir"], fn), i0, i1)
         raw_seqs[s] = seq
-        sig = (fn, i0, i1, y_sh)
+        # pair steps (same motion, Day 6+) share ONE keypoint track extracted from the motion base clip
+        kp_fn = CFG["clips"][str(s)].get("kp_file") or fn
+        twin = next((t for t in (1, 2, 3, 4) if t < s and (CFG["clips"][str(t)].get("kp_file") or "") == kp_fn
+                     and kp_fn and (CFG["clips"][str(t)]["i0"], CFG["clips"][str(t)]["i1"]) == (i0, i1)), None)
+        sig = (kp_fn, i0, i1, y_sh)
+        if twin is not None and kps_seqs.get(("sig", twin)) == sig and len(kps_seqs[twin]) == len(seq):
+            if kps_seqs.get(("sig", s)) != sig or kps_seqs.get(s) is not kps_seqs[twin]:
+                kps_seqs[s], kps_seqs[("sig", s)] = kps_seqs[twin], sig
+                dirty = True
+            continue
+        if kp_fn != fn:   # extract from the motion base clip (not the edited twin)
+            if s not in kps_seqs or kps_seqs.get(("sig", s)) != sig:
+                kps_seqs[("sig", s)] = sig
+                base_seq = d5.load_native_slice_720p(os.path.join(CFG["assets_dir"], kp_fn), i0, i1)
+                kps_seqs[s] = d5.extract_day5_kps_1080(base_seq, s, y_sh)
+                dirty = True
+            continue
         if ("sig", s) not in kps_seqs and s in kps_seqs and tuple(d5.STEP_SPECS_DAY5.get(s, ())[:3]) == (fn, i0, i1):
             kps_seqs[("sig", s)] = sig      # legacy cache entry built from the same clip slice
             dirty = True

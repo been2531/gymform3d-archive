@@ -36,6 +36,56 @@ def _abs(p):
     return p if os.path.isabs(p) else os.path.join(ROOT, p)
 
 
+PAIRS = {1: 3, 2: 4}          # same MOTION, different rendering: 1/3 = wrong form, 2/4 = right form (Day 6+)
+_KIND_STEP = {("wrong", "bone"): 1, ("right", "bone"): 2, ("wrong", "muscle"): 3, ("right", "muscle"): 4}
+
+
+def expand_motions(cfg: dict) -> dict:
+    """Day 6+ schema: `motions` = {"wrong": M, "right": M}; M = {"base": file, "i0", "i1", "y_shift",
+    "renders": {"bone": {"file", "edit_of"?}, "muscle": {"file", "edit_of"?}}}. The 4 steps are DERIVED:
+    1 = wrong/bone, 2 = right/bone, 3 = wrong/muscle, 4 = right/muscle. Both renders of a motion share its
+    slice, y_shift and keypoints (kp_file = the motion base), so pair steps have the identical motion.
+    The anatomy layer is NATIVE in each file (bone X-Ray or muscle fibre baked by the 3D source), so a motion
+    needs one native file per rendering: the base clip and its motion-preserving edit (edit_of = base)."""
+    if "motions" not in cfg:
+        return cfg
+    clips = {}
+    for (form, kind), s in _KIND_STEP.items():
+        m = cfg["motions"][form]
+        r = m["renders"][kind]
+        clips[str(s)] = {"file": r["file"], "i0": int(m["i0"]), "i1": int(m["i1"]), "y_shift": int(m.get("y_shift", 80)),
+                         "is_wrong": form == "wrong", "mode": f"{kind}_blood", "motion": form, "kp_file": m["base"],
+                         "edit_of": r.get("edit_of")}
+    cfg["clips"] = clips
+    cfg["bone_steps"], cfg["muscle_steps"] = [1, 2], [3, 4]
+    return cfg
+
+
+def pair_lint(cfg, spec=None):
+    """Day >= spec.step_order.pair_from_day: pair steps (1/3 wrong, 2/4 right) must be the SAME motion:
+    defined via `motions`, each rendering either the motion's base clip or a declared motion-preserving edit
+    of it (edit_of == base). Any other clip pairing is rejected."""
+    so = (spec or SPEC).get("step_order", {})
+    if int(cfg.get("day", 0)) < int(so.get("pair_from_day", 6)):
+        return []
+    if "motions" not in cfg:
+        return ["Day 6+ config must define `motions` {wrong, right} (pair steps derived from one clip each); "
+                "per-step `clips` with different motions are rejected"]
+    errs = []
+    for form in ("wrong", "right"):
+        m = cfg["motions"].get(form)
+        if not m:
+            errs.append(f"motions.{form} missing")
+            continue
+        for kind in ("bone", "muscle"):
+            r = (m.get("renders") or {}).get(kind)
+            if not r:
+                errs.append(f"motions.{form}.renders.{kind} missing")
+            elif r["file"] != m["base"] and r.get("edit_of") != m["base"]:
+                errs.append(f"motions.{form}.{kind} file {r['file']} is not the motion base {m['base']} nor a declared edit of it")
+    return errs
+
+
 def configure(day_cfg: dict, overrides: dict | None = None):
     """Locked spec defaults + day config (+ autofix overrides) -> CFG."""
     c = {
@@ -46,7 +96,7 @@ def configure(day_cfg: dict, overrides: dict | None = None):
         "bone_steps": [1, 2],
         "muscle_steps": [3, 4],
     }
-    c.update(json.loads(json.dumps(day_cfg)))
+    c.update(expand_motions(json.loads(json.dumps(day_cfg))))
     for k, v in (overrides or {}).items():
         if isinstance(v, dict) and isinstance(c.get(k), dict):
             c[k].update(v)

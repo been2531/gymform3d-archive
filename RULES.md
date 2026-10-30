@@ -46,6 +46,13 @@ rules marked **[QC]** fail the QC gate (`gymform/qc.py`). A day that fails is ne
   Any other order is rejected before render (`ctx.order_lint` [guard] in run_day.py) and in **[QC] (r)**.
   Day 1–5 (published) used the legacy 1/3 bone, 2/4 muscle order. Look code maps every step through `ctx.legacy()`.
   **[QC] (e)(g)**
+- **Pair motion (LOCKED t521u, Day 6+):** wrong steps 1 and 3 use ONE motion, and right steps 2 and 4 use ONE motion,
+  with the same angle and timing. Only the native rendering differs (bone X-Ray vs muscle fibre). The config defines
+  `motions.wrong` / `motions.right`, and the 4 steps are derived from them (`ctx.expand_motions`).
+  - Each motion needs one native file per rendering: its base clip plus a motion-preserving edit (`edit_of` = base).
+    The anatomy is baked into the 3D source, so it is never painted on (0% 2D overpaint).
+  - Pair steps share the keypoint track and framing. The guard `ctx.pair_lint` rejects any other pairing, and
+    **[QC] (s)** requires pair keypoints within 3% and silhouette IoU ≥ 0.85 per QC tag.
 - **Target zoom:** the per-day `target_zoom` {zoom, focus_x, focus_y, equipment_margin} pulls the camera toward the
   target region (shoulder midpoint at the focus). The same scale applies to every step **[QC] (c)**. It backs off
   automatically before the dumbbells would leave the frame; the bench may be partial. Single Lanczos resample from
