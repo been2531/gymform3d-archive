@@ -1,0 +1,13 @@
+{
+ "day": 6,
+ "authorized_by": "t590s2042",
+ "owner_quote": "\ub364\ubca8 \uc724\uacfd \uac80\uc0ac \uc774\ubc88\ub9cc \uac74\ub108\ub6f0\uace0 \ub80c\ub354\ub9c1\ud574",
+ "reason": "owner override, (d) dumbbell mask 94-102px hole / <=5.5% one-side bloat on step 1 only",
+ "waive": [
+  "(d)"
+ ],
+ "stamp_key": "41727a95f06a56e2",
+ "single_use": true,
+ "used_at": "2026-10-30 15:29:23+0900",
+ "used_note": "final QC 27/28 PASS + 1 WAIVED; remaining fails: 0"
+}
