@@ -37,16 +37,31 @@ MODEL = "grok-imagine-video"
 USD_PER_S_720P = 0.07
 MAX_SRC_S = 8.7
 
-PROMPTS = {
-    "bone": ("Change only the anatomy overlay: remove the red muscle colouring and show a glowing {color} X-ray "
-             "skeleton (rib cage, clavicles, scapulae, upper-arm and forearm bones) inside the same silver "
-             "mannequin. Keep everything else exactly as in the original: camera angle, framing, mannequin, "
-             "black shorts, dumbbells, bench, studio background, lighting, and the exact same motion and timing."),
-    "muscle": ("Change only the anatomy overlay: remove the X-ray skeleton and show glowing {color} muscle fibres "
-               "on the target muscles inside the same silver mannequin. Keep everything else exactly as in the "
-               "original: camera angle, framing, mannequin, black shorts, equipment, studio background, lighting, "
-               "and the exact same motion and timing."),
+# t529u root cause: the first prompt said "show a glowing X-ray skeleton", which the model read as a full-body X-ray:
+# it darkened/thinned the limbs into see-through glass, added leg bones and drew cyan (not emerald). The approved
+# bone clips (Day 1-6 i2v) are an OPAQUE silver mannequin with thin glowing UPPER-BODY bones only. Say exactly that.
+COLOR_WORDS = {
+    "crimson": "pure deep crimson red (#C8102E), not orange or pink",
+    "emerald": "pure deep emerald green (#1E9E5A), not cyan, teal, turquoise or mint",
 }
+PROMPTS = {
+    "bone": ("Change only the anatomy overlay. Remove the coloured muscle fibres and instead draw thin glowing {cw} "
+             "bones of the UPPER BODY ONLY (rib cage, clavicles, scapulae, upper-arm and forearm bones) as a luminous "
+             "line overlay on top of the skin. The mannequin skin stays fully OPAQUE matte silver-grey exactly as in the "
+             "original: same arm, shoulder, torso and leg thickness and shape, not transparent, not darkened, not glass. "
+             "No bones and no glow on the hips, legs or feet; no glow outside the body. Keep everything else exactly as "
+             "in the original: camera angle, framing, mannequin size, black shorts, dumbbells, bench, studio background, "
+             "lighting, and the exact same motion and timing."),
+    "muscle": ("Change only the anatomy overlay: remove the bone overlay and show glowing {cw} muscle fibres on the "
+               "target muscles. The mannequin skin stays fully opaque matte silver with the same limb thickness and "
+               "shape. Keep everything else exactly as in the original: camera angle, framing, mannequin, black shorts, "
+               "equipment, studio background, lighting, and the exact same motion and timing."),
+}
+# ACCEPTANCE QC (before an edit may enter output/assets), measured against the base clip on 9 frames.
+# Calibrated on Day 6: base vs itself = 1.00; t522 wrong edit = sil IoU 0.82 + leg bones (reject); t522 right
+# edit = IoU 0.75, area 0.75, hue 86 (cyan) (reject).
+ACCEPT = {"sil_iou_min": 0.90, "area_ratio": (0.93, 1.07), "flow_p90_max_px": 4.0, "leg_glow_max": 0.01,
+          "hue": {"emerald": (50, 80), "crimson": (170, 8)}}
 DEFAULT_COLOR = {"wrong": "crimson", "right": "emerald"}
 
 
@@ -89,12 +104,80 @@ def jobs_for(cfg, only=None):
             if not r.get("edit_of") or r.get("file") == r.get("edit_of"):
                 continue
             color = (r.get("edit") or {}).get("color") or DEFAULT_COLOR.get(m, "crimson")
-            prompt = (r.get("edit") or {}).get("prompt") or PROMPTS[kind].format(color=color)
-            out.append((m, kind, os.path.join(ASSETS, r["edit_of"]), os.path.join(ASSETS, r["file"]), prompt))
+            prompt = (r.get("edit") or {}).get("prompt") or PROMPTS[kind].format(cw=COLOR_WORDS.get(color, color))
+            out.append((m, kind, os.path.join(ASSETS, r["edit_of"]), os.path.join(ASSETS, r["file"]), prompt, color))
     return out
 
 
-def edit_one(src, dst, prompt, key, poll_s=6, timeout_s=900):
+def _frames(path, idx):
+    import cv2
+    cap, out, i = cv2.VideoCapture(path), {}, 0
+    while True:
+        ok, fr = cap.read()
+        if not ok:
+            break
+        if i in idx:
+            out[i] = fr
+        i += 1
+    cap.release()
+    return out, i
+
+
+def acceptance(src, dst, color):
+    """Edit acceptance QC vs its base clip (no spend): silhouette (limb thickness/opacity), motion, leg glow, hue."""
+    import cv2
+    import numpy as np
+    B, nb = _frames(src, set(range(0, 10 ** 4, 15)))
+    E, ne = _frames(dst, set(B))
+    if nb != ne:
+        return False, {"why": f"frame count {ne} != {nb}"}
+    k9 = np.ones((9, 9), np.uint8)
+
+    def sil(x):   # opaque silver/bone body (backdrop ~35, glass ~40-60): closed, holes filled
+        m = cv2.morphologyEx((cv2.cvtColor(x, cv2.COLOR_BGR2GRAY) > 70).astype(np.uint8), cv2.MORPH_CLOSE, k9)
+        ff = np.pad(m, 1).copy()
+        cv2.floodFill(ff, None, (0, 0), 2)
+        return ff[1:-1, 1:-1] != 2
+
+    ious, ratios, flows, legs, hues = [], [], [], [], []
+    for i in sorted(B):
+        b, e = B[i], E[i]
+        mb, me = sil(b), sil(e)
+        ious.append(float((mb & me).sum()) / max(1, (mb | me).sum()))
+        ratios.append(float(me.sum()) / max(1, mb.sum()))
+        gb = cv2.resize(cv2.cvtColor(b, cv2.COLOR_BGR2GRAY), (360, 640))
+        ge = cv2.resize(cv2.cvtColor(e, cv2.COLOR_BGR2GRAY), (360, 640))
+        fl = cv2.calcOpticalFlowFarneback(gb, ge, None, 0.5, 4, 21, 3, 5, 1.1, 0)
+        flows.append(float(np.percentile(np.hypot(fl[..., 0], fl[..., 1])[gb > 40], 90)) * 2.0)
+        hb, he = cv2.cvtColor(b, cv2.COLOR_BGR2HSV), cv2.cvtColor(e, cv2.COLOR_BGR2HSV)
+        glow = (he[..., 1] > 110) & (he[..., 2] > 120) & ~((hb[..., 1] > 110) & (hb[..., 2] > 120))
+        ys = np.where(mb.any(axis=1))[0]
+        if len(ys):   # lower 40% of the body = hips/legs/feet: must stay plain silver
+            y0 = int(ys[0] + 0.6 * (ys[-1] - ys[0]))
+            legs.append(float(glow[y0:].sum()) / max(1, mb[y0:].sum()))
+        if glow.sum() > 200:
+            hues.append(float(np.median(he[..., 0][glow])))
+    hue = float(np.median(hues)) if hues else -1.0
+    lo, hi = ACCEPT["hue"].get(color, (0, 180))
+    hue_ok = (lo <= hue <= hi) if lo <= hi else (hue >= lo or 0 <= hue <= hi)
+    m = {"sil_iou_min": round(min(ious), 3), "area_ratio_min": round(min(ratios), 3), "area_ratio_max": round(max(ratios), 3),
+         "flow_p90_px": round(max(flows), 1), "leg_glow": round(max(legs or [0]), 3), "hue": round(hue, 1), "color": color}
+    fails = []
+    if m["sil_iou_min"] < ACCEPT["sil_iou_min"]:
+        fails.append(f"limb/body silhouette drift (IoU {m['sil_iou_min']} < {ACCEPT['sil_iou_min']}: thinner/see-through limbs)")
+    if not (ACCEPT["area_ratio"][0] <= m["area_ratio_min"] and m["area_ratio_max"] <= ACCEPT["area_ratio"][1]):
+        fails.append(f"body area ratio {m['area_ratio_min']}..{m['area_ratio_max']} outside {ACCEPT['area_ratio']}")
+    if m["flow_p90_px"] > ACCEPT["flow_p90_max_px"]:
+        fails.append(f"motion drift p90 {m['flow_p90_px']}px")
+    if m["leg_glow"] > ACCEPT["leg_glow_max"]:
+        fails.append(f"glow on hips/legs ({m['leg_glow']})")
+    if not hue_ok:
+        fails.append(f"bone hue {hue} not {color} {ACCEPT['hue'].get(color)}")
+    m["fails"] = fails
+    return not fails, m
+
+
+def edit_one(src, dst, prompt, key, color="", poll_s=6, timeout_s=900):
     dur = _probe_s(src)
     if dur > MAX_SRC_S:
         raise RuntimeError(f"source {dur:.2f}s > {MAX_SRC_S}s")
@@ -126,11 +209,15 @@ def edit_one(src, dst, prompt, key, poll_s=6, timeout_s=900):
                 with open(tmp, "wb") as f:
                     for c in d.iter_content(1 << 20):
                         f.write(c)
-            os.replace(tmp, dst)
-            rec.update(status="done", secs=round(time.time() - t0, 1), out_s=round(_probe_s(dst), 3),
-                       usage=j.get("usage"))
+            ok, acc = acceptance(src, tmp, color)
+            final = dst if ok else dst[:-4] + "_REJECTED.mp4"
+            os.replace(tmp, final)
+            rec.update(status="done" if ok else "rejected", secs=round(time.time() - t0, 1), out_s=round(_probe_s(final), 3),
+                       usage=j.get("usage"), acceptance=acc, file=os.path.basename(final))
             _log(rec)
-            print(f"[xai_edit] done {rec['dst']} in {rec['secs']}s", flush=True)
+            print(f"[xai_edit] {rec['status']} {os.path.basename(final)} in {rec['secs']}s {acc}", flush=True)
+            if not ok:
+                raise RuntimeError("edit rejected by acceptance QC (kept as _REJECTED.mp4; owner decides on a retake)")
             return rec
         if st in ("failed", "expired"):
             rec.update(status=st, secs=round(time.time() - t0, 1), detail=str(j)[:300])
@@ -146,13 +233,22 @@ def main(argv=None):
     ap.add_argument("--day", type=int, required=True)
     ap.add_argument("--only", choices=["wrong", "right"])
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--check", action="store_true", help="acceptance QC of existing edits vs their base (no spend)")
     ap.add_argument("--retake", action="store_true", help="allow a 2nd paid take (owner approval required)")
     a = ap.parse_args(argv)
     cfg = json.load(open(os.path.join(ROOT, "configs", f"day{a.day:02d}.json")))
     jobs = jobs_for(cfg, a.only)
     done = {r["dst"] for r in _ledger()}
     todo = []
-    for m, kind, src, dst, prompt in jobs:
+    if a.check:   # acceptance QC of existing edits only (no API call, no spend)
+        bad = 0
+        for m, kind, src, dst, prompt, color in jobs:
+            if os.path.exists(dst):
+                ok, acc = acceptance(src, dst, color)
+                bad += not ok
+                print(f"[xai_edit] {'ACCEPT' if ok else 'REJECT'} {os.path.basename(dst)}: {json.dumps(acc)}")
+        return 1 if bad else 0
+    for m, kind, src, dst, prompt, color in jobs:
         b = os.path.basename(dst)
         if os.path.exists(dst):
             print(f"[xai_edit] exists, skip: {b}")
@@ -161,17 +257,18 @@ def main(argv=None):
         elif not os.path.exists(src):
             print(f"[xai_edit] missing source: {src}")
         else:
-            todo.append((m, kind, src, dst, prompt))
-    est = sum(_probe_s(s) * USD_PER_S_720P for _, _, s, _, _ in todo)
+            todo.append((m, kind, src, dst, prompt, color))
+    est = sum(_probe_s(s) * USD_PER_S_720P for _, _, s, _, _, _ in todo)
     print(f"[xai_edit] {len(todo)} edit(s), est ${est:.2f}")
     if a.dry_run or not todo:
         for t in todo:
             print("  ", t[0], t[1], os.path.basename(t[2]), "->", os.path.basename(t[3]))
+            print("   prompt:", t[4])
         return 0
     key = _key()
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(2) as ex:
-        futs = [ex.submit(edit_one, s, d, p, key) for _, _, s, d, p in todo]
+        futs = [ex.submit(edit_one, s, d, p, key, c) for _, _, s, d, p, c in todo]
         errs = 0
         for f in futs:
             try:
