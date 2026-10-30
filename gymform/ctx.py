@@ -55,9 +55,30 @@ def mistake_type(cfg):
     return "joint"
 
 
-def step_plan(mt="joint"):
+def n_steps(cfg=None):
+    """t568u: a day is 4 steps (default) or 2 steps (1 wrong / 2 right, front camera, muscle fibre only)."""
+    n = int((CFG if cfg is None else cfg).get("n_steps", 4))
+    if n not in (2, 4):
+        raise ValueError(f"n_steps must be 2 or 4, got {n}")
+    return n
+
+
+def steps(cfg=None):
+    """Active step numbers (1..n_steps)."""
+    return tuple(range(1, n_steps(cfg) + 1))
+
+
+def duration(cfg=None):
+    """Reel length: 5 s per step (Day 4 tempo, 1.5 reps per step) -> 20 s (4 steps) / 10 s (2 steps)."""
+    return float(SPEC["tempo_s"].get("step_s", 5.0)) * n_steps(cfg)
+
+
+def step_plan(mt="joint", n=4):
     """t556u fixed camera plan: {step: (form, camera, kind)} - 1 wrong/front, 2 right/front, 3 wrong/side,
-    4 right/side; kinds by mistake type (joint: 1-2 bone, 3-4 muscle; muscle: all muscle)."""
+    4 right/side; kinds by mistake type (joint: 1-2 bone, 3-4 muscle; muscle: all muscle).
+    t568u 2-step day (n=2): 1 wrong/front, 2 right/front, both muscle (no bone X-Ray at all)."""
+    if int(n) == 2:
+        return {1: ("wrong", "front", "muscle"), 2: ("right", "front", "muscle")}
     cp = SPEC["step_order"].get("camera_plan", {})
     plan = {k: tuple(v) for k, v in cp.items() if k in "1234"} or {"1": ("wrong", "front"), "2": ("right", "front"),
                                                                     "3": ("wrong", "side"), "4": ("right", "side")}
@@ -84,7 +105,8 @@ def expand_motions(cfg: dict) -> dict:
         return cfg
     clips = {}
     mt = mistake_type(cfg)
-    for s, (form, cam, kind) in step_plan(mt).items():
+    n_ = n_steps(cfg)
+    for s, (form, cam, kind) in step_plan(mt, n_).items():
         m = cfg["motions"][form]
         r = render_for(m, cam)
         if r.get("pair_match"):   # t541u: a separate NATIVE clip matched to the base within joint tolerance:
@@ -103,14 +125,14 @@ def expand_motions(cfg: dict) -> dict:
     # angle + label (only the consequence line l2 may differ per anatomy layer: bone vs muscle)
     if all("callout" in cfg["motions"][f] for f in ("wrong", "right")):
         cos = {}
-        for s, (form, cam, kind) in step_plan(mt).items():
+        for s, (form, cam, kind) in step_plan(mt, n_).items():
             mc_ = cfg["motions"][form]["callout"]
             l2 = mc_["l2"].get(kind) if isinstance(mc_["l2"], dict) else mc_["l2"]
             cos[str(s)] = {"slot": s - 1, "deg": mc_["deg"], "l1": mc_["l1"], "l2": l2, "motion": form}
         cfg["callouts"] = cos
     cfg["mistake_type"] = mt
-    cfg["bone_steps"] = [int(k) for k, (_, _, kd) in step_plan(mt).items() if kd == "bone"]
-    cfg["muscle_steps"] = [int(k) for k, (_, _, kd) in step_plan(mt).items() if kd == "muscle"]
+    cfg["bone_steps"] = [int(k) for k, (_, _, kd) in step_plan(mt, n_).items() if kd == "bone"]
+    cfg["muscle_steps"] = [int(k) for k, (_, _, kd) in step_plan(mt, n_).items() if kd == "muscle"]
     if not cfg["bone_steps"]:
         cfg["xray_full_steps"] = []     # muscle-mistake day: no X-Ray at all (t554u)
     return cfg
@@ -132,7 +154,7 @@ def pair_lint(cfg, spec=None):
         if not m:
             errs.append(f"motions.{form} missing")
             continue
-        for kind in ("front", "side"):
+        for kind in (("front",) if n_steps(cfg) == 2 else ("front", "side")):
             r = (m.get("renders") or {}).get(kind) or (m.get("renders") or {}).get(_LEGACY_RENDER[kind])
             if not r:
                 errs.append(f"motions.{form}.renders.{kind} missing")
@@ -152,7 +174,7 @@ def camera_plan_lint(cfg):
     unmet items (warnings for configs built from older clips; a new day must have none)."""
     out = []
     c = expand_motions(json.loads(json.dumps(cfg))).get("clips", {})
-    for s, (form, cam, kind) in step_plan(mistake_type(cfg)).items():
+    for s, (form, cam, kind) in step_plan(mistake_type(cfg), n_steps(cfg)).items():
         got = c.get(str(s), {}).get("camera")
         if got != cam:
             out.append(f"step{s} ({form}/{cam}/{kind}) uses camera {got!r}, not the {cam} preset")
@@ -224,7 +246,7 @@ def normalize_scale(kps_seqs):
     if not CFG.get("auto_scale", True):
         return
     sizes, ank = {}, {}
-    for s in (1, 2, 3, 4):
+    for s in steps():
         y_sh = step_spec(s)[5]
         sizes[s] = float(np.median([skeletal_size(k) for k in kps_seqs[s]]))
         ank[s] = float(np.median([max(k["ank_r"][1], k["ank_l"][1]) - y_sh for k in kps_seqs[s]]))
@@ -252,6 +274,14 @@ def normalize_scale(kps_seqs):
                 sc = base * zm / max(sizes[s], 1.0)
                 fpts = [((k["sh_r"][0] + k["sh_l"][0]) * 0.5, (k["sh_r"][1] + k["sh_l"][1]) * 0.5 - y_sh) for k in kps_seqs[s]]
                 fx, fy = float(np.median([p[0] for p in fpts])), float(np.median([p[1] for p in fpts]))
+                if tz.get("focus_mode") == "body_bbox_x":
+                    # t567u (t558 M10: figure off-centre, foot on the left edge): centre the WHOLE figure
+                    # horizontally (keypoint bbox incl. wrists/ankles + head/foot margin), not the shoulders
+                    bx = []
+                    for k in kps_seqs[s]:
+                        xs_ = [k[j][0] for j in ("sh_r", "sh_l", "elb_r", "elb_l", "wr_r", "wr_l", "hip_r", "hip_l", "kn_r", "kn_l", "ank_r", "ank_l")]
+                        bx.append(0.5 * (min(xs_) + max(xs_)))
+                    fx = float(np.median(bx))
                 dx = fx_t - ((fx - W * 0.5) * sc + W * 0.5)
                 dy = fy_t - ((fy - H * 0.5) * sc + H * 0.5)
                 m = pad * base * zm
@@ -302,7 +332,7 @@ def order_lint(cfg, spec=None):
     if int(cfg.get("day", 0)) < int(so.get("from_day", 6)):
         return []
     errs = []
-    plan = step_plan(mistake_type(cfg))
+    plan = step_plan(mistake_type(cfg), n_steps(cfg))
     want_b = [s for s, (_, _, k) in plan.items() if k == "bone"]
     want_m = [s for s, (_, _, k) in plan.items() if k == "muscle"]
     if list(cfg.get("bone_steps", want_b)) != want_b or list(cfg.get("muscle_steps", want_m)) != want_m:
@@ -317,6 +347,8 @@ def order_lint(cfg, spec=None):
         co = cfg.get("callouts", {}).get(str(s), {})
         if co and int(co.get("slot", s - 1)) != s - 1:
             errs.append(f"step{s} preview slot must be {s - 1}")
+    if set(cfg.get("clips", {})) - {str(k) for k in plan}:
+        errs.append(f"clips {sorted(cfg['clips'])} beyond the {len(plan)}-step plan")
     xf = cfg.get("xray_full_steps")
     if xf is not None and not set(xf) <= set(want_b):
         errs.append(f"xray_full_steps {xf} must be bone steps 1/2")

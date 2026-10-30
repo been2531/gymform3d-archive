@@ -64,7 +64,8 @@ def merged_cfg(day_cfg, ovr):
 
 
 GLOBAL_KEYS = ["exercise_name", "equipment", "bone_steps", "muscle_steps", "studio_bg", "xray_style",
-               "mask_feather", "equipment_hull", "kp_cache", "assets_dir", "qc_dir"]
+               "mask_feather", "equipment_hull", "kp_cache", "assets_dir", "qc_dir",
+               "n_steps", "muscle_fill", "clean_plate", "callout_axis", "target_zoom"]   # t567u look keys
 
 
 def step_key(c, s, code_h, spec_h):
@@ -105,7 +106,7 @@ def ensure_tts(day, c, spec, cfg_p, T, force=False):
     return wav
 
 
-def preflight(day, c, keys, cfg_p, ovr_p, icons_p, wav, workers):
+def preflight(day, c, keys, cfg_p, ovr_p, icons_p, wav, workers, steps=(1, 2, 3, 4)):
     """PREFLIGHT (default gate, RULES.md): render only the QC sample frames of every step (7 per step, zoom
     included) through the real composite path and run ALL QC checks on them. On PASS a stamp keyed by the
     config/overrides/spec/code hash is written (gymform/preflight.py); gymform.render --render-step refuses to
@@ -120,7 +121,7 @@ def preflight(day, c, keys, cfg_p, ovr_p, icons_p, wav, workers):
     for f in glob.glob(os.path.join(pdir, "*")):
         os.remove(f)
     base = [sys.executable, "-m", "gymform.render", "--config", cfg_p, "--overrides", ovr_p, "--icons", icons_p, "--qc-dir", pdir]
-    pending, running = [3, 4, 1, 2], []   # motion bases first: edit steps reuse their cached geometry
+    pending, running = [x for x in (3, 4, 1, 2) if x in steps], []   # motion bases first: edit steps reuse their cached geometry
     while pending or running:
         while pending and len(running) < workers:
             busy = set(pending) | {r[0] for r in running}
@@ -141,7 +142,7 @@ def preflight(day, c, keys, cfg_p, ovr_p, icons_p, wav, workers):
                     raise SystemExit(json.dumps({"day": day, "ok": False, "stage": "preflight", "step": sn, "log": LOG}))
     t_frames = round(time.time() - tt, 1)
     merge = {}
-    for sn in (1, 2, 3, 4):
+    for sn in steps:
         m = json.load(open(os.path.join(pdir, f"meta_step{sn}.json")))
         fr = merge.get("frames", {})
         fr.update(m["frames"])
@@ -254,13 +255,14 @@ def main():
     ap.add_argument("--from", dest="frm", default="kp", choices=STAGES)
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--config", default="", help="variant day config (default configs/dayNN.json), e.g. configs/day06_muscle2.json")
     ap.add_argument("--preflight", action="store_true", help="preflight only: QC sample frames + all QC checks (~1 min), no full render")
     a = ap.parse_args()
     t0 = time.time()
     os.makedirs(os.path.join(ROOT, "output", "logs"), exist_ok=True)
     os.makedirs(os.path.join(CACHE, "steps"), exist_ok=True)
     LOG = os.path.join(ROOT, "output", "logs", f"day{a.day:02d}_{time.strftime('%Y%m%d_%H%M%S')}.log")
-    cfg_p = os.path.join(ROOT, "configs", f"day{a.day:02d}.json")
+    cfg_p = os.path.join(ROOT, a.config) if a.config else os.path.join(ROOT, "configs", f"day{a.day:02d}.json")
     if not os.path.exists(cfg_p):
         print(json.dumps({"day": a.day, "ok": False, "blocker": f"missing {os.path.relpath(cfg_p, ROOT)}"}))
         sys.exit(2)
@@ -277,7 +279,8 @@ def main():
     sys.path.insert(0, ROOT)
     from gymform.qc import native_source_ok
     from gymform.layout import callout_lint
-    co_err = callout_lint(day_cfg)
+    from gymform.ctx import expand_motions as _xm
+    co_err = callout_lint(_xm(json.loads(json.dumps(day_cfg))))   # callouts are derived from motions.*.callout
     if co_err:   # numbers / labels / TTS must agree before anything is rendered
         print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "callout: " + "; ".join(co_err)}))
         sys.exit(3)
@@ -288,7 +291,7 @@ def main():
         sys.exit(3)
     from gymform.ctx import camera_plan_lint, step_plan, mistake_type
     mt_ = mistake_type(day_cfg)
-    plan_ = ", ".join(f"{s_} {f_}/{c_}/{k_}" for s_, (f_, c_, k_) in step_plan(mt_).items())
+    plan_ = ", ".join(f"{s_} {f_}/{c_}/{k_}" for s_, (f_, c_, k_) in step_plan(mt_, int(day_cfg.get("n_steps", 4))).items())
     print(f"STEP PLAN ({mt_} mistake day, t554u/t556u): {plan_}", file=sys.stderr, flush=True)
     log(f"step plan ({mt_}): {plan_}")
     cam_err = camera_plan_lint(day_cfg)
@@ -337,9 +340,11 @@ def main():
         print(json.dumps({"day": a.day, "ok": False, "stage": "lint", "lint": lint}))
         sys.exit(2)
     A = lambda p: p if os.path.isabs(p) else os.path.join(ROOT, p)
-    ovr_p = os.path.join(CACHE, f"overrides_day{a.day:02d}.json")
+    VAR = os.path.splitext(os.path.basename(cfg_p))[0]   # day06 | day06_muscle2 (variants keep their own overrides)
+    ovr_p = os.path.join(CACHE, f"overrides_{VAR}.json")
+    STEPS = tuple(range(1, int(day_cfg.get("n_steps", 4)) + 1))
     ovr = json.load(open(ovr_p)) if os.path.exists(ovr_p) else {}
-    only = {int(x) for x in re.findall(r"\d", a.only)} or {1, 2, 3, 4}
+    only = {int(x) for x in re.findall(r"\d", a.only)} or set(STEPS)
     si = STAGES.index(a.frm)
     code_h = src_hash([os.path.join(ROOT, "gymform", f"{m}.py") for m in LOOK_MODULES] + [os.path.join(ROOT, f) for f in LEGACY])
     spec_h = src_hash([SPEC_P])
@@ -350,7 +355,7 @@ def main():
         c = merged_cfg(day_cfg, ovr)
         qc_dir_g = A(c["qc_dir"])
         os.makedirs(qc_dir_g, exist_ok=True)
-        keys = {s: step_key(c, s, code_h, spec_h) for s in (1, 2, 3, 4)}
+        keys = {s: step_key(c, s, code_h, spec_h) for s in STEPS}
         # kp stage: keypoints are cached per clip slice in kp_cache (and plates per step in _cache_gymform)
         if si <= 0 and a.frm == "kp" and a.only:
             import pickle
@@ -374,13 +379,13 @@ def main():
                     raise SystemExit(json.dumps({"day": a.day, "ok": False, "stage": "icons", "log": LOG}))
                 T["icons"] = round(time.time() - tt, 1)
         # composite + overlays stage
-        step_mp4 = {s: os.path.join(CACHE, "steps", f"s{s}_{keys[s]}.mp4") for s in (1, 2, 3, 4)}
+        step_mp4 = {s: os.path.join(CACHE, "steps", f"s{s}_{keys[s]}.mp4") for s in STEPS}
         force = si <= STAGES.index("overlays")
-        todo = [s for s in (1, 2, 3, 4) if not os.path.exists(step_mp4[s]) or (force and s in only and attempt == 1 and a.only)]
+        todo = [s for s in STEPS if not os.path.exists(step_mp4[s]) or (force and s in only and attempt == 1 and a.only)]
         # PREFLIGHT GATE (default, RULES.md): no full render before the QC sample frames pass ALL QC checks
         if todo or a.preflight:
             wav_pf = ensure_tts(a.day, c, spec, cfg_p, T)
-            pf_ok, pf_rows, pf_t, pf_dir, pf_sum = preflight(a.day, c, keys, cfg_p, ovr_p, icons_p, wav_pf, a.workers)
+            pf_ok, pf_rows, pf_t, pf_dir, pf_sum = preflight(a.day, c, keys, cfg_p, ovr_p, icons_p, wav_pf, a.workers, STEPS)
             T[f"preflight_{attempt}"] = pf_t
             pf_fail = pf_sum.get("fails", [])
             n_ck = len(pf_sum.get("checks", {}))
@@ -399,11 +404,11 @@ def main():
             T[f"composite_{attempt}"] = round(time.time() - tt, 1)
             T.setdefault("steps_rendered", []).append(todo)
         # restore the QC sidecar meta of cached steps, then merge
-        for s in (1, 2, 3, 4):
+        for s in STEPS:
             shutil.copy(step_mp4[s][:-4] + "_meta.json", os.path.join(qc_dir_g, f"meta_step{s}.json"))
         sys.path.insert(0, ROOT)
         merge = {}
-        for s in (1, 2, 3, 4):
+        for s in STEPS:
             m = json.load(open(os.path.join(qc_dir_g, f"meta_step{s}.json")))
             fr = merge.get("frames", {})
             fr.update(m["frames"])
@@ -421,12 +426,12 @@ def main():
         if si <= STAGES.index("encode") or attempt > 1:
             tt = time.time()
             lst = os.path.join(CACHE, f"steps_day{a.day:02d}.txt")
-            open(lst, "w").write("".join(f"file '{step_mp4[s]}'\n" for s in (1, 2, 3, 4)))
+            open(lst, "w").write("".join(f"file '{step_mp4[s]}'\n" for s in STEPS))
             if run(["nice", "-n", "10", "ffmpeg", "-y", "-loglevel", "error", "-threads", "2", "-f", "concat", "-safe", "0",
                     "-i", lst, "-i", wav, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", A(c["out_mp4"])]):
                 raise SystemExit(json.dumps({"day": a.day, "ok": False, "stage": "encode", "log": LOG}))
             run([sys.executable, "-m", "gymform.render", "--config", cfg_p, "--overrides", ovr_p, "--sheet", A(c["out_sheet"])]
-                + [step_mp4[s][:-4] + "_peak.png" for s in (1, 2, 3, 4)])
+                + [step_mp4[s][:-4] + "_peak.png" for s in STEPS])
             T[f"encode_{attempt}"] = round(time.time() - tt, 1)
         # qc stage
         tt = time.time()

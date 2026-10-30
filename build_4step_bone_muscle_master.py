@@ -330,6 +330,9 @@ def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, act
     bar_x0, bar_y0, bar_x1, bar_y1 = 212, 258, 868, 400
     tw, th = 134, 158
     slot_centers_x = [303, 461, 619, 777]
+    if len(torso_icons) == 2:   # t568u 2-step day: 2 thumbnails, same slot size/pitch, pill centred
+        slot_centers_x = [461, 619]
+        bar_x0, bar_x1 = 370, 710
     rx0, ry0, rx1, ry1 = 190, 232, 890, 424
     rw, rh = rx1 - rx0, ry1 - ry0
 
@@ -352,7 +355,7 @@ def draw_compact_demic_top_preview(frame_rgb: np.ndarray, torso_icons: list, act
         ny = (yy_t - th * 0.52) / (th * 0.48)
         vign = np.clip(1.0 - 0.55 * ((nx * nx + ny * ny) ** 1.35), 0.15, 1.0)
 
-        for i in range(4):
+        for i in range(len(slot_centers_x)):
             if i == active_slot:
                 continue
             cx = slot_centers_x[i]

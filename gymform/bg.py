@@ -73,6 +73,28 @@ def transform(bgr_720p, kp_cached, y_sh, step_idx):
 b4.transform_frame_and_kp_1080p = transform
 
 
+def _clean_plate(med, seq):
+    """t567u ROOT CAUSE (dumbbell/arm ghosts at the Step 1 start, t558 'smoke' above the dumbbell): the arms and
+    dumbbells stay overhead for most of the window, so the temporal MEDIAN contains them and the plate-difference
+    footprint pastes their ghost where the frame shows plain backdrop. Where the pixel MOVES during the window
+    (frame-to-frame spread > 8) and the median is not backdrop, take the frame value closest to the native
+    backdrop (per-row gradient from the clip borders). Static objects (bench, legs, feet) keep the median."""
+    st = np.stack(seq).astype(np.int16)                                   # T x h x w x 3
+    border = np.concatenate([med[:, :18], med[:, -18:]], axis=1).astype(np.float32)
+    ref = np.median(border, axis=1)                                       # h x 3 backdrop gradient
+    k_ = np.exp(-0.5 * (np.arange(-27, 28) / 9.0) ** 2); k_ /= k_.sum()
+    ref = np.stack([np.convolve(np.pad(ref[:, c], 27, mode="edge"), k_, mode="valid") for c in range(3)], axis=1)
+    dist = np.abs(st - ref[None, :, None, :].astype(np.int16)).max(axis=-1)           # T x h x w
+    best = np.take_along_axis(st, dist.argmin(axis=0)[None, :, :, None], axis=0)[0]
+    spread = (np.percentile(st.max(axis=-1), 90, axis=0) - np.percentile(st.max(axis=-1), 10, axis=0))
+    med_d = np.abs(med.astype(np.int16) - ref[:, None, :].astype(np.int16)).max(axis=-1)
+    use = (spread > 8) & (med_d > 10) & (dist.min(axis=0) < med_d)
+    use = cv2.dilate(use.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    out = med.copy()
+    out[use] = np.clip(best[use], 0, 255).astype(np.uint8)
+    return out
+
+
 def set_step_plate(seq, kps, step_idx, src=None):
     """Per-step temporal median backdrop plate (720p native -> the step's own 1080 transform), cached on disk.
     src = clip that seq comes from when it is not the step's own clip (motion base of an X-Ray edit)."""
@@ -80,12 +102,15 @@ def set_step_plate(seq, kps, step_idx, src=None):
     fn = src or fn
     mir = bool(CFG["clips"][str(step_idx)].get("mirror")) if "clips" in CFG else False
     # the mirror flag is part of the plate identity (a stale unmirrored plate cut the Step 4 bench, t543u)
-    key = hashlib.md5(repr((fn, i0, i1) + (("mirror",) if mir else ())).encode()).hexdigest()[:10]
+    clean = bool(CFG.get("clean_plate"))
+    key = hashlib.md5(repr((fn, i0, i1) + (("mirror",) if mir else ()) + (("clean2",) if clean else ())).encode()).hexdigest()[:10]
     cp = os.path.join(ctx.CACHE_DIR, f"median_{CFG['day']:02d}_s{step_idx}_{key}.npy")   # exact 720p median (uint8)
     if os.path.exists(cp):
         med = np.load(cp)
     else:
         med = np.median(np.stack(seq).astype(np.uint8), axis=0).astype(np.uint8)
+        if clean:
+            med = _clean_plate(med, seq)
         np.save(cp, med)
     mp = cp[:-4] + "_motion.npy"
     if os.path.exists(mp):

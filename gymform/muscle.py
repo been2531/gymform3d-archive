@@ -72,12 +72,41 @@ def activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase):
         d_r = np.hypot((xx - (sh_r[0] - 10.0)) / 92.0, (yy - (sh_r[1] + 22.0)) / 108.0)
         d_l = np.hypot((xx - (sh_l[0] + 10.0)) / 92.0, (yy - (sh_l[1] + 22.0)) / 108.0)
         anat = np.clip((1.35 - np.minimum(d_r, d_l)) / 0.40, 0.0, 1.0)
+    full = CFG.get("muscle_fill") == "native_full" and step_idx in (2, 4)
+    if full and step_idx == 4:   # t567u: the whole native upper-pec glow, not two shoulder ellipses
+        anat = np.clip((yy - (sh_y - 120.0)) / 28.0, 0.0, 1.0) * np.clip(((sh_y + 175.0) - yy) / 40.0, 0.0, 1.0)
+    if full and step_idx == 2:   # t567u: front-delt glow runs up the raised upper arm (overhead at the top)
+        cap = np.zeros((H, W), np.uint8)
+        for sd in ("r", "l"):
+            s0, e0 = kp[f"sh_{sd}"], kp[f"elb_{sd}"]
+            cv2.line(cap, (int(s0[0]), int(s0[1])), (int(0.25 * s0[0] + 0.75 * e0[0]), int(0.25 * s0[1] + 0.75 * e0[1])), 1, 110)
+        anat = np.maximum(anat, cv2.GaussianBlur(cap.astype(np.float32), (0, 0), 12.0))
     anat = anat * w_fg  # colour only inside the clean body mask
 
-    w_act = cv2.GaussianBlur((np.clip((act_dom - 10.0) / 32.0, 0.0, 1.0) ** 0.85).astype(np.float32), (0, 0), 1.8) * (1.0 - shorts_mask) * anat
-    core_seed = (np.clip((act_dom - 16.0) / 42.0, 0.0, 1.0) ** 1.08) * anat
     pulse = 1.0 + 0.06 * math.sin(2.0 * math.pi * pulse_phase)
-    core_w = np.clip(cv2.GaussianBlur(core_seed.astype(np.float32), (0, 0), 1.0) * w_act * 0.90 * pulse, 0.0, 0.90)
+    if full:
+        # t567u ROOT CAUSE (t558 M9: highlight 4-13x smaller than Day 4): the fibre gate started at act 10/16 and
+        # multiplied two soft ramps (w_act x core_seed), so only the hottest third of the NATIVE muscle glow got
+        # colour and at reduced strength. Day 4 colours the whole native glow region at full strength; same here:
+        # every native glow pixel (act > 5) is fibre colour, ramped over a short range (still native pixels only).
+        # colour-specific native glow (wrong = red-dominant, right = green-dominant): faint olive/cyan casts on
+        # the head/chin are not muscle; the head disc is never a target muscle
+        dom = (r_ch - 0.5 * (g_ch + b_ch)) if is_wrong else (g_ch - 0.5 * (r_ch + b_ch))
+        hip_m = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), 0.5 * (kp["hip_r"][1] + kp["hip_l"][1]))
+        sh_m = (0.5 * (sh_r[0] + sh_l[0]), sh_y)
+        tl = max(1.0, math.hypot(sh_m[0] - hip_m[0], sh_m[1] - hip_m[1]))
+        hd = (sh_m[0] + (sh_m[0] - hip_m[0]) * 0.42, sh_m[1] + (sh_m[1] - hip_m[1]) * 0.42)
+        # head disc (small: in the reclined pose the far-side delt sits right next to the head)
+        no_head = np.clip((np.hypot(xx - hd[0], yy - hd[1]) - 0.21 * tl) / 14.0, 0.0, 1.0)
+        ramp = (np.clip((dom - 5.0) / 12.0, 0.0, 1.0) ** 0.7).astype(np.float32)
+        # the native striation lines leave the glow hatched/dotted: close the region (fibre detail stays in the shading)
+        ramp = np.maximum(ramp, cv2.GaussianBlur(cv2.morphologyEx(ramp, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))), (0, 0), 1.2))
+        w_act = cv2.GaussianBlur(ramp, (0, 0), 1.2) * (1.0 - shorts_mask) * anat * no_head
+        core_w = np.clip(w_act * 0.96 * pulse, 0.0, 0.94)
+    else:
+        w_act = cv2.GaussianBlur((np.clip((act_dom - 10.0) / 32.0, 0.0, 1.0) ** 0.85).astype(np.float32), (0, 0), 1.8) * (1.0 - shorts_mask) * anat
+        core_seed = (np.clip((act_dom - 16.0) / 42.0, 0.0, 1.0) ** 1.08) * anat
+        core_w = np.clip(cv2.GaussianBlur(core_seed.astype(np.float32), (0, 0), 1.0) * w_act * 0.90 * pulse, 0.0, 0.90)
 
     act_ch = r_ch if is_wrong else g_ch  # Step 4 source glow is green: read fibers from G (R left dark holes)
     gb_ch = 0.55 * g_ch + 0.45 * b_ch

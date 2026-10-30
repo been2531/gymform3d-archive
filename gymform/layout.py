@@ -171,7 +171,10 @@ def callout_lint(cfg):
     import re
     errs = []
     tts = [t for _, t in cfg.get("tts_lines", [])]
-    for s in ("1", "2", "3", "4"):
+    n_ = int(cfg.get("n_steps", 4))
+    if len(tts) != n_:
+        errs.append(f"{len(tts)} TTS lines for {n_} steps")
+    for s in [str(i) for i in range(1, n_ + 1)]:
         c = cfg["callouts"][s]
         d = c["deg"]
         if isinstance(d, dict):
@@ -191,7 +194,7 @@ def callout_lint(cfg):
         if not (0 <= lo <= 180 and 0 <= hi <= 180):
             errs.append(f"step{s}: angle {lo:g}-{hi:g}\u00b0 outside 0-180")
     # t557u: paired steps (1/3 wrong, 2/4 right = one motion) show the same coached angle and label
-    for a, b in (("1", "3"), ("2", "4")):
+    for a, b in ((("1", "3"), ("2", "4")) if n_ == 4 else ()):
         ca, cb = cfg["callouts"][a], cfg["callouts"][b]
         if ca["deg"] != cb["deg"] or ca["l1"] != cb["l1"]:
             errs.append(f"steps {a}/{b} (same motion) callouts differ: {ca['deg']} {ca['l1']!r} vs {cb['deg']} {cb['l1']!r}")
@@ -254,25 +257,38 @@ def draw_callout_day4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_st
     Day 5 crisp 2.8 px laser (no bloom) and the Day 5 84 px number."""
     if variant is None:   # t554u: muscle-mistake days use the crisper callout (Day 5 2.8 px line, 84 px number)
         variant = SPEC["ui"].get("callout_style_muscle_days", "day4_refined") if not CFG.get("bone_steps") else SPEC["ui"].get("callout_style", "day4")
-    ax = SPEC["ui"].get("callout_axis", {}).get(str(CFG.get("day")), {})
+    ax = dict(SPEC["ui"].get("callout_axis", {}).get(str(CFG.get("day")), {}), **(CFG.get("callout_axis") or {}))
     j = ax.get("joint", "shoulder")
+    arm_axis = False
     if j == "shoulder":   # angle between torso and upper arm (elbow flare / shoulder abduction)
         hip_mid = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), 0.5 * (kp["hip_r"][1] + kp["hip_l"][1]))
-        a, v, b = p62._extend_segment(kp["sh_r"], hip_mid, 0.0, 0.62)[1], kp["sh_r"], kp["elb_r"]
-        nxt = kp["elb_r"]
-        cross1 = p62._extend_segment(kp["sh_r"], kp["sh_l"], -0.10, 0.30)
+        if ax.get("arm_axis"):
+            # t567u (t558 M8): the line must follow the ARM, not run down the torso to the abdomen. Arm nearer the
+            # text block (screen-left), short torso reference ray (28%), axis shoulder -> elbow extended 1.35x
+            sd = "r" if kp["sh_r"][0] <= kp["sh_l"][0] else "l"
+            od = "l" if sd == "r" else "r"
+            a, v, b = p62._extend_segment(kp[f"sh_{sd}"], hip_mid, 0.0, 0.28)[1], kp[f"sh_{sd}"], kp[f"elb_{sd}"]
+            nxt = b
+            cross1 = p62._extend_segment(kp[f"sh_{sd}"], kp[f"sh_{od}"], -0.10, 0.30)
+            arm_axis = True
+        else:
+            a, v, b = p62._extend_segment(kp["sh_r"], hip_mid, 0.0, 0.62)[1], kp["sh_r"], kp["elb_r"]
+            nxt = kp["elb_r"]
+            cross1 = p62._extend_segment(kp["sh_r"], kp["sh_l"], -0.10, 0.30)
     else:                 # hip hinge (Day 4 RDL): shoulder -> hip -> knee
         a, v, b = kp["sh"], kp["hip_r"], kp["kn_r"]
         nxt = kp["kn_r"]
         cross1 = p62._extend_segment(kp["sh"], kp["hip_r"], 0.66, 1.36)
-    _, b_ext = p62._extend_segment(v, b, 0.0, 1.14)
-    a_top, _ = p62._extend_segment(a, v, -0.12, 1.0)
+    _, b_ext = p62._extend_segment(v, b, 0.0, 1.35 if arm_axis else 1.14)
+    a_top, _ = p62._extend_segment(a, v, 0.0 if arm_axis else -0.12, 1.0)
     cross2 = p62._extend_segment(b, v, 0.66, 1.32)
     canvas = Image.fromarray(base_rgb).convert("RGBA")
     laser = _DEMIC_LASER_DAY4 if variant == "day4" else draw_crisp_laser_joint_axis
     laser(canvas, main_chains_1x=[[a_top, v, b_ext]], aux_ext_chains_1x=[list(cross1), list(cross2)],
           vertex_pts_1x=[v] if is_wrong else [v, nxt], is_wrong=is_wrong)
     target_pt = (int(0.48 * v[0] + 0.52 * b[0]), int(0.48 * v[1] + 0.52 * b[1]))
+    LAST_MASKS["callout_axis"] = {"vertex": [float(v[0]), float(v[1])], "limb": [float(b[0]), float(b[1])],
+                                  "ref": [float(a[0]), float(a[1])], "target": list(target_pt), "arm_axis": arm_axis}
     laser_rgb = np.array(canvas.convert("RGB")).astype(np.float32)
     g = np.clip(shorts_mask_1080 * 0.85, 0.0, 0.85)[:, :, None]
     blended = np.clip(laser_rgb * (1.0 - g) + base_rgb.astype(np.float32) * g, 0, 255).astype(np.uint8)
@@ -297,11 +313,12 @@ def draw_callout_day4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_st
 
 def make_sheet(peaks: dict, out_path: str):
     pw, ph, pad, header_h = 520, 924, 22, 96
-    sheet = Image.new("RGB", (pad + 4 * (pw + pad), header_h + ph + pad), (14, 16, 20))
+    st_ = ctx.steps()
+    sheet = Image.new("RGB", (pad + len(st_) * (pw + pad), header_h + ph + pad), (14, 16, 20))
     sd = ImageDraw.Draw(sheet)
     sd.text((28, 18), CFG.get("sheet_title", f"Day {CFG['day']} {CFG['exercise_name']}"), font=v30.f_pretendard(26, "extrabold"), fill=(242, 246, 252))
     sd.text((28, 54), " | ".join(CFG.get("sheet_labels", [])), font=v30.f_pretendard(18, "bold"), fill=(185, 225, 255))
-    for i, s_i in enumerate([1, 2, 3, 4]):
+    for i, s_i in enumerate(st_):
         x0, y0 = pad + i * (pw + pad), header_h
         sheet.paste(peaks[s_i].resize((pw, ph), Image.Resampling.LANCZOS), (x0, y0))
         col = (245, 65, 65) if ctx.step_spec(s_i)[3] else (35, 235, 130)

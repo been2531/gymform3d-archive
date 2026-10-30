@@ -352,3 +352,37 @@ def static_equipment(rgb_1080, F, kp, K, shorts_mask):
             out[lab2 == i] = 1.0
     out *= drop_backdrop_components(out > 0, F, plate)
     return cv2.GaussianBlur(out, (0, 0), 0.7) * st_alpha
+
+
+def static_body(F, K, kp, stat):
+    """t567u ROOT CAUSE (t558 H3/L12/H1): the static-equipment layer is taken from the temporal plate, and every
+    mannequin part that does not move during the rep (feet on the floor, head on the backrest, thigh edge) is IN
+    that plate too, so it was pasted as raw native pixels: pale un-locked feet, a dark rim around the head and
+    olive/red edge streaks. Returns (body, rim):
+      body = static pixels that are bright, neutral mannequin skin inside the keypoint body envelope -> body
+             (silver-locked like the rest of the mannequin), never bench;
+      rim  = dark static pixels hugging the head/upper body silhouette above the shoulders -> neither bench nor
+             body (the backdrop shows, no dark halo)."""
+    if stat is None or float(stat.max()) <= 0.0:
+        z = np.zeros((H, W), np.float32)
+        return z, z
+    lum_eq = np.maximum(F["lum"] - 0.85 * F["act_dom"], F["min_c"])
+    env = K.get("env")
+    if env is None:
+        from gymform.mask import anatomical_envelope
+        env = anatomical_envelope(kp)
+    st = stat > 0.3
+    body = st & (env > 0.35) & (lum_eq > 60.0) & (F["act_dom"] < 20.0)
+    body = cv2.morphologyEx(body.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, lab, sts, _ = cv2.connectedComponentsWithStats(body)
+    keep = np.zeros((H, W), np.uint8)
+    for i in range(1, n):
+        if sts[i, cv2.CC_STAT_AREA] >= 150:
+            keep[lab == i] = 1
+    keep = cv2.morphologyEx(keep, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
+    solid = ((K["w_raw"] > 0.5) | (keep > 0)).astype(np.uint8)
+    near = cv2.dilate(solid, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (17, 17))) > 0
+    sh_y = min(kp["sh_r"][1], kp["sh_l"][1])
+    rim = st & near & (keep == 0) & (lum_eq < 60.0) & (env > 0.35) & (_YY < sh_y - 10.0)
+    return (cv2.GaussianBlur(keep.astype(np.float32), (0, 0), 0.8),
+            cv2.GaussianBlur(rim.astype(np.float32), (0, 0), 0.8))

@@ -475,6 +475,70 @@ def leg_below_hem_check(base, wfg, shorts, kp, eqfoot=None, src=None):
     return out
 
 
+DAY4_MUSCLE_PX = {"wrong": (50145, 62472), "right": (21053, 35179)}   # Day 4 master act>40 px (peak / start), t567u
+
+
+def t567_checks(meta, frames_meta, vids, qc_dir):
+    """t567u checks for the t558 diagnosis fixes (muscle-only day):
+    (m) muscle fibre colour covers the clip's NATIVE glow (>= 80% of src act>10 body px) - Day 4 px for reference
+    (o) whole figure centred (silhouette bbox centre 540 +-40 px, >= 24 px margin both sides)
+    (p) the static (bench) layer never claims bright mannequin skin (pale feet / skin streaks <= 300 px)
+    (r) callout axis follows the upper arm (target point on the shoulder->elbow segment, arm_axis)"""
+    m_bad, m_rows, o_bad, o_rows, p_bad, p_rows, r_bad, r_rows = [], [], [], [], [], [], [], []
+    for key, fm in sorted(frames_meta.items()):
+        pre = os.path.join(qc_dir, key)
+        fr = vids.get(fm["frame_idx"])
+        src = cv2.imread(pre + "_src.png")
+        wfg, st = load_mask(pre + "_wfg.png"), load_mask(pre + "_static.png")
+        if fr is None or src is None or wfg is None:
+            continue
+        srcf = cv2.cvtColor(src, cv2.COLOR_BGR2RGB).astype(np.float32)
+        a_src, a_out = act_of(srcf), act_of(fr.astype(np.float32))
+        body = (wfg > 0.5) & ((st if st is not None else 0) < 0.5)
+        ui = np.zeros_like(body); ui[:600] = True; ui[:, :300] = True
+        if fm["tag"] in ("start", "peak"):
+            iw_ = meta.get("is_wrong", {}).get(str(fm["step"]))
+            dom_ = (srcf[..., 0] - 0.5 * (srcf[..., 1] + srcf[..., 2])) if iw_ else (srcf[..., 1] - 0.5 * (srcf[..., 0] + srcf[..., 2]))
+            nat = int(((dom_ > 10) & body & ~ui).sum())   # the target colour's own native glow
+            col = int(((a_out > 25) & body & ~ui).sum())
+            cov = col / max(nat, 1)
+            form = "wrong" if meta.get("is_wrong", {}).get(str(fm["step"])) else "right"
+            d4 = DAY4_MUSCLE_PX[form]
+            m_rows.append(f"{key}: {col}px coloured / {nat}px native glow = {100 * cov:.0f}% (Day 4 {form}: {d4[0] // 1000}-{d4[1] // 1000}k px)")
+            if cov < 0.80:
+                m_bad.append(m_rows[-1])
+        ys, xs = np.where(body)
+        if xs.size:
+            x0, x1 = int(np.percentile(xs, 0.2)), int(np.percentile(xs, 99.8))
+            cx = 0.5 * (x0 + x1)
+            o_rows.append(f"{key}: x {x0}-{x1} centre {cx:.0f}")
+            if abs(cx - W / 2) > 40 or x0 < 24 or x1 > W - 24:
+                o_bad.append(o_rows[-1])
+        if st is not None:
+            L = srcf.mean(-1); sat = srcf.max(-1) - srcf.min(-1)
+            n_sk = int(((st > 0.5) & (L > 110) & (sat < 30)).sum())
+            p_rows.append(f"{key}: {n_sk}px")
+            if n_sk > 300:
+                p_bad.append(f"{key}: static layer on {n_sk}px bright skin")
+        ca = fm.get("callout_axis")
+        if ca:
+            v, b_, t = np.array(ca["vertex"]), np.array(ca["limb"]), np.array(ca["target"], float)
+            seg = b_ - v
+            u = float(np.clip(np.dot(t - v, seg) / max(np.dot(seg, seg), 1.0), 0, 1))
+            d = float(np.linalg.norm(v + u * seg - t))
+            if fm["tag"] == "peak":
+                r_rows.append(f"{key}: target {d:.1f}px off the upper arm (u={u:.2f}), arm_axis={ca.get('arm_axis')}")
+            if not ca.get("arm_axis") or d > 8.0:
+                r_bad.append(f"{key}: target {d:.1f}px off arm, arm_axis={ca.get('arm_axis')}")
+        else:
+            r_bad.append(f"{key}: no callout_axis in meta")
+    report("(mf) muscle fibre colour covers the native glow (>=80%); Day 4 px for reference", bool(m_rows) and not m_bad,
+           "; ".join(m_bad) or " | ".join(m_rows))
+    report("(oc) whole figure centred (bbox centre 540+-40, margins >=24px)", bool(o_rows) and not o_bad, "; ".join(o_bad[:4]) or " | ".join(o_rows[::3]))
+    report("(pf) bench/static layer never on bright mannequin skin (<=300px)", not p_bad, "; ".join(p_bad[:4]) or "max " + max(p_rows, key=lambda r: int(r.split(": ")[1][:-2])) if p_rows else "no static")
+    report("(ra) callout axis follows the upper arm (target on shoulder->elbow)", not r_bad, "; ".join(r_bad[:4]) or " | ".join(r_rows))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mp4", help="master mp4, or '-' with --preflight")
@@ -488,7 +552,7 @@ def main():
     frames_meta = meta["frames"]
     CFG_EQ[0] = meta.get("equipment", [])
     if args.preflight:   # container format is checked on the full render only (fixed x264 settings)
-        n, fps = 600, 30.0   # (l) timing: the reel is fixed at 20.0s (tempo spec); the wav timing is real
+        n, fps = int(round(30 * float(meta.get("duration_s", 20.0)))), 30.0   # (l) timing: the reel is fixed at 20.0s (tempo spec); the wav timing is real
         vids = {}
         for k_, v_ in frames_meta.items():
             fp_ = os.path.join(args.qc_dir, k_ + "_final.png")
@@ -499,7 +563,7 @@ def main():
         n, fps = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), cap.get(cv2.CAP_PROP_FPS)
         w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
-        report("format", (w, h) == (W, H) and abs(fps - 30) < 0.01 and n >= 590, f"{w}x{h} @ {fps:.2f}fps, {n} frames ({n / max(fps, 1):.2f}s)")
+        report("format", (w, h) == (W, H) and abs(fps - 30) < 0.01 and n >= 30 * float(meta.get("duration_s", 20.0)) - 10, f"{w}x{h} @ {fps:.2f}fps, {n} frames ({n / max(fps, 1):.2f}s)")
         vids = read_frames(args.mp4, [v["frame_idx"] for v in frames_meta.values()])
     bg = cv2.cvtColor(cv2.imread(meta["studio_bg"]), cv2.COLOR_BGR2RGB)
     if bg.shape[:2] != (H, W):
@@ -688,7 +752,10 @@ def main():
     if int(meta.get("day") or 0) >= 6:
         pr_bad, pr_rows = [], []
         joints = ("sh_r", "sh_l", "elb_r", "elb_l", "wr_r", "wr_l", "hip_r", "hip_l", "kn_r", "kn_l")
-        for a_, b_ in ((1, 3), (2, 4)):
+        PAIRS_Q = () if int(meta.get("n_steps", 4)) == 2 else ((1, 3), (2, 4))   # t568u 2-step day: no front/side pair
+        if not PAIRS_Q:
+            pr_rows.append("2-step day (t568u): 1 wrong / 2 right, no paired front/side steps")
+        for a_, b_ in PAIRS_Q:
             ca, cb = (meta.get("clips") or {}).get(str(a_), {}), (meta.get("clips") or {}).get(str(b_), {})
             if not ca or ca.get("motion") is None or ca.get("motion") != cb.get("motion"):
                 pr_bad.append(f"steps {a_}/{b_}: not derived from one motion ({ca.get('file')} vs {cb.get('file')})")
@@ -722,8 +789,8 @@ def main():
         # vertical joint positions: compare wrist/elbow/shoulder/knee heights relative to the hip midpoint per
         # tempo tag (same phase), in units of the mean skeletal size; tolerance = pair tolerance for matched
         # native pairs, else 6 %.
-        y_bad, y_rows = [], []
-        for a_, b_ in ((1, 3), (2, 4)):
+        y_bad, y_rows = [], ([] if PAIRS_Q else ["2-step day: no front/side pair"])
+        for a_, b_ in PAIRS_Q:
             ca, cb = (meta.get("clips") or {}).get(str(a_), {}), (meta.get("clips") or {}).get(str(b_), {})
             pm = ca.get("pair_match") or cb.get("pair_match")
             tol_y = float(_SPEC_Q["step_order"].get("pair_tolerance", {}).get("joint_dev_pct", 15.0)) / 100.0 if pm else 0.06
@@ -745,7 +812,16 @@ def main():
                "; ".join(y_bad) or " | ".join(y_rows))
         # (z) t557u: paired steps show the same callout angle (+-5 deg) and label at every tempo phase
         z_bad, z_rows = [], []
-        for a_, b_ in ((1, 3), (2, 4)):
+        if not PAIRS_Q:   # 2-step day: each step keeps ONE angle + label at every tempo phase (+-5 deg)
+            for s_ in (1, 2):
+                cs_ = [fm_["callout"] for k_, fm_ in sorted(frames_meta.items()) if fm_["step"] == s_ and fm_.get("callout")]
+                if not cs_:
+                    z_bad.append(f"step{s_}: no callout"); continue
+                dd_ = [int(str(c_["deg"]).rstrip("\u00b0")) for c_ in cs_]
+                if max(dd_) - min(dd_) > 5 or len({c_["l1"] for c_ in cs_}) != 1:
+                    z_bad.append(f"step{s_}: angles {sorted(set(dd_))} labels {sorted({c_['l1'] for c_ in cs_})}")
+                z_rows.append(f"step{s_}: {cs_[0]['deg']} {cs_[0]['l1']} on {len(cs_)} phases")
+        for a_, b_ in PAIRS_Q:
             for tag in sorted({fm["tag"] for fm in frames_meta.values()}):
                 ka, kb = frames_meta.get(f"step{a_}_{tag}"), frames_meta.get(f"step{b_}_{tag}")
                 if not ka or not kb or not ka.get("callout") or not kb.get("callout"):
@@ -758,11 +834,13 @@ def main():
             if pk_a and pk_b:
                 z_rows.append(f"{a_}/{b_} peak: {pk_a['deg']} {pk_a['l1']} vs {pk_b['deg']} {pk_b['l1']}")
         report("(z) paired steps show the same callout angle (+-5 deg) and label", not z_bad, "; ".join(z_bad[:6]) or " | ".join(z_rows))
+    if meta.get("muscle_fill") or int(meta.get("n_steps", 4)) == 2:
+        t567_checks(meta, frames_meta, vids, args.qc_dir)
     sq_bad = [f"{k}: {msg}" for k, ok, msg in STRAY if not ok]
     report("(q) no stray / unanchored overlay lines or blobs", not sq_bad,
            "; ".join(sq_bad) or f"{len(STRAY)} frames: all fg components attached to mannequin/equipment")
     from gymform.ctx import order_lint
-    o_bad = order_lint({"day": meta.get("day"), "clips": meta.get("clips") or {}, "bone_steps": meta["bone_steps"],
+    o_bad = order_lint({"day": meta.get("day"), "n_steps": int(meta.get("n_steps", 4)), "clips": meta.get("clips") or {}, "bone_steps": meta["bone_steps"],
                         "muscle_steps": meta["muscle_steps"], "callouts": meta.get("callouts") or {},
                         "xray_full_steps": meta.get("xray_full_steps") or meta["bone_steps"]}) if meta.get("clips") else ["clips missing in meta"]
     report("(r) step order locked (1 wrong bone, 2 right bone, 3 wrong muscle, 4 right muscle)", not o_bad,
@@ -777,7 +855,7 @@ def main():
     from gymform.layout import callout_lint
     p_bad = []
     if meta.get("callouts"):
-        p_bad += callout_lint({"callouts": meta["callouts"], "tts_lines": meta.get("tts_lines", [])})
+        p_bad += callout_lint({"callouts": meta["callouts"], "tts_lines": meta.get("tts_lines", []), "n_steps": int(meta.get("n_steps", 4))})
         for key, fm in sorted(frames_meta.items()):
             co, c = fm.get("callout"), meta["callouts"][str(fm["step"])]
             if not co:
@@ -897,7 +975,8 @@ def main():
         bv_rows.append(f"{key}: L50={mv['L50']:.0f} L90={mv['L90']:.0f} contrast={mv['contrast']:.0f} dark={mv['dark_sat']:.2f}")
         if not bone_visible_ok(mv):
             bv_bad.append(bv_rows[-1])
-    report(f"(u) bones visible: L50>={BONE_VIS['L50_min']:.0f} L90>={BONE_VIS['L90_min']:.0f} contrast>={BONE_VIS['contrast_min']:.0f} "
+    if meta.get("bone_steps"):   # t554u/t568u: muscle-only days show no bones at all (nothing to check)
+     report(f"(u) bones visible: L50>={BONE_VIS['L50_min']:.0f} L90>={BONE_VIS['L90_min']:.0f} contrast>={BONE_VIS['contrast_min']:.0f} "
            f"dark-sat<={BONE_VIS['dark_sat_max']:.2f} (Day 1 v36 calibrated)", bool(bv_rows) and not bv_bad,
            "; ".join(bv_bad) or " | ".join(bv_rows[:4]) or "no bone-step QC frames")
 
@@ -908,11 +987,12 @@ def main():
     if sq and int(meta.get("day", 0) or 0) >= int(sq.get("from_day", 6)) or os.path.exists(tp):
         segs = json.load(open(tp))["segments"] if os.path.exists(tp) else []
         q = [g for g in segs if g["role"] == "question"]
-        s4 = [g for g in segs if g["role"] == "step4"]
+        dur_ = float(meta.get("duration_s", 20.0)); last_ = f"step{int(meta.get('n_steps', 4))}"
+        s4 = [g for g in segs if g["role"] == last_]
         ok = bool(q and s4) and q[0]["text"].strip().endswith("?") and len(q[0]["text"].split()) <= int(sq.get("max_words", 6)) \
-            and q[0]["start"] >= s4[0]["end"] + 0.15 and q[0]["end"] <= float(sq.get("latest_end_s", 19.85)) and n / max(fps, 1) >= 19.95
-        report("(l) spoken end question after Step 4 line, ends inside 20.0s", ok,
-               (f"{q[0]['text']!r} {q[0]['start']:.2f}-{q[0]['end']:.2f}s (step4 ends {s4[0]['end']:.2f}s)" if q and s4
+            and q[0]["start"] >= s4[0]["end"] + 0.15 and q[0]["end"] <= float(sq.get("latest_end_s", 19.85)) + dur_ - 20.0 and n / max(fps, 1) >= dur_ - 0.05
+        report(f"(l) spoken end question after the last step line, ends inside {dur_:.1f}s", ok,
+               (f"{q[0]['text']!r} {q[0]['start']:.2f}-{q[0]['end']:.2f}s (last step line ends {s4[0]['end']:.2f}s)" if q and s4
                 else "no question segment in tts_timing.json"))
 
     # (v) tempo = Day 4 baseline (t544u): smooth cosine, turnarounds at frames 50/100 of every 5 s step, no flat holds

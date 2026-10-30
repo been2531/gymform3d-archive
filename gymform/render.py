@@ -58,7 +58,7 @@ def geo_cache_path(base_step, p_i):
 
 
 def is_edit_base(step_idx):
-    return any(edit_base(e) == step_idx for e in (1, 2, 3, 4) if e != step_idx)
+    return any(edit_base(e) == step_idx for e in ctx.steps() if e != step_idx)
 
 
 def save_geo(step_idx, p_i):
@@ -130,6 +130,15 @@ def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0, geo=None, geo_masks
     stat = equipment.static_equipment(rgb_1080, F, kp, K, shorts_mask)
     if inner is not None:   # X-Ray glass of the edit is body, never bench
         stat = stat * (1.0 - inner)
+    # t567u: motionless mannequin parts (feet, head) are in the temporal plate -> they are body, never bench
+    sb_body, sb_rim = equipment.static_body(F, K, kp, stat)
+    stat = stat * (1.0 - np.maximum(sb_body, sb_rim))
+    if sb_rim.max() > 0:   # pieces of the static layer cut loose by the rim removal are ghosts, not bench
+        n_, lab_, st_, _ = cv2.connectedComponentsWithStats((stat > 0.5).astype(np.uint8))
+        small = np.isin(lab_, [i for i in range(1, n_) if st_[i, cv2.CC_STAT_AREA] < 800])
+        stat = np.where(small, 0.0, stat).astype(np.float32)
+        sb_rim = np.maximum(sb_rim, small.astype(np.float32))
+    w_fg = np.maximum(w_fg, sb_body) * (1.0 - sb_rim)
     LAST_MASKS["static_eq"] = stat
     # X-Ray glass never tints the bench (static equipment is excluded from the X-Ray window like the dumbbells)
     mannequin = xray.apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, np.maximum(eq_solid, stat), kp, step_idx, is_wrong)
@@ -163,7 +172,10 @@ def skin_tone_lock(rgb, w_fg, shorts_mask, metal, step_idx):
     ys = [0.0, 46.0, float(lk["p75"]), float(lk["p90"]), float(lk["max"]), float(lk["max"])]
     gain = np.interp(L, xs, ys) / np.maximum(L, 1.0)
     # full lock on every solid-body pixel (w_fg >= 0.9 is skin for QC (f)); only the soft matte edge blends
-    w = np.clip((w_fg - 0.5) / 0.4, 0, 1) * (1.0 - np.clip(keep_out * 4, 0, 1)) * np.clip((12.0 - act) / 6.0, 0.0, 1.0)
+    # t567u: with the full native muscle fill, the faint fibre fringe (act 6-24) is skin mixed with a little colour;
+    # lock it too (RGB scaled equally, hue kept) so its silver highlights never exceed the Day 4 max
+    a_hi = 24.0 if CFG.get("muscle_fill") == "native_full" else 12.0
+    w = np.clip((w_fg - 0.5) / 0.4, 0, 1) * (1.0 - np.clip(keep_out * 4, 0, 1)) * np.clip((a_hi - act) / 6.0, 0.0, 1.0)
     g = 1.0 + (gain - 1.0) * w
     return np.clip(f * g[:, :, None], 0, 255)
 
@@ -193,7 +205,7 @@ def load_inputs():
     """Clips + cached keypoints (extracted once per clip slice and stored in the day's kp cache)."""
     kps_seqs = pickle.load(open(CFG["kp_cache"], "rb")) if os.path.exists(CFG["kp_cache"]) else {}
     raw_seqs, dirty = {}, False
-    for s in (1, 2, 3, 4):
+    for s in ctx.steps():
         fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(s)
         seq = d5.load_native_slice_720p(os.path.join(CFG["assets_dir"], fn), i0, i1)
         mir = bool(CFG["clips"][str(s)].get("mirror"))
@@ -202,7 +214,7 @@ def load_inputs():
         raw_seqs[s] = seq
         # pair steps (same motion, Day 6+) share ONE keypoint track extracted from the motion base clip
         kp_fn = CFG["clips"][str(s)].get("kp_file") or fn
-        twin = next((t for t in (1, 2, 3, 4) if t < s and (CFG["clips"][str(t)].get("kp_file") or "") == kp_fn
+        twin = next((t for t in ctx.steps() if t < s and (CFG["clips"][str(t)].get("kp_file") or "") == kp_fn
                      and kp_fn and (CFG["clips"][str(t)]["i0"], CFG["clips"][str(t)]["i1"]) == (i0, i1)), None)
         sig = (kp_fn, i0, i1, y_sh) + (("mirror",) if mir else ())
         if twin is not None and kps_seqs.get(("sig", twin)) == sig and len(kps_seqs[twin]) == len(seq):
@@ -230,13 +242,13 @@ def load_inputs():
         pickle.dump(kps_seqs, open(CFG["kp_cache"], "wb"))
     ctx.normalize_scale(kps_seqs)      # same mannequin size + floor line in all 4 steps (any pose)
     SEQS.update(raw_seqs)
-    KPS.update({s: kps_seqs[s] for s in (1, 2, 3, 4)})
+    KPS.update({s: kps_seqs[s] for s in ctx.steps()})
     return raw_seqs, kps_seqs
 
 
 def build_icons(raw_seqs, kps_seqs):
     icons = []
-    for s in (1, 2, 3, 4):
+    for s in ctx.steps():   # one preview slot per step (t568u: 2-step day = 2 thumbnails)
         fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(s)
         bg.set_step_plate(raw_seqs[s], kps_seqs[s], s)
         rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(raw_seqs[s][-1], kps_seqs[s][-1], y_sh, s)
@@ -280,13 +292,14 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
     meta_p = os.path.join(d, f"meta_step{step_idx}.json")
     meta = json.load(open(meta_p)) if os.path.exists(meta_p) else {}
     meta.setdefault("frames", {})[f"step{step_idx}_{tag}"] = {"frame_idx": frame_idx, "step": step_idx, "tag": tag, "kp": kp,
-                                                              "callout": LAST_MASKS.get("callout")}
+                                                              "callout": LAST_MASKS.get("callout"),
+                                                              "callout_axis": LAST_MASKS.get("callout_axis")}
     meta.update({
         "exercise_name": CFG["exercise_name"], "studio_bg": CFG["studio_bg"], "equipment": CFG["equipment"],
         "bone_steps": list(CFG["bone_steps"]), "muscle_steps": list(CFG["muscle_steps"]),
         "clips": CFG.get("clips"), "xray_full_steps": CFG.get("xray_full_steps"),
         "is_wrong": {str(k): bool(v["is_wrong"]) for k, v in CFG.get("clips", {}).items()},
-        "source": CFG.get("source", {}), "callouts": CFG.get("callouts"), "tts_lines": CFG.get("tts_lines"), "day": CFG.get("day"), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
+        "source": CFG.get("source", {}), "callouts": CFG.get("callouts"), "tts_lines": CFG.get("tts_lines"), "day": CFG.get("day"), "muscle_fill": CFG.get("muscle_fill"), "framing_qc": (CFG.get("target_zoom") or {}).get("focus_mode"), "n_steps": ctx.n_steps(), "duration_s": ctx.duration(), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
         "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "overlap_alpha": SPEC["ui"]["overlap_alpha"], "fps": FPS, "qc_tags": tempo.QC_TAGS, "target_bones": CFG.get("target_bones", []),
     })
     json.dump(meta, open(meta_p, "w"), indent=1)
@@ -319,7 +332,7 @@ def render_step_to_mp4(step_idx, raw_seqs, kps_seqs, icons, out, peak_png):
         ff.stdin.write(np.ascontiguousarray(cache[p_i]).tobytes())
     ff.stdin.close()
     ff.wait()
-    print(f"   Step {step_idx}/4 done ({len(cache)} unique poses)", flush=True)
+    print(f"   Step {step_idx}/{ctx.n_steps()} done ({len(cache)} unique poses)", flush=True)
 
 
 def preflight_step(step_idx, raw_seqs, kps_seqs, icons):
@@ -341,7 +354,7 @@ def preflight_step(step_idx, raw_seqs, kps_seqs, icons):
 
 def merge_qc_meta():
     d, meta = CFG["qc_dir"], {}
-    for s in (1, 2, 3, 4):
+    for s in ctx.steps():
         mp_ = os.path.join(d, f"meta_step{s}.json")
         if os.path.exists(mp_):
             m = json.load(open(mp_))
@@ -364,8 +377,8 @@ if __name__ == "__main__":
     _load_cfg(a)
     if "--sheet" in a:          # stage: contact sheet + cover from the cached step peaks
         i = a.index("--sheet")
-        pk = {s: Image.open(a[i + 1 + s]).convert("RGB") for s in (1, 2, 3, 4)}
-        pk[4].save(CFG["out_cover"], quality=95)
+        pk = {s: Image.open(a[i + 1 + s]).convert("RGB") for s in ctx.steps()}
+        pk[ctx.steps()[-1]].save(CFG["out_cover"], quality=95)
         layout.make_sheet(pk, a[i + 1])
     elif "--icons-out" in a:      # stage: preview icons (all 4 steps), pickled for the step workers
         raw, kps = load_inputs()
