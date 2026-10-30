@@ -96,3 +96,4 @@ python3 run_day.py --day N               # lint -> preflight (stamp reused if th
 - Render: for an `edit_of` step the body silhouette and equipment geometry come from the BASE frame of the same pose
   (the edit renders limbs/torso as dark glass the luminance key reads as backdrop); colour/anatomy from the edit.
   QC (d) uses the `_geo.png` sidecar + the base step's plate for the expected equipment footprint.
+- TODO (next run, t526u): see RULES.md "TODO next run" — right-edit limb drift, cyan bones, (q) blobs near base arm outline.

@@ -1,0 +1,27 @@
+{"day": 6, "at": "2026-10-30 07:23:52", "ok": false, "t": {"icons": 18.9, "composite_1": 205.1, "steps_rendered": [[1, 2, 3, 4]], "encode_1": 6.0, "qc_1": 40.5, "total": 270.7}}
+{"day": 6, "at": "2026-10-30 07:34:04", "ok": false, "t": {"icons": 17.2, "composite_1": 199.7, "steps_rendered": [[1, 2, 3, 4]], "encode_1": 5.8, "qc_1": 41.1, "total": 263.8}}
+{"day": 6, "at": "2026-10-30 07:37:20", "ok": true, "t": {"qc_1": 42.0, "total": 42.2}}
+{"day": 6, "at": "2026-10-30 07:45:04", "ok": true, "t": {"icons": 18.7, "composite_1": 195.6, "steps_rendered": [[1, 2, 3, 4]], "encode_1": 6.4, "qc_1": 48.9, "total": 274.8}}
+{"day": 6, "at": "2026-10-30 08:26:31", "ok": false, "t": {"icons": 14.9, "composite_1": 194.8, "steps_rendered": [[1, 2, 3, 4]], "tts": 7.0, "encode_1": 4.8, "qc_1": 41.3, "total": 266.0}}
+{"day": 6, "at": "2026-10-30 08:46:54", "ok": false, "t": {"icons": 12.4, "composite_1": 178.5, "steps_rendered": [[1, 2, 3, 4]], "encode_1": 7.6, "qc_1": 56.6, "total": 258.4}}
+{"day": 6, "at": "2026-10-30 08:58:26", "ok": false, "t": {"icons": 12.9, "composite_1": 188.9, "steps_rendered": [[1, 2, 3, 4]], "encode_1": 4.8, "qc_1": 47.0, "total": 256.6}}
+{"day": 6, "at": "2026-10-30 09:02:32", "ok": true, "stage": "preflight", "t": {"icons": 12.6, "preflight_1": 94.4, "total": 110.2}}
+{"day": 6, "at": "2026-10-30 09:04:43", "ok": true, "stage": "preflight", "t": {"preflight_1": 107.2, "total": 110.7}}
+{"day": 6, "at": "2026-10-30 09:12:58", "ok": true, "stage": "preflight", "t": {"icons": 15.9, "preflight_1": 101.7, "total": 121.2}}
+{"day": 6, "at": "2026-10-30 09:21:13", "ok": true, "t": {"preflight_1": 76.3, "composite_1": 184.1, "steps_rendered": [[1, 2, 3, 4]], "encode_1": 4.6, "qc_1": 33.5, "total": 301.9}}
+{"day": 6, "at": "2026-10-30 09:52:23", "ok": false, "stage": "preflight", "t": {"icons": 20.4, "preflight_1": 81.1, "total": 105.3}}
+{"day": 6, "at": "2026-10-30 09:54:49", "ok": false, "stage": "preflight", "t": {"icons": 12.9, "preflight_1": 82.5, "total": 98.8}}
+{"day": 6, "at": "2026-10-30 09:57:30", "ok": false, "stage": "preflight", "t": {"icons": 14.5, "preflight_1": 85.0, "total": 102.7}}
+{"day": 6, "at": "2026-10-30 09:59:45", "ok": false, "stage": "preflight", "t": {"icons": 15.1, "preflight_1": 84.6, "total": 103.4}}
+{"day": 6, "at": "2026-10-30 10:02:18", "ok": false, "stage": "preflight", "t": {"icons": 15.8, "preflight_1": 82.2, "total": 101.5}}
+{"day": 6, "at": "2026-10-30 10:04:48", "ok": false, "stage": "preflight", "t": {"icons": 15.2, "preflight_1": 87.2, "total": 106.0}}
+{"day": 6, "at": "2026-10-30 10:06:54", "ok": false, "stage": "preflight", "t": {"icons": 14.8, "preflight_1": 86.5, "total": 104.7}}
+{"day": 6, "at": "2026-10-30 10:09:53", "ok": false, "stage": "preflight", "t": {"icons": 16.8, "preflight_1": 102.5, "total": 123.9}}
+{"day": 6, "at": "2026-10-30 10:12:18", "ok": false, "stage": "preflight", "t": {"icons": 17.4, "preflight_1": 104.6, "total": 126.7}}
+{"day": 6, "at": "2026-10-30 10:14:45", "ok": false, "stage": "preflight", "t": {"icons": 17.1, "preflight_1": 99.7, "total": 121.6}}
+{"day": 6, "at": "2026-10-30 10:16:51", "ok": false, "stage": "preflight", "t": {"icons": 16.9, "preflight_1": 90.5, "total": 111.4}}
+{"day": 6, "at": "2026-10-30 10:18:57", "ok": false, "stage": "preflight", "t": {"icons": 15.7, "preflight_1": 84.0, "total": 103.0}}
+{"day": 6, "at": "2026-10-30 10:21:07", "ok": false, "stage": "preflight", "t": {"icons": 14.6, "preflight_1": 86.1, "total": 103.8}}
+{"day": 6, "at": "2026-10-30 10:23:21", "ok": false, "stage": "preflight", "t": {"icons": 14.1, "preflight_1": 83.0, "total": 100.1}}
+{"day": 6, "at": "2026-10-30 10:33:24", "ok": true, "t": {"preflight_1": 94.6, "composite_1": 236.1, "steps_rendered": [[1, 2, 3, 4]], "encode_1": 4.6, "qc_1": 34.5, "total": 373.2}}
+{"day": 6, "at": "2026-10-30 10:33:53", "run": "t526u override render", "ok": true, "t": {"preflight": 94.6, "composite": 236.1, "encode": 4.6, "qc": 34.5, "total": 373.2}, "baseline_total": 301.9, "xai_edit_s": [46.5, 52.5]}

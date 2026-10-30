@@ -149,6 +149,11 @@ def preflight(day, c, keys, cfg_p, ovr_p, icons_p, wav, workers):
         shutil.copy(wav + ".timing.json", os.path.join(pdir, "tts_timing.json"))
     rows = qc("-", pdir, preflight=True)
     fails = [r[1][:160] for r in rows if r[0] == "FAIL"]
+    # one-time audited owner override (gymform/preflight.py): only the named checks, only this hash, once
+    ovr_o = _pf.load_override(day, cfg_p, ovr_p)
+    fails, waived = _pf.waive(fails, ovr_o)
+    if waived:
+        log(f"OWNER OVERRIDE {ovr_o['authorized_by']}: {ovr_o['reason']} | waived: " + "; ".join(w[:120] for w in waived))
     ok = bool(rows) and not fails
     checks = {}
     for r_ in rows:
@@ -156,6 +161,8 @@ def preflight(day, c, keys, cfg_p, ovr_p, icons_p, wav, workers):
         k_ = m_.group(1) if m_ else r_[1][:24]
         checks[k_] = "FAIL" if (r_[0] == "FAIL" or checks.get(k_) == "FAIL") else "PASS"
     summary = {"ok": ok, "day": day, "at": time.strftime("%Y-%m-%d %H:%M:%S"), "checks": checks, "fails": fails,
+               "override": ({"authorized_by": ovr_o["authorized_by"], "reason": ovr_o["reason"], "waived": waived}
+                            if waived else None),
                "t": {"frames": t_frames, "qc": round(time.time() - tt - t_frames, 1)}, "qc_dir": os.path.relpath(pdir, ROOT)}
     _pf.write_stamp(cfg_p, ovr_p, summary)   # a FAILED stamp is stored too (render.py refuses it)
     return ok, rows, round(time.time() - tt, 1), pdir, summary
@@ -385,8 +392,19 @@ def main():
         tt = time.time()
         rows = qc(A(c["out_mp4"]), qc_dir_g)
         T[f"qc_{attempt}"] = round(time.time() - tt, 1)
-        fails = [r for r in rows if r[0] == "FAIL"]
-        status.update({"qc": f"{len(rows) - len(fails)}/{len(rows)} PASS"})
+        from gymform import preflight as _pf
+        ovr_o = _pf.load_override(a.day, cfg_p, ovr_p)
+        rest, waived = _pf.waive([r[1] for r in rows if r[0] == "FAIL"], ovr_o)
+        fails = [r for r in rows if r[0] == "FAIL" and r[1] in rest]
+        status.update({"qc": f"{len(rows) - len(fails) - len(waived)}/{len(rows)} PASS" + (f" + {len(waived)} WAIVED" if waived else "")})
+        if waived:
+            status["override"] = {"authorized_by": ovr_o["authorized_by"], "reason": ovr_o["reason"], "waived": [w[:160] for w in waived]}
+            log(f"OWNER OVERRIDE {ovr_o['authorized_by']}: {ovr_o['reason']} | final QC waived: " + "; ".join(w[:120] for w in waived))
+        if ovr_o:
+            _pf.mark_used(ovr_o, f"final QC {status['qc']}; remaining fails: {len(fails)}")
+            if fails:
+                status["fails"] = [r[1][:120] for r in fails]
+                break   # override run: exactly ONE render, no autofix re-render
         if rows and not fails:
             break
         if attempt > loops:
@@ -397,7 +415,7 @@ def main():
         if not redo:
             status["fails"] = [r[1][:120] for r in fails]
             break
-    ok = bool(rows) and not [r for r in rows if r[0] == "FAIL"]
+    ok = bool(rows) and not fails
     if ok:
         sys.path.insert(0, ROOT)
         from gymform.caption import build as cap_build, lint as cap_lint
