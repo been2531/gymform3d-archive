@@ -61,6 +61,37 @@ def xray_signature(rgb, mask, tint):
     return {"n": n, "hot_ratio": hot_ratio, "core_ratio": max(core_ratio, 1e-3), "detail": float(np.mean(lap[bone]))}
 
 
+# (u) BONE VISIBILITY (owner t530u: "뼈 색상이 너무 진하면 뼈가 안보이자나"). Bone pixels on the rendered X-Ray
+# window = luminous structure (white top-hat > 22 over a 15px disc and lum > 120) or tinted glow (act > 40).
+# Calibrated on approved Day 1 v36 (5 frames, arm box): L50 150.3-152.9, L90 200.3-206.0, contrast 27.0-42.6,
+# dark-saturated share 0.079-0.142. A dark #1E9E5A fill scores L50 112, L90 112, dark share 0.91 (fails).
+BONE_VIS = {"L50_min": 140.0, "L90_min": 190.0, "contrast_min": 25.0, "dark_sat_max": 0.20}
+
+
+def bone_visibility(rgb, region):
+    f = rgb.astype(np.float32)
+    L = lum_of(f)
+    act = act_of(f)
+    th = cv2.morphologyEx(L, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)))
+    bone = (((th > 22.0) & (L > 120.0)) | (act > 40.0)) & region
+    bone = cv2.morphologyEx(bone.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)) > 0
+    n = int(bone.sum())
+    if n < 300:
+        return {"n": n, "L50": 0.0, "L90": 0.0, "contrast": 0.0, "dark_sat": 1.0}
+    ring = (cv2.dilate(bone.astype(np.uint8), np.ones((13, 13), np.uint8)) > 0) & \
+        ~(cv2.dilate(bone.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0) & region
+    mx, mn = f.max(axis=-1), f.min(axis=-1)
+    sat = (mx - mn) / (mx + 1.0)
+    return {"n": n, "L50": float(np.median(L[bone])), "L90": float(np.percentile(L[bone], 90)),
+            "contrast": float(np.median(L[bone]) - (np.median(L[ring]) if ring.any() else 0.0)),
+            "dark_sat": float(((sat > 0.6) & (L < 150.0) & bone).sum()) / n}
+
+
+def bone_visible_ok(m):
+    return (m["L50"] >= BONE_VIS["L50_min"] and m["L90"] >= BONE_VIS["L90_min"]
+            and m["contrast"] >= BONE_VIS["contrast_min"] and m["dark_sat"] <= BONE_VIS["dark_sat_max"])
+
+
 def read_frames(mp4, idxs):
     cap = cv2.VideoCapture(mp4)
     out = {}
@@ -746,6 +777,24 @@ def main():
                    f"detail={sig['detail']:.1f} (ref {ref_sig['detail']:.1f})")
     else:
         report("(g) X-Ray vs Day 1 reference", False, f"reference frame missing: {args.xray_ref}")
+
+    # (u) bone visibility on every bone-step QC frame: luminous near-white bones, visible against body + backdrop
+    bv_bad, bv_rows = [], []
+    for key, fm in sorted(frames_meta.items()):
+        if fm["step"] not in meta["bone_steps"]:
+            continue
+        pre = os.path.join(args.qc_dir, key)
+        if not (os.path.exists(pre + "_base.png") and os.path.exists(pre + "_xwin.png")):
+            continue
+        base = cv2.cvtColor(cv2.imread(pre + "_base.png"), cv2.COLOR_BGR2RGB)
+        region = (load_mask(pre + "_wfg.png") > 0.5) & (load_mask(pre + "_xwin.png") > 0.3)
+        mv = bone_visibility(base, region)
+        bv_rows.append(f"{key}: L50={mv['L50']:.0f} L90={mv['L90']:.0f} contrast={mv['contrast']:.0f} dark={mv['dark_sat']:.2f}")
+        if not bone_visible_ok(mv):
+            bv_bad.append(bv_rows[-1])
+    report(f"(u) bones visible: L50>={BONE_VIS['L50_min']:.0f} L90>={BONE_VIS['L90_min']:.0f} contrast>={BONE_VIS['contrast_min']:.0f} "
+           f"dark-sat<={BONE_VIS['dark_sat_max']:.2f} (Day 1 v36 calibrated)", bool(bv_rows) and not bv_bad,
+           "; ".join(bv_bad) or " | ".join(bv_rows[:4]) or "no bone-step QC frames")
 
     # (l) spoken end question (Day 6+): present, short, after the Step 4 line, inside the 20.0s reel
     spec = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gymform_spec.json")))

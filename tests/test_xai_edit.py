@@ -17,9 +17,11 @@ class XaiEdit(unittest.TestCase):
         jobs = {(m, k): (os.path.basename(s), os.path.basename(d), p) for m, k, s, d, p, _ in xai_edit.jobs_for(cfg)}
         self.assertEqual(jobs[("wrong", "bone")][:2], ("day6_idp_step2_muscle_720p.mp4", "day6_idp_wrong_bone_720p.mp4"))
         self.assertEqual(jobs[("right", "bone")][:2], ("day6_idp_step4_muscle_720p.mp4", "day6_idp_right_bone_720p.mp4"))
-        self.assertIn("crimson", jobs[("wrong", "bone")][2])
-        self.assertIn("emerald", jobs[("right", "bone")][2])
+        self.assertIn("soft red", jobs[("wrong", "bone")][2])
+        self.assertIn("soft green", jobs[("right", "bone")][2])
         self.assertIn("not cyan", jobs[("right", "bone")][2])
+        self.assertIn("near-white", jobs[("right", "bone")][2])
+        self.assertNotIn("#1E9E5A", jobs[("right", "bone")][2])
         self.assertIn("OPAQUE", jobs[("right", "bone")][2])
         self.assertIn("No bones and no glow on the hips, legs or feet", jobs[("right", "bone")][2])
         for _, _, p in jobs.values():
@@ -50,6 +52,20 @@ class XaiEdit(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(any("silhouette" in f for f in m["fails"]))
         self.assertTrue(any("hue" in f for f in m["fails"]))
+        self.assertTrue(any("near-white" in f or "saturated" in f for f in m["fails"]))
+
+    def test_bone_colour_approved_native_clips_pass(self):
+        import cv2
+        a = os.path.join(ROOT, "output", "assets")
+        for f, col in (("day6_idp_step1_bone_720p.mp4", "crimson"), ("day6_idp_step3_bone_720p.mp4", "emerald")):
+            p = os.path.join(a, f)
+            if not os.path.exists(p):
+                self.skipTest("assets missing")
+            c = cv2.VideoCapture(p); c.set(cv2.CAP_PROP_POS_FRAMES, 60); _, x = c.read()
+            bc = xai_edit.bone_colour(x)
+            A = xai_edit.ACCEPT
+            self.assertGreaterEqual(bc["V50"], A["bone_V50_min"]); self.assertLessEqual(bc["S50"], A["bone_S50_max"])
+            self.assertGreaterEqual(bc["white_core"], A["white_core_min"]); self.assertLessEqual(bc["dark_fill"], A["dark_fill_max"])
 
     def test_never_prints_key(self):
         src = open(os.path.join(ROOT, "gymform", "xai_edit.py")).read()

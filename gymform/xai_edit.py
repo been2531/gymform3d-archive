@@ -40,14 +40,15 @@ MAX_SRC_S = 8.7
 # t529u root cause: the first prompt said "show a glowing X-ray skeleton", which the model read as a full-body X-ray:
 # it darkened/thinned the limbs into see-through glass, added leg bones and drew cyan (not emerald). The approved
 # bone clips (Day 1-6 i2v) are an OPAQUE silver mannequin with thin glowing UPPER-BODY bones only. Say exactly that.
+# t530u: "뼈 색상이 너무 진하면 뼈가 안보이자나" -> bright luminous near-white bones (Day 1 v36), only a subtle tint
 COLOR_WORDS = {
-    "crimson": "pure deep crimson red (#C8102E), not orange or pink",
-    "emerald": "pure deep emerald green (#1E9E5A), not cyan, teal, turquoise or mint",
+    "crimson": "bright luminous near-white bones with only a subtle soft red glow at the edges (not dark, not saturated red)",
+    "emerald": "bright luminous near-white bones with only a subtle soft green glow at the edges (not dark, not saturated green, not cyan)",
 }
 PROMPTS = {
-    "bone": ("Change only the anatomy overlay. Remove the coloured muscle fibres and instead draw thin glowing {cw} "
+    "bone": ("Change only the anatomy overlay. Remove the coloured muscle fibres and instead draw thin glowing "
              "bones of the UPPER BODY ONLY (rib cage, clavicles, scapulae, upper-arm and forearm bones) as a luminous "
-             "line overlay on top of the skin. The mannequin skin stays fully OPAQUE matte silver-grey exactly as in the "
+             "X-ray overlay on top of the skin: {cw}. The mannequin skin stays fully OPAQUE matte silver-grey exactly as in the "
              "original: same arm, shoulder, torso and leg thickness and shape, not transparent, not darkened, not glass. "
              "No bones and no glow on the hips, legs or feet; no glow outside the body. Keep everything else exactly as "
              "in the original: camera angle, framing, mannequin size, black shorts, dumbbells, bench, studio background, "
@@ -61,7 +62,28 @@ PROMPTS = {
 # Calibrated on Day 6: base vs itself = 1.00; t522 wrong edit = sil IoU 0.82 + leg bones (reject); t522 right
 # edit = IoU 0.75, area 0.75, hue 86 (cyan) (reject).
 ACCEPT = {"sil_iou_min": 0.90, "area_ratio": (0.93, 1.07), "flow_p90_max_px": 4.0, "leg_glow_max": 0.01,
-          "hue": {"emerald": (50, 80), "crimson": (170, 8)}}
+          # bone colour (t530u): soft tint hue range + bright luminous bones. Calibrated on the approved-look native
+          # i2v bone clips day6_idp_step1_bone (V50 219, S50 0.40, core 0.17, dark 0.075) / step3_bone (V50 199,
+          # S50 0.33, core 0.22, dark 0.003); t522 right edit = V50 249 but S50 0.67, core 0.00, hue 86 (reject)
+          "hue": {"emerald": (40, 80), "crimson": (168, 12)},
+          "bone_V50_min": 190, "bone_S50_max": 0.50, "white_core_min": 0.10, "dark_fill_max": 0.12}
+
+
+def bone_colour(bgr):
+    """Raw-clip bone pixels: tinted glow (S>64, V>100) + their near-white cores (L>185, S<=64, within 3px)."""
+    import cv2
+    import numpy as np
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    Hh, S, V = (hsv[..., i].astype(np.float32) for i in range(3))
+    L = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    tint = (S > 64) & (V > 100)
+    core = (cv2.dilate(tint.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0) & (L > 185) & (S <= 64)
+    b = tint | core
+    n = int(b.sum())
+    if n < 300 or not tint.any():
+        return None
+    return {"V50": float(np.median(V[b])), "S50": float(np.median(S[b]) / 255.0), "hue": float(np.median(Hh[tint])),
+            "white_core": float(core.sum()) / n, "dark_fill": float(((S > 150) & (V < 200) & b).sum()) / n}
 DEFAULT_COLOR = {"wrong": "crimson", "right": "emerald"}
 
 
@@ -155,9 +177,11 @@ def acceptance(src, dst, color):
         if len(ys):   # lower 40% of the body = hips/legs/feet: must stay plain silver
             y0 = int(ys[0] + 0.6 * (ys[-1] - ys[0]))
             legs.append(float(glow[y0:].sum()) / max(1, mb[y0:].sum()))
-        if glow.sum() > 200:
-            hues.append(float(np.median(he[..., 0][glow])))
-    hue = float(np.median(hues)) if hues else -1.0
+        bc = bone_colour(e)
+        if bc:
+            hues.append(bc)
+    pick = lambda k: float(np.median([h[k] for h in hues])) if hues else -1.0
+    hue = pick("hue")
     lo, hi = ACCEPT["hue"].get(color, (0, 180))
     hue_ok = (lo <= hue <= hi) if lo <= hi else (hue >= lo or 0 <= hue <= hi)
     m = {"sil_iou_min": round(min(ious), 3), "area_ratio_min": round(min(ratios), 3), "area_ratio_max": round(max(ratios), 3),
@@ -171,8 +195,13 @@ def acceptance(src, dst, color):
         fails.append(f"motion drift p90 {m['flow_p90_px']}px")
     if m["leg_glow"] > ACCEPT["leg_glow_max"]:
         fails.append(f"glow on hips/legs ({m['leg_glow']})")
+    m.update({k: round(pick(k), 3) for k in ("V50", "S50", "white_core", "dark_fill")})
     if not hue_ok:
-        fails.append(f"bone hue {hue} not {color} {ACCEPT['hue'].get(color)}")
+        fails.append(f"bone tint hue {hue} not {color} {ACCEPT['hue'].get(color)}")
+    if m["V50"] < ACCEPT["bone_V50_min"] or m["white_core"] < ACCEPT["white_core_min"]:
+        fails.append(f"bones not bright/near-white (V50 {m['V50']}, white core {m['white_core']})")
+    if m["S50"] > ACCEPT["bone_S50_max"] or m["dark_fill"] > ACCEPT["dark_fill_max"]:
+        fails.append(f"bone tint too dark/saturated (S50 {m['S50']}, dark fill {m['dark_fill']})")
     m["fails"] = fails
     return not fails, m
 

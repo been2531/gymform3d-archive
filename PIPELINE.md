@@ -97,3 +97,4 @@ python3 run_day.py --day N               # lint -> preflight (stamp reused if th
   (the edit renders limbs/torso as dark glass the luminance key reads as backdrop); colour/anatomy from the edit.
   QC (d) uses the `_geo.png` sidecar + the base step's plate for the expected equipment footprint.
 - TODO (next run, t526u): see RULES.md "TODO next run" — right-edit limb drift, cyan bones, (q) blobs near base arm outline.
+- BASELINE (t532u): see docs/BASELINE.md. QC (u) bone visibility; xai_edit acceptance = silhouette + motion + leg glow + soft tint + bone brightness.
