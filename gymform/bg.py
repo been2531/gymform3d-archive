@@ -44,11 +44,13 @@ def transform(bgr_720p, kp_cached, y_sh, step_idx):
     rgb720 = cv2.cvtColor(bgr_720p, cv2.COLOR_BGR2RGB).astype(np.float32)
     if sc <= 1.0:   # approved Day 1-6 path, unchanged: 1080 upscale + light unsharp, then downscale
         up = cv2.resize(rgb720, (W, H), interpolation=cv2.INTER_LANCZOS4)
-        up = up * 1.22 - cv2.GaussianBlur(up, (0, 0), 0.9) * 0.22
+        if not CFG.get("no_sharpen"):   # t600: native_grade keeps the clip texture (unsharp amplified boil)
+            up = up * 1.22 - cv2.GaussianBlur(up, (0, 0), 0.9) * 0.22
         scaled = cv2.resize(up, (nw, nh), interpolation=cv2.INTER_LANCZOS4)
     else:           # target zoom: ONE Lanczos resample 720p -> final size (no double resample), unsharp at final scale
         scaled = cv2.resize(rgb720, (nw, nh), interpolation=cv2.INTER_LANCZOS4)
-        scaled = scaled * 1.22 - cv2.GaussianBlur(scaled, (0, 0), 0.9 * sc) * 0.22
+        if not CFG.get("no_sharpen"):
+            scaled = scaled * 1.22 - cv2.GaussianBlur(scaled, (0, 0), 0.9 * sc) * 0.22
     bg_med = np.median(np.concatenate([rgb720[:18].reshape(-1, 3), rgb720[:, :18].reshape(-1, 3), rgb720[:, -18:].reshape(-1, 3)]), axis=0)
     canvas = np.ones((H, W, 3), np.float32) * bg_med[None, None, :]
     sx0, sy0, dx0, dy0 = max(0, -x0), max(0, -y0), max(0, x0), max(0, y0)

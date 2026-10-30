@@ -33,6 +33,7 @@ Check status:
 | D14 | Weak wrong/right difference (D6 v1) | Wrong and right movements look almost the same | The source clips don't show the mistake strongly enough | Source: start frames at the most telling point; the mistake exceeds the standard by a wide margin (`docs/MOTION_STANDARDS.md`) | `gymform.motion_check`: wrong step fires ≥ 1 mistake signature, right step passes all items; (s)/(z) pair checks [EXISTS]. motion_check is not yet wired into preflight | partly |
 | D15 | Shorts edge flicker / shorts slab (D5, D6) | Hem flickers; a dark slab appears beside the thigh or over the bench | `native_shorts` zone has no foreground gate, then is forced opaque in `finalize` | Gate by foreground evidence (Day 4 `× w_fg`) or keep the native shorts pixels (fix plan 1) | Shorts ∩ raw backdrop ≤ 2% [MEASURED: 38.6%]; (n) 0% 2D overpaint [EXISTS] | MEASURED |
 | D16 | Judder from the slice cap (D5, D6) | Uneven motion, skipped poses | `d5.load_native_slice_720p` caps slices at 36 frames | Remove the cap (Day 4 loader had none) | Unique poses ≥ 0.9 × slice length [MEASURED: wrong 36/45] | MEASURED |
+| D17 | Figure / equipment / backdrop melt together (D6 v4–v5, t600u–t603u) | Dumbbell plates, bench and shorts read as the same grey as the backdrop; the far plate disappears | Low-separation source: raw plates (median lum 14) and backdrop (15–29, violet vignette) have equal luminance, and they differ only in chroma; a global luminance map can't pull them apart | Mannequin stays at the Day 4 skin tone (never brightened). Backdrop flat, darker than the figure, slight cool tint (35,39,43); static backdrop weight per step; `native_sep_dx/dy` dark knot (B0−8 → BG−10, slope ≤1.25 so no noise boost); `native_dark_warm_rgb` warm-grey darks (bench, frame); glow from clip chroma only (none on backdrop). Source (Day 7+): prompt bright brushed-steel dumbbells, warm-grey bench/machine, a darker cool flat backdrop. A global chroma mix (`native_chroma_k`) was tried and REJECTED: it broke the vignette flat-field and blotched the backdrop | (sep): skin p75 − backdrop ≥ 33 (Day 4 level); dumbbells and bench ≥ 15 RGB from the backdrop and ≥ 10 from the skin, ≤ 25% of their pixels within 6 lum of the backdrop; glow on the raw backdrop ≤ 0.5% | EXISTS (v5 preflight: fig 37–40, dumbbell 28–31, bench 29–31) |
 
 ## Why Day 4 worked (so the defaults stay this way)
 
@@ -44,3 +45,18 @@ Source: `build_day4_rdl_master.py`, commits f63a353 and aeeb806.
 - No frame blending and no slice cap.
 
 Day 4 still amplifies boil, flicker and glow (see D4–D6), which is why its numbers are not the target. The raw clip is.
+
+## t600 implementation status (Day 6 v5, `look: native_grade`, `gymform/native.py`)
+
+The look is behind config flags; older days are unchanged.
+- **D4/D9/D13/D15:** no per-frame cut-out. Clip pixels are kept, and only backdrop never touched in a step becomes flat (one static weight per step).
+  - Shorts need foreground evidence.
+  - `static_body_shin_r` and metal re-shading are gone (D2/D13).
+- **D5:** `no_sharpen`, plus a flow-warped temporal denoise (0.25 per neighbour, occlusion guard).
+- **D6:** glow is linear from clip chroma. Anchors are LK-tracked and clamped to 12 px.
+- **D8:** `phase_continuous_cut` plus `target_zoom.align: hips_ankles`.
+- **D16:** `no_slice_cap`.
+- **QC in native mode:** (d) coverage/holes, (m) opacity and (q) use the `_alpha.png` sidecar (all ones: nothing is cut). (d) bloat measures what is VISIBLE over the raw backdrop. (m) compares against the global tone map (`_ref.png`).
+- **New gates:** (sb), (gh), (sep) per frame; (tq) temporal (boil ≤1.20, edge ≤1.56, glow ≤1.59, cut) on the final render.
+- **(sb)/(gh) raw backdrop** is now connected to the frame edge. With that definition, v4 measures 0–1.7% shorts-on-backdrop. The old 38.6% was largely a measurement artefact: flat fabric folds at the backdrop luminance were counted.
+- **Open:** (d) step-1 right dumbbell bloat 4.3% (t70/t130), and the far hex plate stays low-contrast. Per the owner, it is not waived.

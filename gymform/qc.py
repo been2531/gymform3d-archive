@@ -269,7 +269,7 @@ def stray_components(wfg, src=None, plate=None, base=None, bg=None, min_area=30)
     return (not bad), (", ".join(bad[:4]) if bad else "clean")
 
 
-def static_check(src, base, plate, wfg, shorts, kp, body_lum=70.0):
+def static_check(src, base, plate, wfg, shorts, kp, body_lum=70.0, ref=None):
     """(m) QC's own static-object map (plate vs smooth backdrop; dark, not skin, frame shows the plate) near the
     body: rendered pre-UI base must equal the native source there (not faded into the backdrop, not re-shaded)
     and be fully opaque in the fg mask."""
@@ -285,6 +285,10 @@ def static_check(src, base, plate, wfg, shorts, kp, body_lum=70.0):
     n = int(obj.sum())
     if n < 1500:
         return False, f"static object not found ({n}px) - bench missing/faded or cut"
+    if ref is not None:   # native grade: same pixels after the global tone map (the only allowed change)
+        f = ref.astype(np.float32)
+        lr = lum_of(f)
+        tex = cv2.GaussianBlur(np.abs(lr - cv2.GaussianBlur(lr, (0, 0), 2.0)), (0, 0), 1.5)
     diff = np.abs(base[obj].astype(np.float32) - f[obj]).max(axis=-1)
     cov = float((wfg[obj] > 0.9).mean())
     t_src = float(tex[obj].mean())
@@ -318,27 +322,28 @@ def native_source_ok(prov):
 LAST_BK = [None]   # backdrop pixels covered by fg in the last checked frame (proof overlays)
 
 
-def check_equipment(key, src, plate, zone, wfg, shorts, kp):
+def check_equipment(key, src, plate, zone, wfg, shorts, kp, vis=None):
     """(d) one frame: equipment vs the QC's own expected footprint. Returns (fail_list, rows, exp).
     Speed: all per-pixel work runs on the equipment zone's bounding box (+48px); plate-wide models (clean
     backdrop, static objects) are computed once per plate on the full frame and cropped, so results equal the
     full-frame computation."""
     ys_, xs_ = np.where(zone > 0)
     if len(xs_) == 0:
-        return check_equipment_crop(key, src, plate, zone, wfg, shorts, kp, (0, 0), None, None)
+        return check_equipment_crop(key, src, plate, zone, wfg, shorts, kp, (0, 0), None, None, vis)
     x0, x1 = max(0, xs_.min() - 48), min(W, xs_.max() + 49)
     y0, y1 = max(0, ys_.min() - 48), min(H, ys_.max() + 49)
     sl = (slice(y0, y1), slice(x0, x1))
     clean = clean_qc(plate)[sl]
     stq = static_objects_qc(plate.astype(np.float32))[0][sl] if any(e.get("static") for e in CFG_EQ[0]) else None
     kp_c = {k_: (v_[0] - x0, v_[1] - y0) for k_, v_ in kp.items()}
-    f_, r_, exp_c = check_equipment_crop(key, src[sl], plate[sl], zone[sl], wfg[sl], shorts[sl], kp_c, (x0, y0), clean, stq)
+    f_, r_, exp_c = check_equipment_crop(key, src[sl], plate[sl], zone[sl], wfg[sl], shorts[sl], kp_c, (x0, y0), clean, stq,
+                                         None if vis is None else vis[sl])
     exp = np.zeros((H, W), bool)
     exp[sl] = exp_c
     return f_, r_, exp
 
 
-def check_equipment_crop(key, src, plate, zone, wfg, shorts, kp, off, clean, stq):
+def check_equipment_crop(key, src, plate, zone, wfg, shorts, kp, off, clean, stq, vis=None):
     fails, rows = [], []
     Hc, Wc = zone.shape[:2]
     exp = expected_equipment(src, plate, zone, clean)
@@ -368,7 +373,7 @@ def check_equipment_crop(key, src, plate, zone, wfg, shorts, kp, off, clean, stq
         sq_ = stq if stq is not None else static_objects_qc(fp)[0]
         backdrop &= ~(cv2.dilate(sq_.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
     backdrop &= ~metal   # backdrop = the cool blue-grey studio colour; neutral dark metal of a held-still item is not backdrop
-    bk = (wfg > 0.5) & cv2.erode(backdrop.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+    bk = ((wfg > 0.5) if vis is None else vis) & cv2.erode(backdrop.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
     bloat = float(bk.sum()) / n_exp
     LAST_BK[0] = bk
     mid_x = int(0.5 * (kp["sh_r"][0] + kp["sh_l"][0]))
@@ -478,6 +483,120 @@ def leg_below_hem_check(base, wfg, shorts, kp, eqfoot=None, src=None):
 
 
 DAY4_MUSCLE_PX = {"wrong": (50145, 62472), "right": (21053, 35179)}   # Day 4 master act>40 px (peak / start), t567u
+
+
+def _raw_backdrop(src):
+    """pixels of the RAW source frame that are plain backdrop: within 6 lum of the per-row backdrop level (median of
+    the frame's left/right 24 px, smoothed over rows) on the 4 px-smoothed lum, no texture, AND connected to the
+    backdrop at the frame's left/right edge (or a large open area). A flat fabric highlight that happens to sit at
+    the backdrop level but is enclosed by the shorts is NOT backdrop (t600: a lum-only test flagged shorts folds)."""
+    l = lum_of(src.astype(np.float32))
+    prof = np.median(np.concatenate([l[:, :24], l[:, -24:]], axis=1), axis=1).astype(np.float32)
+    prof = cv2.GaussianBlur(prof[:, None], (0, 0), 25.0)[:, 0]
+    ls = cv2.GaussianBlur(l, (0, 0), 4.0)
+    tex = cv2.GaussianBlur(np.abs(l - cv2.GaussianBlur(l, (0, 0), 2.0)), (0, 0), 2.0)
+    cand = ((np.abs(ls - prof[:, None]) < 6.0) & (tex < 4.0)).astype(np.uint8)
+    cand[:620] = 0
+    n, lab, st, _ = cv2.connectedComponentsWithStats(cand, connectivity=4)
+    keep = np.zeros(n, bool)
+    edge_ids = np.unique(np.concatenate([lab[:, :30].ravel(), lab[:, -30:].ravel()]))
+    keep[edge_ids] = True
+    keep |= st[:, cv2.CC_STAT_AREA] > 30000
+    keep[0] = False
+    bk = keep[lab]
+    obj = ~bk
+    obj[:620] = False
+    return bk, obj
+
+
+def playbook_frame_checks(frames_meta, qc_dir):
+    """t600 DEFECT_PLAYBOOK gates on every QC frame (preflight + final):
+    (sb) D15 shorts on backdrop: shorts-mask pixels that are raw backdrop <= 2% of the shorts mask (v4: 38.6%)
+    (gh) D13 ghosts: raw-backdrop pixels rendered as a visible object (|out - flat backdrop| > 12, 15 px clear of the
+         raw object) <= 2% of the raw object area (v4: 11.9% painted opaque)"""
+    sb_bad, sb_rows, gh_bad, gh_rows, sep_bad, sep_rows = [], [], [], [], [], []
+    bg_l = 0.299 * 35 + 0.587 * 39 + 0.114 * 43
+    for key, fm in sorted(frames_meta.items()):
+        pre = os.path.join(qc_dir, key)
+        src, base = cv2.imread(pre + "_src.png"), cv2.imread(pre + "_base.png")
+        sh = load_mask(pre + "_shorts.png")
+        if src is None or base is None or sh is None:
+            continue
+        bk, obj = _raw_backdrop(cv2.cvtColor(src, cv2.COLOR_BGR2RGB))
+        shm = sh > 0.5
+        r = float((shm & bk).sum()) / max(1.0, float(shm.sum()))
+        sb_rows.append(f"{key}: {100 * r:.1f}%")
+        if r > 0.02:
+            sb_bad.append(sb_rows[-1])
+        # (sep) t601 separation (D17)
+        b_rgb = cv2.cvtColor(base, cv2.COLOR_BGR2RGB).astype(np.float32)
+        lb_ = lum_of(b_rgb)
+        wfg_, eq_, st_ = (load_mask(pre + f"_{n_}.png") for n_ in ("wfg", "eq", "static"))
+        if wfg_ is not None:
+            bgz = cv2.dilate((wfg_ > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) == 0
+            bgz[:620] = False
+            skz = (wfg_ > 0.5) & (lb_ > 46.0) & (act_of(b_rgb) < 12.0) & (sh < 0.2)
+            for m_ in (eq_, st_):
+                if m_ is not None:
+                    skz &= m_ < 0.5
+            skz[:620] = False
+            if bgz.sum() > 5000 and skz.sum() > 2000:
+                bgc = np.median(b_rgb[bgz], axis=0)
+                skc = np.median(b_rgb[skz], axis=0)
+                fig = float(np.percentile(lb_[skz], 75) - lum_of(bgc[None])[0])
+                parts, ok_ = [f"fig {fig:.0f}"], fig >= 33.0
+                for nm, m_ in (("dumbbell", eq_), ("bench", st_)):
+                    if m_ is None:
+                        continue
+                    z = cv2.erode((m_ > 0.5).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+                    z[:620] = False
+                    if z.sum() < 800:
+                        continue
+                    ec = np.median(b_rgb[z], axis=0)
+                    d_b, d_s = float(np.linalg.norm(ec - bgc)), float(np.linalg.norm(ec - skc))
+                    lost = float((np.abs(lb_[z] - lum_of(bgc[None])[0]) < 6.0).mean())   # pixels melting into the backdrop
+                    parts.append(f"{nm} vs bg {d_b:.0f} vs skin {d_s:.0f} lost {100 * lost:.0f}%")
+                    ok_ &= d_b >= 15.0 and d_s >= 10.0 and lost <= 0.25
+                gl = float((bk & (act_of(b_rgb) > 15.0)).sum()) / max(1.0, float(bk.sum()))
+                parts.append(f"glow on bg {100 * gl:.2f}%")
+                ok_ &= gl <= 0.005
+                sep_rows.append(f"{key}: " + ", ".join(parts))
+                if not ok_:
+                    sep_bad.append(sep_rows[-1])
+        far = bk & (cv2.dilate(obj.astype(np.uint8), np.ones((31, 31), np.uint8)) == 0)
+        lo = lum_of(cv2.cvtColor(base, cv2.COLOR_BGR2RGB))
+        g = float((far & (np.abs(lo - bg_l) > 12.0)).sum()) / max(1.0, float(obj[620:].sum()))
+        gh_rows.append(f"{key}: {100 * g:.2f}%")
+        if g > 0.02:
+            gh_bad.append(gh_rows[-1])
+    report("(sep) figure / equipment / backdrop separated (playbook D17: skin p75 - backdrop >= 33; dumbbells and "
+           "bench >= 15 RGB from backdrop, >= 10 from skin, <= 25% of their pixels within 6 lum of it; glow on backdrop <= 0.5%)", bool(sep_rows) and not sep_bad,
+           "; ".join(sep_bad[:4]) or " | ".join(sep_rows[:4]))
+    report("(sb) shorts never on raw backdrop (<= 2% of the shorts mask; playbook D15)", bool(sb_rows) and not sb_bad,
+           "; ".join(sb_bad[:4]) or " | ".join(sb_rows[:4]))
+    report("(gh) no ghosts: raw backdrop rendered as object <= 2% of object area (playbook D13)", bool(gh_rows) and not gh_bad,
+           "; ".join(gh_bad[:4]) or " | ".join(gh_rows[:4]))
+
+
+def playbook_temporal_check(meta, mp4):
+    """t600 DEFECT_PLAYBOOK temporal gates (full render only): raw clip vs output, flow-compensated
+    (gymform/temporal_qc.py): boil <= x1.20, edge (silhouette) flicker <= x1.56, glow flicker <= x1.59 of the raw
+    clip (= Day 4's best ratios), step cut hips/ankles <= 25 px, shoulders <= 40 px, body lum <= 3, cut diff <= 2x."""
+    cp = meta.get("config_path")
+    if not cp or not os.path.exists(cp):
+        report("(tq) temporal playbook gates (boil / edge flicker / glow flicker / step cut)", False, "meta has no config_path")
+        return
+    import subprocess as _sp
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    r = _sp.run([sys.executable, "-m", "gymform.temporal_qc", "gate", cp, mp4, "qc_" + os.path.basename(mp4)[:-4]],
+                cwd=root, capture_output=True, text=True, env=dict(os.environ, ROOTCAUSE_OUT=os.path.join(root, "output", "qc", "temporal")))
+    line = next((l for l in r.stdout.splitlines() if l.startswith("TEMPORAL_QC ")), None)
+    if not line:
+        report("(tq) temporal playbook gates (boil / edge flicker / glow flicker / step cut)", False, (r.stderr or "no output")[-300:])
+        return
+    res = json.loads(line[12:])
+    report("(tq) temporal playbook gates: boil<=x1.20 edge flicker<=x1.56 glow<=x1.59 of raw; step cut matched", res["ok"],
+           "; ".join(res["fails"]) or " | ".join(res["rows"]))
 
 
 def flat_look_checks(meta, frames_meta, vids, qc_dir):
@@ -639,6 +758,11 @@ def main():
         pre = os.path.join(args.qc_dir, key)
         base = cv2.cvtColor(cv2.imread(pre + "_base.png"), cv2.COLOR_BGR2RGB)
         wfg, shorts, eq = load_mask(pre + "_wfg.png"), load_mask(pre + "_shorts.png"), load_mask(pre + "_eq.png")
+        # t600 native grade: the render keeps every clip pixel (alpha 1, nothing cut); opacity / coverage / holes are
+        # judged on that alpha, bloat on what is VISIBLE over raw backdrop (|out - flat backdrop| > 12)
+        alpha = load_mask(pre + "_alpha.png")
+        wsol = alpha if alpha is not None else wfg
+        vis = (np.abs(lum_of(base.astype(np.float32)) - (0.299 * 35 + 0.587 * 39 + 0.114 * 43)) > 12.0) if alpha is not None else None
         kp = fm["kp"]
         s = fm["step"]
         main_frame = fm["tag"] in ("start", "peak")
@@ -656,7 +780,7 @@ def main():
         if zone is not None and os.path.exists(src_p) and os.path.exists(plate_p):
             src = cv2.cvtColor(cv2.imread(src_p), cv2.COLOR_BGR2RGB)
             plate = cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB)
-            f_, r_, exp = check_equipment(key, src, plate, zone, wfg, shorts, kp)
+            f_, r_, exp = check_equipment(key, src, plate, zone, wsol, shorts, kp, vis)
             eq_fail += f_
             EQ_ROWS.extend(r_)
             core = cv2.erode(exp.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
@@ -687,11 +811,13 @@ def main():
         OVP.append((key,) + overpaint_px(src_rgb, shorts))
         # (m) static equipment (bench) preserved as native pixels: not faded, not cut, not re-shaded
         if any(e.get("static") for e in meta["equipment"]) and os.path.exists(plate_p):
-            STATIC.append((key,) + static_check(src_rgb, base, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB), wfg, shorts, kp,
-                                                body_lum=min(70.0, float(meta.get("static_body_lum", 60.0)) + 10.0)))
+            _ref_p = pre + "_ref.png"   # native grade: bench judged against the global tone map of its own pixels
+            STATIC.append((key,) + static_check(src_rgb, base, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB), wsol, shorts, kp,
+                                                body_lum=min(70.0, float(meta.get("static_body_lum", 60.0)) + 10.0),
+                                                ref=cv2.cvtColor(cv2.imread(_ref_p), cv2.COLOR_BGR2RGB) if alpha is not None and os.path.exists(_ref_p) else None))
         # (q) stray / unanchored overlay lines: detached fg components that are visible thin lines or plain-backdrop
         # ghosts (root cause of the Day 6 0:10 line: temporal-median ghosts accepted by the equipment/static layers)
-        STRAY.append((key,) + stray_components(wfg, src_rgb, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB) if os.path.exists(plate_p) else None, base, bg))
+        STRAY.append((key,) + stray_components(wsol, src_rgb, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB) if os.path.exists(plate_p) else None, base, bg))
         if not main_frame:
             continue
 
@@ -750,7 +876,7 @@ def main():
         l = lum_of(base)
         xw = load_mask(pre + "_xwin.png")
         xw_d = (cv2.dilate((xw > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) > 0) if xw is not None else np.zeros((H, W), bool)
-        sk_o = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
+        sk_o = (wsol > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
         st_i = load_mask(pre + "_static.png")   # same skin as (f): native static bench highlights are not skin
         if st_i is not None:
             sk_o &= st_i < 0.5
@@ -770,13 +896,13 @@ def main():
         # (f) skin + shorts
         # (spec: the skin lock excludes only the local X-Ray window, same mask as (i))
         st_m = load_mask(pre + "_static.png")   # native static-equipment pixels (bench highlights) are not skin
-        skin = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
+        skin = (wsol > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
         if st_m is not None:
             skin &= st_m < 0.5
         if skin.sum() > 2000:
             # max = p99.9: the statistic the lock anchors and the Day 4 reference was measured with (t542u)
             p75, p90, mx = np.percentile(l[skin], 75), np.percentile(l[skin], 90), np.percentile(l[skin], 99.9)
-            sh = (shorts > 0.6) & (wfg > 0.9)
+            sh = (shorts > 0.6) & (wsol > 0.9)
             sp = float(np.median(l[sh])) if sh.sum() else -1
             SKIN.append(f"{key}: p75={p75:.0f} p90={p90:.0f} max={mx:.0f} shorts={sp:.0f}")
             if not (SK["qc_p75_range"][0] <= p75 <= SK["qc_p75_range"][1] and SK["qc_p90_range"][0] <= p90 <= SK["qc_p90_range"][1]
@@ -1059,6 +1185,11 @@ def main():
         ok_v, exp_v, bad_v = _tempo.tempo_ok(_tempo.measure_reversals(args.mp4))
         report("(v) tempo = Day 4 (motion turnarounds at frames 50/100 of each step, +-6)", ok_v,
                f"expected {exp_v}; off: {bad_v}" if bad_v else f"all 4 steps turn at {exp_v}")
+
+    if int(meta.get("day") or 0) >= 6:
+        playbook_frame_checks(frames_meta, args.qc_dir)
+        if not args.preflight:
+            playbook_temporal_check(meta, args.mp4)
 
     print(f"\nQC GATE: {'PASS' if all(RESULTS) else 'FAIL'} ({sum(RESULTS)}/{len(RESULTS)} items)")
     sys.exit(0 if all(RESULTS) else 1)

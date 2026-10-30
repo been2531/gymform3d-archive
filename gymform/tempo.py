@@ -24,15 +24,26 @@ def _wave_day5(u):
     return 0.0
 
 
-def tempo_wave(u, style=None):
+def tempo_wave(u, style=None, phase=0.0):
+    """phase = pi continues the motion across a step cut (t600: step N ends at the top of the wave, so step N+1
+    starts there instead of jumping back to pose 0); turnarounds stay at frames 50/100."""
     style = style or TEMPO.get("style", "day4_cosine")
     if style == "day5_holds":
         return _wave_day5(u)
-    return 0.5 - 0.5 * math.cos(2.0 * math.pi * u * float(TEMPO.get("cycles_per_step", 1.5)))
+    return 0.5 - 0.5 * math.cos(2.0 * math.pi * u * float(TEMPO.get("cycles_per_step", 1.5)) + phase)
 
 
-def pose_index(f_local, n_f):
-    return int(round(tempo_wave(f_local / float(FRAMES_PER_STEP)) * (n_f - 1)))
+def pose_index(f_local, n_f, phase=0.0):
+    return int(round(tempo_wave(f_local / float(FRAMES_PER_STEP), phase=phase) * (n_f - 1)))
+
+
+def step_phase(step_order_idx, continuous):
+    return (math.pi * (step_order_idx % 2)) if continuous else 0.0
+
+
+def peak_frame(phase):
+    """frame of the first deep (wave = 1) pose: 50 normally, 100 when the step runs in the continued phase."""
+    return 100 if abs(math.cos(phase) + 1.0) < 1e-6 else 50
 
 
 def reversal_frames(style=None):

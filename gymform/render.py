@@ -12,7 +12,11 @@ from PIL import Image
 
 from gymform import ctx
 from gymform.ctx import CFG, LAST_MASKS, CUR_PLATE, W, H, FPS, d5, b4, SPEC
-from gymform import bg, mask, equipment, xray, muscle, layout, tempo
+from gymform import bg, mask, equipment, xray, muscle, layout, tempo, native
+
+
+def step_phase(step_idx):
+    return tempo.step_phase(ctx.steps().index(step_idx), bool(CFG.get("phase_continuous_cut")))
 
 
 def edit_base(step_idx):
@@ -207,6 +211,8 @@ def render_pose(step_idx, seq, kps, p_i, icons, qc=False):
     pose_frac = p_i / float(max(1, len(seq) - 1))
     if CUR_PLATE.get("step") != step_idx:
         bg.set_step_plate(seq, kps, step_idx)
+    if native.on():
+        return _render_pose_native(step_idx, seq, kps, p_i, icons, qc, is_w, y_sh, pose_frac)
     rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(seq[p_i], kps[p_i], y_sh, step_idx)
     gm = load_geo(step_idx, p_i) if edit_base(step_idx) else None
     base_rgb, sh_mask, w_fg = shade(rgb_1080, step_idx, is_w, kp_1080, pulse_phase=pose_frac * 0.75,
@@ -223,13 +229,33 @@ def render_pose(step_idx, seq, kps, p_i, icons, qc=False):
     return fr
 
 
+def _render_pose_native(step_idx, seq, kps, p_i, icons, qc, is_w, y_sh, pose_frac):
+    """t600 native_grade: the clip's own pixels, graded globally (gymform/native.py). The legacy shade() runs ONLY on
+    QC sample frames and only to give the QC its exclusion masks (equipment zone / bench / X-Ray) - never pixels."""
+    native.prepare(step_idx, seq, kps, y_sh)
+    base_rgb, sh_mask, w_fg, src, kp_1080 = native.grade(step_idx, p_i, is_w)
+    if qc:
+        shade(src.astype(np.float32), step_idx, is_w, native._ST[step_idx]["raw_kp"][p_i])
+        LAST_MASKS["src"] = src
+    slot_i, deg_s, l1_s, l2_s = layout.callout_for(step_idx, pose_frac)
+    fr = layout.draw_laser_and_callout_v4(base_rgb, sh_mask, step_idx, kp_1080, is_w, deg_s, l1_s, l2_s)
+    LAST_MASKS["pre_ui"] = fr
+    LAST_MASKS["eq_front"] = np.zeros((H, W), np.float32)
+    LAST_MASKS.setdefault("eq_foot", np.zeros((H, W), np.float32))
+    fr = layout.composite_title_and_preview_v4(fr, layout.fg_for_preview(w_fg), icons, slot_i, is_w, CFG["exercise_name"])
+    if qc:
+        return fr, base_rgb, sh_mask, w_fg, kp_1080
+    return fr
+
+
 def load_inputs():
     """Clips + cached keypoints (extracted once per clip slice and stored in the day's kp cache)."""
     kps_seqs = pickle.load(open(CFG["kp_cache"], "rb")) if os.path.exists(CFG["kp_cache"]) else {}
     raw_seqs, dirty = {}, False
     for s in ctx.steps():
         fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(s)
-        seq = d5.load_native_slice_720p(os.path.join(CFG["assets_dir"], fn), i0, i1)
+        loader = native.load_slice if CFG.get("no_slice_cap") else d5.load_native_slice_720p
+        seq = loader(os.path.join(CFG["assets_dir"], fn), i0, i1)
         mir = bool(CFG["clips"][str(s)].get("mirror"))
         if mir:   # t543u: Day 4 locked camera side for all 4 steps (whole-frame flip of the native clip, no repaint)
             seq = [np.ascontiguousarray(f[:, ::-1]) for f in seq]
@@ -247,7 +273,7 @@ def load_inputs():
         if kp_fn != fn:   # extract from the motion base clip (not the edited twin)
             if s not in kps_seqs or kps_seqs.get(("sig", s)) != sig:
                 kps_seqs[("sig", s)] = sig
-                base_seq = d5.load_native_slice_720p(os.path.join(CFG["assets_dir"], kp_fn), i0, i1)
+                base_seq = loader(os.path.join(CFG["assets_dir"], kp_fn), i0, i1)
                 if mir:
                     base_seq = [np.ascontiguousarray(f[:, ::-1]) for f in base_seq]
                 kps_seqs[s] = d5.extract_day5_kps_1080(base_seq, s, y_sh)
@@ -286,6 +312,11 @@ def build_icons(raw_seqs, kps_seqs):
         fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(s)
         CFG["_cur_step"] = s
         bg.set_step_plate(raw_seqs[s], kps_seqs[s], s)
+        if native.on():
+            native.prepare(s, raw_seqs[s], kps_seqs[s], y_sh)
+            sh_rgb, _, _, _, kp_1080 = native.grade(s, len(raw_seqs[s]) - 1, is_w)
+            icons.append(b4._make_icon_pair(sh_rgb, kp_1080))
+            continue
         rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(raw_seqs[s][-1], kps_seqs[s][-1], y_sh, s)
         sh_rgb, sh_m, w_fg = shade(rgb_1080, s, is_w, kp_1080, pulse_phase=0.75,
                                    geo=geo_frame(s, len(raw_seqs[s]) - 1))
@@ -301,6 +332,13 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
     m8 = lambda a: (np.clip(a, 0, 1) * 255).astype(np.uint8)
     cv2.imwrite(pre + "_base.png", cv2.cvtColor(base, cv2.COLOR_RGB2BGR))
     cv2.imwrite(pre + "_wfg.png", m8(w_fg))
+    if native.on():   # native grade: every pixel is the clip's own (nothing cut or composited) -> alpha 1
+        cv2.imwrite(pre + "_alpha.png", m8(np.ones_like(w_fg)))
+        cv2.imwrite(pre + "_ref.png", cv2.cvtColor(native.LAST_MASKS["native"]["ref"], cv2.COLOR_RGB2BGR))
+    else:
+        for x_ in ("_alpha.png", "_ref.png"):
+            if os.path.exists(pre + x_):
+                os.remove(pre + x_)
     cv2.imwrite(pre + "_shorts.png", m8(shorts_m))
     cv2.imwrite(pre + "_eq.png", m8(LAST_MASKS.get("eq_solid", z)))
     cv2.imwrite(pre + "_eqfoot.png", m8(LAST_MASKS.get("eq_foot", z)))
@@ -334,7 +372,7 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
         "bone_steps": list(CFG["bone_steps"]), "muscle_steps": list(CFG["muscle_steps"]),
         "clips": CFG.get("clips"), "xray_full_steps": CFG.get("xray_full_steps"),
         "is_wrong": {str(k): bool(v["is_wrong"]) for k, v in CFG.get("clips", {}).items()},
-        "source": CFG.get("source", {}), "callouts": CFG.get("callouts"), "tts_lines": CFG.get("tts_lines"), "day": CFG.get("day"), "muscle_shader": muscle.muscle_shader(), "glow_gain": CFG.get("_glow_gain"), "framing_qc": (CFG.get("target_zoom") or {}).get("focus_mode"), "n_steps": ctx.n_steps(), "duration_s": ctx.duration(), "static_body_lum": float(CFG.get("static_body_lum", 60.0)), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
+        "source": CFG.get("source", {}), "callouts": CFG.get("callouts"), "tts_lines": CFG.get("tts_lines"), "day": CFG.get("day"), "muscle_shader": muscle.muscle_shader(), "glow_gain": CFG.get("_glow_gain"), "framing_qc": (CFG.get("target_zoom") or {}).get("focus_mode"), "n_steps": ctx.n_steps(), "duration_s": ctx.duration(), "static_body_lum": float(CFG.get("static_body_lum", 60.0)), "config_path": CFG.get("_cfg_path"), "look": CFG.get("look"), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
         "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "overlap_alpha": SPEC["ui"]["overlap_alpha"], "fps": FPS, "qc_tags": tempo.QC_TAGS, "target_bones": CFG.get("target_bones", []),
     })
     json.dump(meta, open(meta_p, "w"), indent=1)
@@ -354,7 +392,7 @@ def render_step_to_mp4(step_idx, raw_seqs, kps_seqs, icons, out, peak_png):
                            "-threads", "1", out], stdin=subprocess.PIPE)
     cache = {}   # unique poses rendered once (holds / slow tempo reuse frames)
     for f_local in range(tempo.FRAMES_PER_STEP):
-        p_i = tempo.pose_index(f_local, n_f)
+        p_i = tempo.pose_index(f_local, n_f, step_phase(step_idx))
         if f_local in tempo.QC_TAGS:
             fr_q, base_q, shm_q, wfg_q, kp_q = render_pose(step_idx, seq, kps, p_i, icons, qc=True)
             save_qc_sidecar(step_idx, tempo.QC_TAGS[f_local], (step_idx - 1) * tempo.FRAMES_PER_STEP + f_local,
@@ -362,7 +400,7 @@ def render_step_to_mp4(step_idx, raw_seqs, kps_seqs, icons, out, peak_png):
             cache[p_i] = fr_q
         if p_i not in cache:
             cache[p_i] = render_pose(step_idx, seq, kps, p_i, icons)
-        if f_local == 50:
+        if f_local == tempo.peak_frame(step_phase(step_idx)):
             Image.fromarray(cache[p_i]).save(peak_png)
         ff.stdin.write(np.ascontiguousarray(cache[p_i]).tobytes())
     ff.stdin.close()
@@ -380,7 +418,7 @@ def preflight_step(step_idx, raw_seqs, kps_seqs, icons):
     if os.path.exists(mp_):
         os.remove(mp_)
     for f_local, tag in sorted(tempo.QC_TAGS.items()):
-        p_i = tempo.pose_index(f_local, len(seq))
+        p_i = tempo.pose_index(f_local, len(seq), step_phase(step_idx))
         fr_q, base_q, shm_q, wfg_q, kp_q = render_pose(step_idx, seq, kps, p_i, icons, qc=True)
         save_qc_sidecar(step_idx, tag, (step_idx - 1) * tempo.FRAMES_PER_STEP + f_local, base_q, shm_q, wfg_q, kp_q)
         cv2.imwrite(os.path.join(CFG["qc_dir"], f"step{step_idx}_{tag}_final.png"), cv2.cvtColor(fr_q, cv2.COLOR_RGB2BGR))
@@ -404,6 +442,7 @@ def _load_cfg(argv):
     cfg_path = argv[argv.index("--config") + 1]
     ovr = json.load(open(argv[argv.index("--overrides") + 1])) if "--overrides" in argv else None
     ctx.configure(json.load(open(cfg_path)), ovr)
+    CFG["_cfg_path"] = os.path.abspath(cfg_path)
     return cfg_path
 
 
