@@ -314,8 +314,13 @@ def grade(step, p_i, is_wrong):
     if CFG.get("native_glow_hue_strict"):
         # t609: the glow is red OR green only; gold/yellow (both r and g over b: the plate rim) is never glow
         r_, g_, b_ = f[..., 0], f[..., 1], f[..., 2]
-        a = np.maximum(np.maximum(r_ - np.maximum(g_, b_), g_ - np.maximum(r_, b_))
-                       - 0.8 * np.maximum(0.0, np.minimum(r_, g_) - b_ - 20.0), 0.0)
+        if CFG.get("native_glow_form_hue"):
+            # t612 D19: the step's OWN glow hue only (wrong = red dominance, right = green dominance). With max(red,
+            # green) a warm-grey machine highlight (r - max(g,b) ~ 15) was recoloured GREEN on the right step.
+            dom = (r_ - np.maximum(g_, b_)) if is_wrong else (g_ - np.maximum(r_, b_))
+        else:
+            dom = np.maximum(r_ - np.maximum(g_, b_), g_ - np.maximum(r_, b_))
+        a = np.maximum(dom - 0.8 * np.maximum(0.0, np.minimum(r_, g_) - b_ - 20.0), 0.0)
     w = (np.clip((a - 8.0) / max(S["A95"] - 8.0, 20.0), 0.0, 1.0) * float(CFG.get("native_glow_max", 0.9)))[..., None]
     if is_wrong:
         col = np.stack([40.0 + 1.55 * Lg, 6.0 + 0.38 * Lg, 8.0 + 0.40 * Lg], -1)
