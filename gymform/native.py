@@ -240,11 +240,24 @@ def grade(step, p_i, is_wrong):
         tw_ = np.clip((BG_L - 2.0 - Lg) / 8.0, 0.0, 1.0)[..., None]
         grey = grey + (wt - t_bg) * tw_
     a = _act(f)
+    if CFG.get("native_glow_hue_strict"):
+        # t609: the glow is red OR green only; gold/yellow (both r and g over b: the plate rim) is never glow
+        r_, g_, b_ = f[..., 0], f[..., 1], f[..., 2]
+        a = np.maximum(np.maximum(r_ - np.maximum(g_, b_), g_ - np.maximum(r_, b_))
+                       - 0.8 * np.maximum(0.0, np.minimum(r_, g_) - b_ - 20.0), 0.0)
     w = (np.clip((a - 8.0) / max(S["A95"] - 8.0, 20.0), 0.0, 1.0) * float(CFG.get("native_glow_max", 0.9)))[..., None]
     if is_wrong:
         col = np.stack([40.0 + 1.55 * Lg, 6.0 + 0.38 * Lg, 8.0 + 0.40 * Lg], -1)
     else:
         col = np.stack([8.0 + 0.32 * Lg, 30.0 + 1.38 * Lg, 14.0 + 0.72 * Lg], -1)
+    kc = float(CFG.get("native_keep_chroma", 0.0))
+    if kc > 0:
+        # t609 palette A in the source: saturated NON-glow colours (cobalt plates, gold rim) keep their own chroma,
+        # scaled to the graded brightness (global colour function, no mask); near-neutral skin / backdrop untouched
+        c_src = f - _lum(f)[..., None]
+        sat = np.linalg.norm(c_src, axis=-1)
+        kw = (np.clip((sat - float(CFG.get("native_keep_chroma_sat", 8.0))) / 6.0, 0.0, 1.0) * kc)[..., None] * (1.0 - w)
+        grey = grey + c_src * (Lg / np.maximum(_lum(f), 4.0))[..., None].clip(0.6, 2.0) * kw
     base = grey * (1.0 - w) + np.clip(col, 0, 255) * w
     pm = S["plate"][p_i] if S.get("plate") is not None else None
     if pm is not None:   # t605: plate colour remap (soft matte, the glow never sits on plates: act-gated matte)

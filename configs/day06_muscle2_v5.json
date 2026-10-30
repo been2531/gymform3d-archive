@@ -2,7 +2,7 @@
   "day": 6,
   "exercise_name": "Incline Dumbbell Press",
   "assets_dir": "output/assets",
-  "kp_cache": "_cache_day6_idp_muscle2_v5_kps.pkl",
+  "kp_cache": "_cache_day6_idp_muscle2_v5src_kps.pkl",
   "step_scale": {
     "1": 0.841,
     "2": 0.81
@@ -81,7 +81,7 @@
     "region": "upper_body",
     "focus": "shoulder midpoint (upper chest / shoulders)",
     "zoom": 1.0,
-    "focus_x": 548,
+    "focus_x": 511,
     "focus_y": 1060,
     "top_min_y": 140,
     "side_min": 24,
@@ -92,14 +92,14 @@
   },
   "motions": {
     "wrong": {
-      "base": "day6_v2_wrong_src720.mp4",
+      "base": "day6_v5_wrong_raw.mp4",
       "i0": 144,
-      "i1": 100,
+      "i1": 102,
       "y_shift": 80,
-      "why": "t578: new grok clip (one take). Window (reversed: lockout -> bottom, so the Day 4 peak = deep bottom where the elbow angle and glow show) = last bottom (f100, wristY 422/1280) -> lockout (f144). 2D upper-arm/torso angle at bottom 89/52 deg (near/far arm), elbow-span 2.47x shoulder span",
+      "why": "t609u palette A source (grok post d40cf6b1, 1 take). Window reversed: lockout f144 (plate-centroid y 159/1280) -> last deep bottom f102 (y 378). Bottom 2D upper-arm/torso 48/89 deg (near/far, mediapipe), elbow span 2.34x shoulder width = flared",
       "renders": {
         "front": {
-          "file": "day6_v2_wrong_src720.mp4",
+          "file": "day6_v5_wrong_raw.mp4",
           "camera": "front_3q_high (same as right clip)"
         }
       },
@@ -116,14 +116,14 @@
       }
     },
     "right": {
-      "base": "day6_v3_right_src720.mp4",
-      "i0": 114,
-      "i1": 80,
+      "base": "day6_v5_right_raw.mp4",
+      "i0": 117,
+      "i1": 81,
       "y_shift": 80,
-      "why": "t588/t589: redone right clip (one take). Window reversed lockout f114 -> deepest bottom f80 (wristY 468/1280 vs wrong 418: deeper). Bottom 2D upper-arm angle 71/29 deg (near/far) vs wrong 84/50 (17 deg mean difference); elbow span 2.26x vs 2.47x shoulder width (8.5% narrower) => ~60-65 deg tuck",
+      "why": "t609u palette A source (grok post 88c37954, 1 take). Window reversed: lockout f117 (plate y 182) -> deepest bottom f81 (y 455, deeper than wrong 378). Elbows visibly tucked ~45-60 deg at the bottom (mediapipe unstable on this clip, angles read visually + plate path)",
       "renders": {
         "front": {
-          "file": "day6_v3_right_src720.mp4",
+          "file": "day6_v5_right_raw.mp4",
           "camera": "front_3q_high (same as wrong clip)"
         }
       },
@@ -161,7 +161,7 @@
   "clean_plate": false,
   "muscle_shader": "day4",
   "out_caption": "output/day6_incline_dumbbell_press_muscle2_v5_master_caption.txt",
-  "source_clips_note": "wrong = output/assets/day6_v2_wrong_720p.mp4, right = output/assets/day6_v3_right_720p.mp4 (both 1088x1920 24fps 6.04s); *_src720.mp4 = 4px side crop + lanczos to 720x1280",
+  "source_clips_note": "t609u: wrong = output/assets/day6_v5_wrong_raw.mp4, right = output/assets/day6_v5_right_raw.mp4 (720x1280 24fps 6.04s, palette A built in: cobalt plates + gold rim, warm-grey bench, Day 4 backdrop). Start frames inputs/day6_v5/. Previous v5 regrade of the old clips: configs/day06_muscle2_v5a_oldsrc.json",
   "static_body_lum": 20,
   "metal_lum_max": 42.0,
   "clean_plate_why": "t578: v2 clips have a lighter centre backdrop (vignette); the t567 clean plate's border-gradient reference is darker, so it picked the dark arm over the real backdrop and made ghosts. The plain temporal median is clean here.",
@@ -186,19 +186,8 @@
   "native_sep_dx": 8.0,
   "native_sep_dy": 10.0,
   "native_dark_floor": 18.0,
-  "plate_recolour": {
-    "base_rgb": [
-      45,
-      75,
-      170
-    ],
-    "rim_rgb": [
-      190,
-      160,
-      95
-    ],
-    "rim_px": 5,
-    "accent_rgb": null,
-    "_note": "palette A (owner pick t605u+): matte cobalt plates, thin brushed-gold rim, no logo; ref docs/plate_palette_A_reference.jpg"
-  }
+  "defect_playbook_sha": "d5f0eaa3",
+  "native_keep_chroma": 1.0,
+  "native_glow_hue_strict": true,
+  "native_keep_chroma_sat": 4.0
 }
