@@ -38,6 +38,49 @@ def geo_frame(step_idx, p_i):
 
 
 SEQS, KPS, GEO_PLATE = {}, {}, {}
+_GEO_H = {}
+
+
+def _geo_hash():
+    """Cache key of the base-frame geometry: config + every module that changes the key/footprint."""
+    if "h" not in _GEO_H:
+        import hashlib
+        hh = hashlib.sha1(json.dumps({k: v for k, v in CFG.items() if k != "qc_dir"}, sort_keys=True, default=str).encode())
+        for m in ("mask", "equipment", "bg", "ctx", "render"):
+            hh.update(open(os.path.join(ctx.ROOT, "gymform", f"{m}.py"), "rb").read())
+        _GEO_H["h"] = hh.hexdigest()[:12]
+    return _GEO_H["h"]
+
+
+def geo_cache_path(base_step, p_i):
+    d = os.path.join(ctx.CACHE_DIR, "geo", f"day{int(CFG['day']):02d}_s{base_step}_{_geo_hash()}")
+    return os.path.join(d, f"f{p_i:03d}.npz")
+
+
+def is_edit_base(step_idx):
+    return any(edit_base(e) == step_idx for e in (1, 2, 3, 4) if e != step_idx)
+
+
+def save_geo(step_idx, p_i):
+    """SPEED (t529u): the base step already computes the base frame's body key + footprint for the same pose and
+    transform; store them (bit-packed) so the edit step reuses them instead of a second cutout per frame."""
+    kb, fb = LAST_MASKS.get("geo_kb"), LAST_MASKS.get("geo_fb")
+    if kb is None:
+        return
+    p = geo_cache_path(step_idx, p_i)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    tmp = p[:-4] + ".part.npz"
+    np.savez_compressed(tmp, kb=np.packbits(kb), fb=np.packbits(fb))
+    os.replace(tmp, p)
+
+
+def load_geo(step_idx, p_i):
+    pb = edit_base(step_idx)
+    p = geo_cache_path(pb, p_i) if pb else None
+    if not p or not os.path.exists(p):
+        return None
+    z = np.load(p)
+    return (np.unpackbits(z["kb"])[: H * W].reshape(H, W), np.unpackbits(z["fb"])[: H * W].reshape(H, W))
 
 
 def _with_geo_plate(step_idx, fn):
@@ -55,7 +98,7 @@ def _with_geo_plate(step_idx, fn):
         CUR_PLATE.clear(); CUR_PLATE.update(own)
 
 
-def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0, geo=None):
+def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0, geo=None, geo_masks=None):
     """Returns (composited_rgb_uint8, shorts_mask, w_fg). geo = base frame of a motion-preserving edit (geometry)."""
     F = mask.features(rgb_1080)
     K = mask.body_key(F, step_idx, kp)
@@ -66,13 +109,18 @@ def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0, geo=None):
         # (drops the X-Ray glow spill). Equipment: the edit's own footprint clamped to the base footprint +3px
         # (computed against the BASE plate), with the base core filled (bone glow over the handles neither
         # bloats nor holes the dumbbells). Bench/static: the edit's own, never on the base body core.
-        Fg = mask.features(geo)
-        kb = (mask.body_key(Fg, edit_base(step_idx), kp)["w_raw"] > 0.5).astype(np.uint8)   # base = muscle key
-        fb = (_with_geo_plate(step_idx, lambda: equipment.footprint(geo, kp, Fg)) > 0.5).astype(np.uint8)
+        if geo_masks is not None:      # cached by the base step (same pose, same transform): no second cutout
+            kb, fb = geo_masks
+        else:
+            Fg = mask.features(geo)
+            kb = (mask.body_key(Fg, edit_base(step_idx), kp)["w_raw"] > 0.5).astype(np.uint8)   # base = muscle key
+            fb = (_with_geo_plate(step_idx, lambda: equipment.footprint(geo, kp, Fg)) > 0.5).astype(np.uint8)
         el = lambda r: cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
         inner = cv2.erode(kb, el(3)).astype(np.float32)
         K["w_raw"] = np.maximum(K["w_raw"] * cv2.dilate(kb, el(4)), inner).astype(np.float32)
         foot = np.maximum(foot * cv2.dilate(fb, el(3)), cv2.erode(fb, el(2))).astype(np.float32)
+    if geo is None:   # this frame's own geometry (stored by a base step for its edit twin)
+        LAST_MASKS["geo_kb"], LAST_MASKS["geo_fb"] = (K["w_raw"] > 0.5), (foot > 0.5)
     w_fg, eq_solid, shorts_mask = mask.finalize(F, K, foot)
     metal = equipment.metal_mask(F, foot) * (1.0 - K["skin_seg"])   # metal only, never on a skin segment
     LAST_MASKS.update(eq_solid=metal, eq_foot=foot, eq_zone=K["near_wrist"], src=rgb_1080, geo=geo)
@@ -123,8 +171,11 @@ def render_pose(step_idx, seq, kps, p_i, icons, qc=False):
     if CUR_PLATE.get("step") != step_idx:
         bg.set_step_plate(seq, kps, step_idx)
     rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(seq[p_i], kps[p_i], y_sh, step_idx)
+    gm = load_geo(step_idx, p_i) if edit_base(step_idx) else None
     base_rgb, sh_mask, w_fg = shade(rgb_1080, step_idx, is_w, kp_1080, pulse_phase=pose_frac * 0.75,
-                                    geo=geo_frame(step_idx, p_i))
+                                    geo=geo_frame(step_idx, p_i) if edit_base(step_idx) else None, geo_masks=gm)
+    if is_edit_base(step_idx):
+        save_geo(step_idx, p_i)
     slot_i, deg_s, l1_s, l2_s = layout.callout_for(step_idx, pose_frac)
     fr = layout.draw_laser_and_callout_v4(base_rgb, sh_mask, step_idx, kp_1080, is_w, deg_s, l1_s, l2_s)
     LAST_MASKS["pre_ui"] = fr

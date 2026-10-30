@@ -120,10 +120,14 @@ def preflight(day, c, keys, cfg_p, ovr_p, icons_p, wav, workers):
     for f in glob.glob(os.path.join(pdir, "*")):
         os.remove(f)
     base = [sys.executable, "-m", "gymform.render", "--config", cfg_p, "--overrides", ovr_p, "--icons", icons_p, "--qc-dir", pdir]
-    pending, running = [1, 2, 3, 4], []
+    pending, running = [3, 4, 1, 2], []   # motion bases first: edit steps reuse their cached geometry
     while pending or running:
         while pending and len(running) < workers:
-            sn = pending.pop(0)
+            busy = set(pending) | {r[0] for r in running}
+            ready = [x for x in pending if {1: 3, 2: 4}.get(x) not in busy]   # edit step waits for its base
+            if not ready:
+                break
+            sn = ready[0]; pending.remove(sn)
             lf = open(LOG, "a")
             running.append((sn, subprocess.Popen(["nice", "-n", "10"] + base + ["--preflight-step", str(sn)], cwd=ROOT,
                                                  stdout=lf, stderr=subprocess.STDOUT, env=env_threads()), lf))
@@ -170,11 +174,15 @@ def preflight(day, c, keys, cfg_p, ovr_p, icons_p, wav, workers):
 
 def render_steps(steps, keys, cfg_p, ovr_p, icons_p, workers):
     """Composite + overlays stage: one subprocess per step (nice 10, 1 thread each), `workers` at a time."""
-    pending, running = list(steps), []
+    pending, running = sorted(steps, key=lambda s: (s not in (3, 4), s)), []   # bases first (geometry cache)
     base = [sys.executable, "-m", "gymform.render", "--config", cfg_p, "--overrides", ovr_p, "--icons", icons_p]
     while pending or running:
         while pending and len(running) < workers:
-            s = pending.pop(0)
+            busy = set(pending) | {r[0] for r in running}
+            ready = [x for x in pending if {1: 3, 2: 4}.get(x) not in busy]   # edit step waits for its base
+            if not ready:
+                break
+            s = ready[0]; pending.remove(s)
             out = os.path.join(CACHE, "steps", f"s{s}_{keys[s]}.mp4")
             lf = open(LOG, "a")
             running.append((s, out, subprocess.Popen(["nice", "-n", "10"] + base + ["--render-step", str(s), "--out", out + ".part.mp4",
@@ -282,6 +290,19 @@ def main():
         print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "native_3d_source: " + why, "rules": "RULES.md"}))
         sys.exit(3)
     clips = [os.path.join(ROOT, day_cfg["assets_dir"], v["file"]) for v in day_cfg["clips"].values()]
+    # EDIT ACCEPTANCE GATE (t529u): a motion-preserving edit (edit_of) must pass gymform.xai_edit.acceptance vs its
+    # base (opaque silver limbs of the same thickness, same motion, no leg glow, true tint) before any render
+    from gymform import xai_edit as _xe
+    acc_bad = []
+    for m_, k_, src_, dst_, _, col_ in _xe.jobs_for(day_cfg):
+        if os.path.exists(dst_) and os.path.exists(src_):
+            ok_, am_ = _xe.acceptance(src_, dst_, col_)
+            if not ok_:
+                acc_bad.append(f"{os.path.basename(dst_)}: " + "; ".join(am_["fails"]))
+    if acc_bad and not a.check:
+        print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "edit_acceptance: " + " | ".join(acc_bad),
+                          "fix": "python3 -m gymform.xai_edit --day N (new take needs owner approval)"}))
+        sys.exit(3)
     missing = [os.path.basename(p) for p in clips if not os.path.exists(p)]
     sys.path.insert(0, ROOT)
     from gymform import caption as _cap

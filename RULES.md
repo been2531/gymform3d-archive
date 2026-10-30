@@ -95,3 +95,17 @@ rules marked **[QC]** fail the QC gate (`gymform/qc.py`). A day that fails is ne
    (b) cutout (`gymform/render.py` edit_of path): reconcile base vs edit outline per limb (use the edit's own
    outline where it is confidently body/backdrop, base only for the enclosed X-Ray cavity) without breaking (d);
    (c) add a pre-render edit check (outline IoU per limb vs base + bone hue) in xai_edit before accepting a take.
+
+### t529u (Day 6 deleted by owner, quality too low) — root causes + what is now enforced
+- Root cause 1 (edit drift): the t522 prompt asked for "a glowing X-ray skeleton", which the model read as a full-body
+  X-ray -> limbs thinned/darkened to see-through glass, leg bones added, emerald rendered cyan (hue 86). Both t522 edits
+  fail the new acceptance QC (wrong: silhouette IoU 0.82, leg glow; right: IoU 0.74, flow 7.4px, leg glow, cyan).
+- Root cause 2 ((q) blobs): consequence of 1 — base-geometry fill next to an edit arm that is up to ~10px thinner.
+  No per-day cutout patch: the acceptance gate (silhouette IoU >= 0.90, area 0.93..1.07) keeps base/edit outlines
+  within a few px, so the base-geometry fill cannot create backdrop patches.
+- Root cause 3 (+71s): the edit steps ran a second body key + footprint on the base frame per frame. Now the base step
+  (3/4) caches that geometry (_cache_gymform/geo, compressed bitmasks) and edit steps 1/2 reuse it; run_day schedules
+  bases first (edit step waits for its base).
+- ENFORCED: gymform/xai_edit.py strict prompt (opaque silver limbs, same thickness, UPPER-BODY bones only, no leg glow,
+  deep emerald #1E9E5A not cyan / crimson #C8102E) + acceptance QC on every take (rejected takes -> *_REJECTED.mp4);
+  run_day refuses to render when an edit_of clip fails acceptance (`python3 -m gymform.xai_edit --day N --check`).
