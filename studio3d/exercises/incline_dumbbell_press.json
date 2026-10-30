@@ -1,0 +1,18 @@
+{
+ "_doc": "Exercise config for the locked 3D set (t562u). Only motion + anatomy targets live here; mannequin/equipment/camera/materials come from studio3d/set_v1.json. Angles are 3D joint angles taken from configs/motion_standards.json -> exercises.incline_dumbbell_press.",
+ "motion_standard": "incline_dumbbell_press",
+ "set": "set_v1.json",
+ "mistake_type": "joint",
+ "target_bones": ["humerus", "scapula", "clavicle", "sternum", "upper_ribs"],
+ "target_muscles": {"wrong": ["anterior_deltoid"], "right": ["pectoralis_major"]},
+ "setup": {"bench_incline_deg": 30, "why": "standards.inputs.bench_incline_deg 15-30 (upper pec peaks at 30)"},
+ "forms": {
+  "wrong": {"id": "elbow_flare_90", "bottom": {"arm_torso_deg": 90, "elbow_flexion_deg": 95, "elbow_drop_deg": 15}, "top": {"arm_torso_deg": 90, "elbow_flexion_deg": 12, "elbow_drop_deg": -55},
+            "why": "mistakes.elbow_flare_90: arm_torso > 75 at max elbow flexion"},
+  "right": {"id": "elbow_tuck_bottom", "bottom": {"arm_torso_deg": 50, "elbow_flexion_deg": 95, "elbow_drop_deg": 15}, "top": {"arm_torso_deg": 50, "elbow_flexion_deg": 12, "elbow_drop_deg": -55},
+            "why": "right_form.elbow_tuck_bottom 45-60 at max elbow flexion; full_rom 80-110"}
+ },
+ "tempo": "day4_cosine (gymform_spec tempo_s): phase 0 = bottom, 1 = top",
+ "knee_flexion_deg": 95,
+ "notes": "elbow_drop_deg = angle of the upper arm below (+) / above (-) the chest plane; at the top the arms point up over the shoulders."
+}
