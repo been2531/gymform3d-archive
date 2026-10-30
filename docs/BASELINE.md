@@ -1,5 +1,7 @@
 # @gymform.3d BASELINE TEMPLATE (t530u–t547u)
 
+> **Day 7+:** read [`DAY7_IMPROVEMENTS.md`](DAY7_IMPROVEMENTS.md) first (Day 6 lessons: one dumbbell type, full ROM, Day 4-size glow, real front/side cameras, Day 4 fibre shader only, 2-step muscle-only OK, no studio3d mannequin).
+
 Owner (t530u–t532u): Day 6 fell apart because too much changed at once. **Build from what already worked in the
 posted Day 1–5 reels, then change ONE element per day** (each change = its own preflight + owner look).
 Contact sheet of the chosen frames: `output/baseline_best_frames.jpg` (rows: Day 5 v5, Day 4, + Day 1 X-Ray and the Day 5 native bone clip).
