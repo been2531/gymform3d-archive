@@ -65,7 +65,7 @@ def merged_cfg(day_cfg, ovr):
 
 GLOBAL_KEYS = ["exercise_name", "equipment", "bone_steps", "muscle_steps", "studio_bg", "xray_style",
                "mask_feather", "equipment_hull", "kp_cache", "assets_dir", "qc_dir",
-               "n_steps", "muscle_shader", "clean_plate", "callout_axis", "target_zoom", "static_body_lum", "metal_lum_max", "static_body_shin_r"]   # t567u look keys
+               "n_steps", "muscle_shader", "clean_plate", "callout_axis", "target_zoom", "static_body_lum", "metal_lum_max", "static_body_shin_r", "flat_look"]   # t567u look keys
 
 
 def step_key(c, s, code_h, spec_h):
