@@ -469,7 +469,9 @@ def main():
         if cap_err:
             status["caption_lint"] = cap_err
             log("caption lint: " + "; ".join(cap_err))
-        open(A(f"output/day{a.day}_caption.txt"), "w").write(cap_txt)
+        cap_p = A(c.get("out_caption") or f"output/day{a.day}_caption.txt")   # variants keep their own caption file
+        open(cap_p, "w").write(cap_txt)
+        status["caption"] = os.path.relpath(cap_p, ROOT)
     T["total"] = round(time.time() - t0, 1)
     # production time is measured every run (RULES.md: each reel faster than the last)
     hist_p = os.path.join(ROOT, "output", "qc", "production_times.jsonl")

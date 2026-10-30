@@ -59,7 +59,7 @@
  ],
  "out_mp4": "output/day6_incline_dumbbell_press_muscle2_master.mp4",
  "out_sheet": "output/day6_muscle2_sheet.jpg",
- "out_cover": "output/day6_muscle2_cover.jpg",
+ "out_cover": "output/day6_incline_dumbbell_press_muscle2_master_cover.jpg",
  "qc_dir": "output/qc/day6_muscle2",
  "xray_full_steps": [],
  "question_spoken": "Where do you feel it most?",
@@ -160,5 +160,6 @@
   "why": "t567u: callout axis follows the upper arm (shoulder -> elbow), short torso reference"
  },
  "clean_plate": true,
- "muscle_shader": "day4"
+ "muscle_shader": "day4",
+ "out_caption": "output/day6_incline_dumbbell_press_muscle2_master_caption.txt"
 }
