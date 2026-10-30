@@ -269,13 +269,15 @@ def stray_components(wfg, src=None, plate=None, base=None, bg=None, min_area=30)
     return (not bad), (", ".join(bad[:4]) if bad else "clean")
 
 
-def static_check(src, base, plate, wfg, shorts, kp):
+def static_check(src, base, plate, wfg, shorts, kp, body_lum=70.0):
     """(m) QC's own static-object map (plate vs smooth backdrop; dark, not skin, frame shows the plate) near the
     body: rendered pre-UI base must equal the native source there (not faded into the backdrop, not re-shaded)
     and be fully opaque in the fg mask."""
     f = src.astype(np.float32)
     stat, tex = static_objects_qc(plate)
-    obj = stat & (np.abs(f - plate).max(axis=-1) < 8.0) & (lum_of(f) < 70.0) & (shorts < 0.2)
+    # t578: "dark = bench" stops at the render's skin/bench split (static_body_lum) when the mannequin itself is
+    # dark charcoal (Day 4 tone v2 clips); 70 for the pale v1 mannequin (meta default 60 -> min(70, 60+10)).
+    obj = stat & (np.abs(f - plate).max(axis=-1) < 8.0) & (lum_of(f) < body_lum) & (shorts < 0.2)
     hip = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), 0.5 * (kp["hip_r"][1] + kp["hip_l"][1]))
     near = np.zeros((H, W), np.uint8)
     cv2.ellipse(near, (int(hip[0]), int(hip[1]) + 120), (330, 420), 0, 0, 360, 1, -1)
@@ -637,7 +639,8 @@ def main():
         OVP.append((key,) + overpaint_px(src_rgb, shorts))
         # (m) static equipment (bench) preserved as native pixels: not faded, not cut, not re-shaded
         if any(e.get("static") for e in meta["equipment"]) and os.path.exists(plate_p):
-            STATIC.append((key,) + static_check(src_rgb, base, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB), wfg, shorts, kp))
+            STATIC.append((key,) + static_check(src_rgb, base, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB), wfg, shorts, kp,
+                                                body_lum=min(70.0, float(meta.get("static_body_lum", 60.0)) + 10.0)))
         # (q) stray / unanchored overlay lines: detached fg components that are visible thin lines or plain-backdrop
         # ghosts (root cause of the Day 6 0:10 line: temporal-median ghosts accepted by the equipment/static layers)
         STRAY.append((key,) + stray_components(wfg, src_rgb, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB) if os.path.exists(plate_p) else None, base, bg))
