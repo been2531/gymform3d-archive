@@ -189,5 +189,7 @@
   "defect_playbook_sha": "d5f0eaa3",
   "native_keep_chroma": 1.0,
   "native_glow_hue_strict": true,
-  "native_keep_chroma_sat": 4.0
+  "native_keep_chroma_sat": 4.0,
+  "native_highlight_rolloff": true,
+  "shorts_evidence_strict": true
 }

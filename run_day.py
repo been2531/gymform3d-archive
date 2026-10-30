@@ -65,7 +65,7 @@ def merged_cfg(day_cfg, ovr):
 
 GLOBAL_KEYS = ["exercise_name", "equipment", "bone_steps", "muscle_steps", "studio_bg", "xray_style",
                "mask_feather", "equipment_hull", "kp_cache", "assets_dir", "qc_dir",
-               "n_steps", "muscle_shader", "clean_plate", "callout_axis", "target_zoom", "static_body_lum", "metal_lum_max", "static_body_shin_r", "flat_look", "look", "no_sharpen", "no_slice_cap", "phase_continuous_cut", "native_temporal_w", "native_skin_p5", "native_glow_max", "shorts_evidence_lum", "anchor_lock_px", "native_dark_floor", "native_skin_p90", "native_chroma_k", "native_steel_dx", "native_steel_lift", "native_dark_warm_rgb", "native_sep_dx", "native_sep_dy", "plate_recolour", "native_keep_chroma", "native_glow_hue_strict", "native_keep_chroma_sat"]   # t567u look keys
+               "n_steps", "muscle_shader", "clean_plate", "callout_axis", "target_zoom", "static_body_lum", "metal_lum_max", "static_body_shin_r", "flat_look", "look", "no_sharpen", "no_slice_cap", "phase_continuous_cut", "native_temporal_w", "native_skin_p5", "native_glow_max", "shorts_evidence_lum", "anchor_lock_px", "native_dark_floor", "native_skin_p90", "native_chroma_k", "native_steel_dx", "native_steel_lift", "native_dark_warm_rgb", "native_sep_dx", "native_sep_dy", "plate_recolour", "native_keep_chroma", "native_glow_hue_strict", "native_keep_chroma_sat", "native_highlight_rolloff", "shorts_evidence_strict"]   # t567u look keys
 
 
 def step_key(c, s, code_h, spec_h):
