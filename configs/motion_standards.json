@@ -1,0 +1,1754 @@
+{
+ "_meta": {
+  "version": 1,
+  "created": "2026-10-30",
+  "requested": "t549u-t550u (motion + tempo must match real lifters, credible free sources)",
+  "angle_conventions": {
+   "space": "2D image-plane angles from the cached 13-point keypoints (sh, sh_r/l, elb_r/l, wr_r/l, hip_r/l, kn_r/l, ank_r/l). 3/4 camera views foreshorten angles, so every check has a tolerance (tol_deg).",
+   "elbow_flexion": "180 - angle(shoulder, elbow, wrist); 0 = straight arm",
+   "knee_flexion": "180 - angle(hip, knee, ankle); 0 = straight leg",
+   "hip_flexion": "180 - angle(shoulder, hip, knee); 0 = standing straight, negative not measurable in 2D (treat <=0 as extended)",
+   "arm_torso": "angle(hip, shoulder, elbow); 0 = arm at the side, 90 = horizontal (abduction / flexion), 180 = overhead",
+   "trunk_from_vertical": "angle between mid-hip->mid-shoulder and straight up; 0 = upright, 90 = horizontal",
+   "thigh_below_horizontal": "angle of hip->knee below horizontal; >0 = hip lower than knee (below parallel)",
+   "shin_from_vertical": "angle of knee->ankle from vertical",
+   "knee_ankle_width_ratio": "|knee_r.x - knee_l.x| / |ankle_r.x - ankle_l.x| (valgus proxy, front/3-4 view only)"
+  },
+  "views": "items with `view` (e.g. 'top' = camera above/in front of a lying lifter) are only valid in that camera view; in the reels' 3/4 view the 2D angle is not the anatomical one, so motion_check reports them as n/a unless view= matches",
+  "stats": "start = first frame, end = last frame, min/max/range over the step, value = metric at the frame where `at.metric` hits `at.extreme`",
+  "basis": "source = the number comes from the cited source; heuristic = the cited source describes the cue but gives no number, so the threshold is a pipeline tolerance (change freely)",
+  "general_tempo": {
+   "eccentric_s": [
+    1,
+    2
+   ],
+   "pause_s": [
+    0,
+    1
+   ],
+   "concentric_s": [
+    1,
+    2
+   ],
+   "rep_s": [
+    2,
+    4
+   ],
+   "sources": [
+    "acsm2009",
+    "schoenfeld2015",
+    "enes2025",
+    "nobrega2018",
+    "acsm_hfj_tempo2023"
+   ],
+   "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+  },
+  "rep_duration_effective_s": {
+   "range": [
+    0.5,
+    8
+   ],
+   "avoid_above_s": 10,
+   "sources": [
+    "schoenfeld2015",
+    "enes2025",
+    "acsm_hfj_tempo2023"
+   ]
+  }
+ },
+ "sources": {
+  "schoenfeld2015": {
+   "title": "Schoenfeld, Ogborn, Krieger 2015, Sports Med: repetition duration and hypertrophy meta-analysis (0.5-8 s similar; >10 s likely inferior)",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/25601394/"
+  },
+  "enes2025": {
+   "title": "Enes ... Schoenfeld 2025, JSCR 39(12): How Slow Should You Go? tempo meta-analysis (ECC 0.25-4.5 s, CON 0.5-4.5 s; faster vs slower similar)",
+   "url": "https://doi.org/10.1519/jsc.0000000000005302"
+  },
+  "acsm2009": {
+   "title": "ACSM Position Stand 2009: Progression models in resistance training (moderate velocity 1-2 s CON, 1-2 s ECC; hypertrophy 6-12 RM at moderate velocity)",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/19204579/"
+  },
+  "nobrega2018": {
+   "title": "Nobrega et al. 2018, JSCR: self-selected vs fixed 2 s/2 s repetition duration in trained men (fixed 2:2 had longer TUT per rep than self-selected)",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/29481458/"
+  },
+  "acsm_hfj_tempo2023": {
+   "title": "ACSM's Health & Fitness Journal 2023: The Ultimate Guide for Selecting Repetition Tempos (hypertrophy 0.5-8 s per rep)",
+   "url": "https://journals.lww.com/acsm-healthfitness/fulltext/2023/05000/the_ultimate_guide_for_selecting_repetition_tempos.9.aspx"
+  },
+  "rodriguez_ridao2020": {
+   "title": "Rodriguez-Ridao et al. 2020, IJERPH: five bench inclinations EMG (upper pec max at 30 deg; >45 deg shifts to anterior deltoid; protocol 2 s ECC / 2 s CON)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7579505/"
+  },
+  "sbs_bench": {
+   "title": "Stronger by Science, How to Bench Press (upper arm-torso angle ~45-60 deg; low incline 15-30 deg; grip 1.5-2x shoulder width)",
+   "url": "https://www.strongerbyscience.com/how-to-bench/"
+  },
+  "noteboom2024": {
+   "title": "Noteboom et al. 2024, Front Physiol: bench press technique variations and shoulder loads (abduction 45/70/90 deg, grip 1-2 BAW)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11224528/"
+  },
+  "cscca_squat": {
+   "title": "CSCCA Back Squat technique (femur parallel depth; common errors knee valgus, heels rising, chest dropping)",
+   "url": "https://cscca.org/content.aspx?club_id=408309&module_id=731826&page_id=22"
+  },
+  "scj2018_squat": {
+   "title": "Strength & Conditioning Journal 2018: Optimizing Squat Technique Revisited (full depth 115-125 deg knee flexion, knees over toes, no valgus)",
+   "url": "https://journals.lww.com/nsca-scj/fulltext/2018/12000/optimizing_squat_technique_revisited.10.aspx"
+  },
+  "scj2020_lowbar": {
+   "title": "Strength & Conditioning Journal 2020: Technical Aspects of the Low-Bar Back Squat (tops of thighs just below parallel; excess depth -> forward lean / posterior pelvic tilt)",
+   "url": "https://journals.lww.com/nsca-scj/fulltext/2020/06000/technical_aspects_and_applications_of_the_low_bar.13.aspx"
+  },
+  "myer2014_squat": {
+   "title": "Myer et al. 2014, The Back Squat Part 2 (correcting knee valgus etc.)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4725067/"
+  },
+  "lee2018_rdl": {
+   "title": "Lee et al. 2018, J Exerc Sci Fit: EMG and kinetic comparison of conventional and Romanian deadlifts (RDL peak hip flexion 80.0+/-15.9 deg, knee 33.9+/-12.6 deg; RDL knee 15-33 deg)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6323186/"
+  },
+  "nsca_rdl": {
+   "title": "NSCA Kinetic Select: Romanian Deadlift (RDL)",
+   "url": "https://www.nsca.com/education/articles/kinetic-select/romanian-deadlift-rdl/"
+  },
+  "ace_rdl": {
+   "title": "ACE ProSource: Romanian Deadlift technique guide",
+   "url": "https://www.acefitness.org/continuing-education/prosource/january-2016/5767/ace-technique-series-romanian-deadlift/"
+  },
+  "ace_pushdown": {
+   "title": "ACE Exercise Library: Triceps Pushdowns (elbows by sides, torso vertical, extend fully without locking, pause momentarily)",
+   "url": "https://www.acefitness.org/resources/everyone/exercise-library/185/triceps-pushdowns/"
+  },
+  "ace_pulldown": {
+   "title": "ACE Exercise Library: Seated Lat Pulldown (lean back no more than 30 deg, no additional lean during pull, bar to top/mid chest, scapulae depressed)",
+   "url": "https://www.acefitness.org/resources/everyone/exercise-library/158/seated-lat-pulldown/"
+  },
+  "signorile2002": {
+   "title": "Signorile et al. 2002, JSCR: EMG of hand positions in the lat pull-down (wide grip anterior highest lat activity)",
+   "url": "https://doi.org/10.1519/00124278-200211000-00008"
+  },
+  "pulldown2025": {
+   "title": "2025 J Funct Morphol Kinesiol: lat pulldown grip variations incl. 30 deg trunk inclination (no lat EMG difference; more posterior deltoid)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12452428/"
+  },
+  "ace_lateral": {
+   "title": "ACE Exercise Library: Lateral Raise (slight elbow bend, raise until arms level with shoulders ~parallel to floor, no low-back arch / shrug)",
+   "url": "https://www.acefitness.org/resources/everyone/exercise-library/26/lateral-raise/"
+  },
+  "coratella2020": {
+   "title": "Coratella et al. 2020, IJERPH: EMG of lateral raise variations in bodybuilders (abduct to 90 deg; protocol 2 s CON / 2 s ECC / 0.5 s isometric)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7503819/"
+  },
+  "ace_barbell_row": {
+   "title": "ACE Total-body Barbell Workout: bent-over row (torso about 45-90 deg from vertical / almost parallel; hold contraction for a second)",
+   "url": "https://www.acefitness.org/resources/pros/expert-articles/3802/ace-total-body-barbell-workout/"
+  },
+  "acsm_hfj_row2017": {
+   "title": "ACSM's Health & Fitness Journal 2017: The Barbell Row Exercise",
+   "url": "https://journals.lww.com/acsm-healthfitness/fulltext/2017/03000/the_barbell_row_exercise.9.aspx"
+  },
+  "jstage_row": {
+   "title": "J-STAGE (Japan J Coaching/Training): trunk flexion angle 40 vs 65 deg in bent-over row EMG",
+   "url": "https://www.jstage.jst.go.jp/article/jscicoachingtraining/8/1/8_23/_article/-char/en"
+  },
+  "issa_ohp": {
+   "title": "ISSA: Overhead Press proper form and common mistakes (bar aligned with ears at lockout, no lower-back arch, straight bar path)",
+   "url": "https://www.issaonline.com/blogs/safety-and-injuries/overhead-press-proper-form-variations-and-common-mistakes"
+  },
+  "scj2017_ohp": {
+   "title": "Strength & Conditioning Journal 2017: Exploring the Standing Barbell Overhead Press",
+   "url": "https://journals.lww.com/nsca-scj/fulltext/2017/12000/exploring_the_standing_barbell_overhead_press.7.aspx"
+  },
+  "contreras_ht": {
+   "title": "Bret Contreras: How to Hip Thrust (shins vertical at lockout)",
+   "url": "https://bretcontreras.com/how-to-hip-thrust/"
+  },
+  "contreras_scoop": {
+   "title": "Bret Contreras 2022: Hip Thrust Hinge vs Scoop (hip hyperextension ~10-15 deg past neutral with bent legs; avoid spinal overarch)",
+   "url": "https://bretcontreras.com/hip-thrust-hinge-vs-scoop-method/"
+  },
+  "contreras2015_emg": {
+   "title": "Contreras et al. 2015, J Appl Biomech: glute max EMG back squat vs barbell hip thrust",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/26214739/"
+  },
+  "ace_legpress": {
+   "title": "ACE Exercise Library: Seated Leg Press (knees ~90 deg at setup, sacrum flat on backrest, no low-back movement, don't lock knees)",
+   "url": "https://www.acefitness.org/resources/everyone/exercise-library/154/seated-leg-press/"
+  },
+  "legpress_rom2025": {
+   "title": "2025 J Sports Sci: knee flexion ROM (~5-100 vs ~5-154 deg) does not change quad hypertrophy in leg press",
+   "url": "https://www.tandfonline.com/doi/full/10.1080/02640414.2025.2481534"
+  },
+  "ace_curl": {
+   "title": "ACE: 4 Upper-body Movements for Beginners - Biceps Curl (elbows close to sides, straight body line)",
+   "url": "https://www.acefitness.org/resources/everyone/blog/5241/4-upper-body-movements-for-beginners/"
+  },
+  "ace_seated_row": {
+   "title": "ACE Exercise Library: Seated Row (torso vertical, avoid leaning back / arching, elbows past sides, pause momentarily)",
+   "url": "https://www.acefitness.org/resources/everyone/exercise-library/168/seated-row/"
+  },
+  "acsm_hfj_seated_row": {
+   "title": "ACSM's Health & Fitness Journal 2019: Do It Right: The Seated Cable Row Exercise",
+   "url": "https://journals.lww.com/acsm-healthfitness/fulltext/2019/07000/do_it_right__the_seated_cable_row_exercise.9.aspx"
+  },
+  "bss2025": {
+   "title": "2025 EMG study: Bulgarian split squat trunk position (upright: back knee to floor ~100-110 deg front knee flexion; forward trunk lean raises glute max)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12382192/"
+  },
+  "scj2017_rfess": {
+   "title": "Strength & Conditioning Journal 2017: Technique, Variation, and Progression of the Rear-Foot-Elevated Split Squat",
+   "url": "https://journals.lww.com/nsca-scj/fulltext/2017/12000/technique,_variation,_and_progression_of_the.10.aspx"
+  },
+  "ffpa_pfp": {
+   "title": "2023 IJSPT: frontal plane projection angle cutoff 8.2 deg (single-leg squat, women with patellofemoral pain; NOT a universal threshold)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10324282/"
+  }
+ },
+ "exercises": {
+  "cable_rope_pushdown": {
+   "name": "Cable Rope Pushdown",
+   "day": 1,
+   "target_muscles": [
+    "triceps brachii (lateral + medial heads emphasized, long head)"
+   ],
+   "right_form": [
+    {
+     "id": "elbows_pinned",
+     "desc": "upper arm stays by the side (elbow aligned with trunk midline) through the rep",
+     "metric": "arm_torso",
+     "stat": "max",
+     "range": [
+      0,
+      20
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_pushdown"
+     ],
+     "note": "ACE gives no degree value; 20 deg is a pipeline tolerance for 'elbows by sides'"
+    },
+    {
+     "id": "full_extension",
+     "desc": "elbows reach (near) full extension at the bottom without hard lockout",
+     "metric": "elbow_flexion",
+     "stat": "min",
+     "range": [
+      0,
+      15
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_pushdown"
+     ],
+     "note": "ACE: 'until your elbows become fully extended (do not lock out)'; 0-15 deg is a pipeline tolerance"
+    },
+    {
+     "id": "torso_vertical",
+     "desc": "torso aligned vertically, held still",
+     "metric": "trunk_from_vertical",
+     "stat": "range",
+     "range": [
+      0,
+      10
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_pushdown"
+     ]
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "elbow_drift_forward",
+     "desc": "elbows drift forward / flare (shoulder flexes, lats + momentum take over)",
+     "signature": {
+      "metric": "arm_torso",
+      "stat": "max",
+      "op": ">",
+      "value": 25,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "ace_pushdown"
+     ]
+    },
+    {
+     "id": "torso_lean_over",
+     "desc": "leaning the torso over the handle to push with body weight",
+     "signature": {
+      "metric": "trunk_from_vertical",
+      "stat": "range",
+      "op": ">",
+      "value": 15,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "ace_pushdown"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018",
+     "ace_pushdown"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). ACE: 'pause momentarily' at full extension, return 'slow, controlled'."
+   }
+  },
+  "wide_grip_lat_pulldown": {
+   "name": "Wide-Grip Lat Pulldown",
+   "day": 2,
+   "target_muscles": [
+    "latissimus dorsi",
+    "teres major",
+    "lower/middle trapezius, rhomboids",
+    "biceps brachii (assist)"
+   ],
+   "right_form": [
+    {
+     "id": "slight_fixed_lean",
+     "desc": "slight backward lean, no more than 30 deg",
+     "metric": "trunk_from_vertical",
+     "stat": "max",
+     "range": [
+      0,
+      30
+     ],
+     "tol_deg": 5,
+     "basis": "source",
+     "severity": "fail",
+     "sources": [
+      "ace_pulldown",
+      "pulldown2025"
+     ],
+     "note": "ACE: 'no more than a 30 degree angle'. 2025 EMG study: 30 deg lean did not change lat EMG but raised posterior deltoid."
+    },
+    {
+     "id": "no_added_lean",
+     "desc": "torso angle does not change during the pull (no swing)",
+     "metric": "trunk_from_vertical",
+     "stat": "range",
+     "range": [
+      0,
+      10
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_pulldown"
+     ],
+     "note": "ACE: 'avoid any additional backwards lean during the pull'; 10 deg is a pipeline tolerance"
+    },
+    {
+     "id": "elbows_down_to_sides",
+     "desc": "elbows drive down toward the sides; bar to top/mid chest",
+     "metric": "arm_torso",
+     "stat": "min",
+     "range": [
+      0,
+      40
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_pulldown"
+     ],
+     "note": "ACE: stop when the elbows stop moving down and start moving back"
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "shrug_scapular_elevation",
+     "desc": "shrugging (scapulae elevate instead of depress) -> upper traps take over",
+     "signature": {
+      "metric": null,
+      "note": "needs ear/neck keypoints; the cached 13-point skeleton has none. TODO hook: shoulder-to-ear distance"
+     },
+     "sources": [
+      "ace_pulldown"
+     ]
+    },
+    {
+     "id": "excess_lean_swing",
+     "desc": "leaning back past ~30 deg / swinging the torso to move the weight",
+     "signature": {
+      "metric": "trunk_from_vertical",
+      "stat": "max",
+      "op": ">",
+      "value": 30,
+      "basis": "source"
+     },
+     "sources": [
+      "ace_pulldown"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018",
+     "ace_pulldown"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). ACE: pause momentarily at the bottom, return slowly."
+   }
+  },
+  "barbell_back_squat": {
+   "name": "Barbell Back Squat",
+   "day": 3,
+   "target_muscles": [
+    "quadriceps",
+    "gluteus maximus",
+    "adductor magnus",
+    "spinal erectors (isometric)"
+   ],
+   "right_form": [
+    {
+     "id": "depth_parallel",
+     "desc": "thighs at least parallel to the floor at the bottom (tops of thighs just below parallel)",
+     "metric": "thigh_below_horizontal",
+     "stat": "max",
+     "range": [
+      0,
+      20
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "fail",
+     "sources": [
+      "cscca_squat",
+      "scj2020_lowbar"
+     ],
+     "note": "CSCCA: femur parallel; SCJ 2020: just below parallel, deeper can cause forward lean / pelvic tilt. Upper bound 20 deg is a pipeline tolerance."
+    },
+    {
+     "id": "full_depth_knee",
+     "desc": "full-depth knee flexion",
+     "metric": "knee_flexion",
+     "stat": "max",
+     "range": [
+      115,
+      125
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "warn",
+     "sources": [
+      "scj2018_squat"
+     ],
+     "note": "SCJ 2018 recommends 115-125 deg knee flexion; CSCCA only requires parallel, so this is a warning, not a fail"
+    },
+    {
+     "id": "knees_track_toes",
+     "desc": "knees track over the toes, no valgus (frontal view)",
+     "metric": "knee_ankle_width_ratio",
+     "stat": "min",
+     "range": [
+      0.9,
+      2.0
+     ],
+     "tol_deg": 0,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "cscca_squat",
+      "scj2018_squat"
+     ],
+     "note": "ratio of knee width to ankle width; <0.9 = knees caving inside the feet. Pipeline heuristic; front view only (feet and knees overlap in 3/4 view)",
+     "view": "front"
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "knee_valgus",
+     "desc": "knees cave in (valgus)",
+     "signature": {
+      "metric": "knee_ankle_width_ratio",
+      "stat": "min",
+      "op": "<",
+      "value": 0.85,
+      "basis": "heuristic",
+      "view": "front"
+     },
+     "sources": [
+      "cscca_squat",
+      "myer2014_squat",
+      "ffpa_pfp"
+     ],
+     "note": "Published 2D FPPA cutoff 8.2 deg is for single-leg squats in women with PFP only, so a ratio heuristic is used here"
+    },
+    {
+     "id": "shallow_depth",
+     "desc": "stopping well above parallel",
+     "signature": {
+      "metric": "thigh_below_horizontal",
+      "stat": "max",
+      "op": "<",
+      "value": -15,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "cscca_squat"
+     ]
+    },
+    {
+     "id": "chest_drop",
+     "desc": "chest drops / excessive forward lean",
+     "signature": {
+      "metric": "trunk_from_vertical",
+      "stat": "max",
+      "op": ">",
+      "value": 60,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "cscca_squat",
+      "scj2020_lowbar"
+     ],
+     "note": "no source gives a degree cutoff; 60 deg is a pipeline heuristic"
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). Squat-specific studies in the meta-analyses used 2 s or 4 s ECC with 2 s CON (Enes 2025, Shibata)."
+   }
+  },
+  "romanian_deadlift": {
+   "name": "Romanian Deadlift",
+   "day": 4,
+   "target_muscles": [
+    "hamstrings",
+    "gluteus maximus",
+    "spinal erectors (isometric)"
+   ],
+   "right_form": [
+    {
+     "id": "soft_knees",
+     "desc": "knees stay slightly bent; the movement is a hip hinge",
+     "metric": "knee_flexion",
+     "stat": "max",
+     "range": [
+      15,
+      34
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "fail",
+     "sources": [
+      "lee2018_rdl",
+      "nsca_rdl"
+     ],
+     "note": "literature: ~15 deg (Piper & Waller via Lee 2018 / NSCA) up to 33.9+/-12.6 deg measured to the floor (Lee 2018)"
+    },
+    {
+     "id": "hip_hinge_depth",
+     "desc": "hip flexion at the bottom",
+     "metric": "hip_flexion",
+     "stat": "max",
+     "range": [
+      64,
+      96
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "warn",
+     "sources": [
+      "lee2018_rdl"
+     ],
+     "note": "Lee 2018 mean 80.0 deg, SD 15.9 (range = mean+/-1 SD); stop where the back would round"
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "lumbar_rounding",
+     "desc": "lower back rounds (spine flexes instead of hips)",
+     "signature": {
+      "metric": null,
+      "note": "needs a mid-spine keypoint; TODO hook. Proxy: knee bend and hip angle both low."
+     },
+     "sources": [
+      "nsca_rdl",
+      "ace_rdl"
+     ]
+    },
+    {
+     "id": "squatting_the_rdl",
+     "desc": "bending the knees a lot (turns into a conventional deadlift / squat)",
+     "signature": {
+      "metric": "knee_flexion",
+      "stat": "max",
+      "op": ">",
+      "value": 50,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "lee2018_rdl"
+     ],
+     "note": "conventional deadlift knee flexion 85.2 deg vs RDL 33.9 deg in Lee 2018; 50 deg is a pipeline midpoint heuristic"
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   }
+  },
+  "dumbbell_lateral_raise": {
+   "name": "Dumbbell Lateral Raise",
+   "day": 5,
+   "target_muscles": [
+    "lateral (medial) deltoid",
+    "anterior deltoid / supraspinatus (assist)",
+    "upper trapezius (unwanted if shrugging)"
+   ],
+   "right_form": [
+    {
+     "id": "raise_to_shoulder_height",
+     "desc": "arms rise to shoulder level (~90 deg abduction), not above",
+     "metric": "arm_torso",
+     "stat": "max",
+     "range": [
+      80,
+      95
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "fail",
+     "sources": [
+      "ace_lateral",
+      "coratella2020"
+     ],
+     "note": "ACE: 'level with your shoulders and approximately parallel with the floor'; Coratella 2020 protocol: abduct up to 90 deg. 80-95 band is a pipeline tolerance around 90."
+    },
+    {
+     "id": "slight_elbow_bend",
+     "desc": "slight, fixed elbow bend",
+     "metric": "elbow_flexion",
+     "stat": "max",
+     "range": [
+      0,
+      30
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_lateral"
+     ]
+    },
+    {
+     "id": "torso_still",
+     "desc": "torso erect, no swing / back arch",
+     "metric": "trunk_from_vertical",
+     "stat": "range",
+     "range": [
+      0,
+      10
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_lateral"
+     ]
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "shrug_trap_takeover",
+     "desc": "shrugging / hiking the shoulders (upper trap takes over)",
+     "signature": {
+      "metric": null,
+      "note": "needs ear keypoints; TODO hook"
+     },
+     "sources": [
+      "ace_lateral"
+     ]
+    },
+    {
+     "id": "swing_momentum",
+     "desc": "swinging the torso / using momentum",
+     "signature": {
+      "metric": "trunk_from_vertical",
+      "stat": "range",
+      "op": ">",
+      "value": 15,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "ace_lateral"
+     ]
+    },
+    {
+     "id": "raise_too_high",
+     "desc": "raising well above shoulder height",
+     "signature": {
+      "metric": "arm_torso",
+      "stat": "max",
+      "op": ">",
+      "value": 110,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "ace_lateral"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     0.5
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018",
+     "coratella2020"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). Coratella 2020 used 2 s CON / 2 s ECC / 0.5 s isometric."
+   }
+  },
+  "incline_dumbbell_press": {
+   "name": "Incline Dumbbell Press",
+   "day": 6,
+   "target_muscles": [
+    "pectoralis major (clavicular/upper head)",
+    "anterior deltoid",
+    "triceps brachii"
+   ],
+   "inputs": {
+    "bench_incline_deg": {
+     "range": [
+      15,
+      30
+     ],
+     "sources": [
+      "rodriguez_ridao2020",
+      "sbs_bench"
+     ],
+     "note": "Rodriguez-Ridao 2020: upper pec peaks at 30 deg, >45 deg shifts to anterior deltoid. SBS: low incline 15-30 deg; most gym benches sit at 45 deg (too steep). Sources agree on <=30 deg; the common '30-45 deg' advice is NOT supported for pec emphasis."
+    }
+   },
+   "right_form": [
+    {
+     "id": "elbow_tuck_bottom",
+     "desc": "upper arm ~45-60 deg from the torso at the bottom",
+     "metric": "arm_torso",
+     "stat": "value",
+     "range": [
+      45,
+      60
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "fail",
+     "sources": [
+      "sbs_bench",
+      "noteboom2024"
+     ],
+     "at": {
+      "metric": "elbow_flexion",
+      "extreme": "max"
+     },
+     "note": "SBS gives 45-60 deg for the flat bench; applied to incline by analogy. Noteboom 2024 found abduction (45/70/90) mattered less than grip width/scapula pose and did not rank a safest angle.",
+     "view": "top"
+    },
+    {
+     "id": "full_rom",
+     "desc": "dumbbells lowered to chest level (deep elbow bend)",
+     "metric": "elbow_flexion",
+     "stat": "max",
+     "range": [
+      80,
+      110
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "warn",
+     "sources": [
+      "rodriguez_ridao2020"
+     ]
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "elbow_flare_90",
+     "desc": "elbows flared out to ~90 deg (T-shape)",
+     "signature": {
+      "metric": "arm_torso",
+      "stat": "value",
+      "op": ">",
+      "value": 75,
+      "basis": "heuristic",
+      "view": "top",
+      "at": {
+       "metric": "elbow_flexion",
+       "extreme": "max"
+      }
+     },
+     "sources": [
+      "noteboom2024",
+      "sbs_bench"
+     ],
+     "note": "90 deg was the widest condition tested (Noteboom 2024); 75 deg cutoff is a pipeline heuristic between SBS 60 and 90"
+    },
+    {
+     "id": "bench_too_steep",
+     "desc": "bench set at 45 deg or more (becomes a shoulder press)",
+     "signature": {
+      "metric": "input:bench_incline_deg",
+      "op": ">=",
+      "value": 45,
+      "basis": "source"
+     },
+     "sources": [
+      "rodriguez_ridao2020",
+      "sbs_bench"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018",
+     "rodriguez_ridao2020"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). Rodriguez-Ridao 2020 used 2 s ECC / 2 s CON."
+   }
+  },
+  "barbell_bench_press": {
+   "name": "Barbell Bench Press",
+   "day": null,
+   "target_muscles": [
+    "pectoralis major",
+    "anterior deltoid",
+    "triceps brachii"
+   ],
+   "inputs": {
+    "grip_width_x_shoulder": {
+     "range": [
+      1.5,
+      2.0
+     ],
+     "sources": [
+      "sbs_bench",
+      "noteboom2024"
+     ],
+     "note": "SBS 1.5-2x shoulder width; Noteboom 2024: wider grips (2 BAW) raised glenohumeral and AC joint loads, narrower lowered AC compression."
+    }
+   },
+   "right_form": [
+    {
+     "id": "elbow_tuck_bottom",
+     "desc": "upper arm 45-60 deg from torso with the bar on the lower chest",
+     "metric": "arm_torso",
+     "stat": "value",
+     "range": [
+      45,
+      60
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "fail",
+     "sources": [
+      "sbs_bench",
+      "noteboom2024"
+     ],
+     "at": {
+      "metric": "elbow_flexion",
+      "extreme": "max"
+     },
+     "note": "sources disagree on a single safest angle (Noteboom 2024: 45 deg had more superior shear, larger angles more compression)",
+     "view": "top"
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "elbow_flare_90",
+     "desc": "elbows flared to ~90 deg",
+     "signature": {
+      "metric": "arm_torso",
+      "stat": "value",
+      "op": ">",
+      "value": 75,
+      "basis": "heuristic",
+      "view": "top",
+      "at": {
+       "metric": "elbow_flexion",
+       "extreme": "max"
+      }
+     },
+     "sources": [
+      "noteboom2024",
+      "sbs_bench"
+     ]
+    },
+    {
+     "id": "bar_too_high",
+     "desc": "bar touches high on the chest / neck with elbows flared",
+     "signature": {
+      "metric": null,
+      "note": "needs bar position; TODO hook (bar y vs sternum)"
+     },
+     "sources": [
+      "sbs_bench"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018",
+     "rodriguez_ridao2020"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   }
+  },
+  "barbell_bent_over_row": {
+   "name": "Barbell Bent-Over Row",
+   "day": null,
+   "target_muscles": [
+    "latissimus dorsi",
+    "middle/lower trapezius, rhomboids",
+    "posterior deltoid",
+    "biceps (assist)",
+    "spinal erectors (isometric)"
+   ],
+   "right_form": [
+    {
+     "id": "torso_hinge",
+     "desc": "torso hinged 45-90 deg from vertical (almost parallel)",
+     "metric": "trunk_from_vertical",
+     "stat": "min",
+     "range": [
+      45,
+      90
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "fail",
+     "sources": [
+      "ace_barbell_row",
+      "acsm_hfj_row2017",
+      "jstage_row"
+     ],
+     "note": "ACE: 45-90 deg from vertical; ACSM H&FJ 2017 (abstract only, full text paywalled): slightly above horizontal; J-STAGE study: 65 deg forward flexion gave more lat/lower trap EMG than 40 deg"
+    },
+    {
+     "id": "torso_still",
+     "desc": "torso angle held during the pull (no body english)",
+     "metric": "trunk_from_vertical",
+     "stat": "range",
+     "range": [
+      0,
+      10
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_barbell_row"
+     ]
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "torso_rising",
+     "desc": "torso rises / jerks up to move the bar",
+     "signature": {
+      "metric": "trunk_from_vertical",
+      "stat": "range",
+      "op": ">",
+      "value": 15,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "ace_barbell_row"
+     ]
+    },
+    {
+     "id": "lumbar_rounding",
+     "desc": "lower back rounds",
+     "signature": {
+      "metric": null,
+      "note": "needs spine keypoints; TODO hook"
+     },
+     "sources": [
+      "acsm_hfj_row2017"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018",
+     "ace_barbell_row"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). ACE: hold the contraction for a second, lower slowly."
+   }
+  },
+  "seated_cable_row": {
+   "name": "Seated Cable Row",
+   "day": 7,
+   "target_muscles": [
+    "latissimus dorsi",
+    "middle trapezius, rhomboids",
+    "posterior deltoid",
+    "biceps (assist)"
+   ],
+   "right_form": [
+    {
+     "id": "torso_upright",
+     "desc": "torso vertical and motionless",
+     "metric": "trunk_from_vertical",
+     "stat": "max",
+     "range": [
+      0,
+      15
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_seated_row",
+      "acsm_hfj_seated_row"
+     ],
+     "note": "ACE: 'torso vertical', 'avoid leaning back'; no source gives a degree tolerance"
+    },
+    {
+     "id": "torso_still",
+     "desc": "no rocking",
+     "metric": "trunk_from_vertical",
+     "stat": "range",
+     "range": [
+      0,
+      10
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_seated_row"
+     ]
+    },
+    {
+     "id": "elbows_past_sides",
+     "desc": "elbows pull back past the sides of the body",
+     "metric": "elbow_flexion",
+     "stat": "max",
+     "range": [
+      80,
+      140
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "warn",
+     "sources": [
+      "ace_seated_row"
+     ]
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "lean_back_rock",
+     "desc": "leaning back / rocking the torso to pull",
+     "signature": {
+      "metric": "trunk_from_vertical",
+      "stat": "range",
+      "op": ">",
+      "value": 15,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "ace_seated_row",
+      "acsm_hfj_seated_row"
+     ]
+    },
+    {
+     "id": "rounding_forward",
+     "desc": "rounding the shoulders/back forward at the stretch",
+     "signature": {
+      "metric": null,
+      "note": "needs spine keypoints; TODO hook"
+     },
+     "sources": [
+      "ace_seated_row"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018",
+     "ace_seated_row"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). ACE: pause momentarily, return slowly."
+   }
+  },
+  "bulgarian_split_squat": {
+   "name": "Bulgarian Split Squat",
+   "day": 8,
+   "target_muscles": [
+    "quadriceps (front leg)",
+    "gluteus maximus",
+    "adductors"
+   ],
+   "right_form": [
+    {
+     "id": "front_knee_depth",
+     "desc": "front knee flexion at the bottom (back knee near the floor)",
+     "metric": "knee_flexion",
+     "stat": "max",
+     "range": [
+      100,
+      110
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "fail",
+     "sources": [
+      "bss2025"
+     ],
+     "note": "bss2025 upright variant: back knee to floor = ~100-110 deg front knee flexion. Per-leg metric: the more-bent leg is used (agg=max_side).",
+     "agg": "max_side"
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "front_knee_cave",
+     "desc": "front knee caves inward",
+     "signature": {
+      "metric": null,
+      "note": "per-leg frontal plane check TODO"
+     },
+     "sources": [
+      "scj2017_rfess"
+     ]
+    },
+    {
+     "id": "shallow",
+     "desc": "barely bending (front knee well under 90 deg)",
+     "signature": {
+      "metric": "knee_flexion",
+      "stat": "max",
+      "op": "<",
+      "value": 80,
+      "basis": "heuristic",
+      "agg": "max_side"
+     },
+     "sources": [
+      "bss2025"
+     ]
+    }
+   ],
+   "notes": "Trunk angle is a choice, not an error: upright = quad emphasis; ~40 deg forward lean raised glute max EMG (bss2025).",
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   }
+  },
+  "barbell_overhead_press": {
+   "name": "Standing Barbell Overhead Press",
+   "day": null,
+   "target_muscles": [
+    "anterior + lateral deltoid",
+    "triceps brachii",
+    "upper trapezius / serratus anterior"
+   ],
+   "right_form": [
+    {
+     "id": "lockout_over_head",
+     "desc": "full elbow extension, arms in line with the ears at the top",
+     "metric": "arm_torso",
+     "stat": "max",
+     "range": [
+      160,
+      180
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "issa_ohp",
+      "scj2017_ohp"
+     ],
+     "note": "ISSA: bar, biceps and triceps align with the ears at full extension; degree band is a pipeline heuristic"
+    },
+    {
+     "id": "no_lean_back",
+     "desc": "no lower-back arch / leaning back",
+     "metric": "trunk_from_vertical",
+     "stat": "max",
+     "range": [
+      0,
+      10
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "issa_ohp"
+     ]
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "lumbar_arch",
+     "desc": "arching the lower back / leaning back",
+     "signature": {
+      "metric": "trunk_from_vertical",
+      "stat": "max",
+      "op": ">",
+      "value": 15,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "issa_ohp",
+      "scj2017_ohp"
+     ]
+    },
+    {
+     "id": "elbows_flared",
+     "desc": "elbows flare out instead of pointing forward under the bar",
+     "signature": {
+      "metric": null,
+      "note": "needs a front view; TODO hook"
+     },
+     "sources": [
+      "issa_ohp"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   }
+  },
+  "barbell_hip_thrust": {
+   "name": "Barbell Hip Thrust",
+   "day": null,
+   "target_muscles": [
+    "gluteus maximus",
+    "hamstrings (assist)"
+   ],
+   "right_form": [
+    {
+     "id": "shins_vertical_top",
+     "desc": "shins vertical at lockout",
+     "metric": "shin_from_vertical",
+     "stat": "value",
+     "range": [
+      0,
+      10
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "contreras_ht",
+      "contreras_scoop"
+     ],
+     "at": {
+      "metric": "hip_flexion",
+      "extreme": "min"
+     },
+     "note": "Contreras: shins vertical at lockout, slight angle OK; 10 deg is a pipeline tolerance"
+    },
+    {
+     "id": "full_hip_extension",
+     "desc": "hips reach full extension (neutral to ~10-15 deg past)",
+     "metric": "hip_flexion",
+     "stat": "min",
+     "range": [
+      -15,
+      5
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "fail",
+     "sources": [
+      "contreras_scoop"
+     ],
+     "note": "Contreras 2022: most people extend ~10-15 deg past neutral with bent legs; end range = peak glute EMG (Contreras 2015)"
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "lumbar_hyperextension",
+     "desc": "finishing with the lower back arched instead of the hips",
+     "signature": {
+      "metric": null,
+      "note": "needs spine/pelvis keypoints; TODO hook"
+     },
+     "sources": [
+      "contreras_scoop"
+     ]
+    },
+    {
+     "id": "short_lockout",
+     "desc": "hips stop well short of full extension",
+     "signature": {
+      "metric": "hip_flexion",
+      "stat": "min",
+      "op": ">",
+      "value": 20,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "contreras_scoop"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   }
+  },
+  "leg_press": {
+   "name": "Leg Press",
+   "day": null,
+   "target_muscles": [
+    "quadriceps",
+    "gluteus maximus",
+    "adductors"
+   ],
+   "right_form": [
+    {
+     "id": "depth",
+     "desc": "knees bend to at least ~90 deg at the bottom",
+     "metric": "knee_flexion",
+     "stat": "max",
+     "range": [
+      90,
+      154
+     ],
+     "tol_deg": 10,
+     "basis": "source",
+     "severity": "warn",
+     "sources": [
+      "ace_legpress",
+      "legpress_rom2025"
+     ],
+     "note": "ACE sets up at ~90 deg; 2025 study: ~100 deg vs ~154 deg ROM gave similar quad growth, so any depth with a flat sacrum is fine"
+    },
+    {
+     "id": "no_lockout",
+     "desc": "stop short of locking the knees",
+     "metric": "knee_flexion",
+     "stat": "min",
+     "range": [
+      3,
+      20
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "warn",
+     "sources": [
+      "ace_legpress"
+     ]
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "pelvis_lift_lumbar_round",
+     "desc": "hips/sacrum peel off the pad at the bottom (lumbar rounding)",
+     "signature": {
+      "metric": null,
+      "note": "needs pelvis vs pad; TODO hook"
+     },
+     "sources": [
+      "ace_legpress"
+     ]
+    },
+    {
+     "id": "knee_lockout",
+     "desc": "snapping the knees into lockout",
+     "signature": {
+      "metric": "knee_flexion",
+      "stat": "min",
+      "op": "<",
+      "value": 2,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "ace_legpress"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   }
+  },
+  "dumbbell_biceps_curl": {
+   "name": "Dumbbell Biceps Curl",
+   "day": null,
+   "target_muscles": [
+    "biceps brachii",
+    "brachialis",
+    "brachioradialis"
+   ],
+   "right_form": [
+    {
+     "id": "elbows_by_sides",
+     "desc": "elbows stay close to the sides (upper arm still)",
+     "metric": "arm_torso",
+     "stat": "max",
+     "range": [
+      0,
+      20
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_curl"
+     ]
+    },
+    {
+     "id": "torso_still",
+     "desc": "no swinging / leaning",
+     "metric": "trunk_from_vertical",
+     "stat": "range",
+     "range": [
+      0,
+      10
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "fail",
+     "sources": [
+      "ace_curl"
+     ]
+    },
+    {
+     "id": "full_rom",
+     "desc": "curl through a full elbow range",
+     "metric": "elbow_flexion",
+     "stat": "range",
+     "range": [
+      100,
+      150
+     ],
+     "tol_deg": 10,
+     "basis": "heuristic",
+     "severity": "warn",
+     "sources": [
+      "ace_curl"
+     ]
+    }
+   ],
+   "mistakes": [
+    {
+     "id": "torso_swing",
+     "desc": "swinging the torso / hips for momentum",
+     "signature": {
+      "metric": "trunk_from_vertical",
+      "stat": "range",
+      "op": ">",
+      "value": 15,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "ace_curl"
+     ]
+    },
+    {
+     "id": "elbows_forward",
+     "desc": "elbows drift forward (front delt helps)",
+     "signature": {
+      "metric": "arm_torso",
+      "stat": "max",
+      "op": ">",
+      "value": 30,
+      "basis": "heuristic"
+     },
+     "sources": [
+      "ace_curl"
+     ]
+    }
+   ],
+   "tempo": {
+    "eccentric_s": [
+     1,
+     2
+    ],
+    "pause_s": [
+     0,
+     1
+    ],
+    "concentric_s": [
+     1,
+     2
+    ],
+    "rep_s": [
+     2,
+     5
+    ],
+    "sources": [
+     "acsm2009",
+     "schoenfeld2015",
+     "enes2025",
+     "nobrega2018"
+    ],
+    "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   }
+  }
+ }
+}
