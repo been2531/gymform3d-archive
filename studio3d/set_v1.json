@@ -1,0 +1,370 @@
+{
+ "_doc": "LOCKED 3D SET v1 (t561u/t562u). One mannequin, one bench, one pair of dumbbells, fixed materials, lights and camera presets, used by EVERY day. Days only supply an exercise config (pose keyframes from configs/motion_standards.json, mistake_type, target bones/muscles). Any change here = new set version + new set_lock hash; QC (L) fails a day whose rendered set hash differs from studio3d/set_lock.json.",
+ "version": 1,
+ "units": "metres, Blender Z-up, mannequin faces -Y, mannequin left = +X",
+ "assets": {
+  "mannequin_mesh": {
+   "file": "base.obj",
+   "url": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj",
+   "licence": "CC0 1.0 (MakeHuman assets)",
+   "sha256": null
+  },
+  "rig": {
+   "file": "default.mhskel",
+   "url": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default.mhskel",
+   "licence": "CC0 1.0",
+   "sha256": null
+  },
+  "rig_weights": {
+   "file": "default_weights.mhw",
+   "url": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default_weights.mhw",
+   "licence": "CC0 1.0",
+   "sha256": null
+  },
+  "anatomy_zip": {
+   "file": "bp3d_partof.zip",
+   "url": "https://dbarchive.biosciencedbc.jp/data/bodyparts3d/LATEST/partof_BP3D_4.0_obj_99.zip",
+   "licence": "CC BY 4.0 - attribution required: 'BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International'",
+   "sha256": null
+  },
+  "morph_caucasian-male-young": {
+   "file": "targets/caucasian-male-young.target",
+   "url": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/caucasian-male-young.target",
+   "licence": "CC0 1.0",
+   "sha256": null
+  },
+  "morph_african-male-young": {
+   "file": "targets/african-male-young.target",
+   "url": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/african-male-young.target",
+   "licence": "CC0 1.0",
+   "sha256": null
+  },
+  "morph_asian-male-young": {
+   "file": "targets/asian-male-young.target",
+   "url": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/asian-male-young.target",
+   "licence": "CC0 1.0",
+   "sha256": null
+  },
+  "morph_universal-male-young-maxmuscle-averageweight": {
+   "file": "targets/universal-male-young-maxmuscle-averageweight.target",
+   "url": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-maxmuscle-averageweight.target",
+   "licence": "CC0 1.0",
+   "sha256": null
+  },
+  "morph_universal-male-young-maxmuscle-minweight": {
+   "file": "targets/universal-male-young-maxmuscle-minweight.target",
+   "url": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-maxmuscle-minweight.target",
+   "licence": "CC0 1.0",
+   "sha256": null
+  },
+  "morph_male-young-maxmuscle-averageweight-idealproportions": {
+   "file": "targets/male-young-maxmuscle-averageweight-idealproportions.target",
+   "url": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/proportions/male-young-maxmuscle-averageweight-idealproportions.target",
+   "licence": "CC0 1.0",
+   "sha256": null
+  }
+ },
+ "asset_dir": "/workspace/assets3d",
+ "mannequin": {
+  "scale_from_mh": 0.1,
+  "skin": {
+   "base_rgb_linear": [
+    0.052,
+    0.056,
+    0.062
+   ],
+   "roughness": 0.52,
+   "specular": 0.35,
+   "post_lock": "Day 4 skin lock (gymform_spec mannequin.skin_lock_all_steps) applied on the skin index mask"
+  },
+  "shorts": {
+   "rgb_linear": [
+    0.012,
+    0.012,
+    0.013
+   ],
+   "roughness": 0.85,
+   "region": "pelvis + upper 55% of thigh, dominant rig weight in root/pelvis/upperleg/spine05",
+   "offset_m": 0.004
+  },
+  "morph": {
+   "_doc": "MakeHuman macro: male, young, max muscle, lean (CC0 targets). weight per target file",
+   "targets": {
+    "targets/caucasian-male-young.target": 0.3334,
+    "targets/african-male-young.target": 0.3333,
+    "targets/asian-male-young.target": 0.3333,
+    "targets/universal-male-young-maxmuscle-averageweight.target": 0.5,
+    "targets/universal-male-young-maxmuscle-minweight.target": 0.5,
+    "targets/male-young-maxmuscle-averageweight-idealproportions.target": 1.0
+   }
+  },
+  "faceless": {
+   "_doc": "Day 4 mannequin head = smooth faceless egg: the MH head faces (dominant weight head/jaw/eye/face bones) are removed and replaced by one ellipsoid parented to the head bone",
+   "bones_prefix": [
+    "head",
+    "jaw",
+    "eye",
+    "levator",
+    "oculi",
+    "orbicularis",
+    "oris",
+    "temporalis",
+    "risorius",
+    "special",
+    "tongue"
+   ],
+   "egg_scale": [
+    1.0,
+    1.12,
+    1.22
+   ],
+   "egg_fit": 0.9
+  },
+  "contact": {
+   "_doc": "after posing, the body is translated (y,z) so the buttocks touch the seat pad and the back touches the inclined back pad (evaluated skinned mesh, 2 iterations)",
+   "gap_m": 0.004
+  }
+ },
+ "equipment": {
+  "bench": {
+   "seat_h": 0.45,
+   "seat_len": 0.42,
+   "back_len": 0.8,
+   "pad_w": 0.28,
+   "pad_t": 0.07,
+   "rgb_linear": [
+    0.015,
+    0.015,
+    0.016
+   ],
+   "roughness": 0.6
+  },
+  "dumbbell": {
+   "type": "hex",
+   "head_r": 0.075,
+   "head_len": 0.085,
+   "handle_len": 0.14,
+   "handle_r": 0.016,
+   "rgb_linear": [
+    0.02,
+    0.02,
+    0.021
+   ],
+   "metal_rgb_linear": [
+    0.55,
+    0.55,
+    0.56
+   ]
+  }
+ },
+ "anatomy_parts": {
+  "humerus": {
+   "R": [
+    "FJ3368"
+   ],
+   "L": [
+    "FJ3262"
+   ],
+   "bone": "upperarm01"
+  },
+  "clavicle": {
+   "R": [
+    "FJ3362"
+   ],
+   "L": [
+    "FJ3237"
+   ],
+   "bone": "clavicle"
+  },
+  "scapula": {
+   "R": [
+    "FJ3384"
+   ],
+   "L": [
+    "FJ3279"
+   ],
+   "bone": "shoulder01"
+  },
+  "sternum": {
+   "C": [
+    "FJ3153",
+    "FJ3178",
+    "FJ3290"
+   ],
+   "bone": "spine01"
+  },
+  "upper_ribs": {
+   "R": [
+    "FJ3334",
+    "FJ3336",
+    "FJ3338",
+    "FJ3340",
+    "FJ3342",
+    "FJ3344",
+    "FJ3346"
+   ],
+   "L": [
+    "FJ3228",
+    "FJ3229",
+    "FJ3230",
+    "FJ3231",
+    "FJ3232",
+    "FJ3233",
+    "FJ3234"
+   ],
+   "bone": "spine01"
+  },
+  "radius_ulna": {
+   "R": [
+    "FJ3349",
+    "FJ3391"
+   ],
+   "L": [
+    "FJ3277",
+    "FJ3286"
+   ],
+   "bone": "lowerarm01"
+  },
+  "pectoralis_major": {
+   "R": [
+    "FJ1446",
+    "FJ1464"
+   ],
+   "L": [
+    "FJ1446M",
+    "FJ1464M"
+   ],
+   "bone": "spine01",
+   "kind": "muscle"
+  }
+ },
+ "render": {
+  "engine": "CYCLES",
+  "device": "CPU",
+  "res": [
+   1080,
+   1920
+  ],
+  "samples": 24,
+  "denoise": true,
+  "threads": 1,
+  "film_transparent": true,
+  "backdrop": "gymform bg.studio_bg (Day 4 grade) composited in post"
+ },
+ "lights": [
+  {
+   "name": "key",
+   "type": "AREA",
+   "size": 2.2,
+   "energy": 147,
+   "loc": [
+    -1.6,
+    -2.4,
+    3.2
+   ],
+   "aim": [
+    0,
+    0.2,
+    0.9
+   ]
+  },
+  {
+   "name": "fill",
+   "type": "AREA",
+   "size": 3.0,
+   "energy": 31,
+   "loc": [
+    2.4,
+    -2.0,
+    1.6
+   ],
+   "aim": [
+    0,
+    0.2,
+    0.9
+   ]
+  },
+  {
+   "name": "rim_l",
+   "type": "AREA",
+   "size": 1.2,
+   "energy": 91,
+   "loc": [
+    -2.0,
+    1.8,
+    2.4
+   ],
+   "aim": [
+    0,
+    0.3,
+    1.0
+   ]
+  },
+  {
+   "name": "rim_r",
+   "type": "AREA",
+   "size": 1.2,
+   "energy": 91,
+   "loc": [
+    2.0,
+    1.8,
+    2.4
+   ],
+   "aim": [
+    0,
+    0.3,
+    1.0
+   ]
+  }
+ ],
+ "world_rgb_linear": [
+  0.004,
+  0.0045,
+  0.005
+ ],
+ "cameras": {
+  "front": {
+   "yaw_deg": 0,
+   "pitch_deg": 35,
+   "dist_m": 5.9,
+   "lens_mm": 50,
+   "target": "chest",
+   "frame_h_m": 2.05,
+   "target_offset_m": [
+    0,
+    -0.05,
+    0.1
+   ]
+  },
+  "side": {
+   "yaw_deg": 90,
+   "pitch_deg": 10,
+   "dist_m": 5.9,
+   "lens_mm": 50,
+   "target": "chest",
+   "frame_h_m": 2.05,
+   "target_offset_m": [
+    0,
+    0,
+    0.1
+   ]
+  }
+ },
+ "xray": {
+  "bone_tint": {
+   "wrong": [
+    1.0,
+    0.32,
+    0.26
+   ],
+   "right": [
+    0.3,
+    1.0,
+    0.52
+   ]
+  },
+  "core_white": 0.45,
+  "rim_power": 2.2,
+  "opacity": 0.92
+ }
+}

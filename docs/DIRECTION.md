@@ -16,3 +16,5 @@ viewer sees at a glance **where the body takes the load**.
 - **Goals:** saves and comments (clear wrong/right contrast; spoken + caption experience question at the end).
 - **Zero spend** unless the owner approves a specific cost. Reuse gold assets first (`gold.json`).
 - **Confirm sample frames before rendering:** preflight sheet → owner look → one full render → QC → approval.
+
+- **t562u: locked 3D set is the main architecture** (docs/STUDIO3D.md): one fixed mannequin/bench/dumbbells/lights/cameras (`studio3d/set_v1.json`, hash-locked), each day = only an exercise config; QC (L1)-(L4).
