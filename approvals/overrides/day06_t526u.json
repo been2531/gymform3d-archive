@@ -1,0 +1,13 @@
+{
+ "day": 6,
+ "authorized_by": "t526u",
+ "owner_quote": "\uc774\ubc88\uac74 \uc62c\ub824 \uadf8\ub9ac\uace0 \ub2e4\uc74c\ubc88 \uc791\uc5c5\ub54c\ub294 \uc6d0\uc778 \ucc3e\uc544\uc11c \ud574\uacb0\ud574",
+ "reason": "user override t526u, (q) only",
+ "waive": [
+  "(q)"
+ ],
+ "stamp_key": "85601f2d7820cd21",
+ "single_use": true,
+ "used_at": "2026-10-30 10:33:24+0900",
+ "used_note": "final QC 24/25 PASS + 1 WAIVED; remaining fails: 0"
+}

@@ -78,3 +78,20 @@ rules marked **[QC]** fail the QC gate (`gymform/qc.py`). A day that fails is ne
 ## 5. Publishing
 - Never publish without the owner's explicit approval (`approvals/dayNN.json` status `pending` until approved).
   Instagram is read-only otherwise. Posts go up at 10:00 KST.
+
+## One-time owner override (audited, not a bypass)
+- `approvals/overrides/dayNN_<msgid>.json` may waive NAMED QC checks for ONE day, ONE exact config/code hash, ONE
+  full render, only for an explicit owner message. Recorded in the stamp (`override`), run status/log and approval;
+  marked `used_at` after the run. Every other check must pass; an override run never autofix-re-renders.
+- Used once: Day 6, t526u, "(q) only".
+
+## TODO next run (owner t526u: "다음번 작업때는 원인 찾아서 해결해") — X-Ray edit root cause
+1. Edit drift: the xAI video edit of the RIGHT clip restyled the limbs (thinner, dark see-through arms) and drew
+   flat cyan bones instead of emerald -> the edit's arm outline differs from the base by up to ~10px.
+2. (q) faint blobs appear right next to the base arm outline where the base silhouette/equipment core covers
+   pixels that are backdrop in the edit (step2 t20/t100, step1 start).
+3. Fix in shared modules, not per day: (a) `gymform/xai_edit.py` prompt: "keep the silver arms/legs exactly as
+   thick and opaque as the original; bones deep emerald #1E9E5A, not cyan/turquoise; no glow outside the body";
+   (b) cutout (`gymform/render.py` edit_of path): reconcile base vs edit outline per limb (use the edit's own
+   outline where it is confidently body/backdrop, base only for the enclosed X-Ray cavity) without breaking (d);
+   (c) add a pre-render edit check (outline IoU per limb vs base + bone hue) in xai_edit before accepting a take.
