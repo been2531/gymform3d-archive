@@ -1,5 +1,6 @@
 {
   "day": 5,
+  "muscle_shader": "gymform_v5",
   "exercise_name": "Dumbbell Lateral Raise",
   "assets_dir": "output/assets",
   "kp_cache": "_cache_day5_lat_720p_kps.pkl",

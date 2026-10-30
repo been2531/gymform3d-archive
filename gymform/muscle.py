@@ -49,6 +49,59 @@ def silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong):
     return np.stack([matte + tr, matte + tg, matte + tb], axis=-1)
 
 
+def muscle_shader():
+    """t572u: which proven fibre shader colours the MUSCLE steps. 'day4' = build_day4_rdl_master.shade_day4_3d_frame_1080p
+    (GOLD #1) - the Day 6+ default; 'gymform_v5' = the crisp sigma-1 gate used by the posted Day 5 v5 (configs/day05.json
+    keeps it so Day 5 renders bit-identical)."""
+    m = CFG.get("muscle_shader")
+    if m:
+        return m
+    return SPEC.get("muscle_shader", {}).get("default_from_day6", "day4") if int(CFG.get("day", 0)) >= 6 else "gymform_v5"
+
+
+def day4_fibre(F, mono, w_fg, shorts_mask, is_wrong, pulse_phase):
+    """Day 4 (GOLD #1) muscle-fibre shader, line for line from build_day4_rdl_master.shade_day4_3d_frame_1080p
+    (muscle steps 2/4): NO anatomical gate - the clip's own native glow decides where colour goes; colour weight =
+    soft glow ramp (act 10..44, sigma 1.8) x core seed (act 18..64) blurred WIDE (sigma 7) -> solid colour in the
+    muscle core with a smooth core-to-grey edge falloff (no speckle, no hard edge); x0.86, cap 0.88; fibre ridges /
+    sulci from the R channel + GB; Day 4 colour ramps. Only inside the body mask (w_fg), never on the shorts."""
+    r_ch, g_ch, b_ch, act_dom = F["r"], F["g"], F["b"], F["act_dom"]
+    # input calibration (t572u): Day 4's source clips glow at native act ~95-110 (median); a fainter clip (Day 6
+    # right-form pec glow ~40) is scaled to the same level so the SAME Day 4 thresholds give the same solid core.
+    # The fibre texture is read from the channel that carries the glow (Day 5 rule: a green glow has its fibres in
+    # G, R is dark there) - for Day 4's own red-glow clips this is R, i.e. identical to Day 4.
+    act_dom = act_dom * float(CFG.get("_glow_gain", {}).get(str(CFG.get("_cur_step")), 1.0))
+    grn = (g_ch - 0.5 * (r_ch + b_ch)) > (r_ch - 0.5 * (g_ch + b_ch))
+    r_ch = np.where(grn, g_ch, r_ch)
+    sh = 0.95 * shorts_mask
+    w_act = cv2.GaussianBlur((np.clip((act_dom - 10.0) / 34.0, 0.0, 1.0) ** 0.85).astype(np.float32), (0, 0), 1.8) * (1.0 - sh) * w_fg
+    core_seed = (np.clip((act_dom - 18.0) / 46.0, 0.0, 1.0) ** 1.10) * w_fg
+    pulse = 1.0 + 0.06 * math.sin(2.0 * math.pi * pulse_phase)
+    core_w = np.clip(cv2.GaussianBlur(core_seed.astype(np.float32), (0, 0), 7.0) * w_act * 0.86 * pulse, 0.0, 0.88)
+    gb_ch = 0.55 * g_ch + 0.45 * b_ch
+    r_blur_fine = cv2.GaussianBlur(r_ch, (0, 0), 1.4)
+    r_blur_mid = cv2.GaussianBlur(r_ch, (0, 0), 5.0)
+    r_blur_wide = cv2.GaussianBlur(r_ch, (0, 0), 14.0)
+    gb_blur_mid = cv2.GaussianBlur(gb_ch, (0, 0), 4.5)
+    fiber_fine = (r_ch - r_blur_mid) * 1.85 + (gb_ch - gb_blur_mid) * 1.35
+    fiber_bundle = (r_blur_fine - r_blur_wide) * 0.95
+    sulc_3d = np.clip(-fiber_fine / 14.0, 0.0, 1.0)
+    ridge_3d = np.clip(fiber_fine / 16.0, 0.0, 1.0)
+    vol_3d = np.clip((0.56 * r_ch + 0.44 * gb_ch) / 172.0, 0.18, 1.18)
+    fiber_mod = np.clip(vol_3d + 0.50 * ridge_3d - 0.54 * sulc_3d + 0.004 * fiber_bundle, 0.12, 1.38)
+    if is_wrong:
+        col_r = np.clip(34.0 + 172.0 * fiber_mod + 48.0 * (ridge_3d ** 1.3) - 42.0 * sulc_3d, 22.0, 242.0)
+        col_g = np.clip(14.0 + 42.0 * fiber_mod + 28.0 * (ridge_3d ** 1.5) - 18.0 * sulc_3d, 10.0, 105.0)
+        col_b = np.clip(16.0 + 44.0 * fiber_mod + 26.0 * (ridge_3d ** 1.5) - 18.0 * sulc_3d, 10.0, 105.0)
+    else:
+        col_r = np.clip(14.0 + 38.0 * fiber_mod + 32.0 * (ridge_3d ** 1.5) - 14.0 * sulc_3d, 10.0, 96.0)
+        col_g = np.clip(32.0 + 178.0 * fiber_mod + 56.0 * (ridge_3d ** 1.3) - 46.0 * sulc_3d, 24.0, 248.0)
+        col_b = np.clip(22.0 + 96.0 * fiber_mod + 42.0 * (ridge_3d ** 1.4) - 26.0 * sulc_3d, 16.0, 168.0)
+    act_rgb = np.stack([col_r, col_g, col_b], axis=-1)
+    blend_w = np.clip(core_w, 0.0, 0.92) * (1.0 - sh)
+    return mono * (1.0 - blend_w[:, :, None]) + act_rgb * blend_w[:, :, None], core_w
+
+
 def activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase):
     """Target-muscle fibre colour (muscle steps) / bone tint seed (bone steps) inside the anatomical gate.
     Returns (mannequin_rgb, anat)."""
@@ -56,6 +109,8 @@ def activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase):
     xx, yy = _XX, _YY
     from gymform import ctx as _ctx
     step_idx = _ctx.legacy(step_idx)   # look follows the step's ROLE (bone/muscle x wrong/right), not its position
+    if step_idx in (2, 4) and muscle_shader() == "day4":   # t572u: muscle steps = the Day 4 GOLD #1 shader
+        return day4_fibre(F, mono, w_fg, shorts_mask, is_wrong, pulse_phase)
     sh_r, sh_l = kp["sh_r"], kp["sh_l"]
     sh_y = 0.5 * (sh_r[1] + sh_l[1])
     if step_idx in (1, 3):
@@ -72,41 +127,12 @@ def activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase):
         d_r = np.hypot((xx - (sh_r[0] - 10.0)) / 92.0, (yy - (sh_r[1] + 22.0)) / 108.0)
         d_l = np.hypot((xx - (sh_l[0] + 10.0)) / 92.0, (yy - (sh_l[1] + 22.0)) / 108.0)
         anat = np.clip((1.35 - np.minimum(d_r, d_l)) / 0.40, 0.0, 1.0)
-    full = CFG.get("muscle_fill") == "native_full" and step_idx in (2, 4)
-    if full and step_idx == 4:   # t567u: the whole native upper-pec glow, not two shoulder ellipses
-        anat = np.clip((yy - (sh_y - 120.0)) / 28.0, 0.0, 1.0) * np.clip(((sh_y + 175.0) - yy) / 40.0, 0.0, 1.0)
-    if full and step_idx == 2:   # t567u: front-delt glow runs up the raised upper arm (overhead at the top)
-        cap = np.zeros((H, W), np.uint8)
-        for sd in ("r", "l"):
-            s0, e0 = kp[f"sh_{sd}"], kp[f"elb_{sd}"]
-            cv2.line(cap, (int(s0[0]), int(s0[1])), (int(0.25 * s0[0] + 0.75 * e0[0]), int(0.25 * s0[1] + 0.75 * e0[1])), 1, 110)
-        anat = np.maximum(anat, cv2.GaussianBlur(cap.astype(np.float32), (0, 0), 12.0))
     anat = anat * w_fg  # colour only inside the clean body mask
 
+    w_act = cv2.GaussianBlur((np.clip((act_dom - 10.0) / 32.0, 0.0, 1.0) ** 0.85).astype(np.float32), (0, 0), 1.8) * (1.0 - shorts_mask) * anat
+    core_seed = (np.clip((act_dom - 16.0) / 42.0, 0.0, 1.0) ** 1.08) * anat
     pulse = 1.0 + 0.06 * math.sin(2.0 * math.pi * pulse_phase)
-    if full:
-        # t567u ROOT CAUSE (t558 M9: highlight 4-13x smaller than Day 4): the fibre gate started at act 10/16 and
-        # multiplied two soft ramps (w_act x core_seed), so only the hottest third of the NATIVE muscle glow got
-        # colour and at reduced strength. Day 4 colours the whole native glow region at full strength; same here:
-        # every native glow pixel (act > 5) is fibre colour, ramped over a short range (still native pixels only).
-        # colour-specific native glow (wrong = red-dominant, right = green-dominant): faint olive/cyan casts on
-        # the head/chin are not muscle; the head disc is never a target muscle
-        dom = (r_ch - 0.5 * (g_ch + b_ch)) if is_wrong else (g_ch - 0.5 * (r_ch + b_ch))
-        hip_m = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), 0.5 * (kp["hip_r"][1] + kp["hip_l"][1]))
-        sh_m = (0.5 * (sh_r[0] + sh_l[0]), sh_y)
-        tl = max(1.0, math.hypot(sh_m[0] - hip_m[0], sh_m[1] - hip_m[1]))
-        hd = (sh_m[0] + (sh_m[0] - hip_m[0]) * 0.42, sh_m[1] + (sh_m[1] - hip_m[1]) * 0.42)
-        # head disc (small: in the reclined pose the far-side delt sits right next to the head)
-        no_head = np.clip((np.hypot(xx - hd[0], yy - hd[1]) - 0.21 * tl) / 14.0, 0.0, 1.0)
-        ramp = (np.clip((dom - 5.0) / 12.0, 0.0, 1.0) ** 0.7).astype(np.float32)
-        # the native striation lines leave the glow hatched/dotted: close the region (fibre detail stays in the shading)
-        ramp = np.maximum(ramp, cv2.GaussianBlur(cv2.morphologyEx(ramp, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))), (0, 0), 1.2))
-        w_act = cv2.GaussianBlur(ramp, (0, 0), 1.2) * (1.0 - shorts_mask) * anat * no_head
-        core_w = np.clip(w_act * 0.96 * pulse, 0.0, 0.94)
-    else:
-        w_act = cv2.GaussianBlur((np.clip((act_dom - 10.0) / 32.0, 0.0, 1.0) ** 0.85).astype(np.float32), (0, 0), 1.8) * (1.0 - shorts_mask) * anat
-        core_seed = (np.clip((act_dom - 16.0) / 42.0, 0.0, 1.0) ** 1.08) * anat
-        core_w = np.clip(cv2.GaussianBlur(core_seed.astype(np.float32), (0, 0), 1.0) * w_act * 0.90 * pulse, 0.0, 0.90)
+    core_w = np.clip(cv2.GaussianBlur(core_seed.astype(np.float32), (0, 0), 1.0) * w_act * 0.90 * pulse, 0.0, 0.90)
 
     act_ch = r_ch if is_wrong else g_ch  # Step 4 source glow is green: read fibers from G (R left dark holes)
     gb_ch = 0.55 * g_ch + 0.45 * b_ch

@@ -480,7 +480,7 @@ DAY4_MUSCLE_PX = {"wrong": (50145, 62472), "right": (21053, 35179)}   # Day 4 ma
 
 def t567_checks(meta, frames_meta, vids, qc_dir):
     """t567u checks for the t558 diagnosis fixes (muscle-only day):
-    (m) muscle fibre colour covers the clip's NATIVE glow (>= 80% of src act>10 body px) - Day 4 px for reference
+    (mf) muscle fibre colour = the Day 4 shader with the Day 4/5 look (t572u: no speckle, Day 4/5 colour strength)
     (o) whole figure centred (silhouette bbox centre 540 +-40 px, >= 24 px margin both sides)
     (p) the static (bench) layer never claims bright mannequin skin (pale feet / skin streaks <= 300 px)
     (r) callout axis follows the upper arm (target point on the shoulder->elbow segment, arm_axis)"""
@@ -497,16 +497,17 @@ def t567_checks(meta, frames_meta, vids, qc_dir):
         body = (wfg > 0.5) & ((st if st is not None else 0) < 0.5)
         ui = np.zeros_like(body); ui[:600] = True; ui[:, :300] = True
         if fm["tag"] in ("start", "peak"):
-            iw_ = meta.get("is_wrong", {}).get(str(fm["step"]))
-            dom_ = (srcf[..., 0] - 0.5 * (srcf[..., 1] + srcf[..., 2])) if iw_ else (srcf[..., 1] - 0.5 * (srcf[..., 0] + srcf[..., 2]))
-            nat = int(((dom_ > 10) & body & ~ui).sum())   # the target colour's own native glow
-            col = int(((a_out > 25) & body & ~ui).sum())
-            cov = col / max(nat, 1)
+            # t572u: judged against the Day 4 (GOLD #1) / Day 5 look, measured on their posted masters:
+            # coloured regions 3-11 (no speckle), colour strength act median 52-86, shader = day4
+            m_ = ((a_out > 25) & body & ~ui).astype(np.uint8)
+            n_, _, st_, _ = cv2.connectedComponentsWithStats(m_, 8)
+            comps = sum(1 for i in range(1, n_) if st_[i, cv2.CC_STAT_AREA] >= 20)
+            amed = float(np.median(a_out[m_ > 0])) if m_.sum() else 0.0
             form = "wrong" if meta.get("is_wrong", {}).get(str(fm["step"])) else "right"
             d4 = DAY4_MUSCLE_PX[form]
-            m_rows.append(f"{key}: {col}px coloured / {nat}px native glow = {100 * cov:.0f}% (Day 4 {form}: {d4[0] // 1000}-{d4[1] // 1000}k px)")
-            if cov < 0.80:
-                m_bad.append(m_rows[-1])
+            m_rows.append(f"{key}: {int(m_.sum())}px, {comps} regions, strength {amed:.0f} (Day 4 {form}: {d4[0] // 1000}-{d4[1] // 1000}k px, 3-8 regions, 52-78)")
+            if meta.get("muscle_shader") != "day4" or comps > 16 or not (45.0 <= amed <= 100.0) or m_.sum() < 4000:
+                m_bad.append(m_rows[-1] + f" shader={meta.get('muscle_shader')}")
         ys, xs = np.where(body)
         if xs.size:
             x0, x1 = int(np.percentile(xs, 0.2)), int(np.percentile(xs, 99.8))
@@ -532,7 +533,7 @@ def t567_checks(meta, frames_meta, vids, qc_dir):
                 r_bad.append(f"{key}: target {d:.1f}px off arm, arm_axis={ca.get('arm_axis')}")
         else:
             r_bad.append(f"{key}: no callout_axis in meta")
-    report("(mf) muscle fibre colour covers the native glow (>=80%); Day 4 px for reference", bool(m_rows) and not m_bad,
+    report("(mf) muscle fibre colour = Day 4 shader + Day 4/5 look (<=16 regions, strength 45-100, >=4k px)", bool(m_rows) and not m_bad,
            "; ".join(m_bad) or " | ".join(m_rows))
     report("(oc) whole figure centred (bbox centre 540+-40, margins >=24px)", bool(o_rows) and not o_bad, "; ".join(o_bad[:4]) or " | ".join(o_rows[::3]))
     report("(pf) bench/static layer never on bright mannequin skin (<=300px)", not p_bad, "; ".join(p_bad[:4]) or "max " + max(p_rows, key=lambda r: int(r.split(": ")[1][:-2])) if p_rows else "no static")
@@ -834,7 +835,7 @@ def main():
             if pk_a and pk_b:
                 z_rows.append(f"{a_}/{b_} peak: {pk_a['deg']} {pk_a['l1']} vs {pk_b['deg']} {pk_b['l1']}")
         report("(z) paired steps show the same callout angle (+-5 deg) and label", not z_bad, "; ".join(z_bad[:6]) or " | ".join(z_rows))
-    if meta.get("muscle_fill") or int(meta.get("n_steps", 4)) == 2:
+    if int(meta.get("n_steps", 4)) == 2:
         t567_checks(meta, frames_meta, vids, args.qc_dir)
     sq_bad = [f"{k}: {msg}" for k, ok, msg in STRAY if not ok]
     report("(q) no stray / unanchored overlay lines or blobs", not sq_bad,

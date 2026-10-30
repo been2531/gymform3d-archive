@@ -172,16 +172,14 @@ def skin_tone_lock(rgb, w_fg, shorts_mask, metal, step_idx):
     ys = [0.0, 46.0, float(lk["p75"]), float(lk["p90"]), float(lk["max"]), float(lk["max"])]
     gain = np.interp(L, xs, ys) / np.maximum(L, 1.0)
     # full lock on every solid-body pixel (w_fg >= 0.9 is skin for QC (f)); only the soft matte edge blends
-    # t567u: with the full native muscle fill, the faint fibre fringe (act 6-24) is skin mixed with a little colour;
-    # lock it too (RGB scaled equally, hue kept) so its silver highlights never exceed the Day 4 max
-    a_hi = 24.0 if CFG.get("muscle_fill") == "native_full" else 12.0
-    w = np.clip((w_fg - 0.5) / 0.4, 0, 1) * (1.0 - np.clip(keep_out * 4, 0, 1)) * np.clip((a_hi - act) / 6.0, 0.0, 1.0)
+    w = np.clip((w_fg - 0.5) / 0.4, 0, 1) * (1.0 - np.clip(keep_out * 4, 0, 1)) * np.clip((12.0 - act) / 6.0, 0.0, 1.0)
     g = 1.0 + (gain - 1.0) * w
     return np.clip(f * g[:, :, None], 0, 255)
 
 
 def render_pose(step_idx, seq, kps, p_i, icons, qc=False):
     fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(step_idx)
+    CFG["_cur_step"] = step_idx
     pose_frac = p_i / float(max(1, len(seq) - 1))
     if CUR_PLATE.get("step") != step_idx:
         bg.set_step_plate(seq, kps, step_idx)
@@ -241,6 +239,18 @@ def load_inputs():
     if dirty:
         pickle.dump(kps_seqs, open(CFG["kp_cache"], "wb"))
     ctx.normalize_scale(kps_seqs)      # same mannequin size + floor line in all 4 steps (any pose)
+    # t572u: native glow level per step (Day 4 fibre shader input calibration, see muscle.day4_fibre)
+    ref = float(SPEC.get("muscle_shader", {}).get("day4_native_glow_p50", 100.0))
+    CFG["_glow_gain"] = {}
+    for s in ctx.steps():
+        v = []
+        for f in raw_seqs[s][:: max(1, len(raw_seqs[s]) // 6)]:
+            ff = f.astype(np.float32)   # BGR
+            d = np.maximum(ff[..., 2] - 0.5 * (ff[..., 1] + ff[..., 0]), ff[..., 1] - 0.5 * (ff[..., 2] + ff[..., 0]))
+            v.append(d[d > 10])
+        v = np.concatenate(v) if v else np.zeros(0)
+        p50 = float(np.median(v)) if v.size > 2000 else ref
+        CFG["_glow_gain"][str(s)] = round(float(np.clip(ref / max(p50, 1.0), 1.0, 2.5)), 3)
     SEQS.update(raw_seqs)
     KPS.update({s: kps_seqs[s] for s in ctx.steps()})
     return raw_seqs, kps_seqs
@@ -250,6 +260,7 @@ def build_icons(raw_seqs, kps_seqs):
     icons = []
     for s in ctx.steps():   # one preview slot per step (t568u: 2-step day = 2 thumbnails)
         fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(s)
+        CFG["_cur_step"] = s
         bg.set_step_plate(raw_seqs[s], kps_seqs[s], s)
         rgb_1080, kp_1080 = b4.transform_frame_and_kp_1080p(raw_seqs[s][-1], kps_seqs[s][-1], y_sh, s)
         sh_rgb, sh_m, w_fg = shade(rgb_1080, s, is_w, kp_1080, pulse_phase=0.75,
@@ -299,7 +310,7 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
         "bone_steps": list(CFG["bone_steps"]), "muscle_steps": list(CFG["muscle_steps"]),
         "clips": CFG.get("clips"), "xray_full_steps": CFG.get("xray_full_steps"),
         "is_wrong": {str(k): bool(v["is_wrong"]) for k, v in CFG.get("clips", {}).items()},
-        "source": CFG.get("source", {}), "callouts": CFG.get("callouts"), "tts_lines": CFG.get("tts_lines"), "day": CFG.get("day"), "muscle_fill": CFG.get("muscle_fill"), "framing_qc": (CFG.get("target_zoom") or {}).get("focus_mode"), "n_steps": ctx.n_steps(), "duration_s": ctx.duration(), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
+        "source": CFG.get("source", {}), "callouts": CFG.get("callouts"), "tts_lines": CFG.get("tts_lines"), "day": CFG.get("day"), "muscle_shader": muscle.muscle_shader(), "glow_gain": CFG.get("_glow_gain"), "framing_qc": (CFG.get("target_zoom") or {}).get("focus_mode"), "n_steps": ctx.n_steps(), "duration_s": ctx.duration(), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
         "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "overlap_alpha": SPEC["ui"]["overlap_alpha"], "fps": FPS, "qc_tags": tempo.QC_TAGS, "target_bones": CFG.get("target_bones", []),
     })
     json.dump(meta, open(meta_p, "w"), indent=1)

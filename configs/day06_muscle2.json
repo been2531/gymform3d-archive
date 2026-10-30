@@ -159,6 +159,6 @@
   "arm_axis": true,
   "why": "t567u: callout axis follows the upper arm (shoulder -> elbow), short torso reference"
  },
- "muscle_fill": "native_full",
- "clean_plate": true
+ "clean_plate": true,
+ "muscle_shader": "day4"
 }
