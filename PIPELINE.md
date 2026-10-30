@@ -86,3 +86,13 @@ python3 run_day.py --day N               # lint -> preflight (stamp reused if th
 - Guard `pair_lint` (exit 3); missing twin files block `--check`, preflight and render (exit 2). QC (s) checks pair
   keypoints and silhouette.
 - Tests: `tests/test_pairs.py`.
+
+## X-Ray twin by video edit (Day 6+, `gymform/xai_edit.py`)
+- Pair rule: a motion's second rendering (bone X-Ray) is a **motion-preserving video edit** of its base clip
+  (`motions.<m>.renders.bone = {file, edit_of: base, edit: {color}}`).
+- `python3 -m gymform.xai_edit --day N [--dry-run]` → xAI `POST /v1/videos/edits` (grok-imagine-video), polls
+  `GET /v1/videos/{id}`, writes `output/assets/<file>`. Key from env `XAI_API_KEY` only (never logged/committed).
+  ONE take per target (ledger `_cache_gymform/xai_edits.jsonl`; `--retake` needs owner approval). Billed ~$0.40 per 5 s clip.
+- Render: for an `edit_of` step the body silhouette and equipment geometry come from the BASE frame of the same pose
+  (the edit renders limbs/torso as dark glass the luminance key reads as backdrop); colour/anatomy from the edit.
+  QC (d) uses the `_geo.png` sidecar + the base step's plate for the expected equipment footprint.
