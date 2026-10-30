@@ -107,3 +107,18 @@ python3 run_day.py --day N               # lint -> preflight (stamp reused if th
 - Joint-tolerance pairs: `motions.*.renders.*.pair_match` (own slice + kps, lint + QC (s) at 15 %), `mirror`
   (whole-frame flip, part of kp/plate cache keys), `native_tint` (X-Ray detects the clip's own bone colour and
   grades it to the role colour).
+
+## Motion + tempo standards check (t549u/t550u, standalone, not wired into render yet)
+Goal: the motion and speed in every reel match what real lifters do, backed by free credible sources (ACSM, NSCA/CSCCA, ACE, peer-reviewed EMG/biomechanics).
+- Data: `configs/motion_standards.json` (14 exercises keyed by curriculum slug: Day 1-8 + bench, bent-over row, OHP, hip thrust, leg press, biceps curl).
+  Each item = metric + stat + range + `tol_deg` + `basis` (`source` = number from the cited URL, `heuristic` = pipeline tolerance) + `sources`.
+  Readable version with every link: [docs/MOTION_STANDARDS.md](docs/MOTION_STANDARDS.md).
+- Code: `gymform/motion_check.py` reuses the pipeline keypoint cache (`_cache_dayN_*_kps.pkl`, 13-point 2D skeleton):
+  - right steps: every `right_form` item must pass (`severity: warn` only warns);
+  - wrong steps: >=1 measurable `mistakes` signature must fire (the wrong demo shows a real, common mistake); `--mistake ID` judges only the intended one;
+  - tempo: `pipeline_tempo()` reads `gymform/tempo.py` (Day 4 cosine = 1.67 s down + 1.67 s up, 3.33 s/rep) and checks eccentric/pause/concentric/rep seconds;
+  - setup inputs (e.g. `--input bench_incline_deg=30`) are checked against sourced ranges;
+  - items that need joints the cache lacks (ears, spine, pelvis, bar) or another camera view (`view: top/front`) report n/a, never a false fail.
+- Run: `python3 -m gymform.motion_check --slug dumbbell_lateral_raise --kp _cache_day5_lat_720p_kps.pkl --wrong-steps 1,2` (exit 1 on a fail; `--json` for machine output).
+- Tests: `python3 -m unittest tests.test_motion_check` (standards integrity + angle maths + pass/fail logic, <0.1 s).
+- TODO hooks: wire into `gymform/preflight.py` after sign-off; measure tempo from the rendered mp4 (`tempo.measure_reversals`); add ear/spine keypoints for shrug, lumbar rounding and hip-thrust overarch.
