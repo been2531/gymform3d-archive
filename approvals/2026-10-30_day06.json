@@ -1,14 +1,14 @@
 {
   "day": 6,
   "exercise": "Incline Dumbbell Press",
-  "status": "published",
+  "status": "deleted_by_user",
   "publish_at": "2026-10-30T10:00+09:00",
   "mp4": "output/day6_incline_dumbbell_press_4step_master.mp4",
   "cover": "output/day6_cover.jpg",
   "sheet": "output/day6_4step_sheet.jpg",
   "caption": "output/day6_caption.txt",
   "qc": "preflight 23/24 + final QC 24/25 PASS + 1 WAIVED ((q) only, user override t526u, approvals/overrides/day06_t526u.json; log output/logs/day06_20261030_102711.log)",
-  "note": "t526u: publish now with current xAI edits; (q) waived once. Next run: fix root cause (see RULES.md TODO). Published on t526u; 10:00 routine must skip.",
+  "note": "Deleted by 중현 님 (t529u, quality too low). NO routine may repost. Re-publish only after a new explicit approval.",
   "previous_approval": {
     "by": "중현 님",
     "at": "2026-10-30T08:05+09:00",
@@ -28,5 +28,8 @@
   },
   "permalink": "https://www.instagram.com/reel/DfGabTBjwt8/",
   "media_id": "18176769307453193",
-  "published_at": "2026-10-30T10:34:40+09:00"
+  "published_at": "2026-10-30T10:34:40+09:00",
+  "deleted_at": "2026-10-30T10:41+09:00",
+  "deleted_reason": "quality too low, t529u",
+  "owner_quote_deleted": "다시 삭제했어 내가 너무 퀄리티 낮아"
 }
