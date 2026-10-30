@@ -27,10 +27,31 @@ rules marked **[QC]** fail the QC gate (`gymform/qc.py`). A day that fails is ne
 - Modest CPU (Shorts Manager has box priority): `nice`, ≤2 step workers, never overlapping runs.
 - Never commit secrets; nothing important in /tmp; clean large temp files.
 
+## 2b. Preflight gate (LOCKED 2026-10-30): get it right before the full render
+- Flow: `run_day.py` = config lint/guards → **preflight** → full render → final QC. Default path, no bypass flag.
+- Preflight renders only the QC sample frames (start/t20/t35/peak/t70/t100/t130 × 4 steps, zoom included) through
+  the real composite path (`render.render_pose`), then runs **all** QC checks on them (`qc.py --preflight`;
+  only the container `format` check waits for the mp4). Time budget is about 60–90 s at nice 10 with 2 workers.
+- A PASS writes a stamp `_cache_gymform/preflight/dayNN_<hash>.json`. The hash covers the day config, overrides,
+  `gymform_spec.json` and every `gymform/*.py`. `gymform.render --render-step` **refuses** to render without a
+  passing stamp for the exact hash (`gymform/preflight.require`). Any config/code change invalidates it.
+  Tests: `python3 -m unittest tests.test_preflight`.
+- A failing preflight means fixing the root cause and preflighting again. Never "render and see".
+- Preflight and render times are logged in `output/qc/production_times.jsonl`.
+
 ## 3. Look (locked)
 - Minimal dark charcoal studio, no props. **[QC] (a)** zero bloom / glow halo; zero blur.
-- Steps 1 & 3: local Day-1-style X-Ray (Step 1 crimson, Step 3 emerald). Steps 2 & 4: muscle fibres.
+- **Step order (LOCKED from Day 6):** 1 = WRONG bone X-Ray (crimson), 2 = RIGHT bone X-Ray (emerald),
+  3 = WRONG muscle, 4 = RIGHT muscle (3/4 cover). bone_steps [1,2], muscle_steps [3,4], preview slot = step−1.
+  Any other order is rejected before render (`ctx.order_lint` [guard] in run_day.py) and in **[QC] (r)**.
+  Day 1–5 (published) used the legacy 1/3 bone, 2/4 muscle order. Look code maps every step through `ctx.legacy()`.
   **[QC] (e)(g)**
+- **Target zoom:** the per-day `target_zoom` {zoom, focus_x, focus_y, equipment_margin} pulls the camera toward the
+  target region (shoulder midpoint at the focus). The same scale applies to every step **[QC] (c)**. It backs off
+  automatically before the dumbbells would leave the frame; the bench may be partial. Single Lanczos resample from
+  the 720p source, no blur. Keep the zoom moderate (`_normalized.upscale_vs_720p` is logged).
+- **No stray lines:** the static-equipment layer ignores moving pixels (per-step motion map) and temporal-median
+  ghosts (solid-core reconstruction). Every foreground component must attach to the mannequin or equipment **[QC] (q)**.
 - Silver skin locked in all 4 steps from the first render (p75 165 / p90 191 / max 226). **[QC] (f)(i)(j)(k)**
 - Same mannequin size in all 4 steps: auto-normalised from keypoint bone lengths (`ctx.normalize_scale`), feet
   on one floor line. **[QC] (c)** skeletal size spread ≤ 4%.

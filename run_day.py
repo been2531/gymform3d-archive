@@ -6,6 +6,8 @@ One-command @gymform.3d day build (stage-based, hashed caches):
     python3 run_day.py --day 5 --only step2 --from composite   # re-run one step's composite only
     python3 run_day.py --day 5 --from qc                       # QC the existing master only
     python3 run_day.py --day 5 --check                         # dry run, renders nothing
+    python3 run_day.py --day 6 --preflight                     # QC sample frames only + ALL QC checks (~1 min)
+A full run always preflights first (cached on the step keys) and refuses to render if the preflight fails.
 
 Stages: kp (keypoints + temporal plates, cached) -> icons (4-slot preview) -> composite+overlays (per step,
 piped into x264) -> tts (cached on its lines) -> encode (concat + mux, stream copy) -> qc.
@@ -86,6 +88,79 @@ def env_threads(n="1"):
     return dict(os.environ, OMP_NUM_THREADS=n, OPENBLAS_NUM_THREADS=n, MKL_NUM_THREADS=n)
 
 
+def ensure_tts(day, c, spec, cfg_p, T, force=False):
+    """TTS stage (cached on lines + voice spec). Returns the wav path."""
+    from gymform import caption as _cap
+    sq_from = int(spec["caption_rules"].get("spoken_question", {}).get("from_day", 6))
+    tk = (h(c["tts_lines"], spec["format"]) if day < sq_from else      # Day <= 5: legacy key, no spoken question
+          h(c["tts_lines"], spec["format"], _cap.spoken_question(c, spec), spec["caption_rules"]["spoken_question"],
+            src_hash([os.path.join(ROOT, "gymform", "tts.py")])))
+    wav = os.path.join(CACHE, f"tts_day{day:02d}_{tk}.wav")
+    if not os.path.exists(wav) or force:
+        tt = time.time()
+        if run([sys.executable, "-c", "import sys,json;sys.argv=['x'];from gymform import ctx;"
+                f"ctx.configure(json.load(open({cfg_p!r})));from gymform import tts;tts.synth({wav!r})"]):
+            raise SystemExit(json.dumps({"day": day, "ok": False, "stage": "tts", "log": LOG}))
+        T["tts"] = round(time.time() - tt, 1)
+    return wav
+
+
+def preflight(day, c, keys, cfg_p, ovr_p, icons_p, wav, workers):
+    """PREFLIGHT (default gate, RULES.md): render only the QC sample frames of every step (7 per step, zoom
+    included) through the real composite path and run ALL QC checks on them. On PASS a stamp keyed by the
+    config/overrides/spec/code hash is written (gymform/preflight.py); gymform.render --render-step refuses to
+    render without it. A passing stamp for the same hash is reused (nothing to re-check)."""
+    from gymform import preflight as _pf
+    st = _pf.read_stamp(cfg_p, ovr_p)
+    pdir = os.path.join(ROOT, c["qc_dir"].rstrip("/") + "_preflight")
+    if st and st.get("ok"):
+        return True, [], 0.0, pdir, st
+    tt = time.time()
+    os.makedirs(pdir, exist_ok=True)
+    for f in glob.glob(os.path.join(pdir, "*")):
+        os.remove(f)
+    base = [sys.executable, "-m", "gymform.render", "--config", cfg_p, "--overrides", ovr_p, "--icons", icons_p, "--qc-dir", pdir]
+    pending, running = [1, 2, 3, 4], []
+    while pending or running:
+        while pending and len(running) < workers:
+            sn = pending.pop(0)
+            lf = open(LOG, "a")
+            running.append((sn, subprocess.Popen(["nice", "-n", "10"] + base + ["--preflight-step", str(sn)], cwd=ROOT,
+                                                 stdout=lf, stderr=subprocess.STDOUT, env=env_threads()), lf))
+        time.sleep(0.3)
+        for it in list(running):
+            sn, pr, lf = it
+            if pr.poll() is not None:
+                lf.close()
+                running.remove(it)
+                if pr.returncode != 0:
+                    raise SystemExit(json.dumps({"day": day, "ok": False, "stage": "preflight", "step": sn, "log": LOG}))
+    t_frames = round(time.time() - tt, 1)
+    merge = {}
+    for sn in (1, 2, 3, 4):
+        m = json.load(open(os.path.join(pdir, f"meta_step{sn}.json")))
+        fr = merge.get("frames", {})
+        fr.update(m["frames"])
+        merge.update(m)
+        merge["frames"] = fr
+    merge["day"] = day
+    json.dump(merge, open(os.path.join(pdir, "meta.json"), "w"), indent=1)
+    if os.path.exists(wav + ".timing.json"):
+        shutil.copy(wav + ".timing.json", os.path.join(pdir, "tts_timing.json"))
+    rows = qc("-", pdir, preflight=True)
+    fails = [r[1][:160] for r in rows if r[0] == "FAIL"]
+    ok = bool(rows) and not fails
+    checks = {}
+    for r_ in rows:
+        m_ = re.match(r"(\([a-z0-9]+\))", r_[1])
+        k_ = m_.group(1) if m_ else r_[1][:24]
+        checks[k_] = "FAIL" if (r_[0] == "FAIL" or checks.get(k_) == "FAIL") else "PASS"
+    summary = {"ok": ok, "day": day, "at": time.strftime("%Y-%m-%d %H:%M:%S"), "checks": checks, "fails": fails,
+               "t": {"frames": t_frames, "qc": round(time.time() - tt - t_frames, 1)}, "qc_dir": os.path.relpath(pdir, ROOT)}
+    _pf.write_stamp(cfg_p, ovr_p, summary)   # a FAILED stamp is stored too (render.py refuses it)
+    return ok, rows, round(time.time() - tt, 1), pdir, summary
+
+
 def render_steps(steps, keys, cfg_p, ovr_p, icons_p, workers):
     """Composite + overlays stage: one subprocess per step (nice 10, 1 thread each), `workers` at a time."""
     pending, running = list(steps), []
@@ -112,10 +187,14 @@ def render_steps(steps, keys, cfg_p, ovr_p, icons_p, workers):
                 json.dump(c_meta, open(out[:-4] + "_meta.json", "w"))
 
 
-def qc(mp4, qc_dir):
-    p = subprocess.run([sys.executable, "-m", "gymform.qc", mp4, "--qc-dir", qc_dir], cwd=ROOT, capture_output=True, text=True)
+def qc(mp4, qc_dir, preflight=False):
+    p = subprocess.run([sys.executable, "-m", "gymform.qc", mp4, "--qc-dir", qc_dir] + (["--preflight"] if preflight else []),
+                       cwd=ROOT, capture_output=True, text=True)
     log(p.stdout + p.stderr[-3000:])
-    return re.findall(r"^\[(PASS|FAIL)\]\s+(.*)$", p.stdout, flags=re.M)
+    rows = re.findall(r"^\[(PASS|FAIL)\]\s+(.*)$", p.stdout, flags=re.M)
+    if p.returncode != 0 and "Traceback" in p.stderr:   # a crashed QC never counts as a pass
+        rows.append(("FAIL", "QC crashed: " + p.stderr.strip().splitlines()[-1][:200]))
+    return rows
 
 
 def autofix(rows, c, ovr):
@@ -160,6 +239,7 @@ def main():
     ap.add_argument("--from", dest="frm", default="kp", choices=STAGES)
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--preflight", action="store_true", help="preflight only: QC sample frames + all QC checks (~1 min), no full render")
     a = ap.parse_args()
     t0 = time.time()
     os.makedirs(os.path.join(ROOT, "output", "logs"), exist_ok=True)
@@ -179,6 +259,11 @@ def main():
     co_err = callout_lint(day_cfg)
     if co_err:   # numbers / labels / TTS must agree before anything is rendered
         print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "callout: " + "; ".join(co_err)}))
+        sys.exit(3)
+    from gymform.ctx import order_lint
+    o_err = order_lint(day_cfg, json.load(open(os.path.join(ROOT, "gymform_spec.json"))))
+    if o_err:   # LOCKED step order (Day 6+): 1 wrong bone, 2 right bone, 3 wrong muscle, 4 right muscle
+        print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "step_order: " + "; ".join(o_err), "rules": "RULES.md"}))
         sys.exit(3)
     ok_src, why = native_source_ok(day_cfg.get("source", {}))
     if not ok_src:
@@ -240,6 +325,22 @@ def main():
         step_mp4 = {s: os.path.join(CACHE, "steps", f"s{s}_{keys[s]}.mp4") for s in (1, 2, 3, 4)}
         force = si <= STAGES.index("overlays")
         todo = [s for s in (1, 2, 3, 4) if not os.path.exists(step_mp4[s]) or (force and s in only and attempt == 1 and a.only)]
+        # PREFLIGHT GATE (default, RULES.md): no full render before the QC sample frames pass ALL QC checks
+        if todo or a.preflight:
+            wav_pf = ensure_tts(a.day, c, spec, cfg_p, T)
+            pf_ok, pf_rows, pf_t, pf_dir, pf_sum = preflight(a.day, c, keys, cfg_p, ovr_p, icons_p, wav_pf, a.workers)
+            T[f"preflight_{attempt}"] = pf_t
+            pf_fail = pf_sum.get("fails", [])
+            n_ck = len(pf_sum.get("checks", {}))
+            status["preflight"] = ("PASS" if pf_ok else "FAIL") + f" {n_ck - len(pf_fail)}/{n_ck}" + ("" if pf_rows else " (stamp reused)")
+            if not pf_ok or a.preflight:
+                T["total"] = round(time.time() - t0, 1)
+                status.update({"ok": pf_ok, "stage": "preflight", "checks": pf_sum.get("checks", {}), "fails": pf_fail,
+                               "qc_dir": os.path.relpath(pf_dir, ROOT), "t": T, "log": os.path.relpath(LOG, ROOT)})
+                with open(os.path.join(ROOT, "output", "qc", "production_times.jsonl"), "a") as hf:
+                    hf.write(json.dumps({"day": a.day, "at": time.strftime("%Y-%m-%d %H:%M:%S"), "ok": pf_ok, "stage": "preflight", "t": T}) + "\n")
+                print(json.dumps(status, separators=(",", ":")))
+                sys.exit(0 if pf_ok else 4)
         if todo:
             tt = time.time()
             render_steps(todo, keys, cfg_p, ovr_p, icons_p, a.workers)
@@ -259,17 +360,7 @@ def main():
         merge["day"] = a.day
         json.dump(merge, open(os.path.join(qc_dir_g, "meta.json"), "w"), indent=1)
         # tts stage (cached on lines + voice spec)
-        sq_from = int(spec["caption_rules"].get("spoken_question", {}).get("from_day", 6))
-        tk = (h(c["tts_lines"], spec["format"]) if a.day < sq_from else      # Day <= 5: legacy key, no spoken question
-              h(c["tts_lines"], spec["format"], _cap.spoken_question(c, spec), spec["caption_rules"]["spoken_question"],
-                src_hash([os.path.join(ROOT, "gymform", "tts.py")])))
-        wav = os.path.join(CACHE, f"tts_day{a.day:02d}_{tk}.wav")
-        if not os.path.exists(wav) or (si == STAGES.index("tts") and attempt == 1):
-            tt = time.time()
-            if run([sys.executable, "-c", "import sys,json;sys.argv=['x'];from gymform import ctx;"
-                    f"ctx.configure(json.load(open({cfg_p!r})));from gymform import tts;tts.synth({wav!r})"]):
-                raise SystemExit(json.dumps({"day": a.day, "ok": False, "stage": "tts", "log": LOG}))
-            T["tts"] = round(time.time() - tt, 1)
+        wav = ensure_tts(a.day, c, spec, cfg_p, T, force=(si == STAGES.index("tts") and attempt == 1))
         if os.path.exists(wav + ".timing.json"):
             shutil.copy(wav + ".timing.json", os.path.join(qc_dir_g, "tts_timing.json"))
         elif os.path.exists(os.path.join(qc_dir_g, "tts_timing.json")):

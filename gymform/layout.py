@@ -195,6 +195,7 @@ def callout_lint(cfg):
 def draw_laser_and_callout_v4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_str, l1_str, l2_str):
     """d5.draw_day5_laser_and_callout with an optional fixed text block per step (CFG['callout_ty'])."""
     ov = CFG.get("callout_ty", {}).get(str(step_idx))
+    step_idx = ctx.legacy(step_idx)   # laser chains / callout target follow the step's ROLE, not its position
     if ov is None:
         return d5.draw_day5_laser_and_callout(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_str, l1_str, l2_str)
     # laser only (empty callout strings), then our own text block + leader

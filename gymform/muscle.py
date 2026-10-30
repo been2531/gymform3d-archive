@@ -19,8 +19,9 @@ def silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong):
     grey = np.clip(48.0 + 143.0 * (hv_silver ** 0.88) + hf_ridge * 0.70 - sulc * 11.0, 44.0, 226.0)
     # Lock skin tone to the Bright Silver-Grey standard (p75~165, p90~191, max 226) with a max-anchored remap.
     skin_q = (w_fg > 0.9) & (shorts_mask < 0.2) & (act_dom < 12.0) & (lum > 46.0)
+    from gymform import ctx as _ctx
     if step_idx in CFG["bone_steps"]:   # colour lock is defined on the body OUTSIDE the X-Ray window
-        skin_q &= cv2.dilate((xray_window(kp, step_idx in CFG.get('xray_full_steps', [1])) > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) == 0
+        skin_q &= cv2.dilate((xray_window(kp, step_idx in CFG.get('xray_full_steps', [CFG['bone_steps'][0]])) > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) == 0
     if skin_q.sum() > 2000:
         p75_g = float(np.percentile(grey[skin_q], 75))
         k = float(np.clip((226.0 - 165.0) / max(226.0 - p75_g, 1.0), 0.90, 1.30))
@@ -46,6 +47,8 @@ def activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase):
     Returns (mannequin_rgb, anat)."""
     r_ch, g_ch, b_ch, lum, act_dom = F["r"], F["g"], F["b"], F["lum"], F["act_dom"]
     xx, yy = _XX, _YY
+    from gymform import ctx as _ctx
+    step_idx = _ctx.legacy(step_idx)   # look follows the step's ROLE (bone/muscle x wrong/right), not its position
     sh_r, sh_l = kp["sh_r"], kp["sh_l"]
     sh_y = 0.5 * (sh_r[1] + sh_l[1])
     if step_idx in (1, 3):

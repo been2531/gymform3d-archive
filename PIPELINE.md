@@ -48,3 +48,24 @@ The last narration line asks the caption's experience question out loud (e.g. "W
 - QC: render writes `_uia.png` / `_uirgb.png` sidecars; (b1) fits the effective UI alpha over the solid mannequin,
   (h) over equipment — both must be within ±0.12 of the spec alpha with a small reconstruction residual (= visible,
   not opaque, 3D layer intact).
+
+## Step order + target zoom (Day 6+, locked 2026-10-30)
+- 1 wrong bone X-Ray, 2 right bone X-Ray, 3 wrong muscle, 4 right muscle (cover). `ctx.order_lint` guard + QC (r).
+  Step-specific look code (silver/muscle/laser/callout) keys on `ctx.legacy(step)` = the role, not the position.
+- `target_zoom` in the day config → `ctx.normalize_scale` (focus = median shoulder midpoint, equal scale per step,
+  dumbbell margin back-off); `bg.transform` uses a single Lanczos 720p→canvas resample with DX/DY offsets.
+- QC (q): stray / unanchored foreground components. Static bench = median plate minus motion map (no ghost edges).
+
+## Preflight gate (default, locked 2026-10-30)
+```
+python3 run_day.py --day N --check       # lint only
+python3 run_day.py --day N --preflight   # QC sample frames (7/step) via the real composite path + ALL QC (~60-90 s)
+python3 run_day.py --day N               # lint -> preflight (stamp reused if the hash is unchanged) -> render -> QC
+```
+- The preflight writes the sidecars and `<tag>_final.png` UI frames to `<qc_dir>_preflight/`. QC runs with `--preflight`.
+- Stamp: `_cache_gymform/preflight/dayNN_<sha1(config, overrides, spec, gymform/*.py)>.json` = {ok, checks, fails, t}.
+  `gymform.render --render-step` exits non-zero ("render_guard") without a passing stamp for the same hash.
+- An autofix that changes the overrides changes the hash, so the next attempt preflights again.
+- Exit codes: 3 = guard (order/callout/native source), 4 = preflight FAIL, 1 = final QC FAIL.
+- Tests: `tests/test_preflight.py` (missing or failing stamp blocks the render; a config or override change
+  invalidates the stamp).

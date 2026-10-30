@@ -110,7 +110,7 @@ def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_ma
 def apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, eq_solid, kp, step_idx, is_wrong):
     """Local Day-1 v36 X-Ray window on bone steps; outside the window the locked silver skin is untouched."""
     if step_idx in CFG["bone_steps"] and CFG.get("xray_style") == "day1_v36":
-        win = xray_window(kp, step_idx in CFG.get('xray_full_steps', [1])) * w_fg
+        win = xray_window(kp, step_idx in CFG.get('xray_full_steps', [CFG['bone_steps'][0]])) * w_fg
         win = win * (1.0 - cv2.GaussianBlur(cv2.dilate(eq_solid, np.ones((9, 9), np.uint8)), (0, 0), 2.0))
         LAST_MASKS["xwin"] = win
         if is_wrong:

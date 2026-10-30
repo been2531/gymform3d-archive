@@ -11,7 +11,8 @@ def equipment_zones(kp: dict):
         z = np.zeros((H, W), np.uint8)
         if "anchor" in eq:
             ax, ay = kp[eq["anchor"]]
-            cv2.circle(z, (int(ax), int(ay)), int(eq["radius"]), 1, -1)
+            zf = float((CFG.get("_normalized") or {}).get("zoom", 1.0))   # zone grows with the target zoom
+            cv2.circle(z, (int(ax), int(ay)), int(eq["radius"] * zf), 1, -1)
         elif "segment" in eq:
             pa, pb = [kp[p] if isinstance(p, str) else tuple(p) for p in eq["segment"]]
             e = eq.get("ext", 0.0)
@@ -43,6 +44,11 @@ def footprint(rgb_1080, kp, F):
     foot = np.zeros((H, W), dtype=np.float32)
     plate = CUR_PLATE.get("rgb")
     k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    # object-size constants were calibrated at zoom 1.0: with a target zoom the plates are zf x larger, so every
+    # area / plate-scale kernel scales with it (root cause of the half-filled plate faces after zooming)
+    zf = float((CFG.get("_normalized") or {}).get("zoom", 1.0))
+    A = lambda v: int(v * zf * zf)
+    Kz = lambda k: int(round(k * zf)) | 1
     for x0, y0, x1, y1, zone in equipment_zones(kp):
         if plate is None:
             break
@@ -83,7 +89,7 @@ def footprint(rgb_1080, kp, F):
         n_c, lab_c, st_c, _ = cv2.connectedComponentsWithStats(m)
         keep = np.zeros_like(m)
         for ci in range(1, n_c):
-            if st_c[ci, cv2.CC_STAT_AREA] >= 250:
+            if st_c[ci, cv2.CC_STAT_AREA] >= A(250):
                 keep[lab_c == ci] = 1
         ff = np.pad(keep, 1).copy()
         cv2.floodFill(ff, None, (0, 0), 2)
@@ -91,43 +97,43 @@ def footprint(rgb_1080, kp, F):
         holes = (filled & (keep == 0)).astype(np.uint8)
         n_h, lab_h, st_h, _ = cv2.connectedComponentsWithStats(holes)
         for hi in range(1, n_h):  # only small enclosed holes (plate centres / handle gaps), never body windows
-            if st_h[hi, cv2.CC_STAT_AREA] > 2500:
+            if st_h[hi, cv2.CC_STAT_AREA] > A(2500):
                 filled[lab_h == hi] = False
         # rigid-object completion: the dark metal parts (plates) of one piece of equipment are convex in
         # silhouette, so their joint convex hull restores plate rims that fade into the backdrop. Thin glow arcs
         # are removed by an opening first; the hull is only accepted when it stays compact (not body-sized).
         metal = (filled & (lum[y0:y1, x0:x1] < 100.0)).astype(np.uint8)
-        metal = cv2.morphologyEx(metal, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11)))
+        metal = cv2.morphologyEx(metal, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (Kz(11), Kz(11))))
         n_m, lab_m, st_m, _ = cv2.connectedComponentsWithStats(metal)
-        big = [mi for mi in range(1, n_m) if st_m[mi, cv2.CC_STAT_AREA] >= 1200]
+        big = [mi for mi in range(1, n_m) if st_m[mi, cv2.CC_STAT_AREA] >= A(1200)]
         if big and CFG.get("equipment_hull", False):
             pts = np.concatenate([np.column_stack(np.where(lab_m == mi))[:, ::-1] for mi in big]).astype(np.int32)
             hull = cv2.convexHull(pts)
             hm = np.zeros_like(metal)
             cv2.fillConvexPoly(hm, hull, 1)
             area_big = sum(st_m[mi, cv2.CC_STAT_AREA] for mi in big)
-            if hm.sum() <= 2.2 * area_big and hm.sum() < 60000:
+            if hm.sum() <= 2.2 * area_big and hm.sum() < A(60000):
                 filled = filled | (hm > 0)
         # plate completion: dark metal rings (C-shaped where a matte face meets the backdrop) are closed with a
         # plate-scale kernel and their enclosed faces filled; gaps wider than the kernel (handle span between
         # left/right plate stacks, arm-to-plate) stay open, so no backdrop slab is added
         ring = (filled & (lum[y0:y1, x0:x1] - 0.85 * act_dom[y0:y1, x0:x1] < 100.0)).astype(np.uint8)
-        ring = cv2.morphologyEx(ring, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21)))
+        ring = cv2.morphologyEx(ring, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (Kz(21), Kz(21))))
         rf = np.pad(ring, 1).copy()
         cv2.floodFill(rf, None, (0, 0), 2)
         ring_h = ((rf[1:-1, 1:-1] != 2) & (ring == 0)).astype(np.uint8)
         n_r, lab_r, st_r, _ = cv2.connectedComponentsWithStats(ring_h)
         ring_f = ring > 0
         for ri in range(1, n_r):
-            if st_r[ri, cv2.CC_STAT_AREA] <= 9000:
+            if st_r[ri, cv2.CC_STAT_AREA] <= A(9000):
                 ring_f |= lab_r == ri
         # per-plate-stack convex completion: break thin handle links, then each plate stack (disc-like blob)
         # is replaced by its convex hull when it is compact and plate-sized (not a bridge across the hand)
-        rs = cv2.morphologyEx(ring_f.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+        rs = cv2.morphologyEx(ring_f.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (Kz(9), Kz(9))))
         n_s, lab_s, st_s, _ = cv2.connectedComponentsWithStats(rs)
         for si in range(1, n_s):
             a_s = st_s[si, cv2.CC_STAT_AREA]
-            if a_s < 600:
+            if a_s < A(600):
                 continue
             pts = np.column_stack(np.where(lab_s == si))[:, ::-1].astype(np.int32)
             hull = cv2.convexHull(pts)
@@ -139,7 +145,7 @@ def footprint(rgb_1080, kp, F):
                 aspect = max(ea, eb) / max(1.0, min(ea, eb))
             else:
                 aspect = 9.0
-            if ha <= 22000 and a_s >= 0.33 * ha and aspect <= 3.2:
+            if ha <= A(22000) and a_s >= 0.33 * ha and aspect <= 3.2:
                 ring_f |= hm > 0
         # only keep completion additions that are dark (metal-like), never bright body/glow halo
         add = ring_f & ~filled & ((lum[y0:y1, x0:x1] - 0.85 * act_dom[y0:y1, x0:x1]) < 70.0)
@@ -159,7 +165,7 @@ def footprint(rgb_1080, kp, F):
         n_sh, lab_sh, st_sh, _ = cv2.connectedComponentsWithStats(s_h)
         strong_f = strong > 0
         for hi in range(1, n_sh):
-            if st_sh[hi, cv2.CC_STAT_AREA] <= 9000:
+            if st_sh[hi, cv2.CC_STAT_AREA] <= A(9000):
                 strong_f |= lab_sh == hi
         # neutral dark METAL that measurably differs from the backdrop plate (max-channel >= 6, or a neutral
         # chroma drop) is the object itself, not smear: always solid (matte plate faces have a small difference)
@@ -168,7 +174,7 @@ def footprint(rgb_1080, kp, F):
         strong_f |= metal_solid
         # matte plate faces can match the backdrop locally (d ~ 4): close notches/holes inside the solid object,
         # dark pixels only (a plate-scale closing never bridges to bright body or across the open backdrop)
-        closed = cv2.morphologyEx(strong_f.astype(np.uint8), cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))) > 0
+        closed = cv2.morphologyEx(strong_f.astype(np.uint8), cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (Kz(15), Kz(15)))) > 0
         strong_f |= closed & (lz_eq < 75.0)
         # faces fully enclosed by the solid object (e.g. a plate face the temporal plate also holds) are the object
         ef = np.pad(strong_f.astype(np.uint8), 1).copy()
@@ -176,7 +182,7 @@ def footprint(rgb_1080, kp, F):
         enc = ((ef[1:-1, 1:-1] != 2) & ~strong_f).astype(np.uint8)
         n_e, lab_e, st_e, _ = cv2.connectedComponentsWithStats(enc)
         for ei in range(1, n_e):
-            if st_e[ei, cv2.CC_STAT_AREA] <= 3000:
+            if st_e[ei, cv2.CC_STAT_AREA] <= A(3000):
                 strong_f |= (lab_e == ei) & (lz_eq < 90.0)
         # weak (proportional) alpha only as a thin soft edge of a solid object: weak-difference pixels away from
         # any solid equipment are backdrop-plate ghosts (arm positions held in the median plate), never equipment
@@ -184,7 +190,30 @@ def footprint(rgb_1080, kp, F):
         alpha = np.where(strong_f, 1.0, np.clip((d - 5.0) / 15.0, 0.0, 1.0) * near_obj).astype(np.float32)
         f = ((filled & (zone > 0)) * alpha).astype(np.float32)
         foot[y0:y1, x0:x1] = np.maximum(foot[y0:y1, x0:x1], f)
+    # ROOT CAUSE of the stray lines/blobs beside the arm (Day 6 0:10+, QC (q)): the temporal-median plate holds
+    # GHOSTS of the arm/dumbbell (positions held >50% of the rep), so a frame showing plain backdrop there still
+    # "differs from the plate". A footprint component whose current pixels are, as a whole, plain backdrop is a
+    # ghost and is dropped (component-level, so smooth plate faces attached to real rims are never cut).
+    if plate is not None:
+        foot = foot * drop_backdrop_components(foot > 0.3, F, plate)
     return foot
+
+
+def drop_backdrop_components(mask, F, plate):
+    """Component-level object test: a mask component whose CURRENT pixels are, as a whole, plain backdrop
+    (p90 |lum - object-free backdrop| < 6 and p90 native texture < 1.5: not even a rim or edge) is a ghost/halo.
+    Real equipment components always carry rims/edges or contrast somewhere, so smooth faces attached to them
+    survive. Returns a float keep-mask."""
+    lum = F["lum"]
+    _, _, clean_l, _ = clean_backdrop(plate)
+    tex_c = cv2.GaussianBlur(np.abs(lum - cv2.GaussianBlur(lum, (0, 0), 2.0)), (0, 0), 1.2)
+    n, lab, st, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), 8)
+    keep = np.ones((H, W), np.float32)
+    for i in range(1, n):
+        c = lab == i
+        if np.percentile(np.abs(lum[c] - clean_l[c]), 90) < 6.0 and np.percentile(tex_c[c], 90) < 1.5:
+            keep[c] = 0.0
+    return keep
 
 
 def metal_mask(F, foot):
@@ -199,7 +228,7 @@ def metal_mask(F, foot):
     n, lab, st, _ = cv2.connectedComponentsWithStats(m)
     keep = np.zeros_like(m)
     for i in range(1, n):
-        if st[i, cv2.CC_STAT_AREA] >= 400:
+        if st[i, cv2.CC_STAT_AREA] >= int(400 * float((CFG.get("_normalized") or {}).get("zoom", 1.0)) ** 2):
             keep[lab == i] = 1
     return keep.astype(np.float32) * np.clip(foot, 0.0, 1.0)
 
@@ -215,13 +244,11 @@ def metal_shade(grey, F, eq_solid):
     return grey * (1.0 - eq_w) + metal * eq_w
 
 
-def _static_objects(plate):
-    """Static objects in the step's temporal backdrop plate (bench, rack, machine frame, and the seated body).
-    Returns (component mask uint8, alpha float32): hard = native 3D texture or clearly darker than an object-free
-    (inpainted) backdrop model, with enclosed smooth faces filled; soft = proportional darker-than-backdrop alpha
-    (smooth bench faces, native contact shadow) so nothing is cut at a threshold. Cached per step."""
-    if CUR_PLATE.get("static_for") == id(plate):
-        return CUR_PLATE["static"]
+def clean_backdrop(plate, cache=True):
+    """Object-free backdrop model of the step plate (inpainted at 1/8 scale): returns (plate lum, plate texture,
+    clean backdrop lum, backdrop B-R chroma). Cached per plate."""
+    if cache and CUR_PLATE.get("clean_for") == id(plate):
+        return CUR_PLATE["clean"]
     l = 0.299 * plate[:, :, 0] + 0.587 * plate[:, :, 1] + 0.114 * plate[:, :, 2]
     tex = cv2.GaussianBlur(np.abs(l - cv2.GaussianBlur(l, (0, 0), 2.0)), (0, 0), 1.5)
     sm = cv2.resize(l, (W // 8, H // 8), interpolation=cv2.INTER_AREA).astype(np.uint8)
@@ -232,6 +259,22 @@ def _static_objects(plate):
         obj_s = cv2.dilate(cv2.resize(obj, (W // 8, H // 8), interpolation=cv2.INTER_AREA), np.ones((3, 3), np.uint8))
         bgm = cv2.GaussianBlur(cv2.inpaint(sm, obj_s, 6, cv2.INPAINT_TELEA), (0, 0), 2.0)
     full = cv2.resize(bgm.astype(np.float32), (W, H), interpolation=cv2.INTER_CUBIC)
+    pure = (np.abs(l - full) < 3.0) & (tex < 0.8)
+    br = float(np.median((plate[:, :, 2] - plate[:, :, 0])[pure])) if pure.any() else 0.0
+    if not cache:
+        return l, tex, full, br
+    CUR_PLATE["clean"], CUR_PLATE["clean_for"] = (l, tex, full, br), id(plate)
+    return CUR_PLATE["clean"]
+
+
+def _static_objects(plate):
+    """Static objects in the step's temporal backdrop plate (bench, rack, machine frame, and the seated body).
+    Returns (component mask uint8, alpha float32): hard = native 3D texture or clearly darker than an object-free
+    (inpainted) backdrop model, with enclosed smooth faces filled; soft = proportional darker-than-backdrop alpha
+    (smooth bench faces, native contact shadow) so nothing is cut at a threshold. Cached per step."""
+    if CUR_PLATE.get("static_for") == id(plate):
+        return CUR_PLATE["static"]
+    l, tex, full, _ = clean_backdrop(plate)
     hard = ((np.abs(l - full) > 7.0) | (tex > 2.5)).astype(np.uint8)
     hard = cv2.morphologyEx(hard, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
     hard = cv2.morphologyEx(hard, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
@@ -244,12 +287,22 @@ def _static_objects(plate):
             hard[(lab_h == i) & (l < 80.0)] = 1
     soft = np.clip((full - l - 4.0) / 12.0, 0.0, 1.0)
     # never the transformed clip border seam (canvas fill / feather of the downscaled 720p frame)
-    sc = STEP_SCALE.get(CUR_PLATE.get("step"), b4.SCALE)
-    nw, nh = int(round(W * sc)), int(round(H * sc))
-    x0 = (W - nw) // 2
-    y0 = (H - nh) // 2 + b4.STEP_DY.get(CUR_PLATE.get("step"), 0)
+    from gymform import ctx as _ctx
+    x0, y0, nw, nh = _ctx.clip_rect(CUR_PLATE.get("step"))
     inner = np.zeros((H, W), np.float32)
-    inner[max(0, y0 + 44):min(H, y0 + nh - 44), max(0, x0 + 44):min(W, x0 + nw - 44)] = 1.0
+    inner[max(0, y0 + 44 if y0 > 0 else 0):min(H, y0 + nh - 44 if y0 + nh < H else H),
+          max(0, x0 + 44 if x0 > 0 else 0):min(W, x0 + nw - 44 if x0 + nw < W else W)] = 1.0
+    # Thin static edges must belong to a SOLID static object: the temporal-median plate also keeps faint edge
+    # ghosts of the moving arms/dumbbells. Solid cores (7x7 opening) seed a geodesic reconstruction; thin edges
+    # are re-attached only where the moving body/equipment never passes (motion map < 4%). Smooth faces (soft
+    # alpha) are only shown where the frame currently equals the plate (static_equipment `same`).
+    mot = CUR_PLATE.get("motion")
+    core = cv2.morphologyEx(hard, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+    edge_ok = hard & (mot < 0.04).astype(np.uint8) if mot is not None else hard
+    rec = core.copy()
+    for _ in range(4):
+        rec = (cv2.dilate(rec, np.ones((3, 3), np.uint8)) & edge_ok) | core
+    hard = rec
     inner = cv2.GaussianBlur(inner, (0, 0), 8.0)
     alpha = np.maximum(hard.astype(np.float32), soft) * inner
     comp = ((alpha > 0.25)).astype(np.uint8)
@@ -274,12 +327,22 @@ def static_equipment(rgb_1080, F, kp, K, shorts_mask):
     hip_m = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), 0.5 * (kp["hip_r"][1] + kp["hip_l"][1]))
     probe = np.zeros_like(st)
     cv2.circle(probe, (int(hip_m[0]), int(hip_m[1])), 140, 1, -1)
+    # held equipment that sits still for most of the rep is IN the temporal plate, so the plate-difference
+    # footprint cannot see it (root cause of the cut dumbbell plate at the Step 4 start/hold): static-plate
+    # objects at the hands are equipment too and are kept as native pixels where the frame shows them
+    zf = float((CFG.get("_normalized") or {}).get("zoom", 1.0))
+    for eq in CFG.get("equipment", []):
+        if "anchor" in eq and eq["anchor"] in kp:
+            ax, ay = kp[eq["anchor"]]
+            cv2.circle(probe, (int(ax), int(ay)), int(0.25 * eq["radius"] * zf), 1, -1)
     ids = set(np.unique(lab[(probe > 0) & (st > 0)]).tolist()) - {0}
     obj = np.isin(lab, list(ids)) if ids else np.zeros_like(st, bool)
     lum_eq = np.maximum(F["lum"] - 0.85 * F["act_dom"], F["min_c"])
     same = np.abs(F["rgb"] - plate).max(axis=-1) < 10.0          # the frame shows the static object right now
     skin = cv2.dilate((K["skin_seg"] > 0.3).astype(np.uint8), np.ones((15, 15), np.uint8)) > 0
     body_bright = (K["w_raw"] > 0.5) & (lum_eq > 78.0)               # silver skin is bright; bench metal is dark
+    # a static OBJECT differs from the object-free backdrop: components that are, as a whole, plate ghosts the
+    # frame merely matches (plain backdrop) are dropped below (root cause of the floating patches/lines QC (q))
     keep = obj & same & ~skin & ~body_bright & (shorts_mask < 0.3) & (F["act_dom"] < 20.0)
     keep = cv2.morphologyEx(keep.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     n2, lab2, st2, _ = cv2.connectedComponentsWithStats(keep)
@@ -287,4 +350,5 @@ def static_equipment(rgb_1080, F, kp, K, shorts_mask):
     for i in range(1, n2):
         if st2[i, cv2.CC_STAT_AREA] >= 120:
             out[lab2 == i] = 1.0
+    out *= drop_backdrop_components(out > 0, F, plate)
     return cv2.GaussianBlur(out, (0, 0), 0.7) * st_alpha
