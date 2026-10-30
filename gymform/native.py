@@ -230,6 +230,13 @@ def grade(step, p_i, is_wrong):
     f = src.astype(np.float32)
     L1 = _lumx(f) * S["G"]
     Lg = np.interp(L1, S["xs"], S["ys"]).astype(np.float32)
+    if CFG.get("native_highlight_rolloff"):
+        # t609: soft knee above the skin p99 (output ~lk max - 10): highlights compress smoothly to <= lk max,
+        # p75 / p90 untouched (they sit far below the knee)
+        M_ = float(SPEC["mannequin"]["skin_lock_all_steps"]["max"])
+        K_ = M_ - 10.0
+        hi = Lg > K_
+        Lg[hi] = K_ + 10.0 * np.tanh((Lg[hi] - K_) / 10.0)
     lk = SPEC["mannequin"]["skin_lock_all_steps"]
     t_sk = np.asarray(lk.get("tint_rgb", [-1.5, 0.5, 3.0]), np.float32)
     t_bg = BG_RGB - BG_L
@@ -274,6 +281,12 @@ def grade(step, p_i, is_wrong):
     # foreground evidence on the smoothed flattened lum (fabric sits ~6 under the backdrop; pixel noise ~3)
     evid = (np.abs(cv2.GaussianBlur(L1, (0, 0), 4.0) - S["B0"]) > float(CFG.get("shorts_evidence_lum", 3.5))).astype(np.uint8)
     sm = cv2.morphologyEx((fab > 0.5).astype(np.uint8) & evid, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)) & evid
+    if CFG.get("shorts_evidence_strict"):
+        # t609 (Day 4 x w_fg idea): fabric must be darker than the local backdrop by evidence on the UNBLURRED lum and
+        # carry no backdrop texture-free flatness at its rim -> 3 px inner erosion of the evidence before the AND
+        ev2 = ((S["B0"] - L1) > float(CFG.get("shorts_evidence_lum", 3.5)) + 2.0).astype(np.uint8)
+        ev2 = cv2.erode(cv2.morphologyEx(ev2, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)), np.ones((5, 5), np.uint8))
+        sm = sm & cv2.dilate(ev2, np.ones((3, 3), np.uint8))
     shorts = cv2.GaussianBlur(sm.astype(np.float32), (0, 0), 0.8)
     LAST_MASKS["native"] = dict(L1=L1, B0=S["B0"], ref=ref, plate=pm if pm is not None else np.zeros((H, W), np.float32))
     return base, shorts, w_fg, src, kp

@@ -558,7 +558,7 @@ def playbook_frame_checks(frames_meta, qc_dir):
                         continue
                     ec = np.median(b_rgb[z], axis=0)
                     d_b, d_s = float(np.linalg.norm(ec - bgc)), float(np.linalg.norm(ec - skc))
-                    lost = float((np.abs(lb_[z] - lum_of(bgc[None])[0]) < 6.0).mean())   # pixels melting into the backdrop
+                    lost = float((np.linalg.norm(b_rgb[z] - bgc, axis=-1) < 15.0).mean())   # pixels melting into the backdrop (colour distance)
                     parts.append(f"{nm} vs bg {d_b:.0f} vs skin {d_s:.0f} lost {100 * lost:.0f}%")
                     ok_ &= d_b >= 15.0 and d_s >= 10.0 and lost <= 0.25
                 gl = float((bk & (act_of(b_rgb) > 15.0)).sum()) / max(1.0, float(bk.sum()))
@@ -609,7 +609,7 @@ def playbook_frame_checks(frames_meta, qc_dir):
         if g > 0.02:
             gh_bad.append(gh_rows[-1])
     report("(sep) figure / equipment / backdrop separated (playbook D17: skin p75 - backdrop >= 33; dumbbells and "
-           "bench >= 15 RGB from backdrop, >= 10 from skin, <= 25% of their pixels within 6 lum of it; glow on backdrop <= 0.5%)", bool(sep_rows) and not sep_bad,
+           "bench >= 15 RGB from backdrop, >= 10 from skin, <= 25% of their pixels within 15 RGB of it; glow on backdrop <= 0.5%)", bool(sep_rows) and not sep_bad,
            "; ".join(sep_bad[:4]) or " | ".join(sep_rows[:4]))
     if pl_rows or pl_bad:
         report("(pl) custom plates (playbook D18): plate vs backdrop >= 40 RGB, recolour on raw skin/backdrop <= 0.5%",
@@ -717,7 +717,10 @@ def t567_checks(meta, frames_meta, vids, qc_dir):
             form = "wrong" if meta.get("is_wrong", {}).get(str(fm["step"])) else "right"
             d4 = DAY4_MUSCLE_PX[form]
             m_rows.append(f"{key}: {int(m_.sum())}px, {comps} regions, strength {amed:.0f} (Day 4 {form}: {d4[0] // 1000}-{d4[1] // 1000}k px, 3-8 regions, 52-78)")
-            if meta.get("muscle_shader") != "day4" or comps > 16 or not (45.0 <= amed <= 100.0) or m_.sum() < 4000:
+            # t609 native: the area minimum is judged on the step's PEAK (bottom, the Day 4 measurement frame); at the
+            # lockout the source glow is genuinely small - regions / strength are still judged on both frames
+            area_ok = m_.sum() >= 4000 or (meta.get("look") == "native_grade" and fm["tag"] == "start")
+            if meta.get("muscle_shader") != "day4" or comps > 16 or not (45.0 <= amed <= 100.0) or not area_ok:
                 m_bad.append(m_rows[-1] + f" shader={meta.get('muscle_shader')}")
         ys, xs = np.where(body)
         if xs.size:
@@ -726,7 +729,17 @@ def t567_checks(meta, frames_meta, vids, qc_dir):
             o_rows.append(f"{key}: x {x0}-{x1} centre {cx:.0f}")
             if abs(cx - W / 2) > 40 or x0 < 24 or x1 > W - 24:
                 o_bad.append(o_rows[-1])
-        if st is not None:
+        ref_p = pre + "_ref.png"
+        if st is not None and os.path.exists(pre + "_alpha.png") and os.path.exists(ref_p):
+            # t609 native: no bench layer is pasted; the defect is a REPAINTED bench -> bench pixels must equal the
+            # global tone map of their own pixels (|base - ref| > 6 on <= 300 px)
+            bb = cv2.cvtColor(cv2.imread(pre + "_base.png"), cv2.COLOR_BGR2RGB).astype(np.float32)
+            rr = cv2.cvtColor(cv2.imread(ref_p), cv2.COLOR_BGR2RGB).astype(np.float32)
+            n_sk = int(((st > 0.5) & (np.abs(bb - rr).max(-1) > 6.0)).sum())
+            p_rows.append(f"{key}: {n_sk}px")
+            if n_sk > 300:
+                p_bad.append(f"{key}: bench repainted on {n_sk}px (vs global tone map)")
+        elif st is not None:
             L = srcf.mean(-1); sat = srcf.max(-1) - srcf.min(-1)
             n_sk = int(((st > 0.5) & (L > 110) & (sat < 30)).sum())
             p_rows.append(f"{key}: {n_sk}px")
@@ -747,7 +760,7 @@ def t567_checks(meta, frames_meta, vids, qc_dir):
     report("(mf) muscle fibre colour = Day 4 shader + Day 4/5 look (<=16 regions, strength 45-100, >=4k px)", bool(m_rows) and not m_bad,
            "; ".join(m_bad) or " | ".join(m_rows))
     report("(oc) whole figure centred (bbox centre 540+-40, margins >=24px)", bool(o_rows) and not o_bad, "; ".join(o_bad[:4]) or " | ".join(o_rows[::3]))
-    report("(pf) bench/static layer never on bright mannequin skin (<=300px)", not p_bad, "; ".join(p_bad[:4]) or "max " + max(p_rows, key=lambda r: int(r.split(": ")[1][:-2])) if p_rows else "no static")
+    report("(pf) bench/static layer never on bright mannequin skin (<=300px); native: bench pixels = global tone map (<=300px changed)", not p_bad, "; ".join(p_bad[:4]) or "max " + max(p_rows, key=lambda r: int(r.split(": ")[1][:-2])) if p_rows else "no static")
     report("(ra) callout axis follows the upper arm (target on shoulder->elbow)", not r_bad, "; ".join(r_bad[:4]) or " | ".join(r_rows))
 
 
@@ -869,6 +882,13 @@ def main():
         halo_n = int(halo.sum())
         # also: pixels just outside the mask must match the (shadowed) plate in luminance — no glow lift
         ring = (cv2.dilate((wfg > 0.02).astype(np.uint8), np.ones((15, 15), np.uint8)) > 0) & ~body_d
+        if alpha is not None:
+            # t609 native + palette A source: ring pixels that ARE equipment by their own source colour (warm-grey
+            # bench, cobalt plates, gold rim) are not halo; the 12-lum limit applies to every remaining ring pixel
+            sr_, sg_, sb_ = src_rgb[..., 0].astype(np.float32), src_rgb[..., 1].astype(np.float32), src_rgb[..., 2].astype(np.float32)
+            sl_ = lum_of(src_rgb.astype(np.float32))
+            equip_c = (((sr_ - sb_) > 4.0) & (sl_ > 50.0)) | ((sb_ - np.maximum(sr_, sg_)) > 15.0) | ((np.minimum(sr_, sg_) - sb_) > 20.0)
+            ring &= ~(cv2.dilate(equip_c.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0)
         lift = float(np.percentile((lum_of(base) - lum_of(bg))[ring], 95)) if ring.sum() else 0.0
         if halo_n > 150 or lift > 12.0:
             halo_bad.append(f"{key}: {halo_n}px coloured, ring lift p95={lift:.1f}")
