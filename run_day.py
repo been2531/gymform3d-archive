@@ -267,6 +267,12 @@ def main():
     print(f"RULES: {os.path.join(ROOT, 'RULES.md')} (locked; native 3D only, 0% 2D overpaint, root cause before render)", file=sys.stderr)
     spec = json.load(open(SPEC_P))
     day_cfg = json.load(open(cfg_p))
+    # GOLD registry (t541u): load + print the approved / known-good references before every run
+    sys.path.insert(0, ROOT)
+    from gymform import gold as _gold
+    GOLD = _gold.load()
+    print(_gold.summary(GOLD), file=sys.stderr, flush=True)
+    log(_gold.summary(GOLD))
     # HARD GUARD (RULES.md #1): native 3D source only, no 2D overpaint stage -> fail before any rendering
     sys.path.insert(0, ROOT)
     from gymform.qc import native_source_ok

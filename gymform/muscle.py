@@ -36,10 +36,12 @@ def silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong):
     # (seated legs: lum 69 -> 49, read as dark patches below the hem). Skin never renders darker than its own
     # native shadow up to lum 62; highlights / p75 / p90 lock are unaffected.
     grey = np.maximum(grey, np.minimum(np.maximum(lum - 0.85 * act_dom, F["min_c"]), 62.0))
-    shorts_lum = np.clip(lum * 0.30 + 8.0, 10.0, 22.0)
+    lo, hi = SPEC["mannequin"]["shorts_lum_range"]          # t543u: Day 4 shorts tone (just under the backdrop)
+    shorts_lum = np.clip(lum * 0.30 + lo - 2.0, lo, hi)
     grey = metal_shade(grey, F, eq_solid)
     matte = grey * (1.0 - shorts_mask) + shorts_lum * shorts_mask
-    return np.stack([matte - 1.5, matte + 0.5, matte + 3.0], axis=-1)
+    tr, tg, tb = SPEC["mannequin"]["skin_lock_all_steps"].get("tint_rgb", [-1.5, 0.5, 3.0])   # Day 4 cool charcoal tint
+    return np.stack([matte + tr, matte + tg, matte + tb], axis=-1)
 
 
 def activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase):

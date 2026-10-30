@@ -15,7 +15,12 @@ def studio_bg() -> np.ndarray:
         bgr = cv2.imread(p, cv2.IMREAD_COLOR)
         if bgr.shape[:2] != (H, W):
             bgr = cv2.resize(bgr, (W, H), interpolation=cv2.INTER_AREA)
-        _STUDIO_BG[p] = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
+        tgt = SPEC["background"].get("grade_to_rgb")   # t543u: Day 4 colour grade of the backdrop (per-channel gain)
+        if tgt:
+            med = np.median(rgb.reshape(-1, 3), axis=0)
+            rgb = np.clip(rgb * (np.asarray(tgt, np.float32) / np.maximum(med, 1.0)), 0, 255)
+        _STUDIO_BG[p] = rgb
     return _STUDIO_BG[p]
 
 
@@ -73,7 +78,9 @@ def set_step_plate(seq, kps, step_idx, src=None):
     src = clip that seq comes from when it is not the step's own clip (motion base of an X-Ray edit)."""
     fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(step_idx)
     fn = src or fn
-    key = hashlib.md5(repr((fn, i0, i1)).encode()).hexdigest()[:10]
+    mir = bool(CFG["clips"][str(step_idx)].get("mirror")) if "clips" in CFG else False
+    # the mirror flag is part of the plate identity (a stale unmirrored plate cut the Step 4 bench, t543u)
+    key = hashlib.md5(repr((fn, i0, i1) + (("mirror",) if mir else ())).encode()).hexdigest()[:10]
     cp = os.path.join(ctx.CACHE_DIR, f"median_{CFG['day']:02d}_s{step_idx}_{key}.npy")   # exact 720p median (uint8)
     if os.path.exists(cp):
         med = np.load(cp)

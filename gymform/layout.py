@@ -59,6 +59,7 @@ def draw_crisp_laser_joint_axis(canvas, main_chains_1x, aux_ext_chains_1x, verte
     canvas.paste(roi, (rx0, ry0))
 
 
+_DEMIC_LASER_DAY4 = p62.draw_demic_laser_joint_axis   # the original volumetric Day 4 laser (kept for callout_style day4)
 # d5.draw_day5_laser_and_callout looks the laser function up on the p62 module at call time;
 # patch it in-process only (files on disk are untouched).
 p62.draw_demic_laser_joint_axis = draw_crisp_laser_joint_axis
@@ -194,6 +195,8 @@ def callout_lint(cfg):
 
 def draw_laser_and_callout_v4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_str, l1_str, l2_str):
     """d5.draw_day5_laser_and_callout with an optional fixed text block per step (CFG['callout_ty'])."""
+    if SPEC["ui"].get("callout_style", "day5") in ("day4", "day4_refined") and int(CFG.get("day", 0)) >= 6:
+        return draw_callout_day4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_str, l1_str, l2_str)
     ov = CFG.get("callout_ty", {}).get(str(step_idx))
     step_idx = ctx.legacy(step_idx)   # laser chains / callout target follow the step's ROLE, not its position
     if ov is None:
@@ -233,6 +236,56 @@ def draw_laser_and_callout_v4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong
     rd.text((tx, ty), deg_str, font=v30.f_pretendard(84, "extrabold"), fill=(255, 255, 255, 255))
     rd.text((tx + 2, ty + 90), l1_str, font=v30.f_pretendard(21, "extrabold"), fill=(*col, 255))
     rd.text((tx + 2, ty + 117), l2_str, font=v30.f_pretendard(16, "bold"), fill=(215, 222, 232, 235))
+    return np.array(Image.alpha_composite(base_pil, ovl).convert("RGB"))
+
+
+def draw_callout_day4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_str, l1_str, l2_str, variant=None):
+    """t547u: Day 4 callout look and feel (build_day4_rdl_master.draw_day4_laser_and_callout), generalised:
+    ONE straight joint axis through the coached joint (torso line -> joint vertex -> limb, bent only at the vertex)
+    + two short cross ticks, vertex ring(s) (wrong: the joint only; right: joint + next joint), a horizontal
+    precision leader from a target point on the segment to a left text block (number 86 px at x=86, label 21,
+    sub-line 16, sitting level with the target).
+    variant "day4" = Day 4 volumetric laser + 86 px number; "day4_refined" = same geometry/placement with the
+    Day 5 crisp 2.8 px laser (no bloom) and the Day 5 84 px number."""
+    variant = variant or SPEC["ui"].get("callout_style", "day4")
+    ax = SPEC["ui"].get("callout_axis", {}).get(str(CFG.get("day")), {})
+    j = ax.get("joint", "shoulder")
+    if j == "shoulder":   # angle between torso and upper arm (elbow flare / shoulder abduction)
+        hip_mid = (0.5 * (kp["hip_r"][0] + kp["hip_l"][0]), 0.5 * (kp["hip_r"][1] + kp["hip_l"][1]))
+        a, v, b = p62._extend_segment(kp["sh_r"], hip_mid, 0.0, 0.62)[1], kp["sh_r"], kp["elb_r"]
+        nxt = kp["elb_r"]
+        cross1 = p62._extend_segment(kp["sh_r"], kp["sh_l"], -0.10, 0.30)
+    else:                 # hip hinge (Day 4 RDL): shoulder -> hip -> knee
+        a, v, b = kp["sh"], kp["hip_r"], kp["kn_r"]
+        nxt = kp["kn_r"]
+        cross1 = p62._extend_segment(kp["sh"], kp["hip_r"], 0.66, 1.36)
+    _, b_ext = p62._extend_segment(v, b, 0.0, 1.14)
+    a_top, _ = p62._extend_segment(a, v, -0.12, 1.0)
+    cross2 = p62._extend_segment(b, v, 0.66, 1.32)
+    canvas = Image.fromarray(base_rgb).convert("RGBA")
+    laser = _DEMIC_LASER_DAY4 if variant == "day4" else draw_crisp_laser_joint_axis
+    laser(canvas, main_chains_1x=[[a_top, v, b_ext]], aux_ext_chains_1x=[list(cross1), list(cross2)],
+          vertex_pts_1x=[v] if is_wrong else [v, nxt], is_wrong=is_wrong)
+    target_pt = (int(0.48 * v[0] + 0.52 * b[0]), int(0.48 * v[1] + 0.52 * b[1]))
+    laser_rgb = np.array(canvas.convert("RGB")).astype(np.float32)
+    g = np.clip(shorts_mask_1080 * 0.85, 0.0, 0.85)[:, :, None]
+    blended = np.clip(laser_rgb * (1.0 - g) + base_rgb.astype(np.float32) * g, 0, 255).astype(np.uint8)
+    base_pil = Image.fromarray(blended).convert("RGBA")
+    ovl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    rd = ImageDraw.Draw(ovl)
+    col = (255, 96, 36) if is_wrong else (32, 245, 130)
+    big = 86 if variant == "day4" else 84
+    tx = 86
+    ty_min = int(SPEC["ui"].get("callout_ty_min", 600))   # below the title band
+    ty = int(np.clip(target_pt[1] - 24 - 76, ty_min, 1460))
+    elbow_y = ty + 76
+    elbow_x = max(286, target_pt[0] - 42)
+    d5.bcd._draw_precision_leader(rd, target_pt, (elbow_x, elbow_y), (278, elbow_y), col)
+    f_big = v30.f_pretendard(big, "extrabold")
+    rd.text((tx + 2, ty + 3), deg_str, font=f_big, fill=(0, 0, 0, 210))
+    rd.text((tx, ty), deg_str, font=f_big, fill=(255, 255, 255, 255))
+    rd.text((tx + 2, ty + big + 6), l1_str, font=v30.f_pretendard(21, "extrabold"), fill=(*col, 255))
+    rd.text((tx + 2, ty + big + 33), l2_str, font=v30.f_pretendard(16, "bold"), fill=(215, 222, 232, 235))
     return np.array(Image.alpha_composite(base_pil, ovl).convert("RGB"))
 
 
