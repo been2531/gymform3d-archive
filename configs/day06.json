@@ -3,40 +3,6 @@
   "exercise_name": "Incline Dumbbell Press",
   "assets_dir": "output/assets",
   "kp_cache": "_cache_day6_idp_720p_kps.pkl",
-  "clips": {
-    "1": {
-      "file": "day6_idp_step1_bone_720p.mp4",
-      "i0": 2,
-      "i1": 64,
-      "is_wrong": true,
-      "mode": "bone_blood",
-      "y_shift": 80
-    },
-    "2": {
-      "file": "day6_idp_step3_bone_720p.mp4",
-      "i0": 2,
-      "i1": 62,
-      "is_wrong": false,
-      "mode": "bone_blood",
-      "y_shift": 80
-    },
-    "3": {
-      "file": "day6_idp_step2_muscle_720p.mp4",
-      "i0": 2,
-      "i1": 62,
-      "is_wrong": true,
-      "mode": "muscle_blood",
-      "y_shift": 80
-    },
-    "4": {
-      "file": "day6_idp_step4_muscle_720p.mp4",
-      "i0": 2,
-      "i1": 58,
-      "is_wrong": false,
-      "mode": "muscle_blood",
-      "y_shift": 80
-    }
-  },
   "step_scale": {
     "1": 0.782,
     "2": 0.924,
@@ -180,7 +146,7 @@
     "overpaint_2d": {}
   },
   "auto_scale": true,
-  "callout_note": "deg = coached joint angle the label names for the shown pose (Step 1 elbow flare 90 deg wrong; Steps 2/4 elbows tucked 45 deg = TTS 'forty-five degrees'); not 2D-measured",
+  "callout_note": "deg = coached joint angle for the pair's shared motion: wrong (Steps 1/3) elbow flare 90 deg + shoulder roll; right (Steps 2/4) elbows tucked 45 deg = TTS 'forty-five degrees'; not 2D-measured",
   "target_zoom": {
     "region": "upper_body",
     "focus": "shoulder midpoint (upper chest / shoulders)",
@@ -190,5 +156,50 @@
     "top_min_y": 140,
     "side_min": 24,
     "equipment_margin": 0.11
+  },
+  "superseded_clips": {
+    "note": "t521u: 4 independent clips (4 motions/angles) replaced by 2 motions x 2 native renderings",
+    "files": [
+      "day6_idp_step1_bone_720p.mp4",
+      "day6_idp_step3_bone_720p.mp4",
+      "day6_idp_step2_muscle_720p.mp4",
+      "day6_idp_step4_muscle_720p.mp4"
+    ]
+  },
+  "motions": {
+    "wrong": {
+      "base": "day6_idp_step2_muscle_720p.mp4",
+      "i0": 2,
+      "i1": 62,
+      "y_shift": 80,
+      "why": "clearest wrong form: elbows flared ~90 deg AND shoulders rolled forward off the bench, 3/4 view",
+      "renders": {
+        "muscle": {
+          "file": "day6_idp_step2_muscle_720p.mp4"
+        },
+        "bone": {
+          "file": "day6_idp_wrong_bone_720p.mp4",
+          "edit_of": "day6_idp_step2_muscle_720p.mp4",
+          "status": "NEEDS GENERATION (Grok Imagine video edit of the base: same motion, crimson X-Ray skeleton)"
+        }
+      }
+    },
+    "right": {
+      "base": "day6_idp_step4_muscle_720p.mp4",
+      "i0": 2,
+      "i1": 58,
+      "y_shift": 80,
+      "why": "elbows tucked ~45 deg, blades pinned, 3/4 view = Step 4 cover",
+      "renders": {
+        "muscle": {
+          "file": "day6_idp_step4_muscle_720p.mp4"
+        },
+        "bone": {
+          "file": "day6_idp_right_bone_720p.mp4",
+          "edit_of": "day6_idp_step4_muscle_720p.mp4",
+          "status": "NEEDS GENERATION (Grok Imagine video edit of the base: same motion, emerald X-Ray skeleton)"
+        }
+      }
+    }
   }
 }

@@ -632,6 +632,35 @@ def main():
     tot = sum(t for _, _, t in OVP)
     report("(n) 2d_overpaint_ratio == 0 (shorts = native 3D fabric pixels only)", not ov_bad,
            "; ".join(ov_bad) or f"2d_overpaint_ratio=0.000 over {len(OVP)} frames ({tot}px native shorts)")
+    # (s) pair steps = SAME motion (Day 6+): 1/3 (wrong) and 2/4 (right) must share the clip motion. Per QC tag:
+    # keypoint trajectory (mean joint distance / skeletal size) AND the rendered body silhouette (each step's
+    # own pixels, static bench excluded) must match; only the anatomy rendering may differ.
+    if int(meta.get("day") or 0) >= 6:
+        pr_bad, pr_rows = [], []
+        joints = ("sh_r", "sh_l", "elb_r", "elb_l", "wr_r", "wr_l", "hip_r", "hip_l", "kn_r", "kn_l")
+        for a_, b_ in ((1, 3), (2, 4)):
+            ca, cb = (meta.get("clips") or {}).get(str(a_), {}), (meta.get("clips") or {}).get(str(b_), {})
+            if not ca or ca.get("motion") is None or ca.get("motion") != cb.get("motion"):
+                pr_bad.append(f"steps {a_}/{b_}: not derived from one motion ({ca.get('file')} vs {cb.get('file')})")
+                continue
+            for tag in sorted({fm["tag"] for fm in frames_meta.values()}):
+                ka, kb = frames_meta.get(f"step{a_}_{tag}"), frames_meta.get(f"step{b_}_{tag}")
+                if not ka or not kb:
+                    continue
+                sz = skeletal_size(ka["kp"])
+                dev = float(np.mean([np.hypot(ka["kp"][j][0] - kb["kp"][j][0], ka["kp"][j][1] - kb["kp"][j][1]) for j in joints])) / max(sz, 1.0)
+                wa = load_mask(os.path.join(args.qc_dir, f"step{a_}_{tag}_wfg.png"))
+                wb = load_mask(os.path.join(args.qc_dir, f"step{b_}_{tag}_wfg.png"))
+                sa = load_mask(os.path.join(args.qc_dir, f"step{a_}_{tag}_static.png"))
+                sb = load_mask(os.path.join(args.qc_dir, f"step{b_}_{tag}_static.png"))
+                ma = (wa > 0.5) & ((sa if sa is not None else 0) < 0.5)
+                mb = (wb > 0.5) & ((sb if sb is not None else 0) < 0.5)
+                iou = float((ma & mb).sum()) / max(1.0, float((ma | mb).sum()))
+                pr_rows.append(f"{a_}/{b_} {tag}: kp {100 * dev:.1f}% iou {iou:.2f}")
+                if dev > 0.03 or iou < 0.85:
+                    pr_bad.append(pr_rows[-1])
+        report("(s) pair steps share the same motion (1/3 wrong, 2/4 right): keypoints + silhouette", not pr_bad,
+               "; ".join(pr_bad) or " | ".join(pr_rows[:8]))
     sq_bad = [f"{k}: {msg}" for k, ok, msg in STRAY if not ok]
     report("(q) no stray / unanchored overlay lines or blobs", not sq_bad,
            "; ".join(sq_bad) or f"{len(STRAY)} frames: all fg components attached to mannequin/equipment")

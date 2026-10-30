@@ -69,3 +69,20 @@ python3 run_day.py --day N               # lint -> preflight (stamp reused if th
 - Exit codes: 3 = guard (order/callout/native source), 4 = preflight FAIL, 1 = final QC FAIL.
 - Tests: `tests/test_preflight.py` (missing or failing stamp blocks the render; a config or override change
   invalidates the stamp).
+
+## Pair motion (Day 6+, locked t521u)
+```json
+"motions": {
+  "wrong": {"base": "<wrong clip>", "i0": 2, "i1": 62, "y_shift": 80,
+            "renders": {"muscle": {"file": "<wrong clip>"}, "bone": {"file": "<edit>", "edit_of": "<wrong clip>"}}},
+  "right": {... same for the right clip (Step 4 = cover, 3/4 view)}
+}
+```
+- Derived steps: 1 = wrong/bone, 2 = right/bone, 3 = wrong/muscle, 4 = right/muscle.
+- The keypoint track is extracted once per motion (from the base) and shared, which also gives identical framing.
+- The second native rendering of a motion comes from a Grok Imagine video edit of the base clip (`grok-imagine-video`
+  edit mode keeps duration, framing and motion; source ≤ 8.7 s). Prompt: change only the anatomy overlay, and keep the
+  camera, mannequin, shorts, dumbbells, bench, studio, lighting, motion and timing exactly.
+- Guard `pair_lint` (exit 3); missing twin files block `--check`, preflight and render (exit 2). QC (s) checks pair
+  keypoints and silhouette.
+- Tests: `tests/test_pairs.py`.

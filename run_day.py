@@ -260,7 +260,12 @@ def main():
     if co_err:   # numbers / labels / TTS must agree before anything is rendered
         print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "callout: " + "; ".join(co_err)}))
         sys.exit(3)
-    from gymform.ctx import order_lint
+    from gymform.ctx import order_lint, pair_lint, expand_motions
+    p_err = pair_lint(day_cfg, spec)
+    if p_err:   # LOCKED (t521u): wrong steps 1/3 = one motion, right steps 2/4 = one motion
+        print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "pair_motion: " + "; ".join(p_err), "rules": "RULES.md"}))
+        sys.exit(3)
+    expand_motions(day_cfg)
     o_err = order_lint(day_cfg, json.load(open(os.path.join(ROOT, "gymform_spec.json"))))
     if o_err:   # LOCKED step order (Day 6+): 1 wrong bone, 2 right bone, 3 wrong muscle, 4 right muscle
         print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "step_order: " + "; ".join(o_err), "rules": "RULES.md"}))
