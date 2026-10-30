@@ -34,6 +34,11 @@ Check status:
 | D15 | Shorts edge flicker / shorts slab (D5, D6) | Hem flickers; a dark slab appears beside the thigh or over the bench | `native_shorts` zone has no foreground gate, then is forced opaque in `finalize` | Gate by foreground evidence (Day 4 `× w_fg`) or keep the native shorts pixels (fix plan 1) | Shorts ∩ raw backdrop ≤ 2% [MEASURED: 38.6%]; (n) 0% 2D overpaint [EXISTS] | MEASURED |
 | D16 | Judder from the slice cap (D5, D6) | Uneven motion, skipped poses | `d5.load_native_slice_720p` caps slices at 36 frames | Remove the cap (Day 4 loader had none) | Unique poses ≥ 0.9 × slice length [MEASURED: wrong 36/45] | MEASURED |
 | D17 | Figure / equipment / backdrop melt together (D6 v4–v5, t600u–t603u) | Dumbbell plates, bench and shorts read as the same grey as the backdrop; the far plate disappears | Low-separation source: raw plates (median lum 14) and backdrop (15–29, violet vignette) have equal luminance, and they differ only in chroma; a global luminance map can't pull them apart | Mannequin stays at the Day 4 skin tone (never brightened). Backdrop flat, darker than the figure, slight cool tint (35,39,43); static backdrop weight per step; `native_sep_dx/dy` dark knot (B0−8 → BG−10, slope ≤1.25 so no noise boost); `native_dark_warm_rgb` warm-grey darks (bench, frame); glow from clip chroma only (none on backdrop). Source (Day 7+): prompt bright brushed-steel dumbbells, warm-grey bench/machine, a darker cool flat backdrop. A global chroma mix (`native_chroma_k`) was tried and REJECTED: it broke the vignette flat-field and blotched the backdrop | (sep): skin p75 − backdrop ≥ 33 (Day 4 level); dumbbells and bench ≥ 15 RGB from the backdrop and ≥ 10 from the skin, ≤ 25% of their pixels within 6 lum of the backdrop; glow on the raw backdrop ≤ 0.5% | EXISTS (v5 preflight: fig 37–40, dumbbell 28–31, bench 29–31) |
+| D18 | Plates melt into the backdrop (D6 v5, t605u) | The far hex plate is invisible; the dumbbell reads as a grey smudge | Raw plate faces have the backdrop's luminance and nearly its chroma (plate c≈2 vs backdrop 3–4); no global map separates them | Custom plates, palette A (owner pick, `docs/plate_palette_A_reference.jpg`): matte cobalt (45,75,170), thin brushed-gold rim (190,160,95), steel handles, no logo. `gymform/plates.py` (flag `plate_recolour`):
+  - soft matte in discs on the handle axis; per-blob convex hull;
+  - flow-warped EMA forward + backward;
+  - colour remap that keeps graded shading;
+  - zero weight at skin brightness | (pl): plate vs backdrop ≥ 40 RGB; recolour weight on raw skin or raw backdrop ≤ 0.5%; (tq) edge flicker bound on the render; (d) bloat | EXISTS (gate). The fix FAILS on v5: plate vs bg 100–118 PASS, skin bleed 0 px, but backdrop bleed 0.6–11.7%, and (d) bloat 4.1–5.1% on step 1 |
 
 ## Why Day 4 worked (so the defaults stay this way)
 
@@ -60,3 +65,8 @@ The look is behind config flags; older days are unchanged.
 - **New gates:** (sb), (gh), (sep) per frame; (tq) temporal (boil ≤1.20, edge ≤1.56, glow ≤1.59, cut) on the final render.
 - **(sb)/(gh) raw backdrop** is now connected to the frame edge. With that definition, v4 measures 0–1.7% shorts-on-backdrop. The old 38.6% was largely a measurement artefact: flat fabric folds at the backdrop luminance were counted.
 - **Open:** (d) step-1 right dumbbell bloat 4.3% (t70/t130), and the far hex plate stays low-contrast. Per the owner, it is not waived.
+- **t605 plate recolour (D18) did not pass:**
+  - The dark plate faces recolour well.
+  - The lit faces have the same brightness as the backdrop and the bench backrest, so the matte either misses them (half-painted hex) or spills onto the raw backdrop (≤11.7%).
+  - v5 is NOT rendered.
+  - Real fix: a source with separable plates, i.e. Day 7+ prompts with palette A in the generation itself.

@@ -335,6 +335,7 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
     if native.on():   # native grade: every pixel is the clip's own (nothing cut or composited) -> alpha 1
         cv2.imwrite(pre + "_alpha.png", m8(np.ones_like(w_fg)))
         cv2.imwrite(pre + "_ref.png", cv2.cvtColor(native.LAST_MASKS["native"]["ref"], cv2.COLOR_RGB2BGR))
+        cv2.imwrite(pre + "_plate.png", m8(native.LAST_MASKS["native"]["plate"]))
     else:
         for x_ in ("_alpha.png", "_ref.png"):
             if os.path.exists(pre + x_):

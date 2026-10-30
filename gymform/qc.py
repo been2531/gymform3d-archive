@@ -514,7 +514,7 @@ def playbook_frame_checks(frames_meta, qc_dir):
     (sb) D15 shorts on backdrop: shorts-mask pixels that are raw backdrop <= 2% of the shorts mask (v4: 38.6%)
     (gh) D13 ghosts: raw-backdrop pixels rendered as a visible object (|out - flat backdrop| > 12, 15 px clear of the
          raw object) <= 2% of the raw object area (v4: 11.9% painted opaque)"""
-    sb_bad, sb_rows, gh_bad, gh_rows, sep_bad, sep_rows = [], [], [], [], [], []
+    sb_bad, sb_rows, gh_bad, gh_rows, sep_bad, sep_rows, pl_bad, pl_rows = [], [], [], [], [], [], [], []
     bg_l = 0.299 * 35 + 0.587 * 39 + 0.114 * 43
     for key, fm in sorted(frames_meta.items()):
         pre = os.path.join(qc_dir, key)
@@ -563,6 +563,20 @@ def playbook_frame_checks(frames_meta, qc_dir):
                 sep_rows.append(f"{key}: " + ", ".join(parts))
                 if not ok_:
                     sep_bad.append(sep_rows[-1])
+        # (pl) t605 custom plates (D18): plate vs backdrop >= 40 RGB, recolour weight on raw skin / raw backdrop <= 0.5%
+        pmk = load_mask(pre + "_plate.png")
+        if pmk is not None and pmk.max() > 0.05 and wfg_ is not None and bgz.sum() > 5000:
+            ps = pmk > 0.7
+            if ps.sum() > 300:
+                d_pb = float(np.linalg.norm(np.median(b_rgb[ps], axis=0) - np.median(b_rgb[bgz], axis=0)))
+                s_rgb = cv2.cvtColor(src, cv2.COLOR_BGR2RGB).astype(np.float32)
+                ls_ = lum_of(s_rgb)
+                pw = pmk > 0.2
+                skin_raw = (cv2.GaussianBlur(ls_, (0, 0), 1.5) > 55.0) & (act_of(s_rgb) < 12.0)
+                bleed = float((pw & (skin_raw | bk)).sum()) / max(1.0, float(pw.sum()))
+                pl_rows.append(f"{key}: plate vs bg {d_pb:.0f}, bleed {100 * bleed:.2f}% ({int(ps.sum())}px)")
+                if d_pb < 40.0 or bleed > 0.005:
+                    pl_bad.append(pl_rows[-1])
         far = bk & (cv2.dilate(obj.astype(np.uint8), np.ones((31, 31), np.uint8)) == 0)
         lo = lum_of(cv2.cvtColor(base, cv2.COLOR_BGR2RGB))
         g = float((far & (np.abs(lo - bg_l) > 12.0)).sum()) / max(1.0, float(obj[620:].sum()))
@@ -572,6 +586,9 @@ def playbook_frame_checks(frames_meta, qc_dir):
     report("(sep) figure / equipment / backdrop separated (playbook D17: skin p75 - backdrop >= 33; dumbbells and "
            "bench >= 15 RGB from backdrop, >= 10 from skin, <= 25% of their pixels within 6 lum of it; glow on backdrop <= 0.5%)", bool(sep_rows) and not sep_bad,
            "; ".join(sep_bad[:4]) or " | ".join(sep_rows[:4]))
+    if pl_rows or pl_bad:
+        report("(pl) custom plates (playbook D18): plate vs backdrop >= 40 RGB, recolour on raw skin/backdrop <= 0.5%",
+               not pl_bad, "; ".join(pl_bad[:4]) or " | ".join(pl_rows[:4]))
     report("(sb) shorts never on raw backdrop (<= 2% of the shorts mask; playbook D15)", bool(sb_rows) and not sb_bad,
            "; ".join(sb_bad[:4]) or " | ".join(sb_rows[:4]))
     report("(gh) no ghosts: raw backdrop rendered as object <= 2% of object area (playbook D13)", bool(gh_rows) and not gh_bad,
