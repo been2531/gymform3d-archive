@@ -743,6 +743,21 @@ def main():
                     y_bad.append(y_rows[-1])
         report("(y) front and side views come from the same motion (vertical joint profile per tempo phase)", not y_bad,
                "; ".join(y_bad) or " | ".join(y_rows))
+        # (z) t557u: paired steps show the same callout angle (+-5 deg) and label at every tempo phase
+        z_bad, z_rows = [], []
+        for a_, b_ in ((1, 3), (2, 4)):
+            for tag in sorted({fm["tag"] for fm in frames_meta.values()}):
+                ka, kb = frames_meta.get(f"step{a_}_{tag}"), frames_meta.get(f"step{b_}_{tag}")
+                if not ka or not kb or not ka.get("callout") or not kb.get("callout"):
+                    continue
+                da, db = (int(str(k["callout"]["deg"]).rstrip("\u00b0")) for k in (ka, kb))
+                ok_z = abs(da - db) <= 5 and ka["callout"]["l1"] == kb["callout"]["l1"]
+                if not ok_z:
+                    z_bad.append(f"{a_}/{b_} {tag}: {da}\u00b0 {ka['callout']['l1']!r} vs {db}\u00b0 {kb['callout']['l1']!r}")
+            pk_a, pk_b = frames_meta.get(f"step{a_}_peak", {}).get("callout"), frames_meta.get(f"step{b_}_peak", {}).get("callout")
+            if pk_a and pk_b:
+                z_rows.append(f"{a_}/{b_} peak: {pk_a['deg']} {pk_a['l1']} vs {pk_b['deg']} {pk_b['l1']}")
+        report("(z) paired steps show the same callout angle (+-5 deg) and label", not z_bad, "; ".join(z_bad[:6]) or " | ".join(z_rows))
     sq_bad = [f"{k}: {msg}" for k, ok, msg in STRAY if not ok]
     report("(q) no stray / unanchored overlay lines or blobs", not sq_bad,
            "; ".join(sq_bad) or f"{len(STRAY)} frames: all fg components attached to mannequin/equipment")

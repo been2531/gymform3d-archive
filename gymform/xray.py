@@ -156,7 +156,28 @@ def apply_target_bones(rgb_1080, mono, w_fg, shorts_mask, eq_solid, kp, step_idx
     LAST_MASKS["xwin"] = a                     # = the shown bone pixels only (skin lock + QC exclude just these)
     LAST_MASKS["bone_region"] = reg
     col = bone_colour(bv, "crimson" if is_wrong else "emerald")
+    mono = flatten_offtarget_relief(mono, bone_m, w_fg, reg, eq_solid)
     return mono * (1.0 - a[:, :, None]) + col * a[:, :, None]
+
+
+def flatten_offtarget_relief(mono, bone_m, w_fg, reg, eq_solid, strength=None):
+    """t557u: the native clip bakes bone edges (forearm radius/ulna etc.) into the skin as relief lines. Outside
+    the target-bone region, flatten that relief by blending the skin toward a foreground-normalised blur of its
+    OWN pixels (a local tone grade - nothing is painted, no shape is added). Inside the target region and on the
+    rest of the body the skin is untouched."""
+    k = float(strength if strength is not None else CFG.get("xray_relief_flatten", 0.85))
+    if k <= 0:
+        return mono
+    eqd = np.clip(cv2.dilate(eq_solid.astype(np.float32), np.ones((15, 15), np.uint8)), 0, 1)
+    bm = cv2.GaussianBlur(cv2.dilate(bone_m.astype(np.float32), np.ones((7, 7), np.uint8)), (0, 0), 2.0)
+    m = np.clip(bm * 1.2, 0, 1) * np.clip((w_fg - 0.5) / 0.4, 0, 1) * (1.0 - np.clip(reg * 3.0, 0, 1)) * (1.0 - eqd)
+    wf = np.clip((w_fg - 0.5) / 0.4, 0, 1).astype(np.float32)
+    num = cv2.GaussianBlur(mono * wf[:, :, None], (0, 0), 6.0)
+    den = cv2.GaussianBlur(wf, (0, 0), 6.0)[:, :, None] + 1e-4
+    flat = num / den
+    LAST_MASKS["relief_flat"] = m
+    mk = (k * m)[:, :, None]
+    return mono * (1.0 - mk) + flat * mk
 
 
 def apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, eq_solid, kp, step_idx, is_wrong):

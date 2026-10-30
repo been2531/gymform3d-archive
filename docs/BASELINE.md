@@ -37,8 +37,21 @@ motion matches best. DTW-aligned keypoints (`_tmp_day6/pair/dtw.py`), mean joint
 tolerance `spec.step_order.pair_tolerance` = joint ≤ 15 %, elbow/shoulder angle ≤ 15°, view ≤ 15 %
 (same-clip noise floor 1.5–2.8 %). Lint (`ctx.pair_lint`) checks the stored `pair_match`; QC (s) gates keypoints at
 the same tolerance and reports silhouette IoU (two different native clips never share pixels).
-Day 6 result: wrong = step3 bone f23–59 ↔ step2 muscle: 5.6 % / 11.6° / 8.8° / view 6.8 % (good);
-right = step1 bone f20–47 ↔ step4 muscle: 14.6 % / 14.5° / 12.9° / view 7.1 % (at the limit, eyeball).
+Day 6 result (t557u, scored AS RENDERED: both slices on the same tempo wave, 21 phases):
+wrong = step3 bone f23–60 ↔ step2 muscle f15–64: 4.9 % / 14.4° / 7.9° / view 6.0 % (was 6.9 %);
+right = step1 bone f24–47 ↔ step4 muscle f9–58: 14.9 % / 14.7° / 12.3° / view 8.5 % (was 15.2 %; at the limit, no better existing clip).
+
+### Paired callouts (t557u)
+The callout belongs to the MOTION, not the step: `motions.{wrong,right}.callout = {deg, l1, l2:{bone,muscle}}`;
+steps 1/3 (and 2/4) show the same coached angle and label, only the consequence line l2 differs by layer.
+`callout_lint` rejects differing deg/l1 inside a pair; QC (z) checks the rendered callout per tempo phase (±5°).
+TTS lines for steps 3/4 must explain the SAME mistake/fix (Day 6: flare → front-delt overload; 45° → upper chest).
+
+### Off-target bone relief (t557u)
+Native clips bake glowing bone edges (forearm radius/ulna) into the skin. On bone steps, outside the target-bone
+region, `xray.flatten_offtarget_relief` blends the skin toward a foreground-normalised blur of the clip's OWN pixels
+(`xray_relief_flatten` 0.85; tone grade only, nothing painted). Day 6 step 1 forearm hp90 53 → 6.5, step 2 18 → 15
+(muscle-step forearm texture ≈ 22–24).
 The old 4-clip version had the two bone clips on swapped steps (each matched the other form's muscle clip).
 The paid keyframe-edit route (≈ $1.8/attempt) stays a fallback only with the owner's spend approval.
 

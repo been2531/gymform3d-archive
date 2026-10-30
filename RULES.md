@@ -127,3 +127,10 @@ rules marked **[QC]** fail the QC gate (`gymform/qc.py`). A day that fails is ne
   region, regraded to the role tint). Skin everywhere else = Day 4 tone: no glass, no window darkening, no tint, no
   see-through. QC **(w)** bone px outside the region = 0 (≤ 40 px noise); **(x)** bone-step skin within the (f)
   ranges, ≤ 5 % of the muscle steps, tint ±3 of Day 4, skin next to the bones ≤ 8 % from the rest.
+
+## PAIRED CALLOUTS (t557u)
+- A pair = one motion (1/3 wrong, 2/4 right). Callout angle + label come from `motions.<form>.callout` and are the
+  same on both steps; only the consequence line l2 may differ (bone vs muscle). **[guard]** `callout_lint` pair check,
+  **[QC] (z)** same callout angle within ±5° and same label at every tempo phase. TTS of a pair talks about the same mistake.
+- Pair windows are scored AS RENDERED (both slices on the same tempo wave), not by DTW.
+- Bone steps: off-target native bone relief is flattened by grading the clip's own pixels (`xray_relief_flatten`).

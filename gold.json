@@ -78,7 +78,7 @@
     "output/assets/day6_idp_step2_muscle_720p.mp4"
    ],
    "config": "configs/day06.json motions.wrong",
-   "why": "native bone clip (f23-59) matches the wrong-form muscle clip: joint 5.6% / elbow 11.6 deg / shoulder 8.8 deg / view 6.8% (noise floor 2.8%)"
+   "why": "t557u: native bone clip (f23-60) <-> wrong muscle f15-64, scored as rendered (same tempo wave): joint 4.9% / elbow 14.4 deg / shoulder 7.9 deg / view 6.0% (was 6.9% / 9.2 / 10.6 on f2-62 + f23-59); steps 1/3 share callout 90 deg ELBOW FLARE"
   },
   {
    "id": "day6_pair_right",
@@ -91,7 +91,7 @@
     "output/assets/day6_idp_step4_muscle_720p.mp4"
    ],
    "config": "configs/day06.json motions.right (mirrored to the Day 4 camera side)",
-   "why": "native bone clip (f20-47) matches the right-form muscle clip: joint 14.6% / elbow 14.5 deg / shoulder 12.9 deg / view 7.1% (tolerance 15)"
+   "why": "t557u: native bone clip (f24-47) <-> right muscle f9-58, scored as rendered: joint 14.9% / elbow 14.7 deg / shoulder 12.3 deg / view 8.5% (was 15.2% / 13.4 / 13.6 on f2-58 + f20-47; tolerance 15 - at the limit, no better existing clip); steps 2/4 share callout 45 deg ELBOW TUCK"
   },
   {
    "id": "baseline_doc",

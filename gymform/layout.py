@@ -190,6 +190,11 @@ def callout_lint(cfg):
                     errs.append(f"step{s}: TTS says {v} degrees but the number shows {lo:g}-{hi:g}\u00b0")
         if not (0 <= lo <= 180 and 0 <= hi <= 180):
             errs.append(f"step{s}: angle {lo:g}-{hi:g}\u00b0 outside 0-180")
+    # t557u: paired steps (1/3 wrong, 2/4 right = one motion) show the same coached angle and label
+    for a, b in (("1", "3"), ("2", "4")):
+        ca, cb = cfg["callouts"][a], cfg["callouts"][b]
+        if ca["deg"] != cb["deg"] or ca["l1"] != cb["l1"]:
+            errs.append(f"steps {a}/{b} (same motion) callouts differ: {ca['deg']} {ca['l1']!r} vs {cb['deg']} {cb['l1']!r}")
     return errs
 
 
