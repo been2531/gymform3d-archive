@@ -147,7 +147,8 @@
       "4": {
         "joint": "hip"
       }
-    }
+    },
+    "callout_style_muscle_days": "day4_refined"
   },
   "equipment": {
     "types_supported": [
@@ -243,10 +244,10 @@
     "from_day": 6,
     "locked": true,
     "order": {
-      "1": "WRONG bone X-Ray (crimson)",
-      "2": "RIGHT bone X-Ray (emerald)",
-      "3": "WRONG muscle",
-      "4": "RIGHT muscle (cover)"
+      "1": "WRONG form, FRONT camera (bone X-Ray on joint days, muscle on muscle days)",
+      "2": "RIGHT form, FRONT camera",
+      "3": "WRONG form, SIDE camera, muscle",
+      "4": "RIGHT form, SIDE camera, muscle (cover)"
     },
     "bone_steps": [
       1,
@@ -274,6 +275,39 @@
       "angle_deg": 15.0,
       "view_dev_pct": 15.0,
       "note": "t541u: pair = same motion and angle within joint tolerance; DTW-aligned mean joint distance in % of skeletal size (noise floor 1.5-2.8%)"
+    },
+    "camera_plan": {
+      "1": [
+        "wrong",
+        "front"
+      ],
+      "2": [
+        "right",
+        "front"
+      ],
+      "3": [
+        "wrong",
+        "side"
+      ],
+      "4": [
+        "right",
+        "side"
+      ],
+      "kinds": {
+        "joint": {
+          "1": "bone",
+          "2": "bone",
+          "3": "muscle",
+          "4": "muscle"
+        },
+        "muscle": {
+          "1": "muscle",
+          "2": "muscle",
+          "3": "muscle",
+          "4": "muscle"
+        }
+      },
+      "note": "t556u: 2 motions (wrong, right) x 2 fixed native cameras (front, side); pairs 1/3 and 2/4 share one motion automatically. t554u: kinds by mistake_type. Length stays 4 x 5 s = 20 s on both day types."
     }
   },
   "target_zoom": {

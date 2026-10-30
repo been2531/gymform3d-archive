@@ -114,3 +114,16 @@ rules marked **[QC]** fail the QC gate (`gymform/qc.py`). A day that fails is ne
 - Every day starts from `docs/BASELINE.md` (best of posted Day 1–5) and changes at most ONE element, with a preflight sheet.
 - Bones: bright near-white luminous Day-1 v36 bones with only a subtle red/green tint; never dark saturated fills.
   Gates: render QC (u) and `xai_edit.ACCEPT` bone brightness (thresholds in docs/BASELINE.md).
+
+## STEP PLAN + BONES (t552u / t554u / t556u, enforced in `gymform/ctx.py`, `xray.py`, `qc.py`)
+- **Fixed camera plan, every day**: 1 WRONG/front · 2 RIGHT/front · 3 WRONG/side · 4 RIGHT/side. Produce **2 motions
+  (wrong, right) × 2 fixed native 3D cameras** (`motion_standards.json` → `camera_presets`), so 1/3 and 2/4 share one
+  motion by construction. QC **(y)**: front vs side vertical joint profile per tempo phase (same motion). Day 7+ is
+  blocked by `camera_plan_lint` unless every step uses its preset camera; Day 6 (older clips) only warns.
+- **mistake_type** (`motion_standards.json`, per exercise, main mistake = `mistakes[0]`): `joint` (spine rounding,
+  knee valgus, shoulder impingement…) → steps 1–2 bone X-Ray, 3–4 muscle; `muscle` (target muscle not getting the
+  load) → all 4 steps muscle, crisper callout (`ui.callout_style_muscle_days`). Always 4 × 5 s = 20 s.
+- **Bones like muscle fibre**: only the exercise's `target_bones` are shown (native bone pixels inside the keypoint
+  region, regraded to the role tint). Skin everywhere else = Day 4 tone: no glass, no window darkening, no tint, no
+  see-through. QC **(w)** bone px outside the region = 0 (≤ 40 px noise); **(x)** bone-step skin within the (f)
+  ranges, ≤ 5 % of the muscle steps, tint ±3 of Day 4, skin next to the bones ≤ 8 % from the rest.

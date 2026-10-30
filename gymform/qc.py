@@ -693,6 +693,9 @@ def main():
             if not ca or ca.get("motion") is None or ca.get("motion") != cb.get("motion"):
                 pr_bad.append(f"steps {a_}/{b_}: not derived from one motion ({ca.get('file')} vs {cb.get('file')})")
                 continue
+            if ca.get("camera") in ("front", "side") and cb.get("camera") in ("front", "side") and ca["camera"] != cb["camera"]:
+                pr_rows.append(f"{a_}/{b_}: {ca['camera']} vs {cb['camera']} camera (t556u) - 2D pose not comparable, gated by (y)")
+                continue
             for tag in sorted({fm["tag"] for fm in frames_meta.values()}):
                 ka, kb = frames_meta.get(f"step{a_}_{tag}"), frames_meta.get(f"step{b_}_{tag}")
                 if not ka or not kb:
@@ -715,6 +718,31 @@ def main():
                     pr_bad.append(pr_rows[-1])
         report("(s) pair steps share the same motion (1/3 wrong, 2/4 right): keypoints + silhouette", not pr_bad,
                "; ".join(pr_bad) or " | ".join(pr_rows[:8]))
+        # (y) t556u: front (1/2) and side (3/4) views of a form come from the SAME motion. A yaw camera change keeps
+        # vertical joint positions: compare wrist/elbow/shoulder/knee heights relative to the hip midpoint per
+        # tempo tag (same phase), in units of the mean skeletal size; tolerance = pair tolerance for matched
+        # native pairs, else 6 %.
+        y_bad, y_rows = [], []
+        for a_, b_ in ((1, 3), (2, 4)):
+            ca, cb = (meta.get("clips") or {}).get(str(a_), {}), (meta.get("clips") or {}).get(str(b_), {})
+            pm = ca.get("pair_match") or cb.get("pair_match")
+            tol_y = float(_SPEC_Q["step_order"].get("pair_tolerance", {}).get("joint_dev_pct", 15.0)) / 100.0 if pm else 0.06
+            devs = []
+            for tag in sorted({fm["tag"] for fm in frames_meta.values()}):
+                ka, kb = frames_meta.get(f"step{a_}_{tag}"), frames_meta.get(f"step{b_}_{tag}")
+                if not ka or not kb:
+                    continue
+                def vprof(k):
+                    hy = 0.5 * (k["hip_r"][1] + k["hip_l"][1])
+                    return np.array([k[j_][1] - hy for j_ in ("wr_r", "wr_l", "elb_r", "elb_l", "sh_r", "sh_l", "kn_r", "kn_l")])
+                sz = 0.5 * (skeletal_size(ka["kp"]) + skeletal_size(kb["kp"]))
+                devs.append(float(np.mean(np.abs(vprof(ka["kp"]) - vprof(kb["kp"])))) / max(sz, 1.0))
+            if devs:
+                y_rows.append(f"{a_}/{b_} ({ca.get('camera')} vs {cb.get('camera')}): vertical-profile dev mean {100 * np.mean(devs):.1f}% max {100 * max(devs):.1f}% (tol {100 * tol_y:.0f}%)")
+                if max(devs) > tol_y:
+                    y_bad.append(y_rows[-1])
+        report("(y) front and side views come from the same motion (vertical joint profile per tempo phase)", not y_bad,
+               "; ".join(y_bad) or " | ".join(y_rows))
     sq_bad = [f"{k}: {msg}" for k, ok, msg in STRAY if not ok]
     report("(q) no stray / unanchored overlay lines or blobs", not sq_bad,
            "; ".join(sq_bad) or f"{len(STRAY)} frames: all fg components attached to mannequin/equipment")
@@ -769,6 +797,53 @@ def main():
         r90 = max(p90s.values()) / max(1.0, min(p90s.values()))
         report("(i) mannequin colour locked across steps outside X-Ray window (p75/p90 within 5%)", r75 <= 1.05 and r90 <= 1.05,
                ", ".join(f"step{k} p75={p75s[k]:.0f}/p90={p90s[k]:.0f}" for k in sorted(p75s)) + f" | spread p75 {100 * (r75 - 1):.1f}%, p90 {100 * (r90 - 1):.1f}%")
+
+    # t552u: bones like muscle fibre. (w) no bone pixels outside the exercise's target-bone region;
+    # (x) bone-step skin = Day 4 tone everywhere (incl. right next to the bones): same (f) ranges + (i) 5% vs the
+    # muscle steps + Day 4 tint, measured WITHOUT the old X-Ray-window exclusion (only the shown bone px +5 px).
+    tb = meta.get("target_bones") or []
+    if tb and meta.get("bone_steps"):   # muscle-mistake days have no bone steps (t554u)
+        from gymform import bones as _bones
+        w_bad, w_rows, x_bad, x_rows, x_stats = [], [], [], [], {}
+        mus = {s_: LOCK[s_] for s_ in LOCK if s_ not in meta["bone_steps"]}
+        m75 = float(np.mean([v[0] for vs in mus.values() for v in vs])) if mus else float(SK["p75"])
+        m90 = float(np.mean([v[1] for vs in mus.values() for v in vs])) if mus else float(SK["p90"])
+        for key, fm in sorted(frames_meta.items()):
+            if fm["step"] not in meta["bone_steps"]:
+                continue
+            pre = os.path.join(args.qc_dir, key)
+            base = cv2.cvtColor(cv2.imread(pre + "_base.png"), cv2.COLOR_BGR2RGB).astype(np.float32)
+            wfg, shorts, eq = load_mask(pre + "_wfg.png"), load_mask(pre + "_shorts.png"), load_mask(pre + "_eq.png")
+            st_m, xw = load_mask(pre + "_static.png"), load_mask(pre + "_xwin.png")
+            reg = _bones.region(fm["kp"], tb, (H, W))
+            l, a = lum_of(base), act_of(base)
+            reg_d = cv2.dilate((reg > 0.05).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+            body = (wfg > 0.5) & (shorts < 0.3) & ((eq < 0.5) if eq is not None else True) & ((st_m < 0.5) if st_m is not None else True)
+            stray = body & ~reg_d & (a > 25.0) & (l > 110.0)
+            n_out = int(cv2.morphologyEx(stray.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)).sum())
+            w_rows.append(f"{key}: {n_out}px")
+            if n_out > 40:
+                w_bad.append(w_rows[-1])
+            bone_d = cv2.dilate(((xw if xw is not None else np.zeros((H, W))) > 0.02).astype(np.uint8), np.ones((11, 11), np.uint8)) > 0
+            skin = (wfg > 0.9) & (shorts < 0.2) & (l > 46.0) & (a < 12.0) & ~bone_d & ((eq < 0.5) if eq is not None else True) & ((st_m < 0.5) if st_m is not None else True)
+            near = skin & reg_d          # skin right around / between the shown bones (old window area)
+            if skin.sum() < 2000:
+                continue
+            p75, p90 = float(np.percentile(l[skin], 75)), float(np.percentile(l[skin], 90))
+            n50 = float(np.percentile(l[near], 50)) if near.sum() > 500 else -1.0
+            s50 = float(np.percentile(l[skin & ~reg_d], 50)) if (skin & ~reg_d).sum() > 500 else n50
+            tint = [float(np.median(base[:, :, c][skin] - l[skin])) for c in range(3)]
+            x_stats.setdefault(fm["step"], []).append((p75, p90))
+            x_rows.append(f"{key}: p75={p75:.0f} p90={p90:.0f} near-bone p50={n50:.0f} vs rest {s50:.0f} tint={'/'.join(f'{t:+.0f}' for t in tint)}")
+            ok = (SK["qc_p75_range"][0] <= p75 <= SK["qc_p75_range"][1] and SK["qc_p90_range"][0] <= p90 <= SK["qc_p90_range"][1]
+                  and abs(p75 / m75 - 1) <= 0.05 and abs(p90 / m90 - 1) <= 0.05
+                  and all(abs(t - t0) <= 3.0 for t, t0 in zip(tint, SK.get("tint_rgb", [0, 0, 0])))
+                  and (n50 < 0 or abs(n50 / max(s50, 1) - 1) <= 0.08))
+            if not ok:
+                x_bad.append(x_rows[-1])
+        report(f"(w) bones only inside the target region ({', '.join(tb)})", not w_bad, "; ".join(w_bad) or " | ".join(w_rows[:8]))
+        report(f"(x) bone-step skin = Day 4 tone (f ranges, <=5% vs muscle steps p75 {m75:.0f}/p90 {m90:.0f}, tint +-3, near-bone <=8%)",
+               not x_bad, "; ".join(x_bad) or " | ".join(x_rows[:8]))
 
     # (g) X-Ray look vs approved Day 1 v36 reference: luminous bone ramp (tint -> hot core), glassy darkened body
     if os.path.exists(args.xray_ref):

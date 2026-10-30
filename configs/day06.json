@@ -37,8 +37,7 @@
   2
  ],
  "xray_bones": {
-  "1": "both clavicles, scapulae/acromion, humeral heads, humeri, upper rib cage (crimson)",
-  "2": "both clavicles, scapulae/acromion, humeral heads, humeri, upper rib cage (emerald)"
+  "target_bones": "from configs/motion_standards.json incline_dumbbell_press.target_bones (t552u)"
  },
  "muscle_steps": [
   3,
@@ -167,7 +166,8 @@
    "why": "clearest wrong form: elbows flared ~90 deg AND shoulders rolled forward off the bench, 3/4 view",
    "renders": {
     "muscle": {
-     "file": "day6_idp_step2_muscle_720p.mp4"
+     "file": "day6_idp_step2_muscle_720p.mp4",
+     "camera": "3q_high (same camera for all 4 clips)"
     },
     "bone": {
      "file": "day6_idp_step3_bone_720p.mp4",
@@ -182,7 +182,8 @@
       "method": "DTW keypoints vs base slice (_tmp scorer, t541u)"
      },
      "why": "native bone clip over solid silver skin; its motion/angle matches the WRONG muscle clip (the old 4-clip version had the two bone clips on swapped steps)",
-     "native_tint": "emerald"
+     "native_tint": "emerald",
+     "camera": "3q_high (same camera for all 4 clips)"
     }
    }
   },
@@ -194,7 +195,8 @@
    "why": "elbows tucked ~45 deg, blades pinned, 3/4 view = Step 4 cover",
    "renders": {
     "muscle": {
-     "file": "day6_idp_step4_muscle_720p.mp4"
+     "file": "day6_idp_step4_muscle_720p.mp4",
+     "camera": "3q_high (same camera for all 4 clips)"
     },
     "bone": {
      "file": "day6_idp_step1_bone_720p.mp4",
@@ -209,7 +211,8 @@
       "method": "DTW keypoints vs base slice (_tmp scorer, t541u)"
      },
      "why": "native bone clip; matches the RIGHT muscle clip (weaker match than wrong: eyeball)",
-     "native_tint": "crimson"
+     "native_tint": "crimson",
+     "camera": "3q_high (same camera for all 4 clips)"
     }
    },
    "mirror": true,
@@ -222,5 +225,9 @@
    "day6_idp_right_bone_720p.mp4"
   ],
   "why": "xAI edits rejected (t529u acceptance QC); never use"
- }
+ },
+ "motion_standard": "incline_dumbbell_press",
+ "mistake_type": "joint",
+ "mistake_type_why": "elbow flare ~90 deg loads the glenohumeral joint (humeral head vs acromion: impingement / anterior shoulder stress) - a joint mistake; anterior-delt overload is secondary (t554u)",
+ "camera_plan_note": "t556u plan (1/2 front, 3/4 side) NOT met: all existing Day 6 clips share one elevated 3/4 camera. Needs 2 motions x front/side native clips (new generation, not approved)."
 }

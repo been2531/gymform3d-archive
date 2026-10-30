@@ -113,7 +113,59 @@ def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_ma
     return out
 
 
+def bone_signal(rgb, src_tint):
+    """Native bone pixels of the clip (its own tinted, bright, structured bone render) -> (bone_m, bv, act)."""
+    r, g, b = (rgb[:, :, i].astype(np.float32) for i in range(3))
+    if src_tint == "crimson":
+        t_any = np.clip((r - b - 12.0) / 95.0, 0.0, 1.0)
+        detail = 0.38 * r + 0.62 * g
+        bone_m = np.clip((r - b - 82.0) / 95.0, 0.0, 1.0) * np.clip((r - 130.0) / 75.0, 0.0, 1.0)
+    else:
+        t_any = np.clip((g - r - 8.0) / 50.0, 0.0, 1.0)
+        detail = 0.38 * g + 0.62 * r
+        bone_m = np.clip((g - r - 30.0) / 40.0, 0.0, 1.0) * np.clip((g - 120.0) / 70.0, 0.0, 1.0)
+    bone_sharp = np.clip((detail + (detail - cv2.GaussianBlur(detail, (0, 0), 1.5)) * 2.1 - 20.0) / 205.0, 0.0, 1.0)
+    hf = np.abs(detail - cv2.GaussianBlur(detail, (0, 0), 2.5))
+    bone_m = bone_m * (0.20 + 0.80 * np.clip((hf - 1.5) / 5.0, 0.0, 1.0))
+    bone_m = np.maximum(bone_m, 0.9 * np.clip(t_any * 1.6, 0.0, 1.0) * np.clip((bone_sharp - 0.50) / 0.22, 0.0, 1.0))
+    act = np.maximum(r - 0.5 * (g + b), g - 0.5 * (r + b))
+    return bone_m, np.clip((bone_sharp - 0.12) / 0.78, 0.0, 1.0), act
+
+
+def bone_colour(bv, tint):
+    """Day 1 v36 luminous ramp, lifted toward a soft white (t530u bright bones, subtle tint)."""
+    hot = 110.0 * (bv ** 1.25) + 120.0 * (bv ** 2.6)
+    if tint == "crimson":
+        col = np.stack([95.0 + 160.0 * (bv ** 0.55), 14.0 + hot, 10.0 + 45.0 * (bv ** 1.5) + 135.0 * (bv ** 3.0)], axis=-1)
+    else:
+        col = np.stack([10.0 + 45.0 * (bv ** 1.5) + 135.0 * (bv ** 3.0), 95.0 + 160.0 * (bv ** 0.55), 14.0 + hot], axis=-1)
+    return np.clip(col + (np.array([228.0, 230.0, 234.0], np.float32) - col) * (0.42 * (1.0 - bv))[:, :, None], 0, 255)
+
+
+def apply_target_bones(rgb_1080, mono, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong):
+    """t552u: bones work like muscle fibre. Only the native bone pixels INSIDE the exercise's target-bone region
+    are shown (regraded to the role tint); every other pixel is the locked Day 4 skin (`mono`) - no glass, no
+    window darkening, no tint, no see-through on the surrounding body. Native bone glow outside the region is
+    removed by the skin regrade (de-glowed luminance), never painted over with shapes."""
+    from gymform import bones
+    src_tint = CFG["clips"][str(step_idx)].get("native_tint") or ("crimson" if is_wrong else "emerald")
+    reg = bones.region(kp, CFG["target_bones"], (H, W)) * w_fg * (1.0 - shorts_mask)
+    reg = reg * (1.0 - np.clip(cv2.dilate(eq_solid.astype(np.float32), np.ones((9, 9), np.uint8)), 0, 1))
+    bone_m, bv, _ = bone_signal(rgb_1080, src_tint)
+    a = np.clip((cv2.GaussianBlur(bone_m.astype(np.float32), (0, 0), 0.8) ** 0.80) * 0.96, 0.0, 0.96) * reg
+    LAST_MASKS["xwin"] = a                     # = the shown bone pixels only (skin lock + QC exclude just these)
+    LAST_MASKS["bone_region"] = reg
+    col = bone_colour(bv, "crimson" if is_wrong else "emerald")
+    return mono * (1.0 - a[:, :, None]) + col * a[:, :, None]
+
+
 def apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, eq_solid, kp, step_idx, is_wrong):
+    if step_idx in CFG["bone_steps"] and CFG.get("target_bones"):
+        return apply_target_bones(rgb_1080, mono, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong)
+    return _apply_window(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, eq_solid, kp, step_idx, is_wrong)
+
+
+def _apply_window(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, eq_solid, kp, step_idx, is_wrong):
     """Local Day-1 v36 X-Ray window on bone steps; outside the window the locked silver skin is untouched."""
     if step_idx in CFG["bone_steps"] and CFG.get("xray_style") == "day1_v36":
         win = xray_window(kp, step_idx in CFG.get('xray_full_steps', [CFG['bone_steps'][0]])) * w_fg
