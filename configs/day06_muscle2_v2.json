@@ -1,0 +1,169 @@
+{
+ "day": 6,
+ "exercise_name": "Incline Dumbbell Press",
+ "assets_dir": "output/assets",
+ "kp_cache": "_cache_day6_idp_muscle2_v2_kps.pkl",
+ "step_scale": {
+  "1": 0.841,
+  "2": 0.81
+ },
+ "step_dy": {
+  "1": 230,
+  "2": 230
+ },
+ "equipment": [
+  {
+   "type": "dumbbell",
+   "anchor": "wr_r",
+   "radius": 250
+  },
+  {
+   "type": "dumbbell",
+   "anchor": "wr_l",
+   "radius": 250
+  },
+  {
+   "type": "bench",
+   "static": true,
+   "desc": "adjustable incline bench (native 3D in clip)"
+  }
+ ],
+ "bone_steps": [],
+ "muscle_steps": [
+  1,
+  2
+ ],
+ "target_muscles": {
+  "1": "anterior deltoid (overload, red)",
+  "2": "upper (clavicular) pectoralis major (green)"
+ },
+ "tts_lines": [
+  [
+   0.2,
+   "Incline dumbbell press. Flared elbows dump the load onto your front delts."
+  ],
+  [
+   5.2,
+   "Tuck to about sixty degrees and your upper chest takes it."
+  ]
+ ],
+ "caption": {
+  "title": "Your incline press is hitting your shoulders, not your upper chest.",
+  "question": "Where do you feel your incline press most, chest or shoulders?",
+  "save": "Save this for your next chest day."
+ },
+ "sheet_title": "Day 6 v2 Incline Dumbbell Press — 2-step muscle-fibre, new clips (t578)",
+ "sheet_labels": [
+  "Step 1: wrong · 90° flare · front delt fibres",
+  "Step 2: right · 60° tuck (measured) · upper pec fibres"
+ ],
+ "out_mp4": "output/day6_incline_dumbbell_press_muscle2_v2_master.mp4",
+ "out_sheet": "output/day6_muscle2_v2_sheet.jpg",
+ "out_cover": "output/day6_incline_dumbbell_press_muscle2_v2_master_cover.jpg",
+ "qc_dir": "output/qc/day6_muscle2_v2",
+ "xray_full_steps": [],
+ "question_spoken": "Where do you feel it most?",
+ "source": {
+  "type": "native_3d_clip",
+  "generator": "grok_imagine_i2v",
+  "native": [
+   "mannequin",
+   "shorts",
+   "equipment",
+   "xray",
+   "muscle"
+  ],
+  "note": "3D mannequin with real 3D matte-black shorts, equipment and anatomy are rendered inside the source clip; the pipeline only regrades native pixels",
+  "overpaint_2d": {}
+ },
+ "auto_scale": true,
+ "target_zoom": {
+  "region": "upper_body",
+  "focus": "shoulder midpoint (upper chest / shoulders)",
+  "zoom": 1.0,
+  "focus_x": 548,
+  "focus_y": 1060,
+  "top_min_y": 140,
+  "side_min": 24,
+  "equipment_margin": 0.11,
+  "why": "t567u: whole figure centred horizontally (t558 M10); Day 4 full-body framing, no zoom | t578: v2 clips: dumbbells/bench extend right of the keypoint bbox -> focus_x 548 centres the silhouette",
+  "focus_mode": "body_bbox_x"
+ },
+ "motions": {
+  "wrong": {
+   "base": "day6_v2_wrong_src720.mp4",
+   "i0": 144,
+   "i1": 100,
+   "y_shift": 80,
+   "why": "t578: new grok clip (one take). Window (reversed: lockout -> bottom, so the Day 4 peak = deep bottom where the elbow angle and glow show) = last bottom (f100, wristY 422/1280) -> lockout (f144). 2D upper-arm/torso angle at bottom 89/52 deg (near/far arm), elbow-span 2.47x shoulder span",
+   "renders": {
+    "front": {
+     "file": "day6_v2_wrong_src720.mp4",
+     "camera": "front_3q_high (same as right clip)"
+    }
+   },
+   "callout": {
+    "deg": "90°",
+    "l1": "ELBOW FLARE",
+    "l2": {
+     "muscle": [
+      "FRONT DELT OVERLOAD",
+      74,
+      8
+     ]
+    }
+   }
+  },
+  "right": {
+   "base": "day6_v2_right_src720.mp4",
+   "i0": 144,
+   "i1": 99,
+   "y_shift": 80,
+   "why": "t578: new grok clip (one take). Window (reversed: lockout -> bottom, so the Day 4 peak = deep bottom where the elbow angle and glow show) = last bottom (f99, wristY 452/1280, deeper than wrong) -> lockout (f144). 2D upper-arm/torso angle at bottom 78/42 deg, elbow-span 2.27x (8% narrower than wrong) => ~60-65 deg tuck",
+   "renders": {
+    "front": {
+     "file": "day6_v2_right_src720.mp4",
+     "camera": "front_3q_high (same as wrong clip)"
+    }
+   },
+   "callout": {
+    "deg": "60°",
+    "l1": "ELBOW TUCK",
+    "l2": {
+     "muscle": [
+      "UPPER PEC LOAD",
+      96,
+      4
+     ]
+    }
+   }
+  }
+ },
+ "rejected_clips": {
+  "files": [
+   "day6_idp_wrong_bone_720p.mp4",
+   "day6_idp_right_bone_720p.mp4"
+  ],
+  "why": "xAI edits rejected (t529u acceptance QC); never use"
+ },
+ "motion_standard": "incline_dumbbell_press",
+ "mistake_type": "muscle",
+ "mistake_type_why": "t567u/t568u owner: muscle-fibre-only 2-step variant (no bone X-Ray). The shown consequence is the load shift front delt vs upper pec.",
+ "camera_plan_note": "t568u 2-step plan: 1 wrong/front, 2 right/front. Only one native camera exists for Day 6 muscle clips (elevated front-3/4, same for both); the right clip is the mirrored side so both face the same way.",
+ "callouts_note": "t557u: callouts are derived per motion (motions.*.callout) - steps 1/3 and 2/4 share angle + label",
+ "n_steps": 2,
+ "tmp_dir": "_tmp_gymform_day06_muscle2",
+ "callout_axis": {
+  "arm_axis": true,
+  "why": "t567u: callout axis follows the upper arm (shoulder -> elbow), short torso reference"
+ },
+ "clean_plate": false,
+ "muscle_shader": "day4",
+ "out_caption": "output/day6_incline_dumbbell_press_muscle2_v2_master_caption.txt",
+ "source_clips_note": "originals output/assets/day6_v2_{wrong,right}_720p.mp4 are 1088x1920 24fps 6.04s; *_src720.mp4 = 4px side crop + lanczos to 720x1280 (no other change)",
+ "static_body_lum": 20,
+ "metal_lum_max": 42.0,
+ "clean_plate_why": "t578: v2 clips have a lighter centre backdrop (vignette); the t567 clean plate's border-gradient reference is darker, so it picked the dark arm over the real backdrop and made ghosts. The plain temporal median is clean here.",
+ "static_body_lum_why": "t578: Day 4-tone charcoal skin (lum 20-90) over a near-black bench; 20 keeps head/legs as body (the lock leaves lum<46 untouched)",
+ "metal_lum_max_why": "t578: dark hex dumbbells <=42; the charcoal forearm/upper-arm skin (40-90) is body, not metal"
+}

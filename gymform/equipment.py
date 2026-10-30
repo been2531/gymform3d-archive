@@ -222,7 +222,9 @@ def metal_mask(F, foot):
     (high act_dom) and bright skin are body and keep the silver skin curve (root cause of the black arm)."""
     r, g, b, lum, act = F["r"], F["g"], F["b"], F["lum"], F["act_dom"]
     neutral = (np.abs(b - r) < 9.0) & (np.abs(b - g) < 9.0) & (np.abs(r - g) < 9.0)
-    m = ((foot > 0.3) & neutral & (act < 9.0) & (lum < 105.0)).astype(np.uint8)
+    # t578: "dark neutral = metal" (lum < 105) assumed the pale v1 mannequin; the Day 4-tone charcoal skin of the v2
+    # clips (lum 40-90, neutral) was claimed as metal on the whole forearm/upper arm -> config metal_lum_max
+    m = ((foot > 0.3) & neutral & (act < 9.0) & (lum < float(CFG.get("metal_lum_max", 105.0)))).astype(np.uint8)
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
     n, lab, st, _ = cv2.connectedComponentsWithStats(m)
@@ -372,7 +374,10 @@ def static_body(F, K, kp, stat):
         from gymform.mask import anatomical_envelope
         env = anatomical_envelope(kp)
     st = stat > 0.3
-    body = st & (env > 0.35) & (lum_eq > 60.0) & (F["act_dom"] < 20.0)
+    # t578: skin/bench split level. 60 suits the pale Day 6 v1 clips; the Day 4-tone charcoal mannequin of the v2
+    # clips sits at lum 32-90 over a near-black bench (<=24), so its config lowers this (static_body_lum).
+    thr = float(CFG.get("static_body_lum", 60.0))
+    body = st & (env > 0.35) & (lum_eq > thr) & (F["act_dom"] < 20.0)
     body = cv2.morphologyEx(body.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     n, lab, sts, _ = cv2.connectedComponentsWithStats(body)
     keep = np.zeros((H, W), np.uint8)
@@ -383,6 +388,6 @@ def static_body(F, K, kp, stat):
     solid = ((K["w_raw"] > 0.5) | (keep > 0)).astype(np.uint8)
     near = cv2.dilate(solid, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (17, 17))) > 0
     sh_y = min(kp["sh_r"][1], kp["sh_l"][1])
-    rim = st & near & (keep == 0) & (lum_eq < 60.0) & (env > 0.35) & (_YY < sh_y - 10.0)
+    rim = st & near & (keep == 0) & (lum_eq < thr) & (env > 0.35) & (_YY < sh_y - 10.0)
     return (cv2.GaussianBlur(keep.astype(np.float32), (0, 0), 0.8),
             cv2.GaussianBlur(rim.astype(np.float32), (0, 0), 0.8))
