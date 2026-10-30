@@ -13,7 +13,11 @@ from gymform import xai_edit  # noqa: E402
 
 class XaiEdit(unittest.TestCase):
     def test_day6_jobs(self):
+        # Day 6 no longer declares edits (t539u zero-cost remake); the job builder is tested on the t526 edit schema
         cfg = json.load(open(os.path.join(ROOT, "configs", "day06.json")))
+        for form, src, dst, col in (("wrong", "day6_idp_step2_muscle_720p.mp4", "day6_idp_wrong_bone_720p.mp4", "crimson"),
+                                    ("right", "day6_idp_step4_muscle_720p.mp4", "day6_idp_right_bone_720p.mp4", "emerald")):
+            cfg["motions"][form]["renders"]["bone"] = {"file": dst, "edit_of": src, "edit": {"color": col}}
         jobs = {(m, k): (os.path.basename(s), os.path.basename(d), p) for m, k, s, d, p, _ in xai_edit.jobs_for(cfg)}
         self.assertEqual(jobs[("wrong", "bone")][:2], ("day6_idp_step2_muscle_720p.mp4", "day6_idp_wrong_bone_720p.mp4"))
         self.assertEqual(jobs[("right", "bone")][:2], ("day6_idp_step4_muscle_720p.mp4", "day6_idp_right_bone_720p.mp4"))

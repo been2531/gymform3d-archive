@@ -14,10 +14,56 @@
   "background": {
     "style": "minimal dark charcoal studio, no props (no racks, slats, equipment in bg)",
     "plate": "output/assets/private_gym_studio_minimal_graded_1080p.jpg",
-    "floor_contact_shadow": true
+    "floor_contact_shadow": true,
+    "grade_to_rgb": [
+      35,
+      39,
+      43
+    ],
+    "grade_source": "Day 4 master backdrop median RGB (t543u); plate is graded per channel on load"
   },
   "mannequin": {
     "skin_lock_all_steps": {
+      "source": "Day 4 master (output/day4_romanian_deadlift_4step_master.mp4), t542u: 6 frames (3/4/13/14/18/19 s), body-only ROI (upper back + lower legs, bar/plates excluded), the pipeline's skin definition (L>46, no activation)",
+      "p50": 64,
+      "p75": 75,
+      "p90": 88,
+      "max": 143,
+      "tint_rgb": [
+        -3,
+        1,
+        3
+      ],
+      "qc_p75_range": [
+        69,
+        81
+      ],
+      "qc_p90_range": [
+        81,
+        95
+      ],
+      "qc_max": 160,
+      "qc_max_why": "Day 4 p99.9 on clean frames = 131-148 (body-only ROI) and 145-157 (central ROI incl. arms/hands, L>46) -> 160"
+    },
+    "skin_lock_cross_step_tolerance": 0.05,
+    "skin_lock_excludes": "only the local X-Ray window",
+    "shorts_lum_range": [
+      24,
+      40
+    ],
+    "equal_height_tolerance": 0.04,
+    "feet_on_same_floor_line": true,
+    "camera_angle": "3/4 views (front-3/4 and back-3/4), same framing every step",
+    "skin_by_construction": {
+      "skin_segments_always_skin": true,
+      "segments": "upper arm, forearm to 80% (before hand), torso above hip band, knee..ankle",
+      "equipment_metal_excludes_skin_segments": true,
+      "post_composite_skin_tone_lock": "every step, every frame: monotonic map p75->165, p90->191, max->226, RGB scaled by the same gain (3D shading ratios kept); excludes X-Ray window, shorts, metal, activation colour",
+      "shorts_native_only": "shorts = the source's own native 3D fabric pixels (mask.native_shorts, pose-aware hem along each thigh axis); no 2D polygon/fill; QC (n) 2d_overpaint_ratio == 0",
+      "skin_shadow_floor": "skin never renders darker than its own native shadow up to lum 62 (muscle.silver_skin)"
+    },
+    "equal_size_metric": "skeletal size (torso+thigh+shin+upper arm), auto-normalised per step by ctx.normalize_scale; QC (c) <= 4%",
+    "skin_lock_silver_legacy_day5": {
       "p75": 165,
       "p90": 191,
       "max": 226,
@@ -31,24 +77,11 @@
       ],
       "qc_max": 228
     },
-    "skin_lock_cross_step_tolerance": 0.05,
-    "skin_lock_excludes": "only the local X-Ray window",
-    "shorts_lum_range": [
+    "shorts_lum_range_silver_legacy_day5": [
       10,
       22
     ],
-    "equal_height_tolerance": 0.04,
-    "feet_on_same_floor_line": true,
-    "camera_angle": "3/4 views (front-3/4 and back-3/4), same framing every step",
-    "skin_by_construction": {
-      "skin_segments_always_skin": true,
-      "segments": "upper arm, forearm to 80% (before hand), torso above hip band, knee..ankle",
-      "equipment_metal_excludes_skin_segments": true,
-      "post_composite_skin_tone_lock": "every step, every frame: monotonic map p75->165, p90->191, max->226, RGB scaled by the same gain (3D shading ratios kept); excludes X-Ray window, shorts, metal, activation colour",
-      "shorts_native_only": "shorts = the source's own native 3D fabric pixels (mask.native_shorts, pose-aware hem along each thigh axis); no 2D polygon/fill; QC (n) 2d_overpaint_ratio == 0",
-      "skin_shadow_floor": "skin never renders darker than its own native shadow up to lum 62 (muscle.silver_skin)"
-    },
-    "equal_size_metric": "skeletal size (torso+thigh+shin+upper arm), auto-normalised per step by ctx.normalize_scale; QC (c) <= 4%"
+    "shorts_lum_source": "Day 4 master shorts L p10..p75 = 32..38 (t543u)"
   },
   "steps": {
     "1": {
@@ -102,6 +135,18 @@
       "preview": 0.4,
       "qc_tolerance": 0.12,
       "day4_measured": "title over body median 0.30 (p25 0.16 / p75 0.47, soft colour mask), preview >=0.35 (touch_p 0.65); locked to a constant 0.40 so it is identical over body and equipment"
+    },
+    "callout_style": "day4",
+    "callout_style_note": "t547u: Day 4 callout look (one straight joint axis + cross ticks + vertex ring, horizontal leader, 86 px number at x=86 level with the target). 'day4_refined' = same with Day 5 crisp laser + 84 px number (side-by-side on the Day 6 sample sheet; owner picks).",
+    "callout_ty_min": 600,
+    "callout_axis": {
+      "6": {
+        "joint": "shoulder",
+        "why": "incline DB press: elbow flare = torso vs upper arm"
+      },
+      "4": {
+        "joint": "hip"
+      }
     }
   },
   "equipment": {
@@ -124,12 +169,18 @@
     "qc_max_hole_px": 60
   },
   "tempo_s": {
-    "hold_start": 0.3,
-    "concentric": 1.5,
-    "hold_top": 1.3,
-    "eccentric": 1.5,
-    "hold_end": 0.4,
-    "monotonic": true
+    "source": "Day 4 master + build_day4_rdl_master.py (t544u): wave = 0.5-0.5*cos(2*pi*1.5*u) per 5 s step; measured reversals at 1.67 s / 3.33 s of every step",
+    "style": "day4_cosine",
+    "cycles_per_step": 1.5,
+    "step_s": 5.0,
+    "concentric": 1.667,
+    "eccentric": 1.667,
+    "holds": 0.0,
+    "reversal_frames": [
+      50,
+      100
+    ],
+    "qc_reversal_tol_frames": 6
   },
   "pipeline": {
     "build_threads": 2,
@@ -217,6 +268,12 @@
         4
       ],
       "rule": "t521u: pair steps = SAME motion/angle from one clip; only the native rendering (bone X-Ray vs muscle fibre) differs. Config defines motions.wrong/right; steps derived (ctx.expand_motions); guard ctx.pair_lint; QC (s) keypoints + silhouette."
+    },
+    "pair_tolerance": {
+      "joint_dev_pct": 15.0,
+      "angle_deg": 15.0,
+      "view_dev_pct": 15.0,
+      "note": "t541u: pair = same motion and angle within joint tolerance; DTW-aligned mean joint distance in % of skeletal size (noise floor 1.5-2.8%)"
     }
   },
   "target_zoom": {
@@ -233,5 +290,13 @@
       "dumbbells never cut; bench may be partial (QC d/m)",
       "single Lanczos resample from 720p + light unsharp, no blur; keep zoom moderate (upscale vs 720p reported in _normalized)"
     ]
+  },
+  "tempo_s_day5_legacy": {
+    "hold_start": 0.3,
+    "concentric": 1.5,
+    "hold_top": 1.3,
+    "eccentric": 1.5,
+    "hold_end": 0.4,
+    "monotonic": true
   }
 }

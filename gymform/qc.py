@@ -432,12 +432,12 @@ def arm_skin_check(base, wfg, eq, xw, kp, src=None):
         if sel.sum() < 300:
             continue
         # a dark FILL is a solid dark blob (natural creases are thin lines): largest opened dark component
-        dk = cv2.morphologyEx(((l < 60.0) & sel).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        dk = cv2.morphologyEx(((l < 60.0 * SK_S) & sel).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
         n, _, st, _ = cv2.connectedComponentsWithStats(dk)
         blob = int(max([st[i, cv2.CC_STAT_AREA] for i in range(1, n)] or [0]))
         # silver-range p50 only on non-glow skin (native X-Ray glow regraded to silver is X-Ray content); dark fill on all
         tone = sel & ~glow
-        out[side] = (float(np.percentile(l[tone], 50)) if tone.sum() >= 300 else 160.0, blob, int(tone.sum()))
+        out[side] = (float(np.percentile(l[tone], 50)) if tone.sum() >= 300 else float(SK['p50']), blob, int(tone.sum()))
     return out
 
 
@@ -465,9 +465,9 @@ def leg_below_hem_check(base, wfg, shorts, kp, eqfoot=None, src=None):
         sel &= ~(cv2.dilate((shorts > 0.3).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
         if eqfoot is not None:   # hands/dumbbells resting beside the thigh are not leg skin
             sel &= ~(cv2.dilate((eqfoot > 0.3).astype(np.uint8), np.ones((41, 41), np.uint8)) > 0)
-        dark = (l < 60.0) & sel
+        dark = (l < 60.0 * SK_S) & sel   # thresholds scale with the locked skin tone (Day 4 charcoal, t542u)
         if src is not None:   # a FILL = rendered dark where the source is not (held-still dumbbells/creases are dark in the source too)
-            dark &= lum_of(src.astype(np.float32)) - l > 12.0
+            dark &= lum_of(src.astype(np.float32)) * SK_S - l > 12.0 * SK_S
         dk = cv2.morphologyEx(dark.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
         n_, _, st_, _ = cv2.connectedComponentsWithStats(dk)
         blob = int(max([st_[i, cv2.CC_STAT_AREA] for i in range(1, n_)] or [0]))   # largest dark blob (creases are tiny)
@@ -502,6 +502,12 @@ def main():
         report("format", (w, h) == (W, H) and abs(fps - 30) < 0.01 and n >= 590, f"{w}x{h} @ {fps:.2f}fps, {n} frames ({n / max(fps, 1):.2f}s)")
         vids = read_frames(args.mp4, [v["frame_idx"] for v in frames_meta.values()])
     bg = cv2.cvtColor(cv2.imread(meta["studio_bg"]), cv2.COLOR_BGR2RGB)
+    if bg.shape[:2] != (H, W):
+        bg = cv2.resize(bg, (W, H), interpolation=cv2.INTER_AREA)
+    if _SPEC_Q["background"].get("grade_to_rgb"):   # same Day 4 backdrop grade as gymform.bg.studio_bg (t543u)
+        bgf = bg.astype(np.float32)
+        bg = np.clip(bgf * (np.asarray(_SPEC_Q["background"]["grade_to_rgb"], np.float32)
+                            / np.maximum(np.median(bgf.reshape(-1, 3), axis=0), 1.0)), 0, 255).astype(np.uint8)
     bg_act = act_of(bg)
     ty0, ty1 = meta["title_roi"][1], meta["title_roi"][3]
     px0, py0, px1, py1 = meta["preview_roi"]
@@ -629,13 +635,16 @@ def main():
         xw = load_mask(pre + "_xwin.png")
         xw_d = (cv2.dilate((xw > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) > 0) if xw is not None else np.zeros((H, W), bool)
         sk_o = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
+        st_i = load_mask(pre + "_static.png")   # same skin as (f): native static bench highlights are not skin
+        if st_i is not None:
+            sk_o &= st_i < 0.5
         if sk_o.sum() > 2000:
             LOCK.setdefault(s, []).append((float(np.percentile(l[sk_o], 75)), float(np.percentile(l[sk_o], 90))))
         # (j) arm skin: silver on both arms, no dark fill
         for side, (p75a, blob, npx) in arm_skin_check(base, wfg, eq, xw, kp, cv2.cvtColor(cv2.imread(pre + "_src.png"), cv2.COLOR_BGR2RGB)).items():
             ARM_ROWS.append(f"{key} {side}: p50={p75a:.0f} darkfill={blob}px ({npx}px)")
             # silver range: shaded silver .. highlight (spec curve 46..226); a black fill sits far below it
-            if blob > 250 or (npx > 800 and not (100.0 <= p75a <= 215.0)):
+            if blob > 250 or (npx > 800 and not (100.0 * SK_S <= p75a <= 215.0 * SK_S)):
                 arm_fail.append(ARM_ROWS[-1])
         # (k) legs below the shorts hem: silver skin, no dark leak
         for side, (hem, ndk, npx) in leg_below_hem_check(base, wfg, shorts, kp, load_mask(pre + "_eqfoot.png"), cv2.cvtColor(cv2.imread(pre + "_src.png"), cv2.COLOR_BGR2RGB)).items():
@@ -649,11 +658,13 @@ def main():
         if st_m is not None:
             skin &= st_m < 0.5
         if skin.sum() > 2000:
-            p75, p90, mx = np.percentile(l[skin], 75), np.percentile(l[skin], 90), l[skin].max()
+            # max = p99.9: the statistic the lock anchors and the Day 4 reference was measured with (t542u)
+            p75, p90, mx = np.percentile(l[skin], 75), np.percentile(l[skin], 90), np.percentile(l[skin], 99.9)
             sh = (shorts > 0.6) & (wfg > 0.9)
             sp = float(np.median(l[sh])) if sh.sum() else -1
             SKIN.append(f"{key}: p75={p75:.0f} p90={p90:.0f} max={mx:.0f} shorts={sp:.0f}")
-            if not (155 <= p75 <= 175 and 181 <= p90 <= 201 and mx <= 228 and 10 <= sp <= 22):
+            if not (SK["qc_p75_range"][0] <= p75 <= SK["qc_p75_range"][1] and SK["qc_p90_range"][0] <= p90 <= SK["qc_p90_range"][1]
+                    and mx <= SK["qc_max"] and SH_RANGE[0] <= sp <= SH_RANGE[1]):
                 skin_fail.append(SKIN[-1])
 
     report("(a) no colour halo / bloom outside mannequin", not halo_bad, "; ".join(halo_bad) or f"{len(frames_meta)} frames clean")
@@ -695,8 +706,12 @@ def main():
                 ma = (wa > 0.5) & ((sa if sa is not None else 0) < 0.5)
                 mb = (wb > 0.5) & ((sb if sb is not None else 0) < 0.5)
                 iou = float((ma & mb).sum()) / max(1.0, float((ma | mb).sum()))
-                pr_rows.append(f"{a_}/{b_} {tag}: kp {100 * dev:.1f}% iou {iou:.2f}")
-                if dev > 0.03 or iou < 0.85:
+                pm = ca.get("pair_match") or cb.get("pair_match")
+                pr_rows.append(f"{a_}/{b_} {tag}: kp {100 * dev:.1f}% iou {iou:.2f}" + (" (joint-tolerance pair)" if pm else ""))
+                # t541u relaxed rule for a measured native pair: same motion + angle within joint tolerance; the
+                # silhouette of two different native clips is reported, not gated
+                tol_j = float(_SPEC_Q["step_order"].get("pair_tolerance", {}).get("joint_dev_pct", 15.0)) / 100.0
+                if (dev > tol_j) if pm else (dev > 0.03 or iou < 0.85):
                     pr_bad.append(pr_rows[-1])
         report("(s) pair steps share the same motion (1/3 wrong, 2/4 right): keypoints + silhouette", not pr_bad,
                "; ".join(pr_bad) or " | ".join(pr_rows[:8]))
@@ -746,7 +761,7 @@ def main():
     report("(k) no dark pixels in leg skin below the shorts hem", not leg_fail, "; ".join(leg_fail) or " | ".join(LEG_ROWS[:8]))
     for key, is_bone, ncol, detail, ok in RESULTS_E:
         report(f"(e) {key} {'bone X-Ray' if is_bone else 'muscle fibers'} present/readable", ok, f"coloured px={ncol}, edge detail={detail:.1f}")
-    report("(f) skin p75~165/p90~191, shorts 10..22", not skin_fail, " | ".join(SKIN))
+    report(f"(f) skin = Day 4 tone p75~{SK['p75']}/p90~{SK['p90']}, shorts {SH_RANGE[0]}..{SH_RANGE[1]}", not skin_fail, " | ".join(SKIN))
     if LOCK:
         p75s = {k: float(np.mean([v[0] for v in vs])) for k, vs in LOCK.items()}
         p90s = {k: float(np.mean([v[1] for v in vs])) for k, vs in LOCK.items()}
@@ -810,12 +825,27 @@ def main():
                (f"{q[0]['text']!r} {q[0]['start']:.2f}-{q[0]['end']:.2f}s (step4 ends {s4[0]['end']:.2f}s)" if q and s4
                 else "no question segment in tts_timing.json"))
 
+    # (v) tempo = Day 4 baseline (t544u): smooth cosine, turnarounds at frames 50/100 of every 5 s step, no flat holds
+    from gymform import tempo as _tempo
+    if args.preflight:
+        rv = _tempo.reversal_frames()
+        report("(v) tempo wave = Day 4 (turnarounds 50/100 per step)", rv == list(_tempo.TEMPO.get("reversal_frames", rv)),
+               f"{_tempo.TEMPO.get('style')} reversals {rv}")
+    else:
+        ok_v, exp_v, bad_v = _tempo.tempo_ok(_tempo.measure_reversals(args.mp4))
+        report("(v) tempo = Day 4 (motion turnarounds at frames 50/100 of each step, +-6)", ok_v,
+               f"expected {exp_v}; off: {bad_v}" if bad_v else f"all 4 steps turn at {exp_v}")
+
     print(f"\nQC GATE: {'PASS' if all(RESULTS) else 'FAIL'} ({sum(RESULTS)}/{len(RESULTS)} items)")
     sys.exit(0 if all(RESULTS) else 1)
 
 
 OVP, STATIC, STRAY = [], [], []
 CFG_EQ = [[]]
+_SPEC_Q = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gymform_spec.json")))
+SK = _SPEC_Q["mannequin"]["skin_lock_all_steps"]          # t542u: Day 4 skin tone is the target + QC reference
+SH_RANGE = _SPEC_Q["mannequin"]["shorts_lum_range"]
+SK_S = SK["p75"] / 165.0                                    # scale of the silver-era absolute thresholds to the Day 4 tone
 RESULTS_E, SKIN, EQ_ROWS, H_ROWS, LOCK, ARM_ROWS, arm_fail, LEG_ROWS, leg_fail = [], [], [], [], {}, [], [], [], []
 
 if __name__ == "__main__":

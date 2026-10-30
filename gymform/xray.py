@@ -30,7 +30,7 @@ def xray_window(kp: dict, is_wrong: bool) -> np.ndarray:
 
 
 def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_mask: np.ndarray, tint: str = "crimson",
-                  glass_gate: np.ndarray | None = None, glass_floor: float = 0.0) -> np.ndarray:
+                  glass_gate: np.ndarray | None = None, glass_floor: float = 0.0, src_tint: str | None = None) -> np.ndarray:
     """
     Reusable X-Ray module = the APPROVED Day 1 v36 'Step 1 native 3D X-Ray' method
     (gymform_engine.prepare_xray_bone_frame + render_xray_skeletal_frame), generalised to any tint/gate:
@@ -43,7 +43,10 @@ def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_ma
     r = rgb[:, :, 0].astype(np.float32)
     g = rgb[:, :, 1].astype(np.float32)
     b = rgb[:, :, 2].astype(np.float32)
-    if tint == "crimson":
+    # t541u: the native clip's own bone tint (detection) can differ from the step's role tint (output colour):
+    # a matched native bone clip of the other colour is colour-GRADED (its own bone pixels), never repainted
+    src_tint = src_tint or tint
+    if src_tint == "crimson":
         t_any = np.clip((r - b - 12.0) / 95.0, 0.0, 1.0)
         detail = 0.38 * r + 0.62 * g
         bone_m = np.clip((r - b - 82.0) / 95.0, 0.0, 1.0) * np.clip((r - 130.0) / 75.0, 0.0, 1.0)
@@ -60,7 +63,7 @@ def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_ma
     bone_m = bone_m * (0.20 + 0.80 * structured)
     # native bright bone edges inside the tinted zone also count as bone (Day 5 sources tint bones less than Day 1)
     bone_m = np.maximum(bone_m, 0.9 * np.clip(t_any * 1.6, 0.0, 1.0) * np.clip((bone_sharp - 0.50) / 0.22, 0.0, 1.0))
-    if glass_gate is not None and glass_floor > 0.0 and tint != "crimson":
+    if glass_gate is not None and glass_floor > 0.0 and src_tint != "crimson":
         # Step 3 source tints only thin bone outlines: the native 3D bone/skeletal relief inside the glass
         # window (positive high-frequency ridges of the render: clavicle, scapular spine/acromion, humeral head,
         # humerus, rib arcs) is lit as luminous bone. Per-pixel on the native frame, no drawn shapes, no blur.
@@ -102,6 +105,9 @@ def xray_day1_v36(rgb: np.ndarray, mono: np.ndarray, gate: np.ndarray, shorts_ma
         col = np.stack([95.0 + 160.0 * (bv ** 0.55), 14.0 + hot, 10.0 + 45.0 * (bv ** 1.5) + 135.0 * (bv ** 3.0)], axis=-1)
     else:                   # same ramp mirrored to emerald: deep green -> mint -> white core
         col = np.stack([10.0 + 45.0 * (bv ** 1.5) + 135.0 * (bv ** 3.0), 95.0 + 160.0 * (bv ** 0.55), 14.0 + hot], axis=-1)
+    # t530u/t543u: bones must read bright near-white with only a subtle tint (dark saturated bone = invisible):
+    # the low end of the ramp is lifted toward a soft white, the hot core is unchanged
+    col = col + (np.array([228.0, 230.0, 234.0], np.float32) - col) * (0.42 * (1.0 - bv))[:, :, None]
     a = np.clip((bm ** 0.80) * 0.96, 0.0, 0.96)[:, :, None]
     out = out * (1.0 - a) + np.clip(col, 0, 255) * a
     return out
@@ -113,11 +119,13 @@ def apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, eq_solid, kp, step
         win = xray_window(kp, step_idx in CFG.get('xray_full_steps', [CFG['bone_steps'][0]])) * w_fg
         win = win * (1.0 - cv2.GaussianBlur(cv2.dilate(eq_solid, np.ones((9, 9), np.uint8)), (0, 0), 2.0))
         LAST_MASKS["xwin"] = win
+        src_tint = CFG["clips"][str(step_idx)].get("native_tint") if "clips" in CFG else None
         if is_wrong:
-            mannequin_x = xray_day1_v36(rgb_1080, mono, anat * win, shorts_mask, tint="crimson")
+            mannequin_x = xray_day1_v36(rgb_1080, mono, (anat if src_tint in (None, "crimson") else np.maximum(anat, win)) * win,
+                                        shorts_mask, tint="crimson", src_tint=src_tint)
         else:
             mannequin_x = xray_day1_v36(rgb_1080, mono, np.maximum(anat, win) * win, shorts_mask, tint="emerald",
-                                        glass_gate=win, glass_floor=0.80)
+                                        glass_gate=win, glass_floor=0.80, src_tint=src_tint)
         wv = win[:, :, None]
         return mono * (1.0 - wv) + mannequin_x * wv
     LAST_MASKS["xwin"] = np.zeros((H, W), np.float32)

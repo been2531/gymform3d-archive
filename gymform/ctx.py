@@ -53,9 +53,16 @@ def expand_motions(cfg: dict) -> dict:
     for (form, kind), s in _KIND_STEP.items():
         m = cfg["motions"][form]
         r = m["renders"][kind]
+        if r.get("pair_match"):   # t541u: a separate NATIVE clip matched to the base within joint tolerance:
+            # its own DTW-aligned slice and its own keypoints (same motion phase at rest/peak, not the same frames)
+            clips[str(s)] = {"file": r["file"], "i0": int(r["i0"]), "i1": int(r["i1"]), "y_shift": int(m.get("y_shift", 80)),
+                             "is_wrong": form == "wrong", "mode": f"{kind}_blood", "motion": form, "kp_file": r["file"],
+                             "edit_of": None, "mirror": bool(r.get("mirror", m.get("mirror", False))), "pair_match": r["pair_match"],
+                             "native_tint": r.get("native_tint")}
+            continue
         clips[str(s)] = {"file": r["file"], "i0": int(m["i0"]), "i1": int(m["i1"]), "y_shift": int(m.get("y_shift", 80)),
                          "is_wrong": form == "wrong", "mode": f"{kind}_blood", "motion": form, "kp_file": m["base"],
-                         "edit_of": r.get("edit_of")}
+                         "edit_of": r.get("edit_of"), "mirror": bool(r.get("mirror", m.get("mirror", False)))}
     cfg["clips"] = clips
     cfg["bone_steps"], cfg["muscle_steps"] = [1, 2], [3, 4]
     return cfg
@@ -81,6 +88,12 @@ def pair_lint(cfg, spec=None):
             r = (m.get("renders") or {}).get(kind)
             if not r:
                 errs.append(f"motions.{form}.renders.{kind} missing")
+            elif r.get("pair_match"):   # t541u relaxed rule: same motion + angle within joint tolerance (measured)
+                pm, tol = r["pair_match"], so.get("pair_tolerance", {"joint_dev_pct": 15.0, "angle_deg": 15.0, "view_dev_pct": 15.0})
+                for k_, lim in (("joint_dev_pct", tol["joint_dev_pct"]), ("elbow_deg", tol["angle_deg"]),
+                                ("shoulder_deg", tol["angle_deg"]), ("view_dev_pct", tol["view_dev_pct"])):
+                    if float(pm.get(k_, 1e9)) > float(lim):
+                        errs.append(f"motions.{form}.{kind} {r['file']}: {k_} {pm.get(k_)} > tolerance {lim}")
             elif r["file"] != m["base"] and r.get("edit_of") != m["base"]:
                 errs.append(f"motions.{form}.{kind} file {r['file']} is not the motion base {m['base']} nor a declared edit of it")
     return errs

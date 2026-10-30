@@ -154,13 +154,16 @@ def skin_tone_lock(rgb, w_fg, shorts_mask, metal, step_idx):
     xw = LAST_MASKS.get("xwin")
     keep_out = np.maximum(np.maximum(shorts_mask, metal), xw if xw is not None else 0.0)
     skin = (w_fg > 0.9) & (keep_out < 0.05) & (act < 12.0) & (L > 46.0)
+    if xw is not None:   # statistics on the same skin as QC (f)/(i): 25 px clear of the X-Ray window (glow spill)
+        skin &= cv2.dilate((xw > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) == 0
     if skin.sum() < 2000:
         return rgb
     p75, p90, pmx = (float(np.percentile(L[skin], q)) for q in (75, 90, 99.9))
     xs = [0.0, 46.0, p75, max(p90, p75 + 1), max(pmx, p90 + 2), 255.0]
     ys = [0.0, 46.0, float(lk["p75"]), float(lk["p90"]), float(lk["max"]), float(lk["max"])]
     gain = np.interp(L, xs, ys) / np.maximum(L, 1.0)
-    w = np.clip(w_fg, 0, 1) * (1.0 - np.clip(keep_out * 4, 0, 1)) * np.clip((12.0 - act) / 6.0, 0.0, 1.0)
+    # full lock on every solid-body pixel (w_fg >= 0.9 is skin for QC (f)); only the soft matte edge blends
+    w = np.clip((w_fg - 0.5) / 0.4, 0, 1) * (1.0 - np.clip(keep_out * 4, 0, 1)) * np.clip((12.0 - act) / 6.0, 0.0, 1.0)
     g = 1.0 + (gain - 1.0) * w
     return np.clip(f * g[:, :, None], 0, 255)
 
@@ -193,12 +196,15 @@ def load_inputs():
     for s in (1, 2, 3, 4):
         fn, i0, i1, is_w, v_mode, y_sh = ctx.step_spec(s)
         seq = d5.load_native_slice_720p(os.path.join(CFG["assets_dir"], fn), i0, i1)
+        mir = bool(CFG["clips"][str(s)].get("mirror"))
+        if mir:   # t543u: Day 4 locked camera side for all 4 steps (whole-frame flip of the native clip, no repaint)
+            seq = [np.ascontiguousarray(f[:, ::-1]) for f in seq]
         raw_seqs[s] = seq
         # pair steps (same motion, Day 6+) share ONE keypoint track extracted from the motion base clip
         kp_fn = CFG["clips"][str(s)].get("kp_file") or fn
         twin = next((t for t in (1, 2, 3, 4) if t < s and (CFG["clips"][str(t)].get("kp_file") or "") == kp_fn
                      and kp_fn and (CFG["clips"][str(t)]["i0"], CFG["clips"][str(t)]["i1"]) == (i0, i1)), None)
-        sig = (kp_fn, i0, i1, y_sh)
+        sig = (kp_fn, i0, i1, y_sh) + (("mirror",) if mir else ())
         if twin is not None and kps_seqs.get(("sig", twin)) == sig and len(kps_seqs[twin]) == len(seq):
             if kps_seqs.get(("sig", s)) != sig or kps_seqs.get(s) is not kps_seqs[twin]:
                 kps_seqs[s], kps_seqs[("sig", s)] = kps_seqs[twin], sig
@@ -208,6 +214,8 @@ def load_inputs():
             if s not in kps_seqs or kps_seqs.get(("sig", s)) != sig:
                 kps_seqs[("sig", s)] = sig
                 base_seq = d5.load_native_slice_720p(os.path.join(CFG["assets_dir"], kp_fn), i0, i1)
+                if mir:
+                    base_seq = [np.ascontiguousarray(f[:, ::-1]) for f in base_seq]
                 kps_seqs[s] = d5.extract_day5_kps_1080(base_seq, s, y_sh)
                 dirty = True
             continue

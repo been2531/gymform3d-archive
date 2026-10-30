@@ -98,3 +98,12 @@ python3 run_day.py --day N               # lint -> preflight (stamp reused if th
   QC (d) uses the `_geo.png` sidecar + the base step's plate for the expected equipment footprint.
 - TODO (next run, t526u): see RULES.md "TODO next run" — right-edit limb drift, cyan bones, (q) blobs near base arm outline.
 - BASELINE (t532u): see docs/BASELINE.md. QC (u) bone visibility; xai_edit acceptance = silhouette + motion + leg glow + soft tint + bone brightness.
+
+## t541u–t547u: Day 4 = GOLD #1 base, gold registry, zero-cost pairs
+- `gold.json` + `docs/GOLD.md`: ranked approved references; `run_day.py` prints/logs them first (`gymform/gold.py`).
+- Day 4 measured into `gymform_spec.json`: skin lock (p75 75 / p90 88 / p99.9 143, tint −3/+1/+3), backdrop grade
+  35/39/43, shorts L 24–40, tempo `day4_cosine` (QC (v) turnarounds 50/100), callout `ui.callout_style`
+  (`layout.draw_callout_day4`, `day4` | `day4_refined`). Day 5 values kept as `*_legacy_day5`.
+- Joint-tolerance pairs: `motions.*.renders.*.pair_match` (own slice + kps, lint + QC (s) at 15 %), `mirror`
+  (whole-frame flip, part of kp/plate cache keys), `native_tint` (X-Ray detects the clip's own bone colour and
+  grades it to the role colour).

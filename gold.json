@@ -1,0 +1,115 @@
+{
+ "_doc": "GOLD registry (t541u): approved / known-good references. run_day.py loads + prints this before every run. See docs/GOLD.md. Paths are relative to the repo; media files are local (not in git).",
+ "items": [
+  {
+   "id": "day4_rdl_master",
+   "kind": "master",
+   "day": 4,
+   "path": "output/day4_romanian_deadlift_4step_master.mp4",
+   "cover": "output/day4_romanian_deadlift_4step_master_cover.jpg",
+   "builder": "build_day4_rdl_master.py",
+   "commit": "aeeb806",
+   "permalink": "https://www.instagram.com/gymform.3d/reel/DfC8EifoxFa/",
+   "status": "posted; owner t541u-t547u: best so far = GOLD #1, primary base for everything visual",
+   "why": "skin tone (L p50 64/p75 75/p90 88, cool tint -3/+1/+3), backdrop grade 35/39/43, camera side locked for all steps, full-body framing, muscle fibre look, shorts tone, Kaushan title + translucent preview, angle callout (one joint axis + horizontal leader + 86px number), tempo 1.5 cosine reps per 5 s step (turnarounds 1.67/3.33 s)",
+   "rank": 1,
+   "measured": {
+    "skin": "gymform_spec.json mannequin.skin_lock_all_steps",
+    "tempo": "gymform_spec.json tempo_s",
+    "callout": "spec ui.callout_style"
+   }
+  },
+  {
+   "id": "day1_v36_xray_bones",
+   "kind": "frame",
+   "day": 1,
+   "path": "output/day1_v36_master_reel.mp4",
+   "t_s": 1.5,
+   "permalink": "https://www.instagram.com/reel/De_Yl9rAYC4/",
+   "status": "posted, X-Ray reference for QC (g)/(u)",
+   "why": "bright near-white luminous X-Ray bones with only a soft tint; the ONE element taken from Day 1-3 (t530u)",
+   "rank": 2
+  },
+  {
+   "id": "day5_v5_master",
+   "kind": "master",
+   "day": 5,
+   "path": "output/day5_dumbbell_lateral_raise_4step_master_v5.mp4",
+   "cover": "output/day5_dumbbell_lateral_raise_4step_master_v5_cover.jpg",
+   "config": "configs/day05.json",
+   "commit": "3b584ad",
+   "permalink": "https://www.instagram.com/reel/DfFPS3YFLF3/",
+   "status": "posted; owner t534u good; t543u-t547u: only mechanics kept",
+   "why": "ONLY: one-pass modular pipeline + hashed caches, auto QC gates, native-fabric shorts masking, spoken experience-question caption (its silver skin, tempo and arm-laser callout are superseded by Day 4)",
+   "rank": 3
+  },
+  {
+   "id": "day5_native_bone_clips",
+   "kind": "clip",
+   "day": 5,
+   "path": [
+    "output/assets/day5_lat_step1_bone_720p.mp4",
+    "output/assets/day5_lat_step3_bone_v3_720p.mp4"
+   ],
+   "status": "used in posted Day 5",
+   "why": "clip-generation template: native i2v bone clips with thin glowing bones over OPAQUE skin (mechanics only)",
+   "rank": 4
+  },
+  {
+   "id": "day5_native_muscle_clips",
+   "kind": "clip",
+   "day": 5,
+   "path": [
+    "output/assets/day5_lat_step2_muscle_720p.mp4",
+    "output/assets/day5_lat_step4_muscle_720p.mp4"
+   ],
+   "status": "used in posted Day 5",
+   "why": "native muscle-fibre clips, localized target muscle",
+   "rank": 5
+  },
+  {
+   "id": "day6_pair_wrong",
+   "kind": "clip-pair",
+   "day": 6,
+   "rank": 6,
+   "status": "CANDIDATE (preflight sample frames only; owner look pending)",
+   "path": [
+    "output/assets/day6_idp_step3_bone_720p.mp4",
+    "output/assets/day6_idp_step2_muscle_720p.mp4"
+   ],
+   "config": "configs/day06.json motions.wrong",
+   "why": "native bone clip (f23-59) matches the wrong-form muscle clip: joint 5.6% / elbow 11.6 deg / shoulder 8.8 deg / view 6.8% (noise floor 2.8%)"
+  },
+  {
+   "id": "day6_pair_right",
+   "kind": "clip-pair",
+   "day": 6,
+   "rank": 7,
+   "status": "CANDIDATE, weaker match (eyeball)",
+   "path": [
+    "output/assets/day6_idp_step1_bone_720p.mp4",
+    "output/assets/day6_idp_step4_muscle_720p.mp4"
+   ],
+   "config": "configs/day06.json motions.right (mirrored to the Day 4 camera side)",
+   "why": "native bone clip (f20-47) matches the right-form muscle clip: joint 14.6% / elbow 14.5 deg / shoulder 12.9 deg / view 7.1% (tolerance 15)"
+  },
+  {
+   "id": "baseline_doc",
+   "kind": "doc",
+   "path": "docs/BASELINE.md",
+   "status": "owner direction t530u-t534u",
+   "why": "Day 4 primary base for every visual element; Day 5 mechanics only; Day 1 bones (t541u-t547u)",
+   "rank": 9
+  }
+ ],
+ "never_use": [
+  {
+   "path": "output/assets/day6_idp_wrong_bone_720p.mp4",
+   "why": "xAI edit rejected t529u"
+  },
+  {
+   "path": "output/assets/day6_idp_right_bone_720p.mp4",
+   "why": "xAI edit rejected t529u"
+  }
+ ]
+}

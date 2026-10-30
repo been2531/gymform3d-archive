@@ -1,4 +1,4 @@
-# @gymform.3d BASELINE TEMPLATE (t530u–t532u)
+# @gymform.3d BASELINE TEMPLATE (t530u–t547u)
 
 Owner (t530u–t532u): Day 6 fell apart because too much changed at once. **Build from what already worked in the
 posted Day 1–5 reels, then change ONE element per day** (each change = its own preflight + owner look).
@@ -9,43 +9,38 @@ Posted Day 1–5 (exercise_curriculum.json): D1 `output/day1_v36_master_reel.mp4
 D4 `output/day4_romanian_deadlift_4step_master.mp4` (DfC8EifoxFa) · D5
 `output/day5_dumbbell_lateral_raise_4step_master_v5.mp4` (DfFPS3YFLF3). Day 6 (DfGabTBjwt8) deleted, t529u.
 
-**Primary base = Day 4 + Day 5 (t534u: "Day4, Day5가 진짜 잘나오고 있자나")**: pipeline, look, framing, clip
-generation all come from Day 5 v5 (built on the Day 4 look). From Day 1–3 only clearly better single elements are
-taken: **Day 1 v36 bright X-Ray bones** (never dark, subtle tint). Nothing else from Day 1–3.
+**Primary base = Day 4 for EVERYTHING visual (t541u–t547u: "Day 4 is the best so far")**. Day 4 = gold #1.
+From Day 5 only: the one-pass modular pipeline (+ hashed caches), the auto QC gates, the native-fabric shorts
+masking and the spoken experience-question caption. From Day 1 only: the bright X-Ray bones. Nothing else from Day 1–3/5.
+Measured from `output/day4_romanian_deadlift_4step_master.mp4` (script logic in `gymform/tempo.py`, values in `gymform_spec.json`).
 
-| Element | Base (source day) | Source file / commit | Shared module now |
+| Element | Base (source day) | Measured / source | Shared module now |
 |---|---|---|---|
-| **Pipeline** | **Day 5 v5** modular locked pipeline (gymform/*, hashed per-step caches, QC gate) | ca6e9f1, 66590f9, 3b584ad | `run_day.py`, `gymform/*` |
-| **Studio / look** | **Day 4–5** minimal dark charcoal studio, no props, silver mannequin, crisp (0 bloom/blur) | D4 f63a353/aeeb806, D5 80d99d4 | `gymform/bg.py` |
-| **Clip generation** | **Day 5 v5**: Grok Imagine i2v, 720p, 121 f @24 fps, one native clip per step, start still with the anatomy baked in (bone clips = thin glowing upper-body bones over OPAQUE silver skin); locked angle across steps as in Day 4 | `output/assets/day5_lat_step*_720p.mp4` (bone: `day5_lat_step3_bone_v3_720p.mp4`), D4 aeeb806 | config + assets; `xai_edit.acceptance` colour gate |
-| **X-Ray look** (from Day 1) | **Day 1 v36** bright near-white luminous bones in a local see-through window, only a soft red (wrong) / soft green (right) tint; never dark saturated fills (t530u) | `output/day1_v36_master_reel.mp4` @1.5 s; module in 80d99d4 | `gymform/xray.py`; QC (g) + **(u)** |
-| **Muscle fibre** | **Day 5 v5** localized intrinsic fibre colouring on the target muscle (Day 4 RDL grain as the texture reference) | D5 v5 step 2/4; D4 f63a353 | `gymform/muscle.py` |
-| **Silver skin** | **Day 5 v5** deterministic silver lock p75 ~165 / p90 ~191 / max 226 every step | 66590f9 (curve 68d2fb3) | `render.skin_tone_lock`; QC (f) |
-| **Shorts** | **Day 5 v5** native fabric only, clean hem/waistband (Day 4 jet-black drawers look) | 3b584ad | `mask.native_shorts`; QC (n)(k) |
-| **Framing** | **Day 4–5** full body centred, same mannequin size every step, locked angle, equipment never cut. **No target zoom** in the base (Day 6 zoom = later single change) | D4 aeeb806, D5 66590f9 | `ctx.normalize_scale`; QC (c)(d) |
-| **Layout / title / preview** | **Day 4** depth-behind Kaushan title + 4-slot translucent top preview + see-through 0.40 (as in Day 5 v5) | 70e292c, 328c7b4, c607b9d | `gymform/layout.py`; QC (b1)(b2)(h) |
-| **Callout / laser** | **Day 5 v5** degree callout + single laser chain, numbers = TTS | ca6e9f1 | `layout`, `callout_lint` |
-| **TTS** | **Day 4** lines fitted inside each 5 s step window + Day 6 owner rule (spoken experience question at the end) | e04e274 | `gymform/tts.py`; QC (l) |
-| **Tempo** | **Day 5 V3** 1 rep, 1.3 s peak hold: 0.3/1.5/1.3/1.5/0.4 s | 165922d | `gymform/tempo.py` |
-| **Caption / step order** | Owner rules from Day 6: 3 English lines, 0 hashtags; 1 wrong bone, 2 right bone, 3 wrong muscle, 4 right muscle | 1eba222, t515u | `caption.py`, `ctx.order_lint` |
+| **Skin tone** | **Day 4** cool charcoal-silver: body L p50 64 / p75 75 / p90 88 / p99.9 ~143, tint RGB −3/+1/+3 (t542u, 6 frames, body-only ROI, bar/plates excluded) | Day 4 master | `spec.mannequin.skin_lock_all_steps`; `render.skin_tone_lock`, `muscle.silver_skin`; QC (f)(i)(j)(k) scale with it |
+| **Backdrop / colour grade** | **Day 4** backdrop median RGB 35/39/43 (plate graded per channel on load) | Day 4 master | `bg.studio_bg`; QC (a) uses the same grade |
+| **Shorts** | **Day 4** tone L 24–40 (just under the backdrop) on **Day 5** native-fabric masking | Day 4 master; mask 3b584ad | `muscle.silver_skin`, `mask.native_shorts`; QC (f)(n)(k) |
+| **Camera angle / framing** | **Day 4**: ONE camera side for all 4 steps, full body, no zoom, same mannequin size | aeeb806 | config `motions.*.mirror` (whole-frame flip of native clips), `ctx.normalize_scale`; zoom 1.0 |
+| **Muscle fibre** | **Day 4** RDL fibre grain/colour as reference (current module = Day 5 port of it; next single change if it differs on the sheet) | D4 f63a353 | `gymform/muscle.py` |
+| **Title / preview** | **Day 4** depth-behind Kaushan title + 4-slot translucent preview, see-through 0.40 | 70e292c, 328c7b4 | `gymform/layout.py`; QC (b1)(b2)(h) |
+| **Angle callout** | **Day 4** (t547u): one straight joint axis (bent only at the joint vertex) + 2 cross ticks, vertex ring(s), horizontal precision leader to a left text block level with the target; number 86 px Pretendard ExtraBold at x 86, label 21 px in the role colour, sub-line 16 px | `build_day4_rdl_master.draw_day4_laser_and_callout` | `layout.draw_callout_day4` (`spec.ui.callout_style` = `day4` or `day4_refined` = Day 5 crisp 2.8 px laser + 84 px number) |
+| **Tempo** | **Day 4** (t544u): per 5 s step `0.5−0.5·cos(2π·1.5·u)` = rest → top 1.67 s → rest 3.33 s → top 5.0 s, smooth turnarounds, no flat holds (measured: turnarounds at frames 50/100 of all 4 steps) | `build_day4_rdl_master.py` L284; master | `gymform/tempo.py`; QC **(v)** |
+| **X-Ray bones** (Day 1) | **Day 1 v36** bright near-white luminous bones, only a soft tint; a native bone clip of the other colour is colour-graded (`native_tint`), never repainted | Day 1 v36 @1.5 s | `gymform/xray.py`; QC (e)(g)(u) |
+| **Pipeline / QC** (Day 5) | one-pass modular `run_day.py`, hashed per-step caches, preflight gate, auto QC | ca6e9f1, 66590f9, 3b584ad | `run_day.py`, `gymform/*` |
+| **Caption** (Day 5/6) | 3 English lines, 0 hashtags + spoken experience question at the end | 1eba222, t515u | `caption.py`, `tts.py`; QC (l) |
+| **Step order** | 1 wrong bone, 2 right bone, 3 wrong muscle, 4 right muscle | t515u | `ctx.order_lint` |
 
-## Pair matching (t521u) without video edits
-Wrong steps 1/3 and right steps 2/4 must show the same motion. Video edits (Day 6, t522) changed limb shape and
-colour, so the baseline uses **Day-5-style generated clips + a joint-tolerance check** instead of pixel identity:
-1. Keep the existing native muscle clips as the motion base (Day 6: `day6_idp_step2_muscle_720p.mp4`,
-   `day6_idp_step4_muscle_720p.mp4`).
-2. Make the bone stills by **image edit** of the base clip's frames (first, 4 keyframes on the 1/3 s grid, last):
-   "same opaque silver mannequin, add thin bright near-white upper-body bones with a soft red/green glow".
-   Each still must pass the acceptance gate (silhouette IoU ≥ 0.90, bone V50 ≥ 190, S50 ≤ 0.50, white core ≥ 0.10,
-   tint hue) **before** any video spend.
-3. Generate each bone clip with grok-imagine-video-1.5 i2v, **first + last frame + 4 keyframes pinned** to those
-   stills (same duration/fps as the base).
-4. Accept only if the joint trajectories match the base: mean joint deviation ≤ 4% of skeletal size per sampled
-   frame (QC (s) already measures this on per-clip keypoints when kps are extracted per clip) + `xai_edit.acceptance`.
+Superseded by Day 4 (kept in spec as `*_legacy_day5`): Day 5 bright silver lock 165/191/226, shorts 10–22, tempo 0.3/1.5/1.3/1.5/0.4, single arm-laser callout.
 
-Expected spend for Day 6 (xAI list prices, docs.x.ai/developers/models, 2026-10-30): image edits 12 × ~$0.08
-(input+output, grok-imagine-image-2.0) ≈ $1.0; 2 videos × 5.04 s × $0.08 ≈ $0.81; **≈ $1.8 per attempt**, budget
-one retake → **≤ $3.6**. (t522 edits were billed $0.40 per 5 s clip.) No SuperGrok/grok.com quota used on the API route.
+## Pair matching (t521u relaxed by t541u: same motion + angle within joint tolerance)
+Zero-cost route (t539u, no xAI, no generation): pair each native muscle clip with the native bone clip whose
+motion matches best. DTW-aligned keypoints (`_tmp_day6/pair/dtw.py`), mean joint distance in % of skeletal size;
+tolerance `spec.step_order.pair_tolerance` = joint ≤ 15 %, elbow/shoulder angle ≤ 15°, view ≤ 15 %
+(same-clip noise floor 1.5–2.8 %). Lint (`ctx.pair_lint`) checks the stored `pair_match`; QC (s) gates keypoints at
+the same tolerance and reports silhouette IoU (two different native clips never share pixels).
+Day 6 result: wrong = step3 bone f23–59 ↔ step2 muscle: 5.6 % / 11.6° / 8.8° / view 6.8 % (good);
+right = step1 bone f20–47 ↔ step4 muscle: 14.6 % / 14.5° / 12.9° / view 7.1 % (at the limit, eyeball).
+The old 4-clip version had the two bone clips on swapped steps (each matched the other form's muscle clip).
+The paid keyframe-edit route (≈ $1.8/attempt) stays a fallback only with the owner's spend approval.
 
 ## Bone brightness gates (t530u)
 - Render QC **(u)**: bone pixels in the X-Ray window L50 ≥ 140, L90 ≥ 190, contrast vs surround ≥ 25,

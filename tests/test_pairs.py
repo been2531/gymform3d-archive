@@ -20,8 +20,13 @@ class PairMotion(unittest.TestCase):
         cl = c["clips"]
         self.assertEqual(cl["1"]["motion"], cl["3"]["motion"])
         self.assertEqual(cl["2"]["motion"], cl["4"]["motion"])
-        self.assertEqual(cl["1"]["kp_file"], cl["3"]["kp_file"])
-        self.assertEqual((cl["1"]["i0"], cl["1"]["i1"]), (cl["3"]["i0"], cl["3"]["i1"]))
+        for a, b in (("1", "3"), ("2", "4")):   # same frames, or a measured joint-tolerance native match (t541u)
+            if cl[a].get("pair_match") is None:
+                self.assertEqual(cl[a]["kp_file"], cl[b]["kp_file"])
+                self.assertEqual((cl[a]["i0"], cl[a]["i1"]), (cl[b]["i0"], cl[b]["i1"]))
+            else:
+                self.assertLessEqual(cl[a]["pair_match"]["joint_dev_pct"], 15.0)
+        self.assertEqual(cl["2"]["mirror"], cl["4"]["mirror"])   # a motion's two renders share the camera side
         self.assertEqual([cl[s]["is_wrong"] for s in "1234"], [True, False, True, False])
         self.assertEqual([cl[s]["mode"] for s in "1234"], ["bone_blood", "bone_blood", "muscle_blood", "muscle_blood"])
         self.assertEqual(ctx.order_lint(c), [])
@@ -32,6 +37,11 @@ class PairMotion(unittest.TestCase):
     def test_lint_rejects_unrelated_clip_in_pair(self):
         c = day6()
         c["motions"]["wrong"]["renders"]["bone"] = {"file": "day6_idp_step1_bone_720p.mp4"}
+        self.assertTrue(ctx.pair_lint(c))
+
+    def test_lint_rejects_match_outside_joint_tolerance(self):
+        c = day6()
+        c["motions"]["right"]["renders"]["bone"]["pair_match"]["joint_dev_pct"] = 40.0
         self.assertTrue(ctx.pair_lint(c))
 
     def test_lint_rejects_per_step_clips_from_day6(self):
