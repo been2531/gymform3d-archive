@@ -109,3 +109,8 @@ rules marked **[QC]** fail the QC gate (`gymform/qc.py`). A day that fails is ne
 - ENFORCED: gymform/xai_edit.py strict prompt (opaque silver limbs, same thickness, UPPER-BODY bones only, no leg glow,
   deep emerald #1E9E5A not cyan / crimson #C8102E) + acceptance QC on every take (rejected takes -> *_REJECTED.mp4);
   run_day refuses to render when an edit_of clip fails acceptance (`python3 -m gymform.xai_edit --day N --check`).
+
+## BASELINE FIRST (t530u–t532u)
+- Every day starts from `docs/BASELINE.md` (best of posted Day 1–5) and changes at most ONE element, with a preflight sheet.
+- Bones: bright near-white luminous Day-1 v36 bones with only a subtle red/green tint; never dark saturated fills.
+  Gates: render QC (u) and `xai_edit.ACCEPT` bone brightness (thresholds in docs/BASELINE.md).
