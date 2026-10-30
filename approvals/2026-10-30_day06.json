@@ -1,14 +1,17 @@
 {
  "day": 6,
  "exercise": "Incline Dumbbell Press",
- "status": "approved",
- "approved_by": "중현 님",
- "approved_at": "2026-10-30T08:05+09:00",
+ "status": "pending",
  "publish_at": "2026-10-30T10:00+09:00",
  "mp4": "output/day6_incline_dumbbell_press_4step_master.mp4",
  "cover": "output/day6_cover.jpg",
  "sheet": "output/day6_4step_sheet.jpg",
  "caption": "output/day6_caption.txt",
- "qc": "22/22 PASS (output/logs/day06_20261030_074029.log)",
- "note": "Approved by 중현 님 (t514u) for 10:00 KST publish."
+ "qc": "preflight PASS 19/19 + final QC 24/24 PASS (output/logs/day06_20261030_091611.log)",
+ "note": "Re-rendered with the locked new step order (1 wrong bone, 2 right bone, 3 wrong muscle, 4 right muscle), upper-body target zoom 1.35, stray-line fix. Awaiting approval; do not publish.",
+ "previous_approval": {
+  "by": "중현 님",
+  "at": "2026-10-30T08:05+09:00",
+  "note": "approval of the old step order, superseded"
+ }
 }

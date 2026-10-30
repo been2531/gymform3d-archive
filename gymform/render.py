@@ -26,9 +26,10 @@ def shade(rgb_1080, step_idx, is_wrong, kp, pulse_phase=0.0):
     eq_solid = metal
     mono = muscle.silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong)
     mannequin, anat = muscle.activation(F, mono, w_fg, shorts_mask, kp, step_idx, is_wrong, pulse_phase)
-    mannequin = xray.apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, eq_solid, kp, step_idx, is_wrong)
     stat = equipment.static_equipment(rgb_1080, F, kp, K, shorts_mask)
     LAST_MASKS["static_eq"] = stat
+    # X-Ray glass never tints the bench (static equipment is excluded from the X-Ray window like the dumbbells)
+    mannequin = xray.apply(rgb_1080, mono, mannequin, anat, shorts_mask, w_fg, np.maximum(eq_solid, stat), kp, step_idx, is_wrong)
     mannequin = skin_tone_lock(mannequin, w_fg, np.maximum(shorts_mask, stat), metal, step_idx)
     # static equipment (bench) = native source pixels, fully opaque, never faded into the backdrop
     sw = stat[:, :, None]
@@ -145,6 +146,8 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
     meta.update({
         "exercise_name": CFG["exercise_name"], "studio_bg": CFG["studio_bg"], "equipment": CFG["equipment"],
         "bone_steps": list(CFG["bone_steps"]), "muscle_steps": list(CFG["muscle_steps"]),
+        "clips": CFG.get("clips"), "xray_full_steps": CFG.get("xray_full_steps"),
+        "is_wrong": {str(k): bool(v["is_wrong"]) for k, v in CFG.get("clips", {}).items()},
         "source": CFG.get("source", {}), "callouts": CFG.get("callouts"), "tts_lines": CFG.get("tts_lines"), "day": CFG.get("day"), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
         "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "overlap_alpha": SPEC["ui"]["overlap_alpha"], "fps": FPS, "qc_tags": tempo.QC_TAGS,
     })
@@ -181,6 +184,23 @@ def render_step_to_mp4(step_idx, raw_seqs, kps_seqs, icons, out, peak_png):
     print(f"   Step {step_idx}/4 done ({len(cache)} unique poses)", flush=True)
 
 
+def preflight_step(step_idx, raw_seqs, kps_seqs, icons):
+    """PREFLIGHT: render ONLY the QC sample frames (tempo.QC_TAGS: start/t20/t35/peak/t70/t100/t130) of one
+    step through the exact production path (render_pose: plate, zoom transform, shade, callout, title/preview)
+    and write the same QC sidecars + the final UI frame (<tag>_final.png) the full-render QC reads from the mp4."""
+    cv2.setNumThreads(1)
+    seq, kps = raw_seqs[step_idx], kps_seqs[step_idx]
+    mp_ = os.path.join(CFG["qc_dir"], f"meta_step{step_idx}.json")
+    if os.path.exists(mp_):
+        os.remove(mp_)
+    for f_local, tag in sorted(tempo.QC_TAGS.items()):
+        p_i = tempo.pose_index(f_local, len(seq))
+        fr_q, base_q, shm_q, wfg_q, kp_q = render_pose(step_idx, seq, kps, p_i, icons, qc=True)
+        save_qc_sidecar(step_idx, tag, (step_idx - 1) * tempo.FRAMES_PER_STEP + f_local, base_q, shm_q, wfg_q, kp_q)
+        cv2.imwrite(os.path.join(CFG["qc_dir"], f"step{step_idx}_{tag}_final.png"), cv2.cvtColor(fr_q, cv2.COLOR_RGB2BGR))
+    print(f"   preflight step {step_idx}: {len(tempo.QC_TAGS)} QC frames", flush=True)
+
+
 def merge_qc_meta():
     d, meta = CFG["qc_dir"], {}
     for s in (1, 2, 3, 4):
@@ -212,7 +232,16 @@ if __name__ == "__main__":
     elif "--icons-out" in a:      # stage: preview icons (all 4 steps), pickled for the step workers
         raw, kps = load_inputs()
         pickle.dump(build_icons(raw, kps), open(a[a.index("--icons-out") + 1], "wb"))
+    elif "--preflight-step" in a:   # preflight: QC sample frames only, real composite path
+        CFG["qc_dir"] = a[a.index("--qc-dir") + 1]
+        os.makedirs(CFG["qc_dir"], exist_ok=True)
+        s = int(a[a.index("--preflight-step") + 1])
+        raw, kps = load_inputs()
+        preflight_step(s, raw, kps, pickle.load(open(a[a.index("--icons") + 1], "rb")))
     elif "--render-step" in a:  # stage: composite + overlays + encode for one step
+        # HARD GATE (RULES.md): refuse without a passing preflight stamp for this exact config/code hash
+        from gymform import preflight as _pf
+        _pf.require(a[a.index("--config") + 1], a[a.index("--overrides") + 1] if "--overrides" in a else None)
         s = int(a[a.index("--render-step") + 1])
         raw, kps = load_inputs()
         ic = pickle.load(open(a[a.index("--icons") + 1], "rb"))

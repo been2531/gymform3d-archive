@@ -168,8 +168,10 @@ def body_key(F, step_idx, kp):
     ank_max = max(kp["ank_r"][1], kp["ank_l"][1])
 
     # --- clean fg mask (no act_dom bloom) ---
-    sx0 = (W - int(round(W * STEP_SCALE.get(step_idx, b4.SCALE)))) // 2  # clip left edge (54 at scale 0.90)
-    strips = np.concatenate([lum[:, sx0 + 16 : sx0 + 91], lum[:, W - sx0 - 91 : W - sx0 - 16]], axis=1)
+    from gymform import ctx as _ctx
+    cx0, _, cnw, _ = _ctx.clip_rect(step_idx)             # clip edges on the canvas (zoom/DX aware)
+    la, rb_ = max(0, cx0) + 16, min(W, cx0 + cnw) - 16
+    strips = np.concatenate([lum[:, la: la + 75], lum[:, rb_ - 75: rb_]], axis=1)
     row_bg = cv2.GaussianBlur(np.percentile(strips, 35, axis=1).astype(np.float32)[:, None], (0, 0), 16.0)
     env = anatomical_envelope(kp)
     floor_gate = np.clip(((ank_max + 52.0) - yy) / 24.0, 0.0, 1.0)
@@ -190,6 +192,29 @@ def body_key(F, step_idx, kp):
 
     fg_diff = (bright_diff + dark_diff) * floor_gate
     w_raw = np.clip((fg_diff - 8.5) / 10.5, 0.0, 1.0).astype(np.float32)
+    # ROOT CAUSE of the black holes in saturated native muscle fibres (Day 6 Step 3 deltoids): the glow-robust
+    # bright signal subtracts act_dom, so a fully saturated red/green fibre (min channel ~ backdrop) read as
+    # "glow over backdrop". Native fibres are TEXTURED (striations) and bright in their max channel; a glow
+    # fringe over the backdrop is smooth. Textured, bright-max-channel pixels inside the envelope are body.
+    max_c = F["max_c"]
+    tex_m = cv2.GaussianBlur(np.abs(max_c - cv2.GaussianBlur(max_c, (0, 0), 2.0)), (0, 0), 1.5)
+    fib = ((max_c - row_bg) > 70.0) & (tex_m > 3.0) & (act_dom > 25.0) & (env > 0.5)
+    fib = cv2.morphologyEx(fib.astype(np.uint8), cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+    # (muscle-fibre clips only: in bone X-Ray clips the coloured glow is handled by the X-Ray window)
+    fib = (fib > 0) & ((max_c - row_bg) > 45.0) & (floor_gate > 0.5) & (step_idx in CFG.get("muscle_steps", [3, 4]))
+    w_raw = np.maximum(w_raw, fib.astype(np.float32))
+    # small holes fully enclosed by the body (smooth fibre bellies between striations) are body
+    solid_b = cv2.morphologyEx((w_raw > 0.5).astype(np.uint8), cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11)))
+    hf = np.pad(solid_b, 1).copy()
+    cv2.floodFill(hf, None, (0, 0), 2)
+    holes = ((hf[1:-1, 1:-1] != 2) & (solid_b == 0)).astype(np.uint8)
+    n_h, lab_h, st_h, _ = cv2.connectedComponentsWithStats(holes)
+    if step_idx in CFG.get("muscle_steps", [3, 4]):
+        for i in range(1, n_h):
+            if st_h[i, cv2.CC_STAT_AREA] <= 1500:
+                w_raw[(lab_h == i) & (act_dom > 25.0)] = 1.0
+        # gaps the 11px closing bridged inside saturated fibre regions (not the backdrop)
+        w_raw = np.where((solid_b > 0) & (w_raw < 0.5) & (act_dom > 40.0) & (env > 0.5), 1.0, w_raw).astype(np.float32)
 
     # Matte-black dumbbells and shorts are nearly the same luminance as the source backdrop, so a pure
     # luminance key leaves them see-through. Close them with shape priors (wrist zone hole-fill, shorts polygon).

@@ -25,9 +25,10 @@ CFG = {}          # active day config (mutated in place by configure)
 LAST_MASKS = {}   # per-frame masks for compositing + QC sidecars
 CUR_PLATE = {}    # temporal backdrop plate of the current step
 STEP_SCALE = {}
+STEP_DX = {}      # per-step horizontal offset of the clip (target zoom framing)
 TMP = {"dir": None}
 
-__all__ = ["W", "H", "FPS", "DURATION", "_XX", "_YY", "CFG", "LAST_MASKS", "CUR_PLATE", "STEP_SCALE",
+__all__ = ["W", "H", "FPS", "DURATION", "_XX", "_YY", "CFG", "LAST_MASKS", "CUR_PLATE", "STEP_SCALE", "STEP_DX",
            "d5", "b4", "p62", "v30", "SPEC", "ROOT"]
 
 
@@ -42,8 +43,8 @@ def configure(day_cfg: dict, overrides: dict | None = None):
         "xray_style": "day1_v36",
         "mask_feather": 0.85,
         "equipment_hull": False,
-        "bone_steps": [1, 3],
-        "muscle_steps": [2, 4],
+        "bone_steps": [1, 2],
+        "muscle_steps": [3, 4],
     }
     c.update(json.loads(json.dumps(day_cfg)))
     for k, v in (overrides or {}).items():
@@ -60,6 +61,7 @@ def configure(day_cfg: dict, overrides: dict | None = None):
     CFG.update(c)
     STEP_SCALE.clear()
     STEP_SCALE.update({int(k): float(v) for k, v in c["step_scale"].items()})
+    STEP_DX.clear()
     b4.STEP_DY = dict(b4.STEP_DY)
     b4.STEP_DY.update({int(k): int(v) for k, v in c["step_dy"].items()})
     TMP["dir"] = c.get("tmp_dir", os.path.join(ROOT, f"_tmp_gymform_day{c['day']:02d}"))
@@ -89,22 +91,111 @@ def skeletal_size(kp):
 
 
 def normalize_scale(kps_seqs):
-    """Per-step scale + floor normalisation from the cached keypoints (all days, standing or seated): every step's
-    on-screen skeletal size = the median of the configured sizes, and every step's feet on one floor line.
-    Overrides step_scale/step_dy (they become the starting point only). Deterministic -> identical in all workers."""
+    """Per-step scale + framing from the cached keypoints (all days, standing or seated): every step's on-screen
+    skeletal size = median configured size x target_zoom.zoom (identical in all 4 steps).
+    Without target_zoom: feet on one floor line. With target_zoom: the focus region (e.g. upper chest/shoulders)
+    is placed at the same screen point in every step, and the zoom is reduced automatically if the dumbbells
+    (wrists + plate margin) would leave the frame. Deterministic -> identical in all workers."""
     if not CFG.get("auto_scale", True):
         return
     sizes, ank = {}, {}
     for s in (1, 2, 3, 4):
         y_sh = step_spec(s)[5]
-        sz = [skeletal_size(k) for k in kps_seqs[s]]
-        sizes[s] = float(np.median(sz))
+        sizes[s] = float(np.median([skeletal_size(k) for k in kps_seqs[s]]))
         ank[s] = float(np.median([max(k["ank_r"][1], k["ank_l"][1]) - y_sh for k in kps_seqs[s]]))
     cur = {s: sizes[s] * float(CFG["step_scale"][str(s)]) for s in sizes}
-    target = float(np.median(list(cur.values())))
-    floor = float(np.median([(ank[s] - H * 0.5) * float(CFG["step_scale"][str(s)]) + H * 0.5 + int(CFG["step_dy"][str(s)]) for s in sizes]))
-    for s in sizes:
-        sc = target / max(sizes[s], 1.0)
-        STEP_SCALE[s] = round(sc, 4)
-        b4.STEP_DY[s] = int(round(floor - ((ank[s] - H * 0.5) * sc + H * 0.5)))
-    CFG["_normalized"] = {"scale": dict(STEP_SCALE), "dy": dict(b4.STEP_DY), "target_size": round(target, 1), "floor_y": round(floor, 1)}
+    base = float(np.median(list(cur.values())))
+    tz = CFG.get("target_zoom") or {}
+    zoom = float(tz.get("zoom", 1.0))
+    note = ""
+    if not tz:
+        floor = float(np.median([(ank[s] - H * 0.5) * float(CFG["step_scale"][str(s)]) + H * 0.5 + int(CFG["step_dy"][str(s)]) for s in sizes]))
+        for s in sizes:
+            sc = base / max(sizes[s], 1.0)
+            STEP_SCALE[s] = round(sc, 4)
+            b4.STEP_DY[s] = int(round(floor - ((ank[s] - H * 0.5) * sc + H * 0.5)))
+            STEP_DX[s] = 0
+    else:
+        fx_t, fy_t = float(tz.get("focus_x", W * 0.5)), float(tz.get("focus_y", 1000))
+        pad = float(tz.get("equipment_margin", 0.11))     # dumbbell half-size beyond the wrist, x skeletal size
+        top_min, side_min = float(tz.get("top_min_y", 140)), float(tz.get("side_min", 24))
+
+        def frame(zm):
+            out, worst = {}, 1e9
+            for s in sizes:
+                y_sh = step_spec(s)[5]
+                sc = base * zm / max(sizes[s], 1.0)
+                fpts = [((k["sh_r"][0] + k["sh_l"][0]) * 0.5, (k["sh_r"][1] + k["sh_l"][1]) * 0.5 - y_sh) for k in kps_seqs[s]]
+                fx, fy = float(np.median([p[0] for p in fpts])), float(np.median([p[1] for p in fpts]))
+                dx = fx_t - ((fx - W * 0.5) * sc + W * 0.5)
+                dy = fy_t - ((fy - H * 0.5) * sc + H * 0.5)
+                m = pad * base * zm
+                for k in kps_seqs[s]:
+                    for w_ in ("wr_r", "wr_l"):
+                        x = (k[w_][0] - W * 0.5) * sc + W * 0.5 + dx
+                        y = (k[w_][1] - y_sh - H * 0.5) * sc + H * 0.5 + dy
+                        worst = min(worst, y - m - top_min, x - m - side_min, (W - side_min) - (x + m))
+                out[s] = (round(sc, 4), int(round(dx)), int(round(dy)))
+            return out, worst
+        zm = zoom
+        out, worst = frame(zm)
+        while worst < 0 and zm > 1.0:          # never cut the dumbbells: back the zoom off in small steps
+            zm = round(zm - 0.02, 3)
+            out, worst = frame(zm)
+        if zm < zoom:
+            note = f"zoom reduced {zoom:.2f}->{zm:.2f} to keep dumbbells in frame"
+        for s, (sc, dx, dy) in out.items():
+            STEP_SCALE[s], STEP_DX[s], b4.STEP_DY[s] = sc, dx, dy
+        zoom = zm
+    CFG["_normalized"] = {"scale": dict(STEP_SCALE), "dy": dict(b4.STEP_DY), "dx": dict(STEP_DX), "target_size": round(base * zoom, 1),
+                          "zoom": zoom, "upscale_vs_720p": round(1.5 * float(np.median(list(STEP_SCALE.values()))), 3), "note": note}
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# LOCKED STEP ORDER (from Day 6): bone vs bone, then muscle vs muscle.
+#   1 = WRONG bone X-Ray (crimson) | 2 = RIGHT bone X-Ray (emerald) | 3 = WRONG muscle (red) | 4 = RIGHT muscle (green)
+# Every step-specific branch in the modules goes through role()/legacy(), never a literal step number.
+LOCKED_ORDER = {1: ("bone", True), 2: ("bone", False), 3: ("muscle", True), 4: ("muscle", False)}
+_LEGACY = {("bone", True): 1, ("muscle", True): 2, ("bone", False): 3, ("muscle", False): 4}   # Day 1-5 index convention
+
+
+def role(step):
+    """(kind, is_wrong) of a step from the day config (bone_steps / clips.is_wrong)."""
+    kind = "bone" if int(step) in CFG["bone_steps"] else "muscle"
+    return kind, bool(CFG["clips"][str(int(step))]["is_wrong"])
+
+
+def legacy(step):
+    """Role-equivalent index in the Day 1-5 convention (1 bone-wrong, 2 muscle-wrong, 3 bone-right, 4 muscle-right),
+    used by the shared look code so a step's look follows its ROLE, not its position."""
+    return _LEGACY[role(step)]
+
+
+def order_lint(cfg, spec=None):
+    """Reject any step order other than the locked one (Day >= spec.step_order.from_day)."""
+    so = (spec or SPEC).get("step_order", {})
+    if int(cfg.get("day", 0)) < int(so.get("from_day", 6)):
+        return []
+    errs = []
+    if list(cfg.get("bone_steps", [1, 2])) != [1, 2] or list(cfg.get("muscle_steps", [3, 4])) != [3, 4]:
+        errs.append(f"bone_steps/muscle_steps must be [1,2]/[3,4], got {cfg.get('bone_steps')}/{cfg.get('muscle_steps')}")
+    for s, (kind, wrong) in LOCKED_ORDER.items():
+        c = cfg["clips"][str(s)]
+        if bool(c["is_wrong"]) != wrong:
+            errs.append(f"step{s} must be {'WRONG' if wrong else 'RIGHT'} form")
+        if kind not in c.get("mode", kind):
+            errs.append(f"step{s} clip mode {c.get('mode')!r} must be a {kind} clip")
+        co = cfg.get("callouts", {}).get(str(s), {})
+        if co and int(co.get("slot", s - 1)) != s - 1:
+            errs.append(f"step{s} preview slot must be {s - 1}")
+    xf = cfg.get("xray_full_steps")
+    if xf is not None and not set(xf) <= {1, 2}:
+        errs.append(f"xray_full_steps {xf} must be bone steps 1/2")
+    return errs
+
+
+def clip_rect(step):
+    """(x0, y0, nw, nh) of the step's scaled 720p clip on the 1080x1920 canvas."""
+    sc = STEP_SCALE.get(step, b4.SCALE)
+    nw, nh = int(round(W * sc)), int(round(H * sc))
+    return (W - nw) // 2 + int(STEP_DX.get(step, 0)), (H - nh) // 2 + int(b4.STEP_DY.get(step, 0)), nw, nh

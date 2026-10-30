@@ -73,7 +73,7 @@ def read_frames(mp4, idxs):
     return out
 
 
-def expected_equipment(src, plate, zone):
+def expected_equipment(src, plate, zone, clean=None):
     """
     QC's OWN expected equipment footprint for one frame, independent of the renderer's fg mask: dark/neutral
     pixels of the raw source frame that differ from the step's temporal backdrop plate (the backdrop is static,
@@ -97,9 +97,16 @@ def expected_equipment(src, plate, zone):
     cand = cv2.morphologyEx(cand, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
     n, lab, st, _ = cv2.connectedComponentsWithStats(cand)
     keep = np.zeros_like(cand)
+    if clean is None:
+        clean = clean_qc(p)
     for i in range(1, n):
         if st[i, cv2.CC_STAT_AREA] >= 300:
-            keep[lab == i] = 1
+            c = lab == i
+            # a candidate that is, as a whole, plain backdrop in this frame (p90 |lum - object-free backdrop| < 6,
+            # no rim/texture) is a temporal-median GHOST of a held item, not equipment
+            if np.percentile(np.abs(lum[c] - clean[c]), 90) < 6.0 and np.percentile(tex[c], 90) < 1.5:
+                continue
+            keep[c] = 1
     ff = np.pad(keep, 1).copy()
     cv2.floodFill(ff, None, (0, 0), 2)
     holes = ((ff[1:-1, 1:-1] != 2) & (keep == 0)).astype(np.uint8)
@@ -167,6 +174,18 @@ def overpaint_px(src, shorts):
 _SQC = {}
 
 
+_CLEAN = {}
+
+
+def clean_qc(plate):
+    """Object-free backdrop luminance of a step plate (gymform.equipment.clean_backdrop), cached per plate."""
+    k = (plate.shape, float(plate[::97, ::89].sum()), float(plate[::53, ::61].sum()))
+    if k not in _CLEAN:
+        from gymform.equipment import clean_backdrop
+        _CLEAN[k] = clean_backdrop(plate.astype(np.float32), cache=False)[2]
+    return _CLEAN[k]
+
+
 def static_objects_qc(plate):
     """QC's own static-object map (independent of the renderer): textured or clearly (>16) darker than a coarse
     median backdrop of the plate; smooth faint shadows are not required to be kept."""
@@ -184,6 +203,39 @@ def static_objects_qc(plate):
     bgm = cv2.resize(cv2.GaussianBlur(cv2.inpaint(sm, ob, 8, cv2.INPAINT_NS), (0, 0), 3.0).astype(np.float32), (W, H), interpolation=cv2.INTER_CUBIC)
     _SQC[k] = (((bgm - l) > 16.0) | (tex > 3.0), tex)
     return _SQC[k]
+
+
+def stray_components(wfg, src=None, plate=None, base=None, bg=None, min_area=30):
+    """(q) Stray / unanchored overlay marks: a foreground component (wfg>0.3) not connected to the largest blob
+    (5px bridge) that is either a THIN LINE (mean width < 5px, length >= 20px) or a FAINT GHOST (its source
+    pixels are plain backdrop: median |lum - object-free backdrop| < 3.5 and no native texture). Detached but
+    solid native objects (a bench foot or plate rim seen past a limb) are not strays. Returns (ok, detail)."""
+    fg = (wfg > 0.3).astype(np.uint8)
+    n, lab, st, _ = cv2.connectedComponentsWithStats(cv2.dilate(fg, np.ones((5, 5), np.uint8)), 8)
+    if n <= 1:
+        return False, "no foreground"
+    main = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+    clean = tex = l = None
+    if src is not None and plate is not None:
+        clean = clean_qc(plate)
+        l = lum_of(src.astype(np.float32))
+        tex = cv2.GaussianBlur(np.abs(l - cv2.GaussianBlur(l, (0, 0), 2.0)), (0, 0), 1.2)
+    bad = []
+    for i in range(1, n):
+        if i == main:
+            continue
+        c = (lab == i) & (fg > 0)
+        area = int(c.sum())
+        if area < min_area:
+            continue
+        x, y, w, h = st[i, :4]
+        thin = max(w, h) >= 20 and area / float(max(w, h)) < 5.0
+        if thin and base is not None and bg is not None:   # a thin mark counts when it is VISIBLE over the studio
+            thin = float(np.median(np.abs(lum_of(base.astype(np.float32))[c] - lum_of(bg.astype(np.float32))[c]))) >= 6.0
+        faint = clean is not None and np.median(np.abs(l[c] - clean[c])) < 3.5 and np.median(tex[c]) < 1.0
+        if thin or faint or clean is None:
+            bad.append(f"{area}px@({x},{y},{w}x{h}){' thin' if thin else ''}{' faint' if faint else ''}")
+    return (not bad), (", ".join(bad[:4]) if bad else "clean")
 
 
 def static_check(src, base, plate, wfg, shorts, kp):
@@ -234,9 +286,29 @@ LAST_BK = [None]   # backdrop pixels covered by fg in the last checked frame (pr
 
 
 def check_equipment(key, src, plate, zone, wfg, shorts, kp):
-    """(d) one frame: equipment vs the QC's own expected footprint. Returns (fail_list, rows, exp)."""
+    """(d) one frame: equipment vs the QC's own expected footprint. Returns (fail_list, rows, exp).
+    Speed: all per-pixel work runs on the equipment zone's bounding box (+48px); plate-wide models (clean
+    backdrop, static objects) are computed once per plate on the full frame and cropped, so results equal the
+    full-frame computation."""
+    ys_, xs_ = np.where(zone > 0)
+    if len(xs_) == 0:
+        return check_equipment_crop(key, src, plate, zone, wfg, shorts, kp, (0, 0), None, None)
+    x0, x1 = max(0, xs_.min() - 48), min(W, xs_.max() + 49)
+    y0, y1 = max(0, ys_.min() - 48), min(H, ys_.max() + 49)
+    sl = (slice(y0, y1), slice(x0, x1))
+    clean = clean_qc(plate)[sl]
+    stq = static_objects_qc(plate.astype(np.float32))[0][sl] if any(e.get("static") for e in CFG_EQ[0]) else None
+    kp_c = {k_: (v_[0] - x0, v_[1] - y0) for k_, v_ in kp.items()}
+    f_, r_, exp_c = check_equipment_crop(key, src[sl], plate[sl], zone[sl], wfg[sl], shorts[sl], kp_c, (x0, y0), clean, stq)
+    exp = np.zeros((H, W), bool)
+    exp[sl] = exp_c
+    return f_, r_, exp
+
+
+def check_equipment_crop(key, src, plate, zone, wfg, shorts, kp, off, clean, stq):
     fails, rows = [], []
-    exp = expected_equipment(src, plate, zone)
+    Hc, Wc = zone.shape[:2]
+    exp = expected_equipment(src, plate, zone, clean)
     n_exp = int(exp.sum())
     if n_exp < 1500:
         return [f"{key}: expected equipment footprint too small ({n_exp}px) - detector/zone problem"], rows, exp
@@ -246,7 +318,7 @@ def check_equipment(key, src, plate, zone, wfg, shorts, kp):
     n_m, lab_m, st_m, _ = cv2.connectedComponentsWithStats(miss.astype(np.uint8))
     big_hole = max([st_m[i, cv2.CC_STAT_AREA] for i in range(1, n_m)] or [0])
     ys, xs = np.where(exp)
-    edge = xs.min() <= 3 or ys.min() <= 3 or xs.max() >= W - 4 or ys.max() >= H - 4
+    edge = xs.min() + off[0] <= 3 or ys.min() + off[1] <= 3 or xs.max() + off[0] >= W - 4 or ys.max() + off[1] >= H - 4
     border = (zone > 0) & (cv2.erode((zone > 0).astype(np.uint8), np.ones((5, 5), np.uint8)) == 0)
     touch = float((exp & border).sum()) / max(1.0, float(border.sum()))
     fs, fp = src.astype(np.float32), plate.astype(np.float32)
@@ -260,13 +332,14 @@ def check_equipment(key, src, plate, zone, wfg, shorts, kp):
     # (matte plate faces can equal the backdrop in max-channel; the QC's own footprint says they are the item)
     backdrop = (d < 6.0) & (fp.max(axis=-1) < 52.0) & (zone > 0.5) & ~shd & ~(cv2.dilate(exp.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
     if any(e.get("static") for e in CFG_EQ[0]):   # a static bench/machine in the zone is equipment, not backdrop
-        backdrop &= ~(cv2.dilate(static_objects_qc(fp)[0].astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
+        sq_ = stq if stq is not None else static_objects_qc(fp)[0]
+        backdrop &= ~(cv2.dilate(sq_.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
     backdrop &= ~metal   # backdrop = the cool blue-grey studio colour; neutral dark metal of a held-still item is not backdrop
     bk = (wfg > 0.5) & cv2.erode(backdrop.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
     bloat = float(bk.sum()) / n_exp
     LAST_BK[0] = bk
     mid_x = int(0.5 * (kp["sh_r"][0] + kp["sh_l"][0]))
-    side = np.zeros((H, W), bool); side[:, :mid_x] = True
+    side = np.zeros((Hc, Wc), bool); side[:, :max(0, mid_x)] = True
     # per-item size vs the source, METAL pixels only (neutral, dark: never hand/forearm skin or glow), on both
     # sides of the comparison: source metal object vs metal pixels the composite renders solid around it.
     # Held-still items (the temporal plate already contains them, so plate-difference cannot see them) are
@@ -309,7 +382,7 @@ def check_equipment(key, src, plate, zone, wfg, shorts, kp):
     return fails, rows, exp
 
 
-def arm_skin_check(base, wfg, eq, xw, kp):
+def arm_skin_check(base, wfg, eq, xw, kp, src=None):
     """(j) both arms (keypoint segments, shoulder..80% forearm) outside the X-Ray window: silver skin, no dark fill.
     Returns {side: (p75, dark_fraction)}."""
     l, a = lum_of(base.astype(np.float32)), act_of(base.astype(np.float32))
@@ -321,7 +394,9 @@ def arm_skin_check(base, wfg, eq, xw, kp):
         fw = (el[0] + 0.8 * (wr[0] - el[0]), el[1] + 0.8 * (wr[1] - el[1]))
         P = lambda p: (int(round(p[0])), int(round(p[1])))
         cv2.line(m, P(sh), P(el), 1, 20); cv2.line(m, P(el), P(fw), 1, 14)
+        lit_src = (act_of(src.astype(np.float32)) > 12.0) if src is not None else False   # native bone/fibre glow in the source (X-Ray content, not skin)
         lit = cv2.dilate((a > 12.0).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0   # muscle-fibre colour + its sulci
+        glow = cv2.dilate(np.asarray(lit_src, np.uint8) * np.ones((H, W), np.uint8), np.ones((9, 9), np.uint8)) > 0
         sel = (m > 0) & (wfg > 0.9) & ~xw_d & ~lit & ((eq < 0.5) if eq is not None else True)
         if sel.sum() < 300:
             continue
@@ -329,7 +404,9 @@ def arm_skin_check(base, wfg, eq, xw, kp):
         dk = cv2.morphologyEx(((l < 60.0) & sel).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
         n, _, st, _ = cv2.connectedComponentsWithStats(dk)
         blob = int(max([st[i, cv2.CC_STAT_AREA] for i in range(1, n)] or [0]))
-        out[side] = (float(np.percentile(l[sel], 50)), blob, int(sel.sum()))
+        # silver-range p50 only on non-glow skin (native X-Ray glow regraded to silver is X-Ray content); dark fill on all
+        tone = sel & ~glow
+        out[side] = (float(np.percentile(l[tone], 50)) if tone.sum() >= 300 else 160.0, blob, int(tone.sum()))
     return out
 
 
@@ -369,22 +446,30 @@ def leg_below_hem_check(base, wfg, shorts, kp, eqfoot=None, src=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("mp4")
+    ap.add_argument("mp4", help="master mp4, or '-' with --preflight")
+    ap.add_argument("--preflight", action="store_true", help="QC sample frames rendered by run_day --preflight (no mp4)")
     ap.add_argument("--qc-dir", default="/workspace/daily_info_reels/output/qc/day5_v4d")
     ap.add_argument("--xray-ref", default="/workspace/daily_info_reels/output/qc/ref/day1_v36_xray_t1.5.jpg",
                     help="approved Day 1 v36 X-Ray reference frame (extracted from output/day1_v36_master_reel.mp4 @1.5s)")
     args = ap.parse_args()
 
     meta = json.load(open(os.path.join(args.qc_dir, "meta.json")))
-    cap = cv2.VideoCapture(args.mp4)
-    n, fps = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), cap.get(cv2.CAP_PROP_FPS)
-    w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    cap.release()
-    report("format", (w, h) == (W, H) and abs(fps - 30) < 0.01 and n >= 590, f"{w}x{h} @ {fps:.2f}fps, {n} frames ({n / max(fps, 1):.2f}s)")
-
     frames_meta = meta["frames"]
     CFG_EQ[0] = meta.get("equipment", [])
-    vids = read_frames(args.mp4, [v["frame_idx"] for v in frames_meta.values()])
+    if args.preflight:   # container format is checked on the full render only (fixed x264 settings)
+        n, fps = 600, 30.0   # (l) timing: the reel is fixed at 20.0s (tempo spec); the wav timing is real
+        vids = {}
+        for k_, v_ in frames_meta.items():
+            fp_ = os.path.join(args.qc_dir, k_ + "_final.png")
+            if os.path.exists(fp_):
+                vids[v_["frame_idx"]] = cv2.cvtColor(cv2.imread(fp_), cv2.COLOR_BGR2RGB)
+    else:
+        cap = cv2.VideoCapture(args.mp4)
+        n, fps = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), cap.get(cv2.CAP_PROP_FPS)
+        w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+        report("format", (w, h) == (W, H) and abs(fps - 30) < 0.01 and n >= 590, f"{w}x{h} @ {fps:.2f}fps, {n} frames ({n / max(fps, 1):.2f}s)")
+        vids = read_frames(args.mp4, [v["frame_idx"] for v in frames_meta.values()])
     bg = cv2.cvtColor(cv2.imread(meta["studio_bg"]), cv2.COLOR_BGR2RGB)
     bg_act = act_of(bg)
     ty0, ty1 = meta["title_roi"][1], meta["title_roi"][3]
@@ -443,6 +528,9 @@ def main():
         # (m) static equipment (bench) preserved as native pixels: not faded, not cut, not re-shaded
         if any(e.get("static") for e in meta["equipment"]) and os.path.exists(plate_p):
             STATIC.append((key,) + static_check(src_rgb, base, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB), wfg, shorts, kp))
+        # (q) stray / unanchored overlay lines: detached fg components that are visible thin lines or plain-backdrop
+        # ghosts (root cause of the Day 6 0:10 line: temporal-median ghosts accepted by the equipment/static layers)
+        STRAY.append((key,) + stray_components(wfg, src_rgb, cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB) if os.path.exists(plate_p) else None, base, bg))
         if not main_frame:
             continue
 
@@ -505,7 +593,7 @@ def main():
         if sk_o.sum() > 2000:
             LOCK.setdefault(s, []).append((float(np.percentile(l[sk_o], 75)), float(np.percentile(l[sk_o], 90))))
         # (j) arm skin: silver on both arms, no dark fill
-        for side, (p75a, blob, npx) in arm_skin_check(base, wfg, eq, xw, kp).items():
+        for side, (p75a, blob, npx) in arm_skin_check(base, wfg, eq, xw, kp, cv2.cvtColor(cv2.imread(pre + "_src.png"), cv2.COLOR_BGR2RGB)).items():
             ARM_ROWS.append(f"{key} {side}: p50={p75a:.0f} darkfill={blob}px ({npx}px)")
             # silver range: shaded silver .. highlight (spec curve 46..226); a black fill sits far below it
             if blob > 250 or (npx > 800 and not (100.0 <= p75a <= 215.0)):
@@ -517,7 +605,10 @@ def main():
                 leg_fail.append(LEG_ROWS[-1])
         # (f) skin + shorts
         # (spec: the skin lock excludes only the local X-Ray window, same mask as (i))
+        st_m = load_mask(pre + "_static.png")   # native static-equipment pixels (bench highlights) are not skin
         skin = (wfg > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
+        if st_m is not None:
+            skin &= st_m < 0.5
         if skin.sum() > 2000:
             p75, p90, mx = np.percentile(l[skin], 75), np.percentile(l[skin], 90), l[skin].max()
             sh = (shorts > 0.6) & (wfg > 0.9)
@@ -541,6 +632,15 @@ def main():
     tot = sum(t for _, _, t in OVP)
     report("(n) 2d_overpaint_ratio == 0 (shorts = native 3D fabric pixels only)", not ov_bad,
            "; ".join(ov_bad) or f"2d_overpaint_ratio=0.000 over {len(OVP)} frames ({tot}px native shorts)")
+    sq_bad = [f"{k}: {msg}" for k, ok, msg in STRAY if not ok]
+    report("(q) no stray / unanchored overlay lines or blobs", not sq_bad,
+           "; ".join(sq_bad) or f"{len(STRAY)} frames: all fg components attached to mannequin/equipment")
+    from gymform.ctx import order_lint
+    o_bad = order_lint({"day": meta.get("day"), "clips": meta.get("clips") or {}, "bone_steps": meta["bone_steps"],
+                        "muscle_steps": meta["muscle_steps"], "callouts": meta.get("callouts") or {},
+                        "xray_full_steps": meta.get("xray_full_steps") or meta["bone_steps"]}) if meta.get("clips") else ["clips missing in meta"]
+    report("(r) step order locked (1 wrong bone, 2 right bone, 3 wrong muscle, 4 right muscle)", not o_bad,
+           "; ".join(o_bad) or f"bone {meta['bone_steps']} muscle {meta['muscle_steps']} wrong={meta.get('is_wrong')}")
     if STATIC:
         st_bad = [f"{k}: {msg}" for k, ok, msg in STATIC if not ok]
         report("(m) static equipment (bench) preserved: native, opaque, not faded/cut", not st_bad,
@@ -598,7 +698,8 @@ def main():
                 continue
             base = cv2.cvtColor(cv2.imread(os.path.join(args.qc_dir, key) + "_base.png"), cv2.COLOR_BGR2RGB)
             wfg = load_mask(os.path.join(args.qc_dir, key) + "_wfg.png")
-            tint = "crimson" if fm["step"] == meta["bone_steps"][0] else "emerald"
+            iw = meta.get("is_wrong", {}).get(str(fm["step"]))
+            tint = ("crimson" if iw else "emerald") if iw is not None else ("crimson" if fm["step"] == meta["bone_steps"][0] else "emerald")
             sig = xray_signature(base, wfg, tint)
             ok = (sig["n"] > 1500 and abs(sig["hot_ratio"] - ref_sig["hot_ratio"]) < 0.30
                   and sig["core_ratio"] > 0.5 * ref_sig["core_ratio"] and sig["detail"] > 0.55 * ref_sig["detail"])
@@ -627,7 +728,7 @@ def main():
     sys.exit(0 if all(RESULTS) else 1)
 
 
-OVP, STATIC = [], []
+OVP, STATIC, STRAY = [], [], []
 CFG_EQ = [[]]
 RESULTS_E, SKIN, EQ_ROWS, H_ROWS, LOCK, ARM_ROWS, arm_fail, LEG_ROWS, leg_fail = [], [], [], [], {}, [], [], [], []
 
