@@ -40,6 +40,39 @@ PAIRS = {1: 3, 2: 4}          # same MOTION, different rendering: 1/3 = wrong fo
 _KIND_STEP = {("wrong", "bone"): 1, ("right", "bone"): 2, ("wrong", "muscle"): 3, ("right", "muscle"): 4}
 
 
+_LEGACY_RENDER = {"front": "bone", "side": "muscle"}   # Day 6 configs written before t556u (renders keyed by kind)
+
+
+def mistake_type(cfg):
+    """t554u: 'joint' (bone X-Ray steps 1-2 + muscle 3-4) or 'muscle' (4 muscle steps). Day config, else the
+    exercise's entry in configs/motion_standards.json (motion_standard), else 'joint'."""
+    if cfg.get("mistake_type"):
+        return cfg["mistake_type"]
+    ms = cfg.get("motion_standard")
+    if ms:
+        std = json.load(open(os.path.join(ROOT, "configs", "motion_standards.json")))["exercises"].get(ms, {})
+        return std.get("mistake_type", "joint")
+    return "joint"
+
+
+def step_plan(mt="joint"):
+    """t556u fixed camera plan: {step: (form, camera, kind)} - 1 wrong/front, 2 right/front, 3 wrong/side,
+    4 right/side; kinds by mistake type (joint: 1-2 bone, 3-4 muscle; muscle: all muscle)."""
+    cp = SPEC["step_order"].get("camera_plan", {})
+    plan = {k: tuple(v) for k, v in cp.items() if k in "1234"} or {"1": ("wrong", "front"), "2": ("right", "front"),
+                                                                    "3": ("wrong", "side"), "4": ("right", "side")}
+    kinds = cp.get("kinds", {}).get(mt) or ({"1": "bone", "2": "bone", "3": "muscle", "4": "muscle"} if mt == "joint"
+                                            else {s: "muscle" for s in "1234"})
+    return {int(k): (f, c, kinds[k]) for k, (f, c) in plan.items()}
+
+
+def render_for(m, cam):
+    """A motion's native render for a camera slot: renders.front / renders.side (t556u), or the pre-t556u
+    kind keys (bone -> front slot, muscle -> side slot)."""
+    rs = m["renders"]
+    return rs.get(cam) or rs[_LEGACY_RENDER[cam]]
+
+
 def expand_motions(cfg: dict) -> dict:
     """Day 6+ schema: `motions` = {"wrong": M, "right": M}; M = {"base": file, "i0", "i1", "y_shift",
     "renders": {"bone": {"file", "edit_of"?}, "muscle": {"file", "edit_of"?}}}. The 4 steps are DERIVED:
@@ -50,21 +83,27 @@ def expand_motions(cfg: dict) -> dict:
     if "motions" not in cfg:
         return cfg
     clips = {}
-    for (form, kind), s in _KIND_STEP.items():
+    mt = mistake_type(cfg)
+    for s, (form, cam, kind) in step_plan(mt).items():
         m = cfg["motions"][form]
-        r = m["renders"][kind]
+        r = render_for(m, cam)
         if r.get("pair_match"):   # t541u: a separate NATIVE clip matched to the base within joint tolerance:
             # its own DTW-aligned slice and its own keypoints (same motion phase at rest/peak, not the same frames)
             clips[str(s)] = {"file": r["file"], "i0": int(r["i0"]), "i1": int(r["i1"]), "y_shift": int(m.get("y_shift", 80)),
                              "is_wrong": form == "wrong", "mode": f"{kind}_blood", "motion": form, "kp_file": r["file"],
                              "edit_of": None, "mirror": bool(r.get("mirror", m.get("mirror", False))), "pair_match": r["pair_match"],
-                             "native_tint": r.get("native_tint")}
+                             "native_tint": r.get("native_tint"), "camera": r.get("camera", cam if cam in m["renders"] else "unlabelled"), "camera_slot": cam}
             continue
         clips[str(s)] = {"file": r["file"], "i0": int(m["i0"]), "i1": int(m["i1"]), "y_shift": int(m.get("y_shift", 80)),
                          "is_wrong": form == "wrong", "mode": f"{kind}_blood", "motion": form, "kp_file": m["base"],
-                         "edit_of": r.get("edit_of"), "mirror": bool(r.get("mirror", m.get("mirror", False)))}
+                         "edit_of": r.get("edit_of"), "mirror": bool(r.get("mirror", m.get("mirror", False))),
+                         "camera": r.get("camera", cam if cam in m["renders"] else "unlabelled"), "camera_slot": cam}
     cfg["clips"] = clips
-    cfg["bone_steps"], cfg["muscle_steps"] = [1, 2], [3, 4]
+    cfg["mistake_type"] = mt
+    cfg["bone_steps"] = [int(k) for k, (_, _, kd) in step_plan(mt).items() if kd == "bone"]
+    cfg["muscle_steps"] = [int(k) for k, (_, _, kd) in step_plan(mt).items() if kd == "muscle"]
+    if not cfg["bone_steps"]:
+        cfg["xray_full_steps"] = []     # muscle-mistake day: no X-Ray at all (t554u)
     return cfg
 
 
@@ -84,8 +123,8 @@ def pair_lint(cfg, spec=None):
         if not m:
             errs.append(f"motions.{form} missing")
             continue
-        for kind in ("bone", "muscle"):
-            r = (m.get("renders") or {}).get(kind)
+        for kind in ("front", "side"):
+            r = (m.get("renders") or {}).get(kind) or (m.get("renders") or {}).get(_LEGACY_RENDER[kind])
             if not r:
                 errs.append(f"motions.{form}.renders.{kind} missing")
             elif r.get("pair_match"):   # t541u relaxed rule: same motion + angle within joint tolerance (measured)
@@ -97,6 +136,18 @@ def pair_lint(cfg, spec=None):
             elif r["file"] != m["base"] and r.get("edit_of") != m["base"]:
                 errs.append(f"motions.{form}.{kind} file {r['file']} is not the motion base {m['base']} nor a declared edit of it")
     return errs
+
+
+def camera_plan_lint(cfg):
+    """t556u: steps 1/2 must be the FRONT camera and 3/4 the SIDE camera (native 3D presets). Returns the
+    unmet items (warnings for configs built from older clips; a new day must have none)."""
+    out = []
+    c = expand_motions(json.loads(json.dumps(cfg))).get("clips", {})
+    for s, (form, cam, kind) in step_plan(mistake_type(cfg)).items():
+        got = c.get(str(s), {}).get("camera")
+        if got != cam:
+            out.append(f"step{s} ({form}/{cam}/{kind}) uses camera {got!r}, not the {cam} preset")
+    return out
 
 
 def configure(day_cfg: dict, overrides: dict | None = None):
@@ -118,6 +169,8 @@ def configure(day_cfg: dict, overrides: dict | None = None):
     for k in ("studio_bg", "kp_cache", "assets_dir", "out_mp4", "out_sheet", "out_cover", "qc_dir", "tmp_dir"):
         if k in c:
             c[k] = _abs(c[k])
+    from gymform.bones import target_bones as _tb
+    c["target_bones"] = _tb(c, ROOT)   # t552u: only these bones are shown on the bone steps
     c["bone_steps"] = tuple(c["bone_steps"])
     c["muscle_steps"] = tuple(c["muscle_steps"])
     CFG.clear()
@@ -240,9 +293,13 @@ def order_lint(cfg, spec=None):
     if int(cfg.get("day", 0)) < int(so.get("from_day", 6)):
         return []
     errs = []
-    if list(cfg.get("bone_steps", [1, 2])) != [1, 2] or list(cfg.get("muscle_steps", [3, 4])) != [3, 4]:
-        errs.append(f"bone_steps/muscle_steps must be [1,2]/[3,4], got {cfg.get('bone_steps')}/{cfg.get('muscle_steps')}")
-    for s, (kind, wrong) in LOCKED_ORDER.items():
+    plan = step_plan(mistake_type(cfg))
+    want_b = [s for s, (_, _, k) in plan.items() if k == "bone"]
+    want_m = [s for s, (_, _, k) in plan.items() if k == "muscle"]
+    if list(cfg.get("bone_steps", want_b)) != want_b or list(cfg.get("muscle_steps", want_m)) != want_m:
+        errs.append(f"bone_steps/muscle_steps must be {want_b}/{want_m} ({mistake_type(cfg)} day), got {cfg.get('bone_steps')}/{cfg.get('muscle_steps')}")
+    for s, (form, _, kind) in plan.items():
+        wrong = form == "wrong"
         c = cfg["clips"][str(s)]
         if bool(c["is_wrong"]) != wrong:
             errs.append(f"step{s} must be {'WRONG' if wrong else 'RIGHT'} form")
@@ -252,7 +309,7 @@ def order_lint(cfg, spec=None):
         if co and int(co.get("slot", s - 1)) != s - 1:
             errs.append(f"step{s} preview slot must be {s - 1}")
     xf = cfg.get("xray_full_steps")
-    if xf is not None and not set(xf) <= {1, 2}:
+    if xf is not None and not set(xf) <= set(want_b):
         errs.append(f"xray_full_steps {xf} must be bone steps 1/2")
     return errs
 

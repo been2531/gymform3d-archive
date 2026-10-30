@@ -247,7 +247,8 @@ def draw_callout_day4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_st
     sub-line 16, sitting level with the target).
     variant "day4" = Day 4 volumetric laser + 86 px number; "day4_refined" = same geometry/placement with the
     Day 5 crisp 2.8 px laser (no bloom) and the Day 5 84 px number."""
-    variant = variant or SPEC["ui"].get("callout_style", "day4")
+    if variant is None:   # t554u: muscle-mistake days use the crisper callout (Day 5 2.8 px line, 84 px number)
+        variant = SPEC["ui"].get("callout_style_muscle_days", "day4_refined") if not CFG.get("bone_steps") else SPEC["ui"].get("callout_style", "day4")
     ax = SPEC["ui"].get("callout_axis", {}).get(str(CFG.get("day")), {})
     j = ax.get("joint", "shoulder")
     if j == "shoulder":   # angle between torso and upper arm (elbow flare / shoulder abduction)

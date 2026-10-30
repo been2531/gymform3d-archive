@@ -287,7 +287,7 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
         "clips": CFG.get("clips"), "xray_full_steps": CFG.get("xray_full_steps"),
         "is_wrong": {str(k): bool(v["is_wrong"]) for k, v in CFG.get("clips", {}).items()},
         "source": CFG.get("source", {}), "callouts": CFG.get("callouts"), "tts_lines": CFG.get("tts_lines"), "day": CFG.get("day"), "normalized": {k: {str(a): b for a, b in v.items()} if isinstance(v, dict) else v for k, v in CFG.get("_normalized", {}).items()},
-        "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "overlap_alpha": SPEC["ui"]["overlap_alpha"], "fps": FPS, "qc_tags": tempo.QC_TAGS,
+        "title_roi": [0, 410, W, 565], "preview_roi": [190, 232, 890, 424], "overlap_alpha": SPEC["ui"]["overlap_alpha"], "fps": FPS, "qc_tags": tempo.QC_TAGS, "target_bones": CFG.get("target_bones", []),
     })
     json.dump(meta, open(meta_p, "w"), indent=1)
 

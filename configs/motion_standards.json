@@ -54,7 +54,10 @@
     "enes2025",
     "acsm_hfj_tempo2023"
    ]
-  }
+  },
+  "target_bones": "t552u: bones like muscle fibre - only these bones are shown (gymform/bones.py vocabulary; no side suffix = both sides). Everything else stays Day 4 skin.",
+  "mistake_type": "t554u: joint = bone X-Ray steps 1-2 + muscle 3-4; muscle = all 4 steps muscle (target muscle not getting the load). Main mistake = mistakes[0].",
+  "camera_presets": "t556u: fixed for every day: step 1 wrong/front, 2 right/front, 3 wrong/side, 4 right/side; 2 motions x 2 native cameras (yaw 0 = facing the lifter, 90 = lifter's side, camera level unless pitch set)."
  },
  "sources": {
   "schoenfeld2015": {
@@ -320,6 +323,23 @@
      "ace_pushdown"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). ACE: 'pause momentarily' at full extension, return 'slow, controlled'."
+   },
+   "target_bones": [
+    "humerus",
+    "radius_ulna"
+   ],
+   "target_bones_why": "triceps: elbow extension - humerus fixed, forearm bones move",
+   "mistake_type": "muscle",
+   "mistake_type_why": "elbows drift forward -> shoulders/lats share the push, triceps lose the load",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "wide_grip_lat_pulldown": {
@@ -437,6 +457,24 @@
      "ace_pulldown"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). ACE: pause momentarily at the bottom, return slowly."
+   },
+   "target_bones": [
+    "humerus",
+    "scapula",
+    "clavicle"
+   ],
+   "target_bones_why": "shoulder adduction + scapular depression",
+   "mistake_type": "muscle",
+   "mistake_type_why": "shrugging -> upper traps take the load from the lats",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "barbell_back_squat": {
@@ -578,6 +616,25 @@
      "nobrega2018"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). Squat-specific studies in the meta-analyses used 2 s or 4 s ECC with 2 s CON (Enes 2025, Shibata)."
+   },
+   "target_bones": [
+    "femur",
+    "tibia_fibula",
+    "pelvis",
+    "lumbar_spine"
+   ],
+   "target_bones_why": "knee/hip flexion, neutral lumbar spine",
+   "mistake_type": "joint",
+   "mistake_type_why": "knee valgus = knee joint alignment fault (ACL/patellofemoral stress)",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "romanian_deadlift": {
@@ -678,6 +735,25 @@
      "nobrega2018"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   },
+   "target_bones": [
+    "pelvis",
+    "femur",
+    "lumbar_spine",
+    "thoracic_spine"
+   ],
+   "target_bones_why": "hip hinge on a neutral spine",
+   "mistake_type": "joint",
+   "mistake_type_why": "lumbar rounding = spinal flexion under load (disc stress)",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "dumbbell_lateral_raise": {
@@ -806,6 +882,24 @@
      "coratella2020"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). Coratella 2020 used 2 s CON / 2 s ECC / 0.5 s isometric."
+   },
+   "target_bones": [
+    "humerus",
+    "scapula",
+    "clavicle"
+   ],
+   "target_bones_why": "shoulder abduction (glenohumeral + scapular upward rotation)",
+   "mistake_type": "muscle",
+   "mistake_type_why": "shrug/trap takeover -> lateral delt loses the load",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "incline_dumbbell_press": {
@@ -932,6 +1026,27 @@
      "rodriguez_ridao2020"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). Rodriguez-Ridao 2020 used 2 s ECC / 2 s CON."
+   },
+   "target_bones": [
+    "humerus",
+    "scapula",
+    "clavicle",
+    "sternum",
+    "upper_ribs"
+   ],
+   "target_bones_why": "t552u owner: humerus, scapula/clavicle, sternum/upper ribs; not the full skeleton or legs",
+   "mistake_type": "joint",
+   "mistake_type_why": "elbows flared ~90 deg = humerus at 90 deg abduction + horizontal abduction under load -> anterior shoulder / subacromial stress at the glenohumeral joint (impingement risk); the extra anterior-delt load is secondary",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 25,
+     "note": "from the foot end of the bench, raised so the chest and both elbows are visible"
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "barbell_bench_press": {
@@ -1038,6 +1153,27 @@
      "rodriguez_ridao2020"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   },
+   "target_bones": [
+    "humerus",
+    "scapula",
+    "clavicle",
+    "sternum",
+    "upper_ribs"
+   ],
+   "target_bones_why": "horizontal press: humerus on scapula, pec origin on sternum/ribs",
+   "mistake_type": "joint",
+   "mistake_type_why": "same as incline press: elbow flare loads the glenohumeral joint (impingement risk)",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 35,
+     "note": "from the foot end, raised (lying lifter)"
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "barbell_bent_over_row": {
@@ -1139,6 +1275,25 @@
      "ace_barbell_row"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). ACE: hold the contraction for a second, lower slowly."
+   },
+   "target_bones": [
+    "humerus",
+    "scapula",
+    "thoracic_spine",
+    "lumbar_spine"
+   ],
+   "target_bones_why": "scapular retraction + shoulder extension on a braced spine",
+   "mistake_type": "muscle",
+   "mistake_type_why": "torso rising -> momentum, lats/mid-back lose the load (lumbar rounding is the secondary mistake)",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "seated_cable_row": {
@@ -1255,6 +1410,24 @@
      "ace_seated_row"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018). ACE: pause momentarily, return slowly."
+   },
+   "target_bones": [
+    "humerus",
+    "scapula",
+    "thoracic_spine"
+   ],
+   "target_bones_why": "scapular retraction + shoulder extension",
+   "mistake_type": "muscle",
+   "mistake_type_why": "leaning back/rocking -> momentum replaces scapular retraction",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "bulgarian_split_squat": {
@@ -1338,6 +1511,24 @@
      "nobrega2018"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   },
+   "target_bones": [
+    "femur",
+    "tibia_fibula",
+    "pelvis"
+   ],
+   "target_bones_why": "front-leg knee/hip flexion, level pelvis",
+   "mistake_type": "joint",
+   "mistake_type_why": "front knee caving = knee valgus",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "barbell_overhead_press": {
@@ -1436,6 +1627,25 @@
      "nobrega2018"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   },
+   "target_bones": [
+    "humerus",
+    "scapula",
+    "clavicle",
+    "thoracic_spine"
+   ],
+   "target_bones_why": "shoulder flexion/abduction overhead, ribs down",
+   "mistake_type": "joint",
+   "mistake_type_why": "lumbar arch = lumbar hyperextension under load",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "barbell_hip_thrust": {
@@ -1537,6 +1747,25 @@
      "nobrega2018"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   },
+   "target_bones": [
+    "pelvis",
+    "femur",
+    "lumbar_spine"
+   ],
+   "target_bones_why": "hip extension, posterior pelvic tilt",
+   "mistake_type": "joint",
+   "mistake_type_why": "lumbar hyperextension instead of hip extension",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 10,
+     "note": "from the feet"
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "leg_press": {
@@ -1634,6 +1863,25 @@
      "nobrega2018"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   },
+   "target_bones": [
+    "femur",
+    "tibia_fibula",
+    "pelvis"
+   ],
+   "target_bones_why": "knee/hip flexion, pelvis stays down",
+   "mistake_type": "joint",
+   "mistake_type_why": "pelvis lifts -> lumbar flexion under load",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 15,
+     "note": "from the sled side the feet face"
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   },
   "dumbbell_biceps_curl": {
@@ -1748,6 +1996,23 @@
      "nobrega2018"
     ],
     "note": "General hypertrophy tempo: ACSM moderate velocity 1-2 s CON / 1-2 s ECC; 0.5-8 s per rep gives similar growth (Schoenfeld 2015, Enes 2025), >10 s per rep likely worse. Trained lifters self-select reps shorter than a strict 2:2 (Nobrega 2018)."
+   },
+   "target_bones": [
+    "humerus",
+    "radius_ulna"
+   ],
+   "target_bones_why": "elbow flexion, humerus still",
+   "mistake_type": "muscle",
+   "mistake_type_why": "torso swing -> momentum, biceps lose the load",
+   "camera_presets": {
+    "front": {
+     "yaw_deg": 0,
+     "pitch_deg": 5
+    },
+    "side": {
+     "yaw_deg": 90,
+     "pitch_deg": 5
+    }
    }
   }
  }

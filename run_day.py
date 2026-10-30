@@ -286,6 +286,19 @@ def main():
     if p_err:   # LOCKED (t521u): wrong steps 1/3 = one motion, right steps 2/4 = one motion
         print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": "pair_motion: " + "; ".join(p_err), "rules": "RULES.md"}))
         sys.exit(3)
+    from gymform.ctx import camera_plan_lint, step_plan, mistake_type
+    mt_ = mistake_type(day_cfg)
+    plan_ = ", ".join(f"{s_} {f_}/{c_}/{k_}" for s_, (f_, c_, k_) in step_plan(mt_).items())
+    print(f"STEP PLAN ({mt_} mistake day, t554u/t556u): {plan_}", file=sys.stderr, flush=True)
+    log(f"step plan ({mt_}): {plan_}")
+    cam_err = camera_plan_lint(day_cfg)
+    if cam_err:   # t556u: 2 motions x fixed front/side cameras; Day 6 predates it (warning), Day 7+ must comply
+        msg = "camera_plan: " + "; ".join(cam_err)
+        log("WARNING " + msg)
+        print("WARNING " + msg, file=sys.stderr, flush=True)
+        if a.day >= 7:
+            print(json.dumps({"day": a.day, "ok": False, "stage": "guard", "blocker": msg, "rules": "RULES.md"}))
+            sys.exit(3)
     expand_motions(day_cfg)
     o_err = order_lint(day_cfg, json.load(open(os.path.join(ROOT, "gymform_spec.json"))))
     if o_err:   # LOCKED step order (Day 6+): 1 wrong bone, 2 right bone, 3 wrong muscle, 4 right muscle

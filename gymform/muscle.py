@@ -11,6 +11,11 @@ from gymform.equipment import metal_shade
 def silver_skin(F, w_fg, shorts_mask, eq_solid, kp, step_idx, is_wrong):
     """LOCKED bright silver-grey skin (p75~165, p90~191, max 226), dual-anchor lock measured outside the X-Ray window."""
     lum, act_dom = F["lum"], F["act_dom"]
+    if step_idx in CFG["bone_steps"] and CFG.get("target_bones"):
+        # t552u: native bone glow is NOT skin - de-glow the clip's own luminance (remove the tint excess, floor at
+        # the pixel's own min channel) so the skin around/outside the target bones is the plain Day 4 tone
+        lum = np.maximum(lum - 0.9 * np.clip(act_dom - 6.0, 0.0, None), np.minimum(F["min_c"], lum))
+        act_dom = np.zeros_like(act_dom)
     skin_m = (w_fg > 0.6) & (shorts_mask < 0.2) & (act_dom < 15.0) & (lum > 42.0)
     p90_raw = float(np.percentile(lum[skin_m], 90)) if skin_m.sum() > 500 else 180.0
     hv_silver = np.clip((lum - 24.0) / max(p90_raw - 24.0, 95.0), 0.0, 1.28)
