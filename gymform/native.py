@@ -1,0 +1,260 @@
+"""NATIVE GRADE look (t600, fix plan of docs/ROOTCAUSE_DAY6.md, CFG look == "native_grade").
+
+Root cause of Day 5/6 morph, ghosts, halo and flicker: the picture was re-synthesised from per-frame keypoint masks
+(body key, shorts zone, plate-diff equipment, metal re-shade, static/bench layer, shin capsule) and composited over a
+replaced backdrop. This look KEEPS THE CLIP'S OWN PIXELS everywhere (body, bench, dumbbells, shorts, feet, floor):
+
+  1. temporal denoise in SOURCE order: each frame = 0.5 own + 0.25 x each flow-warped neighbour, per-pixel occlusion
+     guard (no blending where the warp disagrees), so generation micro-noise (fibre boil) is reduced, never smeared
+  2. no unsharp (bg.transform honours CFG no_sharpen)
+  3. backdrop flattened by a SMOOTH low-frequency gain field B0/B(x,y), B = normalised convolution (sigma 100 px) of the
+     step's temporal-median backdrop pixels; applied to every pixel, so there is no matte edge anywhere
+  4. ONE monotonic tone curve per step (constant over the step, matched across steps): backdrop -> Day 4 38 lum,
+     skin p5/p50/p75/p90/max -> 52/64/75/88/143 (SPEC skin_lock_all_steps), darker-than-backdrop (shorts, bench) linear
+  5. glow = the clip's own colour dominance, recoloured LINEARLY (no threshold ramp, no seed blur), temporally smoothed
+     by the same flow filter
+  6. UI matte (title/preview depth, laser gating, QC) = Day 4 soft colour matte on the graded frame; shorts only where
+     the pixel differs from the flattened backdrop (foreground evidence)
+  7. callout joints locked to the skin: Lucas-Kanade tracked through the source sequence, kept within 12 px of the kp
+No per-frame cut-out, no keypoint geometry touches a pixel."""
+import cv2
+import numpy as np
+from gymform.ctx import CFG, SPEC, W, H, b4, LAST_MASKS
+from gymform import mask
+
+_ST = {}
+BG_RGB = np.array([35.0, 39.0, 43.0], np.float32)
+BG_L = float(0.299 * 35 + 0.587 * 39 + 0.114 * 43)
+TRACK_J = ("sh_r", "sh_l", "elb_r", "elb_l", "hip_r", "hip_l", "kn_r", "kn_l", "wr_r", "wr_l")
+
+
+def on():
+    return CFG.get("look") == "native_grade"
+
+
+def load_slice(path, i0, i1):
+    """d5.load_native_slice_720p without the 36-frame cap (Day 4 loader had none; the cap skipped poses)."""
+    cap, frs = cv2.VideoCapture(path), []
+    while True:
+        ok, fr = cap.read()
+        if not ok:
+            break
+        if fr.shape[1] != 720 or fr.shape[0] != 1280:
+            fr = cv2.resize(fr, (720, 1280), interpolation=cv2.INTER_LANCZOS4)
+        frs.append(fr)
+    cap.release()
+    i1 = min(i1, len(frs) - 1)
+    return frs[i0:i1 + 1] if i0 <= i1 else frs[i1:i0 + 1][::-1]
+
+
+def _lum(a):
+    return 0.299 * a[..., 0] + 0.587 * a[..., 1] + 0.114 * a[..., 2]
+
+
+def _lumx(a):
+    """luminance with a global channel mix: the studio backdrop is violet (b,r above g by ~4-6) while the plates,
+    bench and shorts are neutral; lum - k * smoothed violet chroma separates neutral dark equipment from an
+    equal-luminance violet backdrop (one global 3x3-style mix, no mask; chroma smoothed sigma 2 so it adds no noise)."""
+    a = a.astype(np.float32)
+    k = float(CFG.get("native_chroma_k", 0.0))
+    L = _lum(a)
+    if k <= 0:
+        return L
+    c = 0.5 * (a[..., 0] + a[..., 2]) - a[..., 1]
+    s = 2.0 * a.shape[0] / 1920.0
+    return L - k * cv2.GaussianBlur(c, (0, 0), max(0.6, s))
+
+
+def _act(a):
+    return np.maximum(a[..., 0] - 0.5 * (a[..., 1] + a[..., 2]), a[..., 1] - 0.5 * (a[..., 0] + a[..., 2]))
+
+
+def _flow_full(g_t, g_n):
+    """flow at 540x960 such that frame_n(x + f) ~ frame_t(x), returned at 1080x1920 (pixels)."""
+    f = cv2.calcOpticalFlowFarneback(g_t, g_n, None, 0.5, 4, 21, 4, 7, 1.5, 0)
+    return cv2.resize(f, (W, H), interpolation=cv2.INTER_LINEAR) * 2.0
+
+
+_GX, _GY = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
+
+
+def _warp(img, f):
+    return cv2.remap(img, _GX + f[..., 0], _GY + f[..., 1], cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+
+def prepare(step, seq, kps, y_sh):
+    """Per-step precompute (once per worker): denoised 1080 frames, flat field, tone curve, glow scale, tracked kp."""
+    if step in _ST:
+        return _ST[step]
+    raw, kp_t = [], []
+    for i in range(len(seq)):
+        rgb, kp = b4.transform_frame_and_kp_1080p(seq[i], kps[i], y_sh, step)
+        raw.append(np.clip(rgb, 0, 255).astype(np.uint8)); kp_t.append(kp)
+    n = len(raw)
+    small = [cv2.resize(_lum(r.astype(np.float32)), (540, 960), interpolation=cv2.INTER_AREA).astype(np.uint8) for r in raw]
+    tw = float(CFG.get("native_temporal_w", 0.25))
+    den = []
+    for t in range(n):
+        ft = raw[t].astype(np.float32)
+        acc, ws = ft * (1.0 - 2 * tw), np.full((H, W), 1.0 - 2 * tw, np.float32)
+        lt = _lum(ft)
+        for nb in (t - 1, t + 1):
+            if 0 <= nb < n:
+                wp = _warp(raw[nb].astype(np.float32), _flow_full(small[t], small[nb]))
+                ok = np.clip(1.0 - (np.abs(_lum(wp) - lt) - 6.0) / 10.0, 0.0, 1.0) * tw   # occlusion guard
+                acc += wp * ok[..., None]; ws += ok
+            else:
+                acc += ft * tw; ws += tw
+        den.append(np.clip(acc / ws[..., None], 0, 255).astype(np.uint8))
+    # flat field from the temporal median (quarter res)
+    q = np.median(np.stack([cv2.resize(d, (270, 480), interpolation=cv2.INTER_AREA) for d in den[::max(1, n // 15)]]), axis=0).astype(np.float32)
+    h_ = q.shape[0]
+    bgc = np.median(np.concatenate([q[int(h_ * .36):int(h_ * .94), :4].reshape(-1, 3), q[int(h_ * .36):int(h_ * .94), -4:].reshape(-1, 3)]), axis=0)
+    lq = _lumx(q)
+    tex = cv2.GaussianBlur(np.abs(lq - cv2.GaussianBlur(lq, (0, 0), 1.5)), (0, 0), 2.0)
+    # the canvas outside the scaled clip is a synthetic border-median fill, not clip content: never a field sample
+    from gymform import ctx as _ctx
+    x0, y0, nw, nh = _ctx.clip_rect(step)
+    ins = np.zeros((H, W), np.float32)
+    ins[max(0, y0):max(0, y0 + nh), max(0, x0):max(0, x0 + nw)] = 1.0
+    ins_q = cv2.resize(cv2.erode(ins, np.ones((81, 81), np.uint8)), (270, 480), interpolation=cv2.INTER_NEAREST) > 0.5
+    # inside weight: 0 outside the clip, 1 from ~110 px inside its edge (smooth ramp; the fill becomes the flat backdrop)
+    wm = cv2.GaussianBlur(cv2.erode(ins, np.ones((131, 131), np.uint8)), (0, 0), 28.0)
+    # per-row backdrop reference from the clip's own left/right edge columns (vignette changes with height)
+    cols = np.where(ins_q.any(axis=0))[0]
+    if len(cols) > 20:
+        edge = np.concatenate([lq[:, cols[:8]], lq[:, cols[-8:]]], axis=1)
+        prof = np.array([np.median(edge[y][ins_q[y, np.concatenate([cols[:8], cols[-8:]])]]) if ins_q[y].any() else np.nan
+                         for y in range(h_)])
+        good = ~np.isnan(prof)
+        prof = np.interp(np.arange(h_), np.where(good)[0], prof[good]) if good.any() else np.full(h_, _lum(bgc))
+        prof = cv2.GaussianBlur(prof.astype(np.float32)[:, None], (0, 0), 6.0)[:, 0]
+    else:
+        prof = np.full(h_, float(_lum(bgc)), np.float32)
+    cand = ((np.abs(lq - prof[:, None]) < 10.0) & (tex < 4.0) & (_act(q) < 6.0) & ins_q).astype(np.float32)
+    s_ = 14.0
+    B = cv2.GaussianBlur(lq * cand, (0, 0), s_) / np.maximum(cv2.GaussianBlur(cand, (0, 0), s_), 1e-3)
+    B0 = float(np.median(lq[cand > 0])) if cand.sum() > 100 else float(_lum(bgc))
+    G = cv2.resize(np.clip(B0 / np.maximum(B, 1.0), 0.5, 2.0).astype(np.float32), (W, H), interpolation=cv2.INTER_CUBIC)
+    # STATIC backdrop weight: pixels that are backdrop in EVERY sampled frame of the step (never touched by the body,
+    # bench or dumbbells anywhere in its swept volume) take the flat studio colour; one weight per step -> zero flicker,
+    # never a per-frame cut-out. Everything the athlete or equipment ever covers keeps the clip's own pixels.
+    allb = np.ones_like(lq, bool)
+    for d in den[::max(1, n // 24)]:
+        qd = cv2.resize(d, (270, 480), interpolation=cv2.INTER_AREA).astype(np.float32)
+        ld = _lumx(qd)
+        td = cv2.GaussianBlur(np.abs(ld - cv2.GaussianBlur(ld, (0, 0), 1.5)), (0, 0), 2.0)
+        # backdrop in every frame: at the local level, or a soft static contact shadow (<= 14 darker, no texture)
+        allb &= (ld - B < 6.0) & (ld - B > -14.0) & (td < 4.0) & (_act(qd) < 6.0)
+    # outside the scaled clip is synthetic fill; the clip's own vignetted rim follows the local level B
+    ins_qr = cv2.resize(ins, (270, 480), interpolation=cv2.INTER_NEAREST) > 0.5
+    allb |= ~ins_qr
+    allb = cv2.erode(allb.astype(np.uint8), np.ones((7, 7), np.uint8))
+    wb = cv2.resize(cv2.GaussianBlur(allb.astype(np.float32), (0, 0), 5.0), (W, H), interpolation=cv2.INTER_CUBIC)
+    wb = np.clip((wb - 0.15) / 0.7, 0.0, 1.0)
+    # tone curve from skin statistics on the flattened lum (sampled frames)
+    vals, actv = [], []
+    bones = (("sh_r", "elb_r"), ("elb_r", "wr_r"), ("sh_l", "elb_l"), ("elb_l", "wr_l"), ("sh_r", "sh_l"), ("sh_r", "hip_r"),
+             ("sh_l", "hip_l"), ("hip_r", "hip_l"), ("hip_r", "kn_r"), ("hip_l", "kn_l"), ("kn_r", "ank_r"), ("kn_l", "ank_l"))
+    for i_ in range(0, n, max(1, n // 8)):
+        f = den[i_].astype(np.float32)
+        L1, a = _lumx(f) * G, _act(f)
+        # skin population = pixels ON the skeleton (bench / dumbbell highlights excluded, as QC (f) excludes them)
+        skel = np.zeros((H, W), np.uint8)
+        kq = kp_t[i_]
+        for j1, j2 in bones:
+            if j1 in kq and j2 in kq:
+                cv2.line(skel, tuple(int(c) for c in kq[j1]), tuple(int(c) for c in kq[j2]), 1, 70)
+        for wj in ("wr_r", "wr_l"):
+            if wj in kq:
+                cv2.circle(skel, tuple(int(c) for c in kq[wj]), 75, 0, -1)
+        sk = (L1 > B0 + 10.0) & (a < 12.0) & (skel > 0)
+        sk[:620] = False
+        vals.append(L1[sk][::7]); actv.append(a[(a > 15.0)][::5])
+    v = np.concatenate(vals)
+    lk = SPEC["mannequin"]["skin_lock_all_steps"]
+
+    def _curve(qs, ys_in):
+        sdx = min(float(CFG.get("native_sep_dx", 0.0)), B0 - 2.0)
+        xs_ = [0.0] + ([B0 - sdx] if sdx > 0 else []) + [B0, B0 + float(CFG.get("native_steel_dx", 0.0) or 0.5)] + qs + [max(255.0, qs[-1] + 2.0)]
+        for i in range(1, len(xs_)):
+            xs_[i] = max(xs_[i], xs_[i - 1] + 1.0)
+        return xs_, ys_in
+    # darker than the backdrop (shorts, bench, metal): one linear segment floor..backdrop (slope < 1, so backdrop
+    # noise is never amplified - a steep knot at the backdrop turned sensor noise into boiling texture); above: skin
+    # anchors (pass 1: all skin, pass 2: the QC/Day 4 skin population above lum 46, as (f) measures it)
+    # t601 separation: neutral mid-dark equipment just above the backdrop level (dumbbell plates) is lifted to
+    # brushed steel (BG + native_steel_lift at B0 + native_steel_dx), skin above p5 untouched (Day 4 tone)
+    lo = [float(CFG.get("native_dark_floor", 24.0))] + ([BG_L - float(CFG.get("native_sep_dy", 0.0))] if float(CFG.get("native_sep_dx", 0.0)) > 0 else []) \
+        + [BG_L, BG_L + float(CFG.get("native_steel_lift", 0.0))]
+    q1 = [float(np.percentile(v, p)) for p in (5, 50, 75, 90, 99.9)]
+    ys1 = lo + [float(CFG.get("native_skin_p5", 52.0)), float(lk["p50"]), float(lk["p75"]), float(CFG.get("native_skin_p90", lk["p90"])), float(lk["max"]), float(lk["max"]) + 6.0]
+    xs, ys = _curve(q1, ys1)
+    lv = np.interp(v, xs, ys)
+    v2 = v[lv > 46.0]
+    if v2.size > 2000:
+        q2 = [q1[0], q1[1]] + [float(np.percentile(v2, p)) for p in (75, 90, 99.9)]
+        q2[2] = max(q2[2], q2[1] + 2.0)
+        xs, ys = _curve(q2, ys1)
+    a_all = np.concatenate(actv) if actv else np.zeros(1)
+    A95 = float(np.percentile(a_all, 95)) if a_all.size > 500 else 60.0
+    # callout joints locked to the skin (LK through the source order, clamped to 12 px of the kp)
+    g8 = [cv2.cvtColor(d, cv2.COLOR_RGB2GRAY) for d in den]
+    trk = [dict(kp_t[0])]
+    pts = np.array([kp_t[0][j] for j in TRACK_J], np.float32).reshape(-1, 1, 2)
+    R = float(CFG.get("anchor_lock_px", 12.0))
+    for t in range(1, n):
+        nxt, st, _ = cv2.calcOpticalFlowPyrLK(g8[t - 1], g8[t], pts, None, winSize=(41, 41), maxLevel=3)
+        out = dict(kp_t[t])
+        newp = []
+        for k_, j in enumerate(TRACK_J):
+            kp_ = np.array(kp_t[t][j], np.float32)
+            p_ = nxt[k_, 0] if st[k_, 0] else kp_
+            d_ = p_ - kp_; dn = float(np.hypot(*d_))
+            if dn > R:
+                p_ = kp_ + d_ * (R / dn)
+            out[j] = (float(p_[0]), float(p_[1])); newp.append(p_)
+        out["sh"] = (0.5 * (out["sh_r"][0] + out["sh_l"][0]), 0.5 * (out["sh_r"][1] + out["sh_l"][1]))
+        trk.append(out)
+        pts = np.array(newp, np.float32).reshape(-1, 1, 2)
+    _ST[step] = dict(den=den, G=G, B0=B0, wm=wm * (1.0 - wb), xs=xs, ys=ys, A95=A95, kp=trk, raw_kp=kp_t)
+    return _ST[step]
+
+
+def grade(step, p_i, is_wrong):
+    """-> (base_rgb uint8, shorts_mask, w_fg, src_rgb, kp_locked)."""
+    S = _ST[step]
+    src = S["den"][p_i]
+    f = src.astype(np.float32)
+    L1 = _lumx(f) * S["G"]
+    Lg = np.interp(L1, S["xs"], S["ys"]).astype(np.float32)
+    lk = SPEC["mannequin"]["skin_lock_all_steps"]
+    t_sk = np.asarray(lk.get("tint_rgb", [-1.5, 0.5, 3.0]), np.float32)
+    t_bg = BG_RGB - BG_L
+    tb = np.clip((Lg - 45.0) / 25.0, 0.0, 1.0)[..., None]
+    grey = Lg[..., None] + t_bg * (1.0 - tb) + t_sk * tb
+    wt = np.asarray(CFG.get("native_dark_warm_rgb", [0.0, 0.0, 0.0]), np.float32)
+    if wt.any():   # t601: darker-than-backdrop neutrals (bench, frame) read warm grey, never black or backdrop-cool
+        tw_ = np.clip((BG_L - 2.0 - Lg) / 8.0, 0.0, 1.0)[..., None]
+        grey = grey + (wt - t_bg) * tw_
+    a = _act(f)
+    w = (np.clip((a - 8.0) / max(S["A95"] - 8.0, 20.0), 0.0, 1.0) * float(CFG.get("native_glow_max", 0.9)))[..., None]
+    if is_wrong:
+        col = np.stack([40.0 + 1.55 * Lg, 6.0 + 0.38 * Lg, 8.0 + 0.40 * Lg], -1)
+    else:
+        col = np.stack([8.0 + 0.32 * Lg, 30.0 + 1.38 * Lg, 14.0 + 0.72 * Lg], -1)
+    base = grey * (1.0 - w) + np.clip(col, 0, 255) * w
+    wm = S["wm"][..., None]
+    ref = np.clip(grey * wm + BG_RGB * (1.0 - wm), 0, 255).astype(np.uint8)   # global tone map only (QC (m) reference)
+    base = np.clip(base * wm + BG_RGB * (1.0 - wm), 0, 255).astype(np.uint8)
+    bf = base.astype(np.float32)
+    w_fg = cv2.GaussianBlur(np.clip((np.abs(_lum(bf) - BG_L) + 0.95 * _act(bf) - 6.0) / 14.0, 0.0, 1.0).astype(np.float32), (0, 0), 2.0)
+    kp = S["kp"][p_i]
+    F = mask.features(f)
+    fab, _zone = mask.native_shorts(F, kp)
+    # foreground evidence on the smoothed flattened lum (fabric sits ~6 under the backdrop; pixel noise ~3)
+    evid = (np.abs(cv2.GaussianBlur(L1, (0, 0), 4.0) - S["B0"]) > float(CFG.get("shorts_evidence_lum", 3.5))).astype(np.uint8)
+    sm = cv2.morphologyEx((fab > 0.5).astype(np.uint8) & evid, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)) & evid
+    shorts = cv2.GaussianBlur(sm.astype(np.float32), (0, 0), 0.8)
+    LAST_MASKS["native"] = dict(L1=L1, B0=S["B0"], ref=ref)
+    return base, shorts, w_fg, src, kp

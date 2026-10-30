@@ -299,6 +299,17 @@ def normalize_scale(kps_seqs):
             out, worst = frame(zm)
         if zm < zoom:
             note = f"zoom reduced {zoom:.2f}->{zm:.2f} to keep dumbbells in frame"
+        if tz.get("align") == "hips_ankles" and len(out) > 1:
+            # t600 step cut: put every step's hips+ankles centre (where the body sits on the bench) at the same
+            # screen point (mean over steps) instead of the shoulders/bbox, so bench and feet do not jump at the cut
+            anc = {}
+            for s, (sc, dx, dy) in out.items():
+                y_sh = step_spec(s)[5]
+                pts = [np.mean([k[j] for j in ("hip_r", "hip_l", "ank_r", "ank_l")], axis=0) for k in kps_seqs[s]]
+                ax, ay = float(np.median([p[0] for p in pts])), float(np.median([p[1] for p in pts]))
+                anc[s] = ((ax - W * 0.5) * sc + W * 0.5 + dx, (ay - y_sh - H * 0.5) * sc + H * 0.5 + dy)
+            tx, ty = float(np.mean([a[0] for a in anc.values()])), float(np.mean([a[1] for a in anc.values()]))
+            out = {s: (sc, int(round(dx + tx - anc[s][0])), int(round(dy + ty - anc[s][1]))) for s, (sc, dx, dy) in out.items()}
         for s, (sc, dx, dy) in out.items():
             STEP_SCALE[s], STEP_DX[s], b4.STEP_DY[s] = sc, dx, dy
         zoom = zm
