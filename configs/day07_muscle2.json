@@ -4,8 +4,8 @@
   "assets_dir": "output/assets",
   "kp_cache": "_cache_day7_scr_muscle2_kps.pkl",
   "step_scale": {
-    "1": 1.0,
-    "2": 1.0
+    "1": 0.95,
+    "2": 0.95
   },
   "step_dy": {
     "1": 0,
@@ -76,62 +76,52 @@
     "region": "upper_body",
     "focus": "shoulders / upper back",
     "zoom": 1.0,
-    "focus_x": 511,
-    "focus_y": 1060,
+    "focus_x": 450,
+    "focus_y": 840,
     "top_min_y": 140,
     "side_min": 24,
     "equipment_margin": 0.11,
-    "why": "Day 7: whole figure + machine centred, Day 4 full-body framing (re-tune after clips)",
+    "why": "Day 7: low-row station fills the 720p width already (x 151-1029 at 1.5x); keep <=1.5x upscale (sharp), scale 0.95, lift so the stack box is not cut at the bottom, centre figure+machine bbox",
     "focus_mode": "body_bbox_x",
     "align": "hips_ankles"
   },
   "motions": {
     "wrong": {
       "base": "day7_wrong_raw.mp4",
-      "i0": null,
-      "i1": null,
-      "y_shift": 0,
-      "why": "TBD after download: window from full contraction (handle at belly, shoulders shrugged) to full stretch",
+      "i0": 0,
+      "i1": 50,
+      "y_shift": 80,
+      "why": "v2 grok post a3a12545-91f7-4dfa-b906-34c603b42c16 (1 take). Window f0 stretch (wrist-shoulder 230 px/720p, arms straight) -> f50 full contraction (128 px, handle at belly). Near arm at contraction: elbow flexion 109 deg (2D), elbow only 62 px behind shoulder, upper-arm/torso 48 deg; shoulders visibly rise (shrug). Trunk range 11 deg.",
       "renders": {
         "front": {
           "file": "day7_wrong_raw.mp4",
-          "camera": "front_3q_high (same as right clip)"
+          "camera": "front",
+          "camera_note": "elevated front-3/4 (owner-approved v2 frames); DAY7_IMPROVEMENTS #5: a 2-step day uses one best angle for both steps, same for wrong and right"
         }
       },
       "callout": {
-        "deg": "",
+        "deg": "105\u00b0",
         "l1": "ARM PULL + SHRUG",
-        "l2": {
-          "muscle": [
-            "BICEPS / TRAP OVERLOAD",
-            74,
-            8
-          ]
-        }
+        "l2": "BICEPS + TRAPS TAKE IT"
       }
     },
     "right": {
       "base": "day7_right_raw.mp4",
-      "i0": null,
-      "i1": null,
-      "y_shift": 0,
-      "why": "TBD after download: window from full contraction (elbows behind torso, scapulae retracted) to full stretch",
+      "i0": 0,
+      "i1": 36,
+      "y_shift": 80,
+      "why": "v2 grok post b21203af-133e-4101-b18e-5624e950cde2 (1 take). Window f0 stretch (229 px) -> f36 full contraction (126 px, handle at lower ribs/upper abdomen, held f36-72). Near arm at contraction: elbow flexion 106 deg (2D), elbow 94 px behind shoulder, upper-arm/torso 68 deg (elbows past the torso). Trunk range 10 deg.",
       "renders": {
         "front": {
           "file": "day7_right_raw.mp4",
-          "camera": "front_3q_high (same as wrong clip)"
+          "camera": "front",
+          "camera_note": "elevated front-3/4 (owner-approved v2 frames); DAY7_IMPROVEMENTS #5: a 2-step day uses one best angle for both steps, same for wrong and right"
         }
       },
       "callout": {
-        "deg": "",
+        "deg": "105\u00b0",
         "l1": "ELBOWS BACK",
-        "l2": {
-          "muscle": [
-            "LAT LOAD",
-            96,
-            4
-          ]
-        }
+        "l2": "LATS TAKE IT"
       }
     }
   },
@@ -159,7 +149,7 @@
   "no_slice_cap": true,
   "phase_continuous_cut": true,
   "native_why": "t600: fix plan of docs/ROOTCAUSE_DAY6.md - clip's own pixels, temporal flow denoise, flat-field backdrop gain, one tone curve per step, linear glow, flow-locked callout joints, no slice cap, continuous motion phase at the cut, hips/ankles alignment; static_body_shin_r capsule and metal re-shade not used",
-  "native_skin_p90": 84.0,
+  "native_skin_p90": 88.0,
   "native_chroma_k": 0.0,
   "native_steel_dx": 0.0,
   "native_steel_lift": 0.0,
@@ -171,7 +161,7 @@
   "native_sep_dx": 8.0,
   "native_sep_dy": 10.0,
   "native_dark_floor": 18.0,
-  "defect_playbook_sha": "12b32caa",
+  "defect_playbook_sha": "bf89cb12",
   "native_keep_chroma": 1.0,
   "native_glow_hue_strict": true,
   "native_keep_chroma_sat": 4.0,
@@ -179,5 +169,8 @@
   "shorts_evidence_strict": true,
   "native_bench_map": true,
   "native_wfg_colour": true,
-  "native_anchor_smooth": 2.0
+  "native_anchor_smooth": 2.0,
+  "callout_note": "deg = ELBOW FLEXION at the end of the pull, fixed (2-step (z): one coached angle per step): 105 deg is inside the MOTION_STANDARDS seated_cable_row band 80-140 and matches the measured near-arm 106-109 (2D) in BOTH clips - the elbow bend is the same; the difference (shrug vs elbows past the torso) is carried by the labels. l2 is plain text: no invented percentages.",
+  "native_skin_p90_why": "Day 4 lock p90 (spec skin_lock_all_steps 88); 84 (Day 6 v5) left Day 7 p90 at 79-83 under the (f) band 81-95",
+  "native_glow_form_hue": true
 }
