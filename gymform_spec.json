@@ -332,5 +332,10 @@
     "eccentric": 1.5,
     "hold_end": 0.4,
     "monotonic": true
+  },
+  "muscle_shader": {
+    "default_from_day6": "day4",
+    "day4_native_glow_p50": 100.0,
+    "note": "t572u: muscle steps use the Day 4 GOLD #1 fibre shader (muscle.day4_fibre = build_day4_rdl_master.shade_day4_3d_frame_1080p). Day 4 source clips glow at native act median 95-110; a fainter clip is gain-matched to 100 (x1..2.5) before the same thresholds. Day <= 5 keeps 'gymform_v5'."
   }
 }

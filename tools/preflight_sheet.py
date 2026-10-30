@@ -23,6 +23,8 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--notes", default="", help="text file: one remaining-issue line per row")
     ap.add_argument("--tags", default="start,peak,t100")
+    ap.add_argument("--compare", default="", help="gold mp4 for a side-by-side muscle-colour crop, e.g. "
+                    "output/day4_romanian_deadlift_4step_master.mp4:200,500 (wrong frame, right frame)")
     a = ap.parse_args()
     cfg = json.load(open(os.path.join(ROOT, a.config)))
     n = int(cfg.get("n_steps", 4))
@@ -44,7 +46,29 @@ def main():
         q_lines.append((st, wrap(t[:230], 70)))
     hq = sum(34 * len(l) + 8 for _, l in q_lines)
     hn = sum(32 * len(wrap(t, 72)) + 6 for t in notes)
-    H = 150 + n * (th + 70) + 90 + hq + (90 + hn if notes else 0) + 40
+    cmp_rows = []
+    if a.compare:
+        import cv2, numpy as np
+        mp4, frs = a.compare.split(":")
+        cap = cv2.VideoCapture(os.path.join(ROOT, mp4))
+
+        def crop(bgr, sz=440):
+            f = bgr.astype(np.float32)
+            act = np.maximum(f[..., 2] - 0.5 * (f[..., 1] + f[..., 0]), f[..., 1] - 0.5 * (f[..., 2] + f[..., 0]))
+            act[:600] = 0; act[:, :300] = 0
+            ys, xs = np.where(act > 40)
+            cy, cx = (int(np.median(ys)), int(np.median(xs))) if ys.size else (960, 540)
+            y0, x0 = max(0, min(1920 - sz, cy - sz // 2)), max(0, min(1080 - sz, cx - sz // 2))
+            return Image.fromarray(cv2.cvtColor(bgr[y0:y0 + sz, x0:x0 + sz], cv2.COLOR_BGR2RGB))
+        gold_day = re.search(r"day(\d+)", os.path.basename(mp4)).group(1)
+        for s_, fi in zip((1, 2), [int(x) for x in frs.split(",")]):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, fi)
+            ok, g = cap.read()
+            d6 = cv2.imread(os.path.join(pdir, f"step{s_}_peak_final.png"))
+            if ok and d6 is not None:
+                cmp_rows.append((("wrong / red" if s_ == 1 else "right / green"), f"Day {gold_day} (gold)", crop(g), f"Day {cfg['day']} now", crop(d6)))
+    cw = (Wd - 3 * pad) // 2
+    H = 150 + n * (th + 70) + (80 + len(cmp_rows) * (cw + 60) if cmp_rows else 0) + 90 + hq + (90 + hn if notes else 0) + 40
     img = Image.new("RGB", (Wd, H), (14, 16, 20))
     d = ImageDraw.Draw(img)
     npass = sum(1 for s, _ in rows if s == "PASS")
@@ -66,6 +90,18 @@ def main():
             d.rectangle([x - 2, y - 2, x + tw + 1, y + th + 1], outline=col, width=3)
             d.text((x + 8, y + th - 34), tg, font=f_q, fill=(235, 240, 248))
         y += th + 20
+    if cmp_rows:
+        d.text((pad, y + 10), "Muscle colour: gold vs now (same crop size, 1:1 pixels)", font=f_s, fill=(255, 200, 90))
+        y += 70
+        for lab, l1, im1, l2, im2 in cmp_rows:
+            d.text((pad, y), lab, font=f_q, fill=(215, 222, 232))
+            y += 40
+            for k, (l_, im_) in enumerate(((l1, im1), (l2, im2))):
+                x = pad + k * (cw + pad)
+                img.paste(im_.resize((cw, cw), Image.Resampling.LANCZOS), (x, y))
+                d.rectangle([x, y, x + 210, y + 40], fill=(14, 16, 20))
+                d.text((x + 8, y + 6), l_, font=f_q, fill=(242, 246, 252))
+            y += cw + 20
     d.text((pad, y + 10), "QC (preflight sample frames)", font=f_s, fill=(242, 246, 252))
     y += 60
     for st, ls in q_lines:
