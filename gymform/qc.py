@@ -545,6 +545,10 @@ def playbook_frame_checks(frames_meta, qc_dir):
                 skc = np.median(b_rgb[skz], axis=0)
                 fig = float(np.percentile(lb_[skz], 75) - lum_of(bgc[None])[0])
                 parts, ok_ = [f"fig {fig:.0f}"], fig >= 33.0
+                bh2 = ((b_rgb[..., 2] - np.maximum(b_rgb[..., 0], b_rgb[..., 1])) > 25).astype(np.uint8)
+                _pm0 = load_mask(pre + "_plate.png")
+                if bh2[620:].sum() > 3000 and (_pm0 is None or _pm0.max() <= 0.05):
+                    eq_ = cv2.morphologyEx(bh2, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)).astype(np.float32)   # source cobalt plates
                 for nm, m_ in (("dumbbell", eq_), ("bench", st_)):
                     if m_ is None:
                         continue
@@ -565,6 +569,27 @@ def playbook_frame_checks(frames_meta, qc_dir):
                     sep_bad.append(sep_rows[-1])
         # (pl) t605 custom plates (D18): plate vs backdrop >= 40 RGB, recolour weight on raw skin / raw backdrop <= 0.5%
         pmk = load_mask(pre + "_plate.png")
+        if (pmk is None or pmk.max() <= 0.05) and wfg_ is not None and bgz.sum() > 5000:
+            # t609 source-coloured plates (palette A in the clip, no recolour): plate = cobalt-hue blobs, convex hull
+            # per blob (all faces incl. lit tops / shaded sides); plate vs backdrop median >= 40 (D18) + p05 reported
+            bh = ((b_rgb[..., 2] - np.maximum(b_rgb[..., 0], b_rgb[..., 1])) > 25).astype(np.uint8)
+            bh[:620] = 0
+            bh = cv2.morphologyEx(bh, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+            n_, lab_, st__, _ = cv2.connectedComponentsWithStats(bh, connectivity=8)
+            hull_ = np.zeros(bh.shape, np.uint8)
+            for i_ in range(1, n_):
+                if st__[i_, cv2.CC_STAT_AREA] > 800:
+                    yy, xx = np.where(lab_ == i_)
+                    cv2.fillConvexPoly(hull_, cv2.convexHull(np.stack([xx, yy], 1).astype(np.int32)), 1)
+            hull_ = cv2.erode(hull_, np.ones((7, 7), np.uint8)) > 0
+            if hull_.sum() > 1500:
+                bgc_ = np.median(b_rgb[bgz], axis=0)
+                dd = np.linalg.norm(b_rgb - bgc_, axis=-1)
+                area40 = cv2.morphologyEx((hull_ & (dd < 40)).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)).sum() / float(hull_.sum())
+                d_pb = float(np.median(dd[hull_]))
+                pl_rows.append(f"{key}: source plates vs bg median {d_pb:.0f} p05 {np.percentile(dd[hull_], 5):.0f}, faces<40 {100 * area40:.1f}% ({int(hull_.sum())}px)")
+                if d_pb < 40.0:
+                    pl_bad.append(pl_rows[-1])
         if pmk is not None and pmk.max() > 0.05 and wfg_ is not None and bgz.sum() > 5000:
             ps = pmk > 0.7
             if ps.sum() > 300:
@@ -894,6 +919,8 @@ def main():
         xw = load_mask(pre + "_xwin.png")
         xw_d = (cv2.dilate((xw > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) > 0) if xw is not None else np.zeros((H, W), bool)
         sk_o = (wsol > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
+        if alpha is not None:   # native: the warm-grey bench (r-b > 4) is never skin (skin lock tint is cool)
+            sk_o &= (base[..., 0].astype(np.float32) - base[..., 2]) <= 4.0
         st_i = load_mask(pre + "_static.png")   # same skin as (f): native static bench highlights are not skin
         if st_i is not None:
             sk_o &= st_i < 0.5
@@ -914,6 +941,8 @@ def main():
         # (spec: the skin lock excludes only the local X-Ray window, same mask as (i))
         st_m = load_mask(pre + "_static.png")   # native static-equipment pixels (bench highlights) are not skin
         skin = (wsol > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
+        if alpha is not None:
+            skin &= (base[..., 0].astype(np.float32) - base[..., 2]) <= 4.0
         if st_m is not None:
             skin &= st_m < 0.5
         if skin.sum() > 2000:
