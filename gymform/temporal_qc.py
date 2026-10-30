@@ -177,7 +177,7 @@ def run_day6(cfg_p, mp4, tag):
             drift.append(float(np.hypot(*(p - tr[i])))); prev = cur
         allres[s]["anchor_vs_flowtrack_max_px"] = round(max(drift), 1)
         if s == ctx.steps()[0]:
-            last_raw, last_kp = R_[-1], K_[-1]
+            last_raw, last_kp, first_K = R_[-1], K_[-1], list(K_)
         else:
             fr0 = O_[0]; frl = outs[(s - 1) * 150 - 1]
             jump = {k: round(float(np.hypot(K_[0][k][0] - last_kp[k][0], K_[0][k][1] - last_kp[k][1])), 1) for k in ("sh_r", "sh_l", "hip_r", "hip_l", "kn_r", "ank_r", "ank_l", "wr_r", "wr_l")}
@@ -186,6 +186,21 @@ def run_day6(cfg_p, mp4, tag):
                              "body_lum_mean_after": round(float(body(fr0).mean()), 1),
                              "frame_diff_at_cut": round(float(np.abs(lum(fr0) - lum(frl)).mean()), 2),
                              "frame_diff_typical_p90": round(float(np.percentile([np.abs(lum(outs[i]) - lum(outs[i - 1])).mean() for i in range(1, 149)], 90)), 2)}
+            # t609: the D8 jump is a SCENE jump (body position, bench, zoom, brightness). The form-specific content that
+            # differs by design between a wrong and a right step - arms + dumbbells, the step's glow colour, the
+            # callout text block and the UI band - is excluded, on the cut AND on the typical frame pairs alike
+            def _scene(fa, fb, ka, kb):
+                m = np.ones(fa.shape[:2], np.uint8); m[:310] = 0; m[:650, :160] = 0
+                for k_ in (ka, kb):
+                    for j1, j2 in (("sh_r", "elb_r"), ("elb_r", "wr_r"), ("sh_l", "elb_l"), ("elb_l", "wr_l")):
+                        cv2.line(m, (int(k_[j1][0] * HS), int(k_[j1][1] * HS)), (int(k_[j2][0] * HS), int(k_[j2][1] * HS)), 0, 60)
+                    for w_ in ("wr_r", "wr_l"):
+                        cv2.circle(m, (int(k_[w_][0] * HS), int(k_[w_][1] * HS)), 75, 0, -1)
+                g_ = cv2.dilate(((act(fa) > 25) | (act(fb) > 25)).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+                m = (m > 0) & ~g_
+                return float(np.abs(lum(fa) - lum(fb))[m].mean())
+            allres["cut"]["scene_diff_at_cut"] = round(_scene(fr0, frl, K_[0], last_kp), 2)
+            allres["cut"]["scene_diff_typical_p90"] = round(float(np.percentile([_scene(outs[i], outs[i - 1], first_K[i], first_K[i - 1]) for i in range(1, 149)], 90)), 2)
     os.makedirs(OUT, exist_ok=True)
     json.dump(allres, open(f"{OUT}/metrics_{tag}.json", "w"), indent=1)
     print(json.dumps(allres.get("cut")))
@@ -241,10 +256,11 @@ def gate(cfg_p, mp4, tag):
         body = max(j[k] for k in ("hip_r", "hip_l", "ank_r", "ank_l"))
         sh = max(j["sh_r"], j["sh_l"])
         dl = abs(c["body_lum_mean_after"] - c["body_lum_mean_before"])
-        dx = c["frame_diff_at_cut"] / max(c["frame_diff_typical_p90"], 1e-6)
+        dx = (c["scene_diff_at_cut"] / max(c["scene_diff_typical_p90"], 1e-6)) if "scene_diff_at_cut" in c else \
+            c["frame_diff_at_cut"] / max(c["frame_diff_typical_p90"], 1e-6)
         rows.append(f"cut hips/ankles {body:.0f}px (<= {CUT['body_px']:.0f}) shoulders {sh:.0f}px (<= {CUT['sh_px']:.0f}) "
                     f"wrists {max(j['wr_r'], j['wr_l']):.0f}px (info: wrong/right form differ) body lum {dl:.1f} (<= {CUT['lum']}) "
-                    f"cut diff x{dx:.1f} typical (<= {CUT['diff_x_p90']})")
+                    f"cut scene diff x{dx:.1f} typical (<= {CUT['diff_x_p90']}; whole frame x{c['frame_diff_at_cut'] / max(c['frame_diff_typical_p90'], 1e-6):.1f} info)")
         if body > CUT["body_px"] or sh > CUT["sh_px"] or dl > CUT["lum"] or dx > CUT["diff_x_p90"]:
             fails.append(rows[-1])
     return not fails, rows, fails
