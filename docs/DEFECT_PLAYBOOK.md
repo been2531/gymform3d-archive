@@ -66,3 +66,30 @@ The look is behind config flags; older days are unchanged.
   - The lit faces have the same brightness as the backdrop and the bench backrest, so the matte either misses them (half-painted hex) or spills onto the raw backdrop (≤11.7%).
   - v5 is NOT rendered.
   - Real fix: a source with separable plates, i.e. Day 7+ prompts with palette A in the generation itself.
+
+## t609 palette A source: QC definition + native fixes (Day 6 v5, flags in `configs/day06_muscle2_v5.json`)
+
+Rule: a definition is changed only so it measures the real defect. No threshold was raised.
+- **(a) halo:** in native mode, ring pixels that are equipment by their own SOURCE colour are excluded (`qc._equip_colour`):
+  - warm-grey bench = r−b > 4, lum > 50 and saturation < 30, so the red glow is never equipment;
+  - cobalt = b − max(r,g) > 15;
+  - gold rim = min(r,g) − b > 20;
+  - dilated 3 px.
+
+  The 12-lum lift limit still applies to every remaining ring pixel.
+- **(pf):** native mode pastes no bench layer. The check is now "bench pixels equal the global tone map": static>0.5 pixels with |base − `_ref`| > 6 must be ≤ 300 px.
+- **(sep):** "lost" now means within 15 RGB of the backdrop (colour distance, not brightness), limit still 25%. The bench is measured on the bench-colour mask `_benchc.png`; the static layer also holds the bench shadow. Skin excludes source-colour equipment and the Day 4 shorts mask.
+- **(mf):** in native mode the ≥4k px area is judged on the step's PEAK (bottom) frame, the Day 4 measurement frame. At lockout the source glow is genuinely small. Regions and strength are still judged on both frames, and no glow is painted.
+- **(f):**
+  - `native_highlight_rolloff` adds a tanh knee 10 below the lock max, so skin max stays ≤ 145 while p75/p90 are unchanged.
+  - The shorts median is measured on the Day 4 foreground-evidence mask (`_shortsev.png`). With `shorts_evidence_strict`, that evidence must be DARKER than the backdrop, so bright thigh skin inside the fabric zone is never "shorts".
+- **(sb):**
+  - `shorts_evidence_strict`: the render/UI shorts mask also needs unblurred darker-than-backdrop evidence (open 3, erode 5, dilate 3).
+  - No shorts treatment applies to pixels without foreground evidence, i.e. backdrop-level and texture-free pixels. The limit stays 2%.
+- **(bg)/(sep)/(sh):** `native_bench_map` replaces the legacy static layer with a per-step STATIC bench map:
+  - bench body = bench-coloured pixels (warm, > B0+15, sat < 30) that are stable in ≥ 85% of the sampled frames;
+  - plus its neutral static shadows (floor/contact shadows outside the skeleton capsule, touching the bench or below the hips, with their connected penumbra);
+  - plus static near-black occlusion gaps (source lum < B0−20).
+
+  The same map drives the flat-field weight: bench and shadow never take the flat backdrop colour. The step1_t20 "41" block was a cobalt plate the matte missed, not a non-flat backdrop.
+- **w_fg (matte):** `native_wfg_colour`. Cobalt has a NEGATIVE red/green dominance, so the lum+act matte read the plates as backdrop. Where act < 0, the chroma distance to the backdrop tint replaces it; pixels with act ≥ 0 are identical to the legacy matte. (oc) centres the mannequin without the source-colour equipment.

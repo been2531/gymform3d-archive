@@ -152,6 +152,52 @@ def prepare(step, seq, kps, y_sh):
     allb = cv2.erode(allb.astype(np.uint8), np.ones((7, 7), np.uint8))
     wb = cv2.resize(cv2.GaussianBlur(allb.astype(np.float32), (0, 0), 5.0), (W, H), interpolation=cv2.INTER_CUBIC)
     wb = np.clip((wb - 0.15) / 0.7, 0.0, 1.0)
+    bench_q = shadow_q = None
+    if CFG.get("native_bench_map"):
+        # t609: STATIC bench map from clearly bench-coloured pixels (palette A warm grey: r - b > 4, brighter than the
+        # backdrop by > 15, saturation < 30 = never glow) that are stable over the step (|frame - median| < 12 in >= 85% of
+        # the sampled frames); large components only. Used for the QC static layer AND the flat field (bench pixels are
+        # never flat-field samples and never take the flat backdrop colour).
+        qq = q.astype(np.float32)
+        warm = ((qq[..., 0] - qq[..., 2]) > 4.0) & (_lum(qq) > B0 + 15.0) & ((qq.max(-1) - qq.min(-1)) < 30.0)   # glow is sat > 30
+        stab = np.zeros(lq.shape, np.float32); n_s = 0
+        for d in den[::max(1, n // 24)]:
+            qd = cv2.resize(d, (270, 480), interpolation=cv2.INTER_AREA).astype(np.float32)
+            stab += (np.abs(qd - qq).max(-1) < 12.0); n_s += 1
+        bq = (warm & (stab >= 0.85 * n_s)).astype(np.uint8)
+        bq = cv2.morphologyEx(bq, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+        nc, lab_, st_, _ = cv2.connectedComponentsWithStats(bq)
+        bq = np.isin(lab_, [i for i in range(1, nc) if st_[i, cv2.CC_STAT_AREA] >= 150]).astype(np.uint8)
+        # the bench's own static floor/contact shadow (darker than the backdrop, neutral, stable, outside every
+        # sampled skeleton capsule, touching the bench or on the floor below the hips) belongs to the static bench layer, never to the skin
+        cap = np.zeros(lq.shape, np.uint8)
+        bones_ = (("sh_r", "elb_r"), ("elb_r", "wr_r"), ("sh_l", "elb_l"), ("elb_l", "wr_l"), ("sh_r", "sh_l"), ("sh_r", "hip_r"),
+                  ("sh_l", "hip_l"), ("hip_r", "hip_l"), ("hip_r", "kn_r"), ("hip_l", "kn_l"), ("kn_r", "ank_r"), ("kn_l", "ank_l"))
+        for kq in kp_t[::max(1, n // 12)]:
+            for j1, j2 in bones_:
+                if j1 in kq and j2 in kq:
+                    cv2.line(cap, tuple(int(c / 4) for c in kq[j1]), tuple(int(c / 4) for c in kq[j2]), 1, 36)   # ~144 px: a whole thigh
+        # (no texture test: thin crisp bench shadows have edge texture at quarter res; the body is excluded by the
+        # capsule, and inside it only very dark (< B0 - 12) static gaps that touch the bench count - skin creases
+        # touching the bench are lit skin (> 40))
+        dk_ = (lq < B0 - 6.0) & ((qq.max(-1) - qq.min(-1)) < 12.0) & (stab >= 0.85 * n_s)
+        bnd = cv2.dilate(bq, np.ones((5, 5), np.uint8)) > 0
+        # + static near-black occlusion gaps anywhere (source lum < B0 - 20 ~ 16, all step long: the gap between back and
+        # pad, under the chin, the knee pit - no lit surface, so never skin; a shaded skin side is 25-45, not < 16)
+        shd = (dk_ & ((cap == 0) | ((lq < B0 - 12.0) & bnd) | (lq < B0 - 20.0))).astype(np.uint8)
+        hip_y = float(np.median([0.5 * (k_["hip_r"][1] + k_["hip_l"][1]) for k_ in kp_t if "hip_r" in k_ and "hip_l" in k_])) / 4.0
+        nc, lab_, st_, _ = cv2.connectedComponentsWithStats(shd)
+        touch = set(np.unique(lab_[((cv2.dilate(bq, np.ones((5, 5), np.uint8)) > 0) | (lq < B0 - 20.0)) & (shd > 0)]).tolist()) - {0}
+        floor = {i for i in range(1, nc) if st_[i, cv2.CC_STAT_TOP] > hip_y and st_[i, cv2.CC_STAT_AREA] >= 60}   # on the floor
+        sq = np.isin(lab_, list(touch | floor)).astype(np.uint8)
+        # penumbra: the shadow's soft rim (still darker than the backdrop), connected, outside the body
+        grow = ((lq < B0 - 2.0) & (cap == 0)).astype(np.uint8)
+        for _ in range(8):   # geodesic: the penumbra connected to the shadow, <= 8 quarter-res px (32 px)
+            sq = np.maximum(sq, cv2.dilate(sq, np.ones((3, 3), np.uint8)) & grow)
+        bench_q = bq
+        shadow_q = sq & (1 - bq)
+        # flat field: bench + its shadow are never given the flat backdrop colour (the clip's own pixels stay)
+        wb = wb * (1.0 - cv2.resize(cv2.dilate(np.maximum(bq, sq), np.ones((5, 5), np.uint8)).astype(np.float32), (W, H), interpolation=cv2.INTER_LINEAR))
     # tone curve from skin statistics on the flattened lum (sampled frames)
     vals, actv = [], []
     bones = (("sh_r", "elb_r"), ("elb_r", "wr_r"), ("sh_l", "elb_l"), ("elb_l", "wr_l"), ("sh_r", "sh_l"), ("sh_r", "hip_r"),
@@ -217,7 +263,25 @@ def prepare(step, seq, kps, y_sh):
         out["sh"] = (0.5 * (out["sh_r"][0] + out["sh_l"][0]), 0.5 * (out["sh_r"][1] + out["sh_l"][1]))
         trk.append(out)
         pts = np.array(newp, np.float32).reshape(-1, 1, 2)
+    sg_ = float(CFG.get("native_anchor_smooth", 0.0))
+    if sg_ > 0 and n > 4:
+        # t609: callout anchor jitter (boil hotspot under the anchor dot / laser): temporal Gaussian over the SOURCE
+        # order (the tempo replays source frames, so the smoothed track is replayed identically), reflect at the ends
+        r_ = int(3 * sg_ + 0.5)
+        kern = np.exp(-0.5 * (np.arange(-r_, r_ + 1) / sg_) ** 2); kern /= kern.sum()
+        for j in TRACK_J:
+            arr = np.array([trk[t][j] for t in range(n)], np.float32)
+            pad = np.pad(arr, ((r_, r_), (0, 0)), mode="reflect")
+            sm_ = np.stack([np.convolve(pad[:, c], kern, mode="valid") for c in range(2)], -1)
+            for t in range(n):
+                trk[t][j] = (float(sm_[t, 0]), float(sm_[t, 1]))
+        for t in range(n):
+            trk[t]["sh"] = (0.5 * (trk[t]["sh_r"][0] + trk[t]["sh_l"][0]), 0.5 * (trk[t]["sh_r"][1] + trk[t]["sh_l"][1]))
     _ST[step] = dict(den=den, G=G, B0=B0, wm=wm * (1.0 - wb), xs=xs, ys=ys, A95=A95, kp=trk, raw_kp=kp_t)
+    if bench_q is not None:
+        _ST[step]["bench"] = cv2.resize(bench_q.astype(np.float32), (W, H), interpolation=cv2.INTER_LINEAR)
+        _ST[step]["shadow"] = cv2.resize(shadow_q.astype(np.float32), (W, H), interpolation=cv2.INTER_LINEAR)
+        _ST[step]["bench_med"] = cv2.resize(q, (W, H), interpolation=cv2.INTER_LINEAR)
     from gymform import plates as _pl   # t605 plate recolour (flagged): soft tracked matte per source frame
     _ST[step]["plate"] = _pl.build(_ST[step], _lumx, _act, _flow_full, _warp, small)
     return _ST[step]
@@ -274,19 +338,43 @@ def grade(step, p_i, is_wrong):
     ref = np.clip(grey * wm + BG_RGB * (1.0 - wm), 0, 255).astype(np.uint8)   # global tone map only (QC (m) reference)
     base = np.clip(base * wm + BG_RGB * (1.0 - wm), 0, 255).astype(np.uint8)
     bf = base.astype(np.float32)
-    w_fg = cv2.GaussianBlur(np.clip((np.abs(_lum(bf) - BG_L) + 0.95 * _act(bf) - 6.0) / 14.0, 0.0, 1.0).astype(np.float32), (0, 0), 2.0)
+    if CFG.get("native_wfg_colour"):
+        # t609: palette A cobalt plates have NEGATIVE red/green dominance (act < 0) -> the lum+act matte read them as
+        # backdrop; foreground = lum distance + max(act, chroma distance from the backdrop tint)
+        # (act >= 0: identical to the legacy |dL| + act; only a NEGATIVE act (blue/cyan) is replaced by the chroma term)
+        chd = np.linalg.norm((bf - _lum(bf)[..., None]) - (BG_RGB - BG_L), axis=-1)
+        ac_ = _act(bf)
+        e_ = np.abs(_lum(bf) - BG_L) + np.where(ac_ >= 0.0, 0.95 * ac_, np.maximum(0.95 * ac_, 0.8 * chd - 6.0))
+    else:
+        e_ = np.abs(_lum(bf) - BG_L) + 0.95 * _act(bf)
+    w_fg = cv2.GaussianBlur(np.clip((e_ - 6.0) / 14.0, 0.0, 1.0).astype(np.float32), (0, 0), 2.0)
     kp = S["kp"][p_i]
     F = mask.features(f)
     fab, _zone = mask.native_shorts(F, kp)
     # foreground evidence on the smoothed flattened lum (fabric sits ~6 under the backdrop; pixel noise ~3)
-    evid = (np.abs(cv2.GaussianBlur(L1, (0, 0), 4.0) - S["B0"]) > float(CFG.get("shorts_evidence_lum", 3.5))).astype(np.uint8)
+    if CFG.get("shorts_evidence_strict"):   # t609: fabric evidence is DARKER than the backdrop (bright thigh skin never shorts)
+        evid = ((S["B0"] - cv2.GaussianBlur(L1, (0, 0), 4.0)) > float(CFG.get("shorts_evidence_lum", 3.5))).astype(np.uint8)
+    else:
+        evid = (np.abs(cv2.GaussianBlur(L1, (0, 0), 4.0) - S["B0"]) > float(CFG.get("shorts_evidence_lum", 3.5))).astype(np.uint8)
     sm = cv2.morphologyEx((fab > 0.5).astype(np.uint8) & evid, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)) & evid
+    sm_ev = sm.copy()   # Day 4 definition (foreground-evidence mask): QC (f) shorts median
     if CFG.get("shorts_evidence_strict"):
         # t609 (Day 4 x w_fg idea): fabric must be darker than the local backdrop by evidence on the UNBLURRED lum and
         # carry no backdrop texture-free flatness at its rim -> 3 px inner erosion of the evidence before the AND
         ev2 = ((S["B0"] - L1) > float(CFG.get("shorts_evidence_lum", 3.5)) + 2.0).astype(np.uint8)
         ev2 = cv2.erode(cv2.morphologyEx(ev2, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)), np.ones((5, 5), np.uint8))
         sm = sm & cv2.dilate(ev2, np.ones((3, 3), np.uint8))
+        # no shorts treatment on pixels without foreground evidence: backdrop-level (4 px smoothed, within 6 of the
+        # local level) AND texture-free pixels are backdrop, never shorts
+        ls_ = cv2.GaussianBlur(L1, (0, 0), 4.0)
+        tx_ = cv2.GaussianBlur(np.abs(L1 - cv2.GaussianBlur(L1, (0, 0), 2.0)), (0, 0), 2.0)
+        sm = sm & ((np.abs(ls_ - S["B0"]) >= 6.0) | (tx_ >= 4.0)).astype(np.uint8)
     shorts = cv2.GaussianBlur(sm.astype(np.float32), (0, 0), 0.8)
-    LAST_MASKS["native"] = dict(L1=L1, B0=S["B0"], ref=ref, plate=pm if pm is not None else np.zeros((H, W), np.float32))
+    bench = benchc = None
+    if S.get("bench") is not None:   # static bench where the frame currently shows it (an arm in front wins)
+        shows = np.abs(f - S["bench_med"]).max(-1) < 12.0
+        bench = np.maximum(S["bench"], S["shadow"]) * shows   # static layer = bench + its floor shadow
+        benchc = S["bench"] * shows                            # bench body only (QC (sep) colour)
+    LAST_MASKS["native"] = dict(L1=L1, B0=S["B0"], ref=ref, plate=pm if pm is not None else np.zeros((H, W), np.float32),
+                                shorts_ev=cv2.GaussianBlur(sm_ev.astype(np.float32), (0, 0), 0.8), bench=bench, benchc=benchc)
     return base, shorts, w_fg, src, kp

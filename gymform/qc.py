@@ -485,6 +485,16 @@ def leg_below_hem_check(base, wfg, shorts, kp, eqfoot=None, src=None):
 DAY4_MUSCLE_PX = {"wrong": (50145, 62472), "right": (21053, 35179)}   # Day 4 master act>40 px (peak / start), t567u
 
 
+def _equip_colour(src_rgb):
+    """t609 palette A source equipment by its OWN colour (warm-grey bench = warm AND sat < 30 so the red glow is never
+    equipment, cobalt plates, gold rim), dilated 3 px.
+    Used by the native-mode checks so equipment is never counted as halo, figure, skin or backdrop."""
+    f = src_rgb.astype(np.float32)
+    r, g, b = f[..., 0], f[..., 1], f[..., 2]
+    m = (((r - b) > 4.0) & (lum_of(f) > 50.0) & ((f.max(-1) - f.min(-1)) < 30.0)) | ((b - np.maximum(r, g)) > 15.0) | ((np.minimum(r, g) - b) > 20.0)
+    return cv2.dilate(m.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+
+
 def _raw_backdrop(src):
     """pixels of the RAW source frame that are plain backdrop: within 6 lum of the per-row backdrop level (median of
     the frame's left/right 24 px, smoothed over rows) on the 4 px-smoothed lum, no texture, AND connected to the
@@ -536,6 +546,9 @@ def playbook_frame_checks(frames_meta, qc_dir):
             bgz = cv2.dilate((wfg_ > 0.02).astype(np.uint8), np.ones((25, 25), np.uint8)) == 0
             bgz[:620] = False
             skz = (wfg_ > 0.5) & (lb_ > 46.0) & (act_of(b_rgb) < 12.0) & (sh < 0.2)
+            _sev = load_mask(pre + "_shortsev.png")
+            if _sev is not None and os.path.exists(pre + "_alpha.png"):   # t609 native: Day 4 shorts def + source-colour equipment
+                skz &= (_sev < 0.2) & ~_equip_colour(cv2.cvtColor(src, cv2.COLOR_BGR2RGB))
             for m_ in (eq_, st_):
                 if m_ is not None:
                     skz &= m_ < 0.5
@@ -549,7 +562,8 @@ def playbook_frame_checks(frames_meta, qc_dir):
                 _pm0 = load_mask(pre + "_plate.png")
                 if bh2[620:].sum() > 3000 and (_pm0 is None or _pm0.max() <= 0.05):
                     eq_ = cv2.morphologyEx(bh2, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)).astype(np.float32)   # source cobalt plates
-                for nm, m_ in (("dumbbell", eq_), ("bench", st_)):
+                _bc = load_mask(pre + "_benchc.png")   # t609 native: bench body colour mask (the static layer also holds its shadow)
+                for nm, m_ in (("dumbbell", eq_), ("bench", _bc if _bc is not None else st_)):
                     if m_ is None:
                         continue
                     z = cv2.erode((m_ > 0.5).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
@@ -673,6 +687,13 @@ def flat_look_checks(meta, frames_meta, vids, qc_dir):
             if span > 4.0:
                 b_bad.append(b_rows[-1])
         skin = (wfg > 0.9) & (act_of(f) < 12.0)
+        if os.path.exists(pre + "_alpha.png"):   # t609 native: Day 4 shorts definition + source-colour equipment are not skin
+            sev = load_mask(pre + "_shortsev.png")
+            if sev is not None:
+                sh = np.maximum(sh, sev) if sh is not None else sev
+            s_ = cv2.imread(pre + "_src.png")
+            if s_ is not None:
+                skin &= ~_equip_colour(cv2.cvtColor(s_, cv2.COLOR_BGR2RGB))
         for m_ in (st, sh, eq):
             if m_ is not None:
                 skin &= m_ < 0.2 if m_ is sh else m_ < 0.5
@@ -706,6 +727,8 @@ def t567_checks(meta, frames_meta, vids, qc_dir):
         srcf = cv2.cvtColor(src, cv2.COLOR_BGR2RGB).astype(np.float32)
         a_src, a_out = act_of(srcf), act_of(fr.astype(np.float32))
         body = (wfg > 0.5) & ((st if st is not None else 0) < 0.5)
+        if os.path.exists(pre + "_alpha.png"):   # t609 native: the figure is the mannequin, not the palette A equipment
+            body &= ~_equip_colour(srcf)
         ui = np.zeros_like(body); ui[:600] = True; ui[:, :300] = True
         if fm["tag"] in ("start", "peak"):
             # t572u: judged against the Day 4 (GOLD #1) / Day 5 look, measured on their posted masters:
@@ -885,10 +908,7 @@ def main():
         if alpha is not None:
             # t609 native + palette A source: ring pixels that ARE equipment by their own source colour (warm-grey
             # bench, cobalt plates, gold rim) are not halo; the 12-lum limit applies to every remaining ring pixel
-            sr_, sg_, sb_ = src_rgb[..., 0].astype(np.float32), src_rgb[..., 1].astype(np.float32), src_rgb[..., 2].astype(np.float32)
-            sl_ = lum_of(src_rgb.astype(np.float32))
-            equip_c = (((sr_ - sb_) > 4.0) & (sl_ > 50.0)) | ((sb_ - np.maximum(sr_, sg_)) > 15.0) | ((np.minimum(sr_, sg_) - sb_) > 20.0)
-            ring &= ~(cv2.dilate(equip_c.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0)
+            ring &= ~_equip_colour(src_rgb)
         lift = float(np.percentile((lum_of(base) - lum_of(bg))[ring], 95)) if ring.sum() else 0.0
         if halo_n > 150 or lift > 12.0:
             halo_bad.append(f"{key}: {halo_n}px coloured, ring lift p95={lift:.1f}")
@@ -963,12 +983,16 @@ def main():
         skin = (wsol > 0.9) & (shorts < 0.2) & (act_of(base) < 12.0) & (l > 46.0) & (eq < 0.5) & ~xw_d
         if alpha is not None:
             skin &= (base[..., 0].astype(np.float32) - base[..., 2]) <= 4.0
+            _sev = load_mask(pre + "_shortsev.png")
+            if _sev is not None:
+                skin &= _sev < 0.2
         if st_m is not None:
             skin &= st_m < 0.5
         if skin.sum() > 2000:
             # max = p99.9: the statistic the lock anchors and the Day 4 reference was measured with (t542u)
             p75, p90, mx = np.percentile(l[skin], 75), np.percentile(l[skin], 90), np.percentile(l[skin], 99.9)
-            sh = (shorts > 0.6) & (wsol > 0.9)
+            sh_ev = load_mask(pre + "_shortsev.png") if alpha is not None else None   # t609: Day 4 definition mask
+            sh = ((sh_ev if sh_ev is not None else shorts) > 0.6) & (wsol > 0.9)
             sp = float(np.median(l[sh])) if sh.sum() else -1
             SKIN.append(f"{key}: p75={p75:.0f} p90={p90:.0f} max={mx:.0f} shorts={sp:.0f}")
             if not (SK["qc_p75_range"][0] <= p75 <= SK["qc_p75_range"][1] and SK["qc_p90_range"][0] <= p90 <= SK["qc_p90_range"][1]

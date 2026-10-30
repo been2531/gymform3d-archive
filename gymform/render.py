@@ -237,6 +237,8 @@ def _render_pose_native(step_idx, seq, kps, p_i, icons, qc, is_w, y_sh, pose_fra
     if qc:
         shade(src.astype(np.float32), step_idx, is_w, native._ST[step_idx]["raw_kp"][p_i])
         LAST_MASKS["src"] = src
+        if native.LAST_MASKS["native"].get("bench") is not None:   # t609 native bench map replaces the legacy static layer
+            LAST_MASKS["static_eq"] = native.LAST_MASKS["native"]["bench"].astype(np.float32)
     slot_i, deg_s, l1_s, l2_s = layout.callout_for(step_idx, pose_frac)
     fr = layout.draw_laser_and_callout_v4(base_rgb, sh_mask, step_idx, kp_1080, is_w, deg_s, l1_s, l2_s)
     LAST_MASKS["pre_ui"] = fr
@@ -336,6 +338,9 @@ def save_qc_sidecar(step_idx, tag, frame_idx, base, shorts_m, w_fg, kp):
         cv2.imwrite(pre + "_alpha.png", m8(np.ones_like(w_fg)))
         cv2.imwrite(pre + "_ref.png", cv2.cvtColor(native.LAST_MASKS["native"]["ref"], cv2.COLOR_RGB2BGR))
         cv2.imwrite(pre + "_plate.png", m8(native.LAST_MASKS["native"]["plate"]))
+        cv2.imwrite(pre + "_shortsev.png", m8(native.LAST_MASKS["native"]["shorts_ev"]))
+        if native.LAST_MASKS["native"].get("benchc") is not None:
+            cv2.imwrite(pre + "_benchc.png", m8(native.LAST_MASKS["native"]["benchc"]))
     else:
         for x_ in ("_alpha.png", "_ref.png"):
             if os.path.exists(pre + x_):

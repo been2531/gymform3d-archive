@@ -186,10 +186,13 @@
   "native_sep_dx": 8.0,
   "native_sep_dy": 10.0,
   "native_dark_floor": 18.0,
-  "defect_playbook_sha": "d5f0eaa3",
+  "defect_playbook_sha": "12b32caa",
   "native_keep_chroma": 1.0,
   "native_glow_hue_strict": true,
   "native_keep_chroma_sat": 4.0,
   "native_highlight_rolloff": true,
-  "shorts_evidence_strict": true
+  "shorts_evidence_strict": true,
+  "native_bench_map": true,
+  "native_wfg_colour": true,
+  "native_anchor_smooth": 2.0
 }
