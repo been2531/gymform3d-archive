@@ -365,9 +365,11 @@ def static_body(F, K, kp, stat):
              (silver-locked like the rest of the mannequin), never bench;
       rim  = dark static pixels hugging the head/upper body silhouette above the shoulders -> neither bench nor
              body (the backdrop shows, no dark halo)."""
-    if stat is None or float(stat.max()) <= 0.0:
+    if (stat is None or float(stat.max()) <= 0.0) and not CFG.get("static_body_shin_r"):
         z = np.zeros((H, W), np.float32)
         return z, z
+    if stat is None:
+        stat = np.zeros((H, W), np.float32)
     lum_eq = np.maximum(F["lum"] - 0.85 * F["act_dom"], F["min_c"])
     env = K.get("env")
     if env is None:
@@ -378,6 +380,17 @@ def static_body(F, K, kp, stat):
     # clips sits at lum 32-90 over a near-black bench (<=24), so its config lowers this (static_body_lum).
     thr = float(CFG.get("static_body_lum", 60.0))
     body = st & (env > 0.35) & (lum_eq > thr) & (F["act_dom"] < 20.0)
+    r_leg = int(CFG.get("static_body_shin_r", 0))
+    if r_leg > 0:
+        # t588: the shaded side of a motionless shin on the Day 4-tone charcoal mannequin is as dark as the bench
+        # (lum 8-40), so no level splits them; inside the knee->ankle capsule a static pixel is shin, not bench
+        cap = np.zeros((H, W), np.uint8)
+        for kn, an in (("kn_r", "ank_r"), ("kn_l", "ank_l")):
+            if kn in kp and an in kp:
+                cv2.line(cap, tuple(int(v) for v in kp[kn][:2]), tuple(int(v) for v in kp[an][:2]), 1, 2 * r_leg)
+        # not only static-plate pixels: the dark shaded shin matches the plate AND the backdrop, so it is in neither
+        # the plate-difference fg nor the static layer and showed the studio backdrop (QC (m) 91% opaque)
+        body = body | ((cap > 0) & (env > 0.5) & (F["act_dom"] < 20.0))
     body = cv2.morphologyEx(body.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     n, lab, sts, _ = cv2.connectedComponentsWithStats(body)
     keep = np.zeros((H, W), np.uint8)
