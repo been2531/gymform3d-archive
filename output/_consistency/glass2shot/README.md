@@ -24,3 +24,13 @@ Owner-approved combo: ② smoked glass + Ⓑ 2-shot, rear-3/4 high. Stills only:
 **Machine fidelity:** checked against the verified plate, an edit of the real Matrix photo that passed part by part (`docs/mission/D7_MACHINE_CONCEPT.md` §9). The `_align_*` images show each still warped onto the plate.
 
 **Not committed:** `gen/ref_real_photo.jpg`, a third-party product photo kept for internal reference only.
+
+## t688u muscle look v2 (code only, 0 generations)
+`gymform.glass_look.day4_muscle` + `regions_right_v2`. These are now the default; `--look-v1` reproduces t687u.
+- **Muscle shapes:** full anatomical shapes for lats, rhomboids, mid trap (tapered fan, no bar) and rear delt, plus faint biceps.
+- **Volume:** each muscle has its own belly profile (distance to the edge, lit from upper left), which separates neighbouring muscles.
+- **Fibres:** dark grooves along each muscle's fibre direction, bundle brightness variation, and a neutral fibre sheen stretched along the fibre (it adds contrast without changing the hue).
+- **Edges:** 4–5 px edge ramp and a halo clipped to the body.
+- **Rim leak fix:** `glass_body_v2` replaces the light mannequin edge band just outside the silhouette with the plate and draws the rim inside the edge only.
+
+Sheet: `G2S_MUSCLE_sheet.jpg`, built with `python3 tools/glass_muscle_sheet.py`. Before images and QC are in `before_t688/`.

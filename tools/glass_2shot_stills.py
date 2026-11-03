@@ -10,6 +10,7 @@ sys.path.insert(0, "/workspace/daily_info_reels")
 from gymform import glass_look as gl, joint_callout as jc
 from build_v28_luxury_ab import f_pretendard
 T0 = time.time(); R = "/workspace/daily_info_reels/"; G = R + "output/_consistency/glass2shot/gen/"; O = R + "output/_consistency/glass2shot/"
+BEFORE = O + "before_t688/"
 SHOTS = {"wide_peak": "wide_peak_gen1", "tight_peak": "tight_peak_gen2", "tight_start": "tight_start_gen3"}
 KP = json.load(open(G + "kp.json")); S = 1.5
 MP = {"sh_l": "11", "sh_r": "12", "elb_l": "13", "elb_r": "14", "wr_l": "15", "wr_r": "16", "hip_l": "23", "hip_r": "24",
@@ -79,23 +80,42 @@ for nm, (img, seg, A) in out.items():
     wy = 0.5 * (kp["hip_l"][1] + kp["hip_r"][1]) - 40
     shorts = ((L < 62) & (body > 0) & (np.arange(H)[:, None] > wy)).astype(np.uint8)
     shorts = cv2.morphologyEx(shorts, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)); shorts = cv2.GaussianBlur(shorts.astype(np.float32), (0, 0), 1.5)
-    g = gl.glass_body(up, sega, behind=behind, shorts=shorts)
-    # regions: canonical torso -> image; lats/rhomboids exclude the arm capsule, faint biceps on the visible upper arm
-    Wc, Tc = gl.build_canon()
-    M = gl.torso_affine(kp)
-    Wm = cv2.warpAffine(Wc, M, (W, H)); Tm = cv2.warpAffine(Tc, M, (W, H))
-    arm = np.zeros((H, W), np.float32); uw = np.linalg.norm(np.subtract(kp["sh_r"], kp["sh_l"]))
+    LOOK = "v1" if "--look-v1" in sys.argv else "v2"
+    if LOOK == "v1":
+        g = gl.glass_body(up, sega, behind=behind, shorts=shorts)
+    else:
+        g, sega = gl.glass_body_v2(up, sega, behind=behind, shorts=shorts, edge_pad=6, light_edge=12); body = (sega > 0.5).astype(np.uint8)
+    uw = np.linalg.norm(np.subtract(kp["sh_r"], kp["sh_l"]))
+    arm = np.zeros((H, W), np.float32)
     vis = {sd: KP[SHOTS[nm]][MP[f"elb_{sd}"]][2] for sd in ("l", "r")}
     for a_, b_ in [p_ for sd in ("l", "r") if vis[sd] > 0.5 for p_ in ((f"sh_{sd}", f"elb_{sd}"), (f"elb_{sd}", f"wr_{sd}"))]:   # only arms in front of the back
         cv2.line(arm, tuple(int(v) for v in kp[a_]), tuple(int(v) for v in kp[b_]), 1.0, max(6, int(uw * 0.30)))
     arm = cv2.GaussianBlur(arm, (0, 0), 3)
-    Wm = Wm * (1 - 0.9 * arm)
-    bic = np.zeros((H, W), np.float32)
     sh_, el_ = np.array(kp["sh_l"]), np.array(kp["elb_l"])
-    cv2.line(bic, tuple((sh_ + 0.3 * (el_ - sh_)).astype(int)), tuple((sh_ + 0.85 * (el_ - sh_)).astype(int)), 0.22, max(4, int(uw * 0.16)))
-    Wm = np.maximum(Wm, cv2.GaussianBlur(bic, (0, 0), 3)) * cv2.erode(body, np.ones((5, 5), np.uint8)) * (1 - shorts)
+    bic = np.zeros((H, W), np.float32)
+    cv2.line(bic, tuple((sh_ + 0.3 * (el_ - sh_)).astype(int)), tuple((sh_ + 0.85 * (el_ - sh_)).astype(int)), 1.0, max(4, int(uw * 0.16)))
+    bic = cv2.GaussianBlur(bic, (0, 0), 3)
+    keep = cv2.erode(body, np.ones((5, 5), np.uint8)).astype(np.float32) * (1 - shorts)
     gain = 0.22 if "start" in nm else 1.0
-    gr = gl.neon(g, Wm, Tm, sega, gain=gain).astype(np.uint8)
+    if LOOK == "v1":
+        Wc, Tc = gl.build_canon()
+        M = gl.torso_affine(kp)
+        Wm = cv2.warpAffine(Wc, M, (W, H)); Tm = cv2.warpAffine(Tc, M, (W, H))
+        Wm = np.maximum(Wm * (1 - 0.9 * arm), bic * 0.22) * keep
+        gr = gl.neon(g, Wm, Tm, sega, gain=gain).astype(np.uint8)
+    else:
+        mus = []
+        for n_, m_, t_, w_ in gl.warp_muscles(kp, (H, W)):
+            cut = (1 - 0.95 * arm) if n_ != "reardelt" else 1.0
+            mus.append((n_, m_ * cut * keep, t_, w_))
+        bt = np.zeros((H, W), np.float32)
+        for i_ in range(14):   # faint biceps fibres along the upper arm
+            f_ = (i_ + 0.5) / 14 - 0.5; nrm = np.array([-(el_ - sh_)[1], (el_ - sh_)[0]]) / max(1, np.linalg.norm(el_ - sh_))
+            p0 = sh_ + 0.3 * (el_ - sh_) + nrm * f_ * uw * 0.16; p1 = sh_ + 0.85 * (el_ - sh_) + nrm * f_ * uw * 0.12
+            cv2.line(bt, tuple(p0.astype(int)), tuple(p1.astype(int)), 1.0, 1, cv2.LINE_AA)
+        mus.append(("biceps", bic * keep, bt, 0.30))
+        gr = gl.day4_muscle(g, mus, sega, gain=gain).astype(np.uint8)
+        Wm = np.clip(np.max(np.stack([m_ * w_ for _, m_, _, w_ in mus]), 0), 0, 1)
     rgb = cv2.cvtColor(gr, cv2.COLOR_BGR2RGB)
     jkp = {k: kp[k] for k in ("sh_l", "sh_r", "elb_l", "elb_r", "wr_l", "wr_r", "hip_l", "hip_r")}
     layer, ci = jc.draw(rgb, jkp, protect=Wm, is_wrong=False, label="ELBOWS BACK", ui_top=200, num_px=84, lab_px=26, max_dist=520,
