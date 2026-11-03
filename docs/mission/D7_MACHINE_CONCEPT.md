@@ -118,3 +118,48 @@ Handle travels on the cable line (axis) only; feet never leave the plate; seat n
 - Next idea (needs owner OK, not executed): split step 2 — (a) put the V handle and the straight low-pulley cable into the EMPTY
   machine first (machine-only edit, easier to verify), (b) then add a smaller mannequin with an explicit size anchor
   ("his seated head is level with the top of the weight stack's guide-rod housing / halfway up the tower").
+
+## One-pass plan (t648u–t651u)
+
+**Stills, locked (no more generation):**
+- Machine: `output/_consistency/d7m/empty_machine_t1_gen_raw.jpg` (Matrix G3-MS53 recolour, side camera). Every
+  frame below is composited back on it, so the machine pixels are identical in all of them.
+- Mannequin: `mannequin_2b_t2_composite.jpg` (glow-free, seated, soles on the footplate).
+- Wrong glow source: `wrong_start_t1_composite.jpg`. Right glow source: `right_start_t2_composite.jpg`. Right t1
+  fails because it has no glow between the shoulder blades, and the clamp can't add any.
+- Pipeline inputs (720x1280): `wrong_start_t1_720x1280.png`, `right_start_t2_720x1280.png`.
+
+**Look = Day 4 by code (configs/day07_muscle2.json):**
+- `native_muscle_shader: "day4"`: native grade with its linear glow recolour switched off. Muscle colour comes from
+  the UNCHANGED `muscle.day4_fibre` on the source's own glow (act_dom). The existing `_glow_gain` calibration
+  (render.load_inputs, Day 4 p50 ref) still applies.
+- `muscle_glow_clamp: true` + `target_regions`: `gymform/region_glow.py` builds allowed-region polygons from the
+  same frame's keypoints (torso frame hips→shoulders and half the shoulder width; arm capsules on the visible arm
+  only). They multiply into act_dom, so w_act and core_w are zero outside: right = lats, rhomboids/mid-trap, rear
+  delt, biceps ×0.35; wrong = erector columns, biceps, forearm, upper trap. Both flags are opt-in and default off,
+  so Day 4/5/6 render the same as before.
+- No bone steps on D7 (`bone_steps: []`), so the Day 4 bone treatment doesn't run here.
+
+**Video: exactly 2 generations.** wrong = i2v from `wrong_start_t1_720x1280.png`, right = i2v from
+`right_start_t2_720x1280.png`. In each, first = last = the pinned still and the contraction is mid-clip. The pinned
+frames make the clip loop and keep the machine fixed. The clip's own glow moves with the muscles. The clamp is
+rebuilt per frame from that frame's keypoints, which costs 45 ms. A static clamp from the pinned frame would cut
+glow off the arms during the pull, so don't use one.
+
+**Render: one `run_day.py --day 7` pass** (native_grade, no per-frame cut-out, `nice -n 19`, 2 workers = 1 per step).
+
+**Measured on the stills** (box, nice 19, 1080x1920, `tools/time_d7_grade.py`):
+- render_pose per frame: 1.02–1.40 s with day4_fibre + clamp, 0.62–1.01 s with the old linear recolour.
+  Inside that, day4_fibre takes 0.33 s, features 0.08 s and the clamp 0.045 s.
+- `native.prepare`: ≈0.5 s per source frame. load + icons: 17 s.
+
+**Full 10 s reel estimate:** render_step already caches one render per unique pose (`cache[p_i]`), so the cost
+scales with source frames (~50–70 per step), not the 150 output frames.
+- Per step: 60 × (0.5 + 1.1) s ≈ 1.6 min. The 2 steps render in parallel.
+- Plus load/icons/preflight ≈ 1 min and TTS/encode ≈ 0.5 min.
+- Total ≈ 3–4 min, of which day4_fibre adds ≈ 0.5 min.
+
+**Speedups that don't change the look:**
+- Already in place: per-pose cache, per-clip kp cache, cached TTS, `--workers 2`.
+- Pulse phase is fixed (0.75, like the Day 4 static) so the per-pose cache stays valid.
+- Not worth more: the clamp is 4% of the frame cost, and the Day 4 shader blurs are the look.

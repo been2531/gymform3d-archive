@@ -322,6 +322,8 @@ def grade(step, p_i, is_wrong):
             dom = np.maximum(r_ - np.maximum(g_, b_), g_ - np.maximum(r_, b_))
         a = np.maximum(dom - 0.8 * np.maximum(0.0, np.minimum(r_, g_) - b_ - 20.0), 0.0)
     w = (np.clip((a - 8.0) / max(S["A95"] - 8.0, 20.0), 0.0, 1.0) * float(CFG.get("native_glow_max", 0.9)))[..., None]
+    if CFG.get("native_muscle_shader") == "day4":
+        w = w * 0.0   # t648u: muscle colour comes from the Day 4 fibre shader (region_glow.apply), not the linear recolour
     if is_wrong:
         col = np.stack([40.0 + 1.55 * Lg, 6.0 + 0.38 * Lg, 8.0 + 0.40 * Lg], -1)
     else:
@@ -380,6 +382,11 @@ def grade(step, p_i, is_wrong):
         shows = np.abs(f - S["bench_med"]).max(-1) < 12.0
         bench = np.maximum(S["bench"], S["shadow"]) * shows   # static layer = bench + its floor shadow
         benchc = S["bench"] * shows                            # bench body only (QC (sep) colour)
+    if CFG.get("native_muscle_shader") == "day4":
+        # t648u: Day 4 fibre/colour by code (muscle.day4_fibre on the source's native glow, opt-in region clamp)
+        from gymform import region_glow
+        base, _cw, _rm = region_glow.apply(base, f, w_fg, shorts, kp, is_wrong)
+        LAST_MASKS["region_glow"] = dict(core_w=_cw, regions=_rm)
     LAST_MASKS["native"] = dict(L1=L1, B0=S["B0"], ref=ref, plate=pm if pm is not None else np.zeros((H, W), np.float32),
                                 shorts_ev=cv2.GaussianBlur(sm_ev.astype(np.float32), (0, 0), 0.8), bench=bench, benchc=benchc)
     return base, shorts, w_fg, src, kp
