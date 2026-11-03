@@ -191,3 +191,12 @@ scales with source frames (~50–70 per step), not the 150 output frames.
   - Both come from the source: the right t2 glow is smooth green, and the figure is small at 720p (2.3× upscale).
   - The fix is in the i2v source: prompt fibre striations visible through the glow and a larger figure (camera
     closer, tower top may crop). Re-measure with the same tool on the clips.
+
+## t660u/t661u run: pins, 2 clips, gates, preflight (2026-11-03 KST)
+- Pins (cropped 720x1280, matte-charcoal head folded into the one edit per still): `output/_consistency/d7m/pin_wrong_head_t1_720x1280.png`, `pin_right_fibre_head_t2_720x1280.png` (right t1 kept for comparison).
+- Clips (GenerateVideo, 720p 5 s, first=last pinned, 0 retries): `output/assets/day7_wrong_raw_v3.mp4`, `day7_right_raw_v3.mp4`.
+- Gates: `gates_v3.json` (G1-G6, G8-G10 pass; G7 view spread 0.051 vs 0.05 marginal, inherited from the pins; G9 wrong lean_back_rock 23 deg trunk range) and `gates_v3_extra.json` (machine unchanged mean|diff| <= 1.67, SSIM 0.99; foot-on-plate pixel gate pass; head vs body tone pass).
+- Fix: `layout.measure_angle` read `gymform.render.KPS`, which is empty in the step workers (render runs as `__main__`), so preflight step 2 crashed; it now falls back to `__main__.KPS`.
+- run_day with 2 workers was OOM-killed on the shared box (preflight step 2, no traceback); use `--workers 1`.
+- Callout deg now = the measured values (wrong 78, right 75 elbow flexion), so (p) passes. frame_override dx 15 (scale < 1 breaks the backdrop/matte: out-of-source band).
+- Preflight QC: FAIL 25/33. Remaining fails are Day 4-6 silver-mannequin / dumbbell definitions meeting the charcoal mannequin + cable machine: (f) skin tone (p75=p90=max=141: the measured "skin" is the light-grey machine frame), (sh), (j) "silver skin" arms, (sep)/(pl) dumbbell plates, (d) equipment footprint detector, (oc) bbox includes the machine (figure+machine span ~1000 px, cannot centre at scale 1), (mf) wrong-peak glow sits at x<300 where the QC UI exclusion (`ui[:, :300]`) removes it. No threshold changed; full render not run (render.py refuses without a PASS stamp; an owner override needs an explicit owner message).

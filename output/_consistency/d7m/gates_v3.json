@@ -1,0 +1,431 @@
+{
+ "wrong": {
+  "clip": "output/assets/day7_wrong_raw_v3.mp4",
+  "frames": 121,
+  "fps": 24.0,
+  "dur_s": 5.04,
+  "key_frame_idx": 118,
+  "sampled": [
+   0,
+   10,
+   20,
+   30,
+   40,
+   50,
+   60,
+   70,
+   80,
+   90,
+   100,
+   110,
+   118,
+   120
+  ],
+  "G1": {
+   "ssim": 0.994,
+   "edge_iou": 0.89,
+   "pass": true
+  },
+  "G2": {
+   "end_ssim": 0.993,
+   "end_edge_iou": 0.882,
+   "key_ssim": 0.992,
+   "key_edge_iou": 0.878,
+   "key_best_pm6": [
+    0.993,
+    0.882
+   ],
+   "pass": true
+  },
+  "G3": {
+   "rule": "v2 vs pinned frames (interpolated)",
+   "pin_glow_pct": [
+    17.78,
+    17.78,
+    17.78
+   ],
+   "ratio_vs_pins_min": 0.92,
+   "ratio_vs_pins_max": 1.03,
+   "ratio_cv_pct": 3.5,
+   "v1_start_only_pass": true,
+   "start_glow_pct": 17.78,
+   "keyframe_glow_pct": 17.78,
+   "clip_min_pct": 16.31,
+   "clip_max_pct": 18.35,
+   "ratio_min": 0.92,
+   "ratio_max": 1.03,
+   "cv_pct": 3.5,
+   "series_pct": [
+    17.6,
+    17.8,
+    16.7,
+    17.1,
+    17.9,
+    16.5,
+    16.3,
+    18.3,
+    18.0,
+    17.0,
+    17.3,
+    18.4,
+    17.7,
+    17.6
+   ],
+   "pass": true
+  },
+  "G4": {
+   "max_off_body_pct": 0.07,
+   "pass": true
+  },
+  "G5": {
+   "bg_ssim_min": 0.976,
+   "pass": true
+  },
+  "G6": {
+   "bg_lum_drift": 1.0,
+   "bg_rgb_f0": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "bg_rgb_start": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "pass": true
+  },
+  "view_mean": 0.467,
+  "view_start": 0.482,
+  "motion": {
+   "kp_frames": 25,
+   "elbow_flex_min": 22.2,
+   "elbow_flex_max": 97.8,
+   "trunk_from_vertical_range": 23.0,
+   "trunk_max": 23.7,
+   "ear_to_shoulder_norm_start_vs_min": [
+    0.485,
+    0.377
+   ],
+   "elbow_flare_start_vs_max": [
+    0.396,
+    1.304
+   ],
+   "elbow_series": [
+    53,
+    39,
+    35,
+    28,
+    22,
+    22,
+    32,
+    41,
+    65,
+    92,
+    92,
+    98,
+    95,
+    91,
+    75,
+    43,
+    40,
+    30,
+    23,
+    23,
+    32,
+    45,
+    34,
+    55,
+    44
+   ]
+  },
+  "G10": {
+   "fig_minus_bg": 35.7,
+   "plate_vs_bg_p05": 34.1,
+   "bench_vs_bg": 138.7,
+   "bench_vs_skin": 119.7,
+   "startframe_gates_pass": false,
+   "pass": true
+  },
+  "skin_series": [
+   42.0,
+   51.4,
+   58.7,
+   56.7,
+   44.0,
+   19.0,
+   20.0,
+   36.2,
+   52.0,
+   58.6,
+   55.7,
+   46.0,
+   43.3,
+   43.0
+  ],
+  "skin_start": 43.0,
+  "G9": {
+   "kind": "wrong",
+   "fired": [
+    "lean_back_rock"
+   ],
+   "pass": true,
+   "severity": "warn",
+   "items": [
+    [
+     "lean_back_rock",
+     23.04,
+     "range > 15",
+     true
+    ],
+    [
+     "rounding_forward",
+     null,
+     "unmeasurable",
+     null
+    ]
+   ]
+  },
+  "G7": {
+   "view_spread_between_clips": 0.051,
+   "view_mean": 0.467,
+   "view_start": 0.482,
+   "pass": false
+  },
+  "G8": {
+   "cobalt_frac_mean": 0.0094,
+   "cobalt_cv_pct": 7.5,
+   "cobalt_rgb": [
+    26.0,
+    51.0,
+    95.0
+   ],
+   "start_cobalt_rgb": [
+    26.0,
+    52.0,
+    96.0
+   ],
+   "cobalt_rgb_dist_vs_start": 1.4,
+   "between_rel_pct": 12.0,
+   "pass": true
+  },
+  "G1_G8_all_pass": false
+ },
+ "right": {
+  "clip": "output/assets/day7_right_raw_v3.mp4",
+  "frames": 121,
+  "fps": 24.0,
+  "dur_s": 5.04,
+  "key_frame_idx": 118,
+  "sampled": [
+   0,
+   10,
+   20,
+   30,
+   40,
+   50,
+   60,
+   70,
+   80,
+   90,
+   100,
+   110,
+   118,
+   120
+  ],
+  "G1": {
+   "ssim": 0.994,
+   "edge_iou": 0.899,
+   "pass": true
+  },
+  "G2": {
+   "end_ssim": 0.993,
+   "end_edge_iou": 0.897,
+   "key_ssim": 0.993,
+   "key_edge_iou": 0.899,
+   "key_best_pm6": [
+    0.993,
+    0.903
+   ],
+   "pass": true
+  },
+  "G3": {
+   "rule": "v2 vs pinned frames (interpolated)",
+   "pin_glow_pct": [
+    30.53,
+    30.53,
+    30.53
+   ],
+   "ratio_vs_pins_min": 0.77,
+   "ratio_vs_pins_max": 1.06,
+   "ratio_cv_pct": 9.0,
+   "v1_start_only_pass": true,
+   "start_glow_pct": 30.53,
+   "keyframe_glow_pct": 30.53,
+   "clip_min_pct": 23.6,
+   "clip_max_pct": 32.21,
+   "ratio_min": 0.77,
+   "ratio_max": 1.06,
+   "cv_pct": 9.0,
+   "series_pct": [
+    29.2,
+    29.2,
+    26.5,
+    23.9,
+    23.6,
+    27.6,
+    30.7,
+    31.5,
+    32.1,
+    32.2,
+    30.2,
+    29.1,
+    29.2,
+    28.5
+   ],
+   "pass": true
+  },
+  "G4": {
+   "max_off_body_pct": 0.04,
+   "pass": true
+  },
+  "G5": {
+   "bg_ssim_min": 0.978,
+   "pass": true
+  },
+  "G6": {
+   "bg_lum_drift": 1.0,
+   "bg_rgb_f0": [
+    39.0,
+    39.0,
+    39.0
+   ],
+   "bg_rgb_start": [
+    40.0,
+    40.0,
+    40.0
+   ],
+   "pass": true
+  },
+  "view_mean": 0.518,
+  "view_start": 0.537,
+  "motion": {
+   "kp_frames": 25,
+   "elbow_flex_min": 16.9,
+   "elbow_flex_max": 88.0,
+   "trunk_from_vertical_range": 19.1,
+   "trunk_max": 19.6,
+   "ear_to_shoulder_norm_start_vs_min": [
+    0.508,
+    0.438
+   ],
+   "elbow_flare_start_vs_max": [
+    0.378,
+    0.667
+   ],
+   "elbow_series": [
+    48,
+    49,
+    50,
+    40,
+    68,
+    84,
+    84,
+    88,
+    84,
+    78,
+    47,
+    54,
+    40,
+    38,
+    17,
+    17,
+    23,
+    26,
+    35,
+    42,
+    48,
+    45,
+    48,
+    48,
+    49
+   ]
+  },
+  "G10": {
+   "fig_minus_bg": 40.0,
+   "plate_vs_bg_p05": 34.1,
+   "bench_vs_bg": 184.8,
+   "bench_vs_skin": 165.8,
+   "startframe_gates_pass": false,
+   "pass": true
+  },
+  "skin_series": [
+   24.0,
+   23.0,
+   19.6,
+   18.8,
+   19.0,
+   20.0,
+   26.0,
+   47.7,
+   47.7,
+   31.0,
+   24.0,
+   25.0,
+   25.0,
+   24.4
+  ],
+  "skin_start": 25.0,
+  "G9": {
+   "kind": "right",
+   "items": [
+    [
+     "torso_upright",
+     19.6,
+     "0..15 (+/-10.0)",
+     true,
+     "fail"
+    ],
+    [
+     "torso_still",
+     19.1,
+     "0..10 (+/-10.0)",
+     true,
+     "fail"
+    ],
+    [
+     "elbows_past_sides",
+     88.0,
+     "80..140 (+/-10.0)",
+     true,
+     "warn"
+    ]
+   ],
+   "pass": true
+  },
+  "G7": {
+   "view_spread_between_clips": 0.051,
+   "view_mean": 0.518,
+   "view_start": 0.537,
+   "pass": false
+  },
+  "G8": {
+   "cobalt_frac_mean": 0.0106,
+   "cobalt_cv_pct": 8.4,
+   "cobalt_rgb": [
+    26.0,
+    51.0,
+    95.0
+   ],
+   "start_cobalt_rgb": [
+    26.0,
+    52.0,
+    96.0
+   ],
+   "cobalt_rgb_dist_vs_start": 1.4,
+   "between_rel_pct": 12.0,
+   "pass": true
+  },
+  "G1_G8_all_pass": false
+ }
+}
