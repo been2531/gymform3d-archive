@@ -153,6 +153,14 @@ def apply(base_rgb, src_rgb, w_fg, shorts, kp, is_wrong, pulse_phase=0.75):
             cm, ms = clamp_mask(kp, is_wrong, w_fg.shape)
             F["act_dom"] = F["act_dom"] * cm      # -> w_act and core_seed (hence core_w) are zero outside the regions
             LAST_MASKS_CLAMP["m"] = cm
+    if CFG.get("muscle_glow_clamp") and CFG.get("muscle_glow_wfg_from_glow"):
+        # t663u: on the charcoal mannequin the lum matte w_fg collapses where the body sits at the backdrop level
+        # (lower erectors, back contour), so day4_fibre (colour x w_fg) left gaps and only ridges coloured. A pixel the
+        # SOURCE itself glows on, inside the allowed region, is body by definition -> body weight 1 there. Backdrop and
+        # everything outside the clamp keep the lum matte; day4_fibre itself is unchanged.
+        a_src = F["act_dom"] / max(k_in, 1e-3) if CFG.get("muscle_glow_source") != "regions" else F["act_dom"]
+        g_ = cv2.GaussianBlur(np.clip((a_src - 6.0) / 10.0, 0.0, 1.0).astype(np.float32), (0, 0), 1.5)
+        w_fg = np.maximum(w_fg, g_)
     out, core_w = muscle.day4_fibre(F, base_rgb.astype(np.float32), w_fg, shorts, is_wrong, pulse_phase)
     return np.clip(out, 0, 255).astype(np.uint8), core_w, ms
 

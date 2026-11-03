@@ -1,0 +1,54 @@
+{
+ "d4w": {
+  "core_hue_deg": 359.1,
+  "core_sat": 155.6,
+  "core_val": 175.1,
+  "fibre_contrast": 13.33,
+  "fibre_density_per100px": 7.08,
+  "falloff_px": 2.2,
+  "core_px": 46394,
+  "glow_px": 77272,
+  "torso_px_onscreen": 356.4,
+  "scale_to_ref": 1.0,
+  "cover_glow_per_torso2": 0.608
+ },
+ "d7w": {
+  "core_hue_deg": 4.3,
+  "core_sat": 169.0,
+  "core_val": 219.0,
+  "fibre_contrast": 8.78,
+  "fibre_density_per100px": 0.27,
+  "falloff_px": 4.39,
+  "core_px": 11291,
+  "glow_px": 22940,
+  "torso_px_onscreen": 298.0,
+  "scale_to_ref": 1.196,
+  "cover_glow_per_torso2": 0.181
+ },
+ "d4r": {
+  "core_hue_deg": 147.6,
+  "core_sat": 163.5,
+  "core_val": 179.0,
+  "fibre_contrast": 20.3,
+  "fibre_density_per100px": 10.54,
+  "falloff_px": 4.0,
+  "core_px": 24737,
+  "glow_px": 28154,
+  "torso_px_onscreen": 356.4,
+  "scale_to_ref": 1.0,
+  "cover_glow_per_torso2": 0.222
+ },
+ "d7r": {
+  "core_hue_deg": 147.2,
+  "core_sat": 174.3,
+  "core_val": 226.8,
+  "fibre_contrast": 8.89,
+  "fibre_density_per100px": 0.0,
+  "falloff_px": 3.6,
+  "core_px": 11070,
+  "glow_px": 27210,
+  "torso_px_onscreen": 296.0,
+  "scale_to_ref": 1.204,
+  "cover_glow_per_torso2": 0.214
+ }
+}
