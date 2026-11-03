@@ -8,6 +8,7 @@ Read-only phase. No code changed, nothing deleted, no paid service, no publish.
 | `02_BENCHMARK.md` | 11 accounts screened, top 5 × 3 videos analysed (17 items), production grammar presets |
 | `03_OSS.md` | Open-source / asset licences, commercial use, maintenance (GitHub API 2026-11-03) |
 | `04_PROPOSAL.md` | Target architecture, exercise schema, QC redesign, weekly 3-reel ops, Top 5 Cursor specs (awaiting approval) |
+| `DAY4_TEMPLATE_SPEC.md` | t637u/t638u: measured Day 4 template, 2-step Day 4 mode, feet root cause + v3 start frames, static Day 4 mock (see-through overlap) |
 | `REEL_FORMAT_V2.md` | t634u–t636u: 10–12 s 2-clip loop reel format + real seated-cable-row smoke (D7v2): G1–G8 pass |
 | `2D_CONSISTENCY_PLAN.md` | t633u: 2D consistency root causes (measured), fix spec, raw-clip drift gate G1–G10, smoke test |
 | `benchmark_metrics.json` | Raw public metrics (yt-dlp metadata; Demic from `demic_bench/` 2026-10-29) |

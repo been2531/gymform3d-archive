@@ -1,3 +1,5 @@
+> **Superseded 2026-11-03 (t637u):** the owner rejected this cut (feet off the footplate; not the Day 4 template). See `DAY4_TEMPLATE_SPEC.md`. The ✕/✓ badges, hook and tail below are withdrawn.
+
 # Reel format v2 + real-machine smoke (D7v2, seated cable row) — 2026-11-03 KST
 
 Owner asks: pt633u (2D consistency), t634u–t636u ("실제 운동기구와 동일해야하고", popularity with minimal generation).
