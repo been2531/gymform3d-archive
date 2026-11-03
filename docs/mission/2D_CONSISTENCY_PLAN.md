@@ -131,7 +131,7 @@ Measured at 360×640 on 9 frames + the pinned frames; code = `tools/consistency_
 |---|---|---|---|
 | G1 | Start hold: tone-normalised SSIM(start, f0) and edge IoU | ≥ 0.97 and ≥ 0.88 | grok.com 0.993 / 0.90–0.91 pass; GenerateVideo first-frame-only 0.955 / 0.80–0.83 fail |
 | G2 | End / keyframe hold (when pinned): same metrics vs the pinned image | ≥ 0.97 and ≥ 0.88 | unpinned ends were 0.85–0.95 |
-| G3 | Glow area vs start frame | every sample 0.6–1.6× start and cv ≤ 30% (if start glow < 2%: absolute range ≤ 1.5 pt) | D4 cv 10–25 pass; D5 s4 78, D7 v3 right 0.42×, D7 v1 right 8× fail |
+| G3 | Glow area vs the PINNED frames over time (v2, 2026-11-03) | expected = glow of start/keyframes/last pins, linearly interpolated; every sample 0.6–1.6× expected and ratio cv ≤ 30% (if min pin glow < 2%: abs ≤ 1.5 pt). v1 (vs start only) still reported. Why: a correct contraction pose legitimately hides part of the target muscle, so the pinned keyframe itself has less glow; v1 failed clips that faithfully followed their pins. See REEL_FORMAT_V2.md | D7v2 t2 wrong 0.95–1.03, right 0.93–1.31 pass (right v1 0.42× fail) |
 | G4 | Glow off the body | ≤ 0.5% of the frame | all clips ≤ 0.3% |
 | G5 | Camera lock: backdrop-only SSIM vs f0 | ≥ 0.90 | 20 of 21 clips 0.90–0.99; D7 v1 right min 0.87 (the clip that also changed the exercise) |
 | G6 | Backdrop gain drift in the clip | ≤ 4 lum | 0–5 measured (D5 s1 5.0 fails) |
