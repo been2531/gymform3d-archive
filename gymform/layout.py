@@ -159,7 +159,11 @@ def measure_angle(step_idx):
     from gymform import render as _r
     m = CFG["callout_measure"]
     m = m if isinstance(m, dict) else {"metric": str(m)}
-    seq = _r.KPS[step_idx]
+    import sys as _sys
+    _main = _sys.modules.get("__main__")
+    # render.py runs as __main__ in the step workers (python -m gymform.render): its KPS lives there
+    _src = _r.KPS if step_idx in _r.KPS else getattr(_main, "KPS", {})
+    seq = _src[step_idx]
     fr = m.get("frame", "last")
     k = seq[-1] if fr == "last" else seq[0] if fr == "first" else seq[int(fr)]
     P = lambda j: np.asarray(k[j], np.float64)
@@ -175,7 +179,9 @@ def measure_angle(step_idx):
         u, w = a - v, b - v
         return float(np.degrees(np.arccos(np.clip(np.dot(u, w) / max(np.linalg.norm(u) * np.linalg.norm(w), 1e-6), -1, 1))))
     met = m.get("metric", "arm_torso")
-    if met == "elbow":
+    if met == "elbow_flexion":   # 0 = straight arm (the coaching convention used by the Day 7 callouts)
+        val = 180.0 - ang(P(f"sh_{sd}"), P(f"elb_{sd}"), P(f"wr_{sd}"))
+    elif met == "elbow":
         val = ang(P(f"sh_{sd}"), P(f"elb_{sd}"), P(f"wr_{sd}"))
     elif met == "trunk_lean":
         sh = 0.5 * (P("sh_r") + P("sh_l"))

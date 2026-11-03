@@ -87,42 +87,46 @@
   },
   "motions": {
     "wrong": {
-      "base": "day7_wrong_raw.mp4",
+      "base": "day7_wrong_raw_v3.mp4",
       "i0": 0,
-      "i1": 50,
+      "i1": 57,
       "y_shift": 80,
-      "why": "v2 grok post a3a12545-91f7-4dfa-b906-34c603b42c16 (1 take). Window f0 stretch (wrist-shoulder 230 px/720p, arms straight) -> f50 full contraction (128 px, handle at belly). Near arm at contraction: elbow flexion 109 deg (2D), elbow only 62 px behind shoulder, upper-arm/torso 48 deg; shoulders visibly rise (shrug). Trunk range 11 deg.",
+      "why": "t660u v3 (Grok Bot GenerateVideo, 720p 5 s, first=last = pin_wrong_head_t1). f0 start (pinned) -> f57 peak (2.38 s, elbow flexion 92 deg, max of the clip). Gates G1-G6/G8-G10 pass, G7 view spread 0.051 (pins differ by 0.055).",
       "renders": {
         "front": {
-          "file": "day7_wrong_raw.mp4",
+          "file": "day7_wrong_raw_v3.mp4",
           "camera": "front",
-          "camera_note": "elevated front-3/4 (owner-approved v2 frames); DAY7_IMPROVEMENTS #5: a 2-step day uses one best angle for both steps, same for wrong and right"
+          "camera_note": "side camera along the fixed machine (D7_MACHINE_CONCEPT), whole-frame mirror so the tower is on the right",
+          "mirror": true
         }
       },
       "callout": {
-        "deg": "105°",
+        "deg": "78°",
         "l1": "ARMS + SHRUG",
         "l2": "BICEPS + TRAPS TAKE IT"
-      }
+      },
+      "mirror": true
     },
     "right": {
-      "base": "day7_right_raw.mp4",
+      "base": "day7_right_raw_v3.mp4",
       "i0": 0,
       "i1": 36,
       "y_shift": 80,
-      "why": "v2 grok post b21203af-133e-4101-b18e-5624e950cde2 (1 take). Window f0 stretch (229 px) -> f36 full contraction (126 px, handle at lower ribs/upper abdomen, held f36-72). Near arm at contraction: elbow flexion 106 deg (2D), elbow 94 px behind shoulder, upper-arm/torso 68 deg (elbows past the torso). Trunk range 10 deg.",
+      "why": "t660u v3 (Grok Bot GenerateVideo, 720p 5 s, first=last = pin_right_fibre_head_t2). f0 start -> f36 peak (1.50 s, elbow flexion 80.5 deg, elbows back). Gates as wrong.",
       "renders": {
         "front": {
-          "file": "day7_right_raw.mp4",
+          "file": "day7_right_raw_v3.mp4",
           "camera": "front",
-          "camera_note": "elevated front-3/4 (owner-approved v2 frames); DAY7_IMPROVEMENTS #5: a 2-step day uses one best angle for both steps, same for wrong and right"
+          "camera_note": "side camera along the fixed machine (D7_MACHINE_CONCEPT), whole-frame mirror so the tower is on the right",
+          "mirror": true
         }
       },
       "callout": {
-        "deg": "105°",
+        "deg": "75°",
         "l1": "ELBOWS BACK",
         "l2": "LATS TAKE IT"
-      }
+      },
+      "mirror": true
     }
   },
   "motion_standard": "seated_cable_row",
@@ -139,7 +143,7 @@
   "clean_plate": false,
   "muscle_shader": "day4",
   "out_caption": "output/day7_seated_cable_row_muscle2_master_caption.txt",
-  "source_clips_note": "v2 start frames inputs/day7/day7_v2_{wrong,right}_start.png (low-row station, stretch start, single V-handle). Placeholders output/assets/day7_wrong_raw.mp4 / day7_right_raw.mp4 (grok.com, 1 take each). v1 takes failed (pulldown / fly / split handle), kept as day7_*_raw_v1.mp4. i0/i1 TBD.",
+  "source_clips_note": "t660u v3: output/assets/day7_{wrong,right}_raw_v3.mp4 from pinned stills output/_consistency/d7m/pin_*_720x1280.png (already cropped to the final framing; frame_override 1:1).",
   "static_body_lum": 20,
   "metal_lum_max": 42.0,
   "flat_look": false,
@@ -170,7 +174,7 @@
   "native_bench_map": true,
   "native_wfg_colour": true,
   "native_anchor_smooth": 2.0,
-  "callout_note": "deg = ELBOW FLEXION at the end of the pull, fixed (2-step (z): one coached angle per step): 105 deg is inside the MOTION_STANDARDS seated_cable_row band 80-140 and matches the measured near-arm 106-109 (2D) in BOTH clips - the elbow bend is the same; the difference (shrug vs elbows past the torso) is carried by the labels. l2 is plain text: no invented percentages.",
+  "callout_note": "deg = ELBOW FLEXION (180 - shoulder-elbow-wrist) of the visible arm, MEASURED by layout.measure_angle from the pipeline keypoints at the last frame of each slice (t652u: no faked numbers): wrong 78, right 75. Inside the seated_cable_row band; the difference (shrug vs elbows past the torso) is carried by the labels. (was a fixed 105.)",
   "native_skin_p90_why": "Day 4 lock p90 (spec skin_lock_all_steps 88); 84 (Day 6 v5) left Day 7 p90 at 79-83 under the (f) band 81-95",
   "native_glow_form_hue": true,
   "target_regions": {
@@ -193,23 +197,24 @@
   "hide_lines": true,
   "callout_single_label": true,
   "callout_measure": {
-    "metric": "arm_torso",
+    "metric": "elbow_flexion",
     "frame": "last"
   },
   "frame_override": {
-    "scale": 1.53,
-    "dx": 62,
-    "dy": 247
+    "scale": 1.0,
+    "dx": 15,
+    "dy": 0
   },
   "callout_text_y": 560,
   "simplify_why": "t652u-t653u: no laser/leader/dot, no sub-label; big MEASURED angle (shoulder angle trunk->upper arm of the visible arm, at the slice's last = peak frame) + one short label; one fixed crop/scale for stills and clips (frame_override) so mannequin + machine fill 9:16",
   "day4_input_scale": {
-    "1": 0.45,
-    "2": 0.25
+    "1": 0.3,
+    "2": 0.6
   },
   "glow_gain_override": {
-    "1": 12,
-    "2": 30
+    "1": 14,
+    "2": 18
   },
-  "day4_calibration_why": "t654u: measured at equal torso scale vs the Day 4 master (tools/day4_look_metrics.py, sweeps A-J in output/_consistency/d7m/sweep_*): glow-pixel V median wrong 155 vs D4 157, right 194 vs D4 190; hue/sat/fibre contrast within ~10%. Set for the locked stills (wrong t1, right t2); re-measure on the i2v clips (their glow level differs)."
+  "day4_calibration_why": "t654u: measured at equal torso scale vs the Day 4 master (tools/day4_look_metrics.py, sweeps A-J in output/_consistency/d7m/sweep_*): glow-pixel V median wrong 155 vs D4 157, right 194 vs D4 190; hue/sat/fibre contrast within ~10%. Set for the locked stills (wrong t1, right t2); re-measure on the i2v clips (their glow level differs).",
+  "frame_override_why": "t660u: the pinned stills (and so the i2v clips) are already cropped to the t652u final framing (old frame_override scale 1.53/dx 62/dy 247 on the 1024 composite = window x 215.7-885.1, y -236.2-953.1), so the clip maps 1:1 onto 1080x1920; machine pixels unchanged (crop + resize only)"
 }
