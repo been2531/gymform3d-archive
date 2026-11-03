@@ -1,0 +1,56 @@
+{
+ "side_now": {
+  "yaw": 90,
+  "pitch": 5,
+  "dist_cm": 655,
+  "person_h_frac": 0.22,
+  "machine_h_frac": 0.538,
+  "all_h_frac": 0.538,
+  "all_w_frac": 0.916
+ },
+ "rear34_high": {
+  "yaw": 35,
+  "pitch": 28,
+  "dist_cm": 465,
+  "person_h_frac": 0.212,
+  "machine_h_frac": 0.893,
+  "all_h_frac": 0.893,
+  "all_w_frac": 0.913
+ },
+ "front34_low": {
+  "yaw": 150,
+  "pitch": -6,
+  "dist_cm": 515,
+  "person_h_frac": 0.263,
+  "machine_h_frac": 0.887,
+  "all_h_frac": 0.887,
+  "all_w_frac": 0.913
+ },
+ "front34_eye": {
+  "yaw": 140,
+  "pitch": 8,
+  "dist_cm": 575,
+  "person_h_frac": 0.28,
+  "machine_h_frac": 0.758,
+  "all_h_frac": 0.758,
+  "all_w_frac": 0.915
+ },
+ "tight_body_rear34": {
+  "yaw": 35,
+  "pitch": 22,
+  "dist_cm": 240,
+  "person_h_frac": 0.471,
+  "machine_h_frac": 1.622,
+  "all_h_frac": 1.622,
+  "all_w_frac": 1.616
+ },
+ "stack_top_wide_rear34": {
+  "yaw": 35,
+  "pitch": 28,
+  "dist_cm": 465,
+  "person_h_frac": 0.212,
+  "machine_h_frac": 0.893,
+  "all_h_frac": 0.893,
+  "all_w_frac": 0.913
+ }
+}
