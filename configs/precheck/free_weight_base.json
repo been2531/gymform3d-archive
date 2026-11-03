@@ -1,0 +1,35 @@
+{
+ "_doc": "Shared thresholds for dumbbell/bodyweight start stills (tools/free_weight_precheck.py). Per-exercise files 'extends' this and set forms + dumbbells_expected.",
+ "size": [
+  720,
+  1280
+ ],
+ "border_px": 6,
+ "height_frac_min": 0.6,
+ "dumbbell_hsv": [
+  [
+   100,
+   90,
+   40
+  ],
+  [
+   130,
+   255,
+   255
+  ]
+ ],
+ "dumbbell_head_min_px": 250,
+ "dumbbell_merge_px": 25,
+ "dumbbells_expected": 2,
+ "dumbbell_solidity_min": 0.8,
+ "dumbbell_near_hand_max": 0.6,
+ "head_body_dL_max": 14,
+ "shaded_vs_backdrop_min": -2,
+ "sharp_ref_var": 704.7,
+ "sharp_min_frac": 0.6,
+ "glow_frac_min": 0.02,
+ "glow_other_max": 0.002,
+ "_sharp_ref": "output/_consistency/db1/ref_day4_step4_f1s.png (Day 4 step 4 ecorche, t=1 s, 720x1280)",
+ "dumbbell_height_ratio_min": 0.75,
+ "dumbbell_pair_dy_max": 0.35
+}

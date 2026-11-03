@@ -1,0 +1,40 @@
+{
+ "_doc": "Pilot dumbbell day: two-dumbbell bent-over row, rear three-quarter side camera, start stills (arms hanging).",
+ "extends": "configs/precheck/free_weight_base.json",
+ "exercise": "Dumbbell Bent-Over Row",
+ "dumbbells_expected": 2,
+ "forms": {
+  "wrong": {
+   "desc": "torso too upright + shrug; red upper traps",
+   "torso_lean": [
+    0,
+    25
+   ],
+   "elbow_flex": [
+    0,
+    25
+   ],
+   "glow": "red",
+   "glow_band": [
+    -0.35,
+    0.4
+   ]
+  },
+  "right": {
+   "desc": "hip hinge ~45 deg, flat back; green lats/rhomboids/mid trap",
+   "torso_lean": [
+    35,
+    65
+   ],
+   "elbow_flex": [
+    0,
+    25
+   ],
+   "glow": "green",
+   "glow_band": [
+    0.0,
+    0.85
+   ]
+  }
+ }
+}
