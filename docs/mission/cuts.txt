@@ -1,0 +1,19 @@
+(scene cuts >0.3 via ffmpeg select / mean audio dB via volumedetect; 2026-11-03)
+0DXfTct2gh8 dur=14.7 cuts=2 vol=-91 (silent)
+7ZNZxdpoUvg dur=39.1 cuts=31 vol=-19.7
+ZTJpo9YsuYk dur=30.2 cuts=25 vol=-28.0
+DTimWt0v4xA dur=51.8 cuts=4 vol=-25.8
+4Pm7m72aWBM dur=57.4 cuts=2 vol=-24.1
+KB42XXLUYus dur=36.6 cuts=2 vol=-23.4
+lYdTddtGV0Y dur=34.8 cuts=12 vol=-16.9
+riiS4XftoOE dur=32.0 cuts=12 vol=-13.4
+2HAfhZbbbcU dur=44.5 cuts=8 vol=-17.3
+ZAGUs5DtvLg dur=34.4 cuts=30 vol=-21.8
+IHImpzGBqdM dur=35.4 cuts=28 vol=-20.2
+Bd156yxr_6Q dur=54.1 cuts=34 vol=-17.5
+DUlzpgekQRy dur=34.3 cuts=6 vol=-20.3
+DePzKDbFB0y dur=32.5 cuts=6 vol=-17.6
+DetDsIDj2BJ dur=39.1 cuts=6 vol=-17.7
+WFpXANKYIiM dur=16 cuts=2 vol=-19.5
+4m1gSHzRfW0 dur=16 cuts=2 vol=-18.8
+VsAiVlchDXU dur=12 cuts=2 vol=-19.6
