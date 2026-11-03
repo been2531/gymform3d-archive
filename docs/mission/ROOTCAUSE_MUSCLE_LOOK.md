@@ -37,7 +37,7 @@ What sells "real muscle":
 | Motion stability | Day 4-proven with the native grade. The generator's relief can boil (playbook D5), handled as in Day 4 | Perfect once rigged | Drift between the fitted mesh and the video body | Perfect |
 | Machine fidelity | As now: edit of the verified plate, part-by-part check | Needs a 3D Matrix model or a camera-matched comp on the plate | As A | Needs a 3D machine |
 | Cost (generations) | 1–2 images + 1 video per form | 0 | As A | 0, but paid assets and/or outsourcing (≈ €80 per 10 s clip on freelancer listings) |
-| Time per reel | Generation plus a 1–2 min render (existing pipeline) | Setup days: Z-Anatomy is an atlas, not rigged. CPU render only (no GPU on the box; Blender isn't installed), Cycles ≈ hours per reel | B's setup + per-reel fitting | Weeks to set up, or external |
+| Time per reel | Generation plus a 1–2 min render (existing pipeline) | Setup days: Z-Anatomy is an atlas, not rigged. CPU render only (no GPU; headless bpy 5.2.3 in /workspace/.bpyenv, no Blender GUI), Cycles ≈ 3.5 min per 1080p frame ≈ hours per reel | B's setup + per-reel fitting | Weeks to set up, or external |
 | Risk | Generator anatomy errors or glow off-target, both handled by existing clamps | High: rigging, licence (CC BY-SA 4.0 attribution + share-alike), render time | High | Purchase approval, budget |
 | Reusable | The whole Day 4 pipeline (native grade, region clamp, joint callout, 2-shot plan, machine check) | Long-term asset library | Little | Everything, if built |
 
