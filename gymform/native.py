@@ -293,6 +293,19 @@ def grade(step, p_i, is_wrong):
     src = S["den"][p_i]
     f = src.astype(np.float32)
     L1 = _lumx(f) * S["G"]
+    if CFG.get("native_muscle_shader") == "day4" and CFG.get("native_deglow_base"):
+        # t663u: the grey base under / around the Day 4 colour is graded from the source luminance, which the source glow
+        # inflates (a green glow at lum ~150): outside the clamp regions (and at the soft colour edge inside them) it read
+        # as light-grey blotches (QC (f) p75 117 on the right step). On the mannequin (keypoint body capsule) the glow
+        # channel is replaced by the max of the other two for the TONE only (shading kept, glow removed); day4_fibre
+        # still reads its fibres/colour from the untouched source channels.
+        from gymform.qc import body_capsule as _bc
+        ci = 0 if is_wrong else 1
+        oth = np.maximum(f[..., (ci + 1) % 3], f[..., (ci + 2) % 3])
+        wgl = np.clip((f[..., ci] - oth - 4.0) / 10.0, 0.0, 1.0) * cv2.GaussianBlur(_bc(S["kp"][p_i], f.shape[:2]).astype(np.float32), (0, 0), 4.0)
+        fd = f.copy()
+        fd[..., ci] = f[..., ci] * (1.0 - wgl) + oth * wgl
+        L1 = _lumx(fd) * S["G"]
     Lg = np.interp(L1, S["xs"], S["ys"]).astype(np.float32)
     if CFG.get("native_highlight_rolloff"):
         # t609: soft knee above the skin p99 (output ~lk max - 10): highlights compress smoothly to <= lk max,
@@ -341,7 +354,14 @@ def grade(step, p_i, is_wrong):
             # here (too bright, soft source-glow edge under the Day 4 core). Glow pixels get the plain grey base, as in
             # Day 4 (day4_fibre blends its colour over grey); plates / rim keep their chroma (w_glow ~ 0 there).
             ex = np.clip((a_glow - 4.0) / 10.0, 0.0, 1.0)
-            if CFG.get("muscle_glow_clamp"):   # only on the body's glow regions: machine colours (orange pin) stay as in every step
+            if CFG.get("muscle_glow_clamp") and CFG.get("muscle_glow_clamp_chroma") == "body":
+                # t663u: the source glow chroma never passes ANYWHERE on the mannequin (keypoint body capsule), not only
+                # inside the clamp regions: outside them it showed as a fibre-less source-red smear (lower back / flank).
+                # Off the body (machine: orange pin, cobalt stack) keep_chroma is unchanged.
+                from gymform.qc import body_capsule as _bc
+                bm_ = _bc(S["kp"][p_i], ex.shape).astype(np.float32)
+                ex = ex * np.clip(cv2.GaussianBlur(bm_, (0, 0), 6.0) * 2.0, 0.0, 1.0)
+            elif CFG.get("muscle_glow_clamp"):   # only on the body's glow regions: machine colours (orange pin) stay as in every step
                 from gymform import region_glow as _rg
                 cm_, _ = _rg.clamp_mask(S["kp"][p_i], is_wrong, ex.shape)
                 ex = ex * np.clip(cv2.GaussianBlur((cm_ > 0.02).astype(np.float32), (0, 0), 6.0) * 3.0, 0.0, 1.0)

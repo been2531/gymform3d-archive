@@ -347,6 +347,8 @@ def check_equipment_crop(key, src, plate, zone, wfg, shorts, kp, off, clean, stq
     fails, rows = [], []
     Hc, Wc = zone.shape[:2]
     exp = expected_equipment(src, plate, zone, clean)
+    if MACHINE_EXP[0] is not None:   # t662s cable profile (crop to this window)
+        exp = exp | MACHINE_EXP[0][off[1]:off[1] + Hc, off[0]:off[0] + Wc]
     n_exp = int(exp.sum())
     if n_exp < 1500:
         return [f"{key}: expected equipment footprint too small ({n_exp}px) - detector/zone problem"], rows, exp
@@ -495,6 +497,50 @@ def _equip_colour(src_rgb):
     return cv2.dilate(m.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# t662s cable-machine QC profile (opt-in: config "qc_profile": "cable_machine" -> meta["qc_profile"]). Days 4-6 never set
+# it, so their results are unchanged. Same thresholds; only WHICH pixels are skin / figure / equipment changes:
+#   machine  = the cable machine by its own source colour (light-grey frame lum > 120 sat < 30, cobalt stack, orange
+#              selector pin) dilated 5 px, PLUS every foreground pixel outside the mannequin's keypoint body capsule
+#              (seat, footplate, pads, handle, cable are dark neutrals that colour alone cannot separate from charcoal skin)
+#   body     = keypoint body capsule (torso quad + limb capsules + head disc), machine colour removed
+PROFILE = [None]
+
+
+def cable_profile():
+    return PROFILE[0] == "cable_machine"
+
+
+def machine_colour(src_rgb):
+    f = src_rgb.astype(np.float32)
+    r, g, b = f[..., 0], f[..., 1], f[..., 2]
+    L, sat = lum_of(f), f.max(-1) - f.min(-1)
+    m = ((L > 120.0) & (sat < 30.0)) | ((b - np.maximum(r, g)) > 15.0) | ((r > 120.0) & (g - b > 25.0) & (r - b > 60.0))
+    return cv2.dilate(m.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+
+
+def body_capsule(kp, shape=(H, W)):
+    cap = np.zeros(shape, np.uint8)
+    P = lambda j: (int(round(kp[j][0])), int(round(kp[j][1])))
+    hip = 0.5 * (np.asarray(kp["hip_r"], np.float32) + np.asarray(kp["hip_l"], np.float32))
+    sh = 0.5 * (np.asarray(kp["sh_r"], np.float32) + np.asarray(kp["sh_l"], np.float32))
+    tl = float(np.linalg.norm(sh - hip))
+    cv2.fillConvexPoly(cap, np.array([kp["sh_r"], kp["sh_l"], kp["hip_l"], kp["hip_r"]], np.int32), 1)
+    th = max(8, int(0.30 * tl))
+    for a, c in (("sh_r", "elb_r"), ("elb_r", "wr_r"), ("sh_l", "elb_l"), ("elb_l", "wr_l"), ("hip_r", "kn_r"),
+                 ("hip_l", "kn_l"), ("hip_r", "hip_l"), ("sh_r", "sh_l")):
+        if a in kp and c in kp:
+            cv2.line(cap, P(a), P(c), 1, th)
+    up = (sh - hip) / max(tl, 1.0)
+    cv2.circle(cap, tuple(int(v) for v in sh + up * 0.55 * tl), int(0.30 * tl), 1, -1)   # head + neck
+    return cv2.dilate(cap, np.ones((15, 15), np.uint8)) > 0
+
+
+def nonbody(src_rgb, kp):
+    """cable profile: True where a pixel is machine / not the mannequin (see PROFILE note)."""
+    return machine_colour(src_rgb) | ~body_capsule(kp, src_rgb.shape[:2])
+
+
 def _raw_backdrop(src):
     """pixels of the RAW source frame that are plain backdrop: within 6 lum of the per-row backdrop level (median of
     the frame's left/right 24 px, smoothed over rows) on the 4 px-smoothed lum, no texture, AND connected to the
@@ -526,6 +572,7 @@ def playbook_frame_checks(frames_meta, qc_dir):
          raw object) <= 2% of the raw object area (v4: 11.9% painted opaque)"""
     sb_bad, sb_rows, gh_bad, gh_rows, sep_bad, sep_rows, pl_bad, pl_rows = [], [], [], [], [], [], [], []
     bg_l = 0.299 * 35 + 0.587 * 39 + 0.114 * 43
+    no_db = cable_profile() and not any("dumbbell" in str(e.get("type", "")) for e in CFG_EQ[0])
     for key, fm in sorted(frames_meta.items()):
         pre = os.path.join(qc_dir, key)
         src, base = cv2.imread(pre + "_src.png"), cv2.imread(pre + "_base.png")
@@ -622,10 +669,15 @@ def playbook_frame_checks(frames_meta, qc_dir):
         gh_rows.append(f"{key}: {100 * g:.2f}%")
         if g > 0.02:
             gh_bad.append(gh_rows[-1])
-    report("(sep) figure / equipment / backdrop separated (playbook D17: skin p75 - backdrop >= 33; dumbbells and "
-           "bench >= 15 RGB from backdrop, >= 10 from skin, <= 25% of their pixels within 15 RGB of it; glow on backdrop <= 0.5%)", bool(sep_rows) and not sep_bad,
-           "; ".join(sep_bad[:4]) or " | ".join(sep_rows[:4]))
-    if pl_rows or pl_bad:
+    if no_db:   # t662s cable_machine profile: D17/D18 are dumbbell-plate defects; no dumbbell in this reel
+        print("[N/A ] (sep) figure / equipment / backdrop separated (playbook D17): no dumbbells (qc_profile cable_machine) | "
+              + " | ".join(sep_rows[:2]), flush=True)
+        print("[N/A ] (pl) custom plates (playbook D18): no dumbbell plates (qc_profile cable_machine)", flush=True)
+    else:
+        report("(sep) figure / equipment / backdrop separated (playbook D17: skin p75 - backdrop >= 33; dumbbells and "
+               "bench >= 15 RGB from backdrop, >= 10 from skin, <= 25% of their pixels within 15 RGB of it; glow on backdrop <= 0.5%)", bool(sep_rows) and not sep_bad,
+               "; ".join(sep_bad[:4]) or " | ".join(sep_rows[:4]))
+    if (pl_rows or pl_bad) and not no_db:
         report("(pl) custom plates (playbook D18): plate vs backdrop >= 40 RGB, recolour on raw skin/backdrop <= 0.5%",
                not pl_bad, "; ".join(pl_bad[:4]) or " | ".join(pl_rows[:4]))
     report("(sb) shorts never on raw backdrop (<= 2% of the shorts mask; playbook D15)", bool(sb_rows) and not sb_bad,
@@ -697,6 +749,10 @@ def flat_look_checks(meta, frames_meta, vids, qc_dir):
         for m_ in (st, sh, eq):
             if m_ is not None:
                 skin &= m_ < 0.2 if m_ is sh else m_ < 0.5
+        if cable_profile():   # t662s: machine (seat, pads, footplate, frame) is never skin
+            s_c = cv2.imread(pre + "_src.png")
+            if s_c is not None:
+                skin &= ~nonbody(cv2.cvtColor(s_c, cv2.COLOR_BGR2RGB), fm["kp"])
         skin[:620] = False
         if skin.sum() > 2000:
             dark = float((l[skin] < 46.0).mean())
@@ -730,6 +786,12 @@ def t567_checks(meta, frames_meta, vids, qc_dir):
         if os.path.exists(pre + "_alpha.png"):   # t609 native: the figure is the mannequin, not the palette A equipment
             body &= ~_equip_colour(srcf)
         ui = np.zeros_like(body); ui[:600] = True; ui[:, :300] = True
+        scene = body.copy()
+        if cable_profile():   # t662s: mannequin = keypoint body capsule minus machine colour; UI = title rows + callout block only
+            nb_ = nonbody(srcf, fm["kp"])
+            scene = (wfg > 0.5) & (~nb_ | machine_colour(srcf))   # mannequin + machine (the framed subject)
+            body &= ~nb_
+            ui = np.zeros_like(body); ui[:600] = True; ui[:700, :320] = True
         if fm["tag"] in ("start", "peak"):
             # t572u: judged against the Day 4 (GOLD #1) / Day 5 look, measured on their posted masters:
             # coloured regions 3-11 (no speckle), colour strength act median 52-86, shader = day4
@@ -746,7 +808,19 @@ def t567_checks(meta, frames_meta, vids, qc_dir):
             if meta.get("muscle_shader") != "day4" or comps > 16 or not (45.0 <= amed <= 100.0) or not area_ok:
                 m_bad.append(m_rows[-1] + f" shader={meta.get('muscle_shader')}")
         ys, xs = np.where(body)
-        if xs.size:
+        if cable_profile():
+            # t662s: fixed camera + static machine -> the FRAMING is judged once per step on the swept subject
+            # (mannequin + machine, union over the step's QC frames): centre 540+-40, margins >= 24 (same thresholds);
+            # per frame the mannequin itself must keep the 24 px margin
+            ys2, xs2 = np.where(scene & ~ui)
+            if xs2.size:
+                sw = OC_SWEEP.setdefault(fm["step"], [W, 0])
+                sw[0] = min(sw[0], int(np.percentile(xs2, 0.2))); sw[1] = max(sw[1], int(np.percentile(xs2, 99.8)))
+            if xs.size:
+                bx0, bx1 = int(np.percentile(xs, 0.2)), int(np.percentile(xs, 99.8))
+                if bx0 < 24 or bx1 > W - 24:
+                    o_bad.append(f"{key}: mannequin x {bx0}-{bx1} (margin < 24)")
+        elif xs.size:
             x0, x1 = int(np.percentile(xs, 0.2)), int(np.percentile(xs, 99.8))
             cx = 0.5 * (x0 + x1)
             o_rows.append(f"{key}: x {x0}-{x1} centre {cx:.0f}")
@@ -780,6 +854,11 @@ def t567_checks(meta, frames_meta, vids, qc_dir):
                 r_bad.append(f"{key}: target {d:.1f}px off arm, arm_axis={ca.get('arm_axis')}")
         else:
             r_bad.append(f"{key}: no callout_axis in meta")
+    for st_n, (x0, x1) in sorted(OC_SWEEP.items()):
+        cx = 0.5 * (x0 + x1)
+        o_rows.append(f"step{st_n} swept subject x {x0}-{x1} centre {cx:.0f}")
+        if abs(cx - W / 2) > 40 or x0 < 24 or x1 > W - 24:
+            o_bad.append(o_rows[-1])
     report("(mf) muscle fibre colour = Day 4 shader + Day 4/5 look (<=16 regions, strength 45-100, >=4k px)", bool(m_rows) and not m_bad,
            "; ".join(m_bad) or " | ".join(m_rows))
     report("(oc) whole figure centred (bbox centre 540+-40, margins >=24px)", bool(o_rows) and not o_bad, "; ".join(o_bad[:4]) or " | ".join(o_rows[::3]))
@@ -799,6 +878,9 @@ def main():
     meta = json.load(open(os.path.join(args.qc_dir, "meta.json")))
     frames_meta = meta["frames"]
     CFG_EQ[0] = meta.get("equipment", [])
+    PROFILE[0] = meta.get("qc_profile")
+    if PROFILE[0]:
+        print(f"QC PROFILE: {PROFILE[0]} (t662s; machine mask for (f)(sh)(j)(oc)(d), (sep)/(pl) N/A without dumbbells, (mf) no left strip)", flush=True)
     if args.preflight:   # container format is checked on the full render only (fixed x264 settings)
         n, fps = int(round(30 * float(meta.get("duration_s", 20.0)))), 30.0   # (l) timing: the reel is fixed at 20.0s (tempo spec); the wav timing is real
         vids = {}
@@ -858,6 +940,8 @@ def main():
         if zone is not None and os.path.exists(src_p) and os.path.exists(plate_p):
             src = cv2.cvtColor(cv2.imread(src_p), cv2.COLOR_BGR2RGB)
             plate = cv2.cvtColor(cv2.imread(plate_p), cv2.COLOR_BGR2RGB)
+            if cable_profile():   # t662s: the machine's own colour inside the zone is expected equipment too
+                MACHINE_EXP[0] = machine_colour(src) & (zone > 0.5) & ~body_capsule(kp)
             f_, r_, exp = check_equipment(key, src, plate, zone, wsol, shorts, kp, vis)
             eq_fail += f_
             EQ_ROWS.extend(r_)
@@ -967,7 +1051,11 @@ def main():
         if sk_o.sum() > 2000:
             LOCK.setdefault(s, []).append((float(np.percentile(l[sk_o], 75)), float(np.percentile(l[sk_o], 90))))
         # (j) arm skin: silver on both arms, no dark fill
-        for side, (p75a, blob, npx) in arm_skin_check(base, wfg, eq, xw, kp, cv2.cvtColor(cv2.imread(pre + "_src.png"), cv2.COLOR_BGR2RGB)).items():
+        eq_j = eq
+        if cable_profile():   # t662s: handle / cable / machine colour never count as arm skin
+            nb_j = nonbody(cv2.cvtColor(cv2.imread(pre + "_src.png"), cv2.COLOR_BGR2RGB), kp)
+            eq_j = np.maximum(eq if eq is not None else 0.0, nb_j.astype(np.float32))
+        for side, (p75a, blob, npx) in arm_skin_check(base, wfg, eq_j, xw, kp, cv2.cvtColor(cv2.imread(pre + "_src.png"), cv2.COLOR_BGR2RGB)).items():
             ARM_ROWS.append(f"{key} {side}: p50={p75a:.0f} darkfill={blob}px ({npx}px)")
             # silver range: shaded silver .. highlight (spec curve 46..226); a black fill sits far below it
             if blob > 250 or (npx > 800 and not (100.0 * SK_S <= p75a <= 215.0 * SK_S)):
@@ -988,6 +1076,8 @@ def main():
                 skin &= _sev < 0.2
         if st_m is not None:
             skin &= st_m < 0.5
+        if cable_profile():   # t662s: the light-grey machine frame / stack / pads are never skin
+            skin &= ~nonbody(cv2.cvtColor(cv2.imread(pre + "_src.png"), cv2.COLOR_BGR2RGB), kp)
         if skin.sum() > 2000:
             # max = p99.9: the statistic the lock anchors and the Day 4 reference was measured with (t542u)
             p75, p90, mx = np.percentile(l[skin], 75), np.percentile(l[skin], 90), np.percentile(l[skin], 99.9)
@@ -1286,6 +1376,8 @@ def main():
 
 
 OVP, STATIC, STRAY = [], [], []
+OC_SWEEP = {}
+MACHINE_EXP = [None]
 CFG_EQ = [[]]
 _SPEC_Q = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gymform_spec.json")))
 SK = _SPEC_Q["mannequin"]["skin_lock_all_steps"]          # t542u: Day 4 skin tone is the target + QC reference

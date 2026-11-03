@@ -62,3 +62,7 @@ Evidence: `output/_consistency/day4_mock/feet_fix_sheet.jpg`.
 2. Contraction keyframes as raw edits of the v3 starts (no regrade), 1 per form; GenerateVideo 720p 5 s, first = last = start, keyframes at 2.2/2.8 s; ≤ 1 retry each; G1–G10 + a new manual foot-contact check (soles on plate in f0/key/end).
 3. Day 7 config: clips → the new mp4s, window = one full rep, framing = whole machine (no tower cut), callout moved off the tower.
 4. `run_day.py` 2-step build (10 s, TTS, title, pill, see-through) → QC → sheet → owner review. Nothing published.
+
+
+## 8. Cable-machine QC profile (t662s, D7)
+Opt-in `qc_profile: "cable_machine"` in the day config (Days 4–6 do not set it, so their QC is unchanged). Same thresholds as Day 4; only the pixel sets change: the machine (own colour + everything outside the mannequin's keypoint body capsule) is never skin, figure or glow body. Skin reference stays the Day 4 lock (p50 64 / p75 75 / p90 88, (f) bands 69–81 / 81–95, (sh) lum < 46 ≤ 6 % and p5 ≥ 44), which is also the canonical charcoal-mannequin target in 2D_CONSISTENCY_PLAN. (oc) is judged on the swept subject (mannequin + static machine) because the camera and machine are fixed. (sep)/(pl) are N/A without dumbbells. (mf) has no x < 300 strip (the figure sits left of the machine). Details: DEFECT_PLAYBOOK D20/D21.
