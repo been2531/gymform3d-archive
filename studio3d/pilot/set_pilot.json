@@ -1,0 +1,80 @@
+{
+  "_doc": "Day-4-look pilot set (Wide-Grip Lat Pulldown only). Does not replace studio3d/set_v1.json. Flat RGB 35/39/43 backdrop, shadowless even light, fibre-striation skin, muscle emission glow (not bone X-ray), warm-grey lat machine, palette-A bar.",
+  "version": "pilot-1",
+  "units": "metres, Blender Z-up, mannequin faces -Y",
+  "asset_dir": "/agent/repos/gymform3d-archive/assets3d",
+  "inherits_mannequin_from": "../set_v1.json",
+  "world_srgb": [35, 39, 43],
+  "mannequin": {
+    "scale_from_mh": 0.1,
+    "skin_srgb": [42, 44, 48],
+    "skin_roughness": 0.72,
+    "skin_specular": 0.08,
+    "fibre_bump_strength": 0.22,
+    "fibre_scale": 48.0,
+    "shorts_srgb": [8, 8, 9],
+    "shorts_roughness": 0.88,
+    "shorts_offset_m": 0.004,
+    "morph": {
+      "targets": {
+        "targets/caucasian-male-young.target": 0.3334,
+        "targets/african-male-young.target": 0.3333,
+        "targets/asian-male-young.target": 0.3333,
+        "targets/universal-male-young-maxmuscle-averageweight.target": 0.5,
+        "targets/universal-male-young-maxmuscle-minweight.target": 0.5,
+        "targets/male-young-maxmuscle-averageweight-idealproportions.target": 1.0
+      }
+    },
+    "faceless": {
+      "bones_prefix": ["head", "jaw", "eye", "levator", "oculi", "orbicularis", "oris", "temporalis", "risorius", "special", "tongue"],
+      "egg_fit": 0.9
+    },
+    "contact_seat_gap_m": 0.006
+  },
+  "glow": {
+    "wrong_srgb": [220, 48, 42],
+    "right_srgb": [32, 210, 120],
+    "emission_strength": 2.8,
+    "mix": 0.62,
+    "regions_wrong": ["biceps", "front_delt"],
+    "regions_right": ["lat"]
+  },
+  "equipment": {
+    "machine_srgb": [118, 112, 108],
+    "machine_roughness": 0.55,
+    "seat_h": 0.42,
+    "seat_depth": 0.38,
+    "thigh_pad_h": 0.28,
+    "stack_w": 0.55,
+    "stack_d": 0.42,
+    "stack_h": 1.85,
+    "stack_x": 0.72,
+    "bar": {
+      "width": 1.35,
+      "handle_r": 0.014,
+      "plate_r": 0.11,
+      "plate_t": 0.028,
+      "cobalt_srgb": [45, 75, 170],
+      "gold_srgb": [190, 160, 95],
+      "steel_srgb": [165, 168, 172]
+    }
+  },
+  "render": {
+    "engine": "CYCLES",
+    "device": "CPU",
+    "res": [1080, 1920],
+    "samples": 16,
+    "denoise": true,
+    "threads": 8,
+    "film_transparent": false,
+    "seed": 424242
+  },
+  "cameras": {
+    "front": {"yaw_deg": 0, "pitch_deg": 8, "dist_m": 4.2, "lens_mm": 52, "target_offset_m": [0, -0.15, 0.05]},
+    "side": {"yaw_deg": 90, "pitch_deg": 5, "dist_m": 4.0, "lens_mm": 52, "target_offset_m": [0, 0, 0.05]}
+  },
+  "attribution": {
+    "makehuman": "CC0 1.0",
+    "blender": "GPL-3.0+ (tool; render output is yours)"
+  }
+}

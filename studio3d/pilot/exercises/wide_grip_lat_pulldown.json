@@ -1,0 +1,29 @@
+{
+  "_doc": "Pilot exercise config — motion targets from configs/motion_standards.json wide_grip_lat_pulldown. phase 0 = stretch (bar overhead), phase 1 = contraction (bar at upper chest).",
+  "motion_standard": "wide_grip_lat_pulldown",
+  "mistake_type": "trunk_and_elbow_path",
+  "target_muscles": {
+    "wrong": ["biceps brachii", "anterior deltoid", "upper trapezius"],
+    "right": ["latissimus dorsi"]
+  },
+  "forms": {
+    "wrong": {
+      "id": "excess_lean_biceps_pull",
+      "stretch": {"trunk_lean_deg": 28, "elbow_flexion_deg": 155, "upper_arm_forward_deg": 38, "bar_y_m": 1.72},
+      "contract": {"trunk_lean_deg": 42, "elbow_flexion_deg": 68, "upper_arm_forward_deg": 52, "bar_y_m": 1.05},
+      "why": "mistakes.excess_lean_swing trunk > 30; arms/biceps dominate pull"
+    },
+    "right": {
+      "id": "scapula_depress_lat_drive",
+      "stretch": {"trunk_lean_deg": 18, "elbow_flexion_deg": 158, "upper_arm_forward_deg": 12, "bar_y_m": 1.72},
+      "contract": {"trunk_lean_deg": 20, "elbow_flexion_deg": 72, "upper_arm_forward_deg": 8, "bar_y_m": 1.08},
+      "why": "right_form slight lean <=30, elbows down to sides"
+    }
+  },
+  "tempo": {"eccentric_s": 1.67, "concentric_s": 1.67, "fps": 24},
+  "qc_angles": {
+    "wrong_contract_trunk_min": 32,
+    "right_contract_trunk_max": 28,
+    "right_contract_arm_torso_max": 45
+  }
+}
