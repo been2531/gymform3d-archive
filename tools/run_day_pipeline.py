@@ -371,8 +371,8 @@ def summarize_gates(g, hard, warnl):
                        if re.fullmatch(r"G\d+", k) and isinstance(r[k], dict)}
         for k, ok in table[form].items():
             if not ok:
-                d = {kk: vv for kk, vv in r[k].items() if kk != "pass" and not isinstance(vv, list)}
-                msg = f"{form} {k}: " + ", ".join(f"{kk}={vv}" for kk, vv in list(d.items())[:4])
+                d = {kk: vv for kk, vv in r[k].items() if kk != "pass" and not (isinstance(vv, list) and kk not in ("fired", "items"))}
+                msg = f"{form} {k}: " + ", ".join(f"{kk}={json.dumps(vv, default=str)[:160]}" for kk, vv in list(d.items())[:4])
                 (fails if k in hard else warns if k in warnl else warns).append(msg)
     return table, fails, warns
 
