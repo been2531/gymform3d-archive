@@ -1,0 +1,34 @@
+{
+ "ecorche": {
+  "body_L": 29.0,
+  "head_L": 38.0,
+  "backdrop_L": 38.0,
+  "body_texture_lap_std": 3.33
+ },
+ "glass": {
+  "body_L": 32.0,
+  "head_L": 32.0,
+  "backdrop_L": 38.0,
+  "body_texture_lap_std": 1.46
+ },
+ "clay": {
+  "body_L": 143.0,
+  "head_L": 146.0,
+  "backdrop_L": 38.0,
+  "body_texture_lap_std": 1.24
+ },
+ "composition": {
+  "A_rear34_high_one_shot": {
+   "person_h": 0.212,
+   "machine_h": 0.893
+  },
+  "B_two_shot_wide_then_tight": {
+   "wide_person_h": 0.212,
+   "tight_person_h": 0.471
+  },
+  "C_front34_eye_one_shot": {
+   "person_h": 0.28,
+   "machine_h": 0.758
+  }
+ }
+}
