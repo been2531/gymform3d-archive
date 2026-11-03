@@ -87,7 +87,9 @@ def draw(frame_rgb, kp, protect=None, is_wrong=False, label="", ui_top=640, num_
             n = 24
             pts = [(int(cx + (ax_ - cx) * i / n), int(cy + (ay_ - cy) * i / n)) for i in range(3, n + 1)]
             on_m = np.mean([prot[min(H - 1, max(0, y)), min(W - 1, max(0, x))] for x, y in pts]) if prot is not None else 0.0
-            cost = 100.0 * o + 40.0 * on_m + dist / 60.0
+            # the leader should leave the body quickly: penalise its length over non-backdrop (body / machine) pixels
+            on_b = np.mean([obst[min(H - 1, max(0, y)), min(W - 1, max(0, x))] > 0.5 for x, y in pts[4:]]) if len(pts) > 4 else 0.0
+            cost = 100.0 * o + 40.0 * on_m + 12.0 * on_b + dist / 60.0 + (2.0 if by > cy else 0.0)   # prefer above the joint
             if best is None or cost < best[0]:
                 best = (cost, bx, by, dist, o, on_m)
     _, bx, by, dist, ovl, on_m = best
@@ -129,3 +131,48 @@ def draw(frame_rgb, kp, protect=None, is_wrong=False, label="", ui_top=640, num_
 def composite(frame_rgb, layer):
     a = layer[..., 3:4]
     return np.clip(frame_rgb.astype(np.float32) * (1 - a) + layer[..., :3] * 255.0 * a, 0, 255).astype(np.uint8)
+
+
+def blend_tile(frame_rgb, joint, box_xy, num, label, is_wrong=False, opacity=1.0, num_px=50, lab_px=16):
+    """fast per-frame callout for the motion stage: neon leader + joint dot + number/label drawn into a local tile at
+    explicit (already camera-transformed) positions; text stays crisp (not resampled). Modifies a copy, returns it."""
+    if opacity <= 0.003:
+        return frame_rgb
+    H, W = frame_rgb.shape[:2]
+    col = RED if is_wrong else GREEN
+    f_num, f_lab = _font(num_px, "extrabold"), _font(lab_px, "extrabold")
+    nb = f_num.getbbox(num); lb = f_lab.getbbox(label) if label else (0, 0, 0, 0)
+    bw = max(nb[2] - nb[0], lb[2] - lb[0]) + 4
+    bh = (nb[3] - nb[1]) + (lb[3] - lb[1] + 8 if label else 0) + 4
+    cx, cy = int(round(joint[0])), int(round(joint[1]))
+    bx, by = int(round(box_xy[0])), int(round(box_xy[1]))
+    ax = bx - 8 if cx < bx else (bx + bw + 8 if cx > bx + bw else bx + bw // 2)
+    ay = int(np.clip(cy, by + 6, by + bh - 6)) if ax != bx + bw // 2 else (by - 8 if cy < by else by + bh + 8)
+    x0, y0 = max(0, min(cx, bx) - 30), max(0, min(cy, by) - 30)
+    x1, y1 = min(W, max(cx, bx + bw) + 30), min(H, max(cy, by + bh) + 30)
+    ss = 4
+    tile = np.zeros(((y1 - y0) * ss, (x1 - x0) * ss), np.uint8)
+    P = lambda x, y: (int((x - x0) * ss), int((y - y0) * ss))
+    cv2.line(tile, P(cx, cy), P(ax, ay), 255, int(2.0 * ss), cv2.LINE_AA)
+    cv2.circle(tile, P(cx, cy), int(5.0 * ss), 255, -1, cv2.LINE_AA)
+    core = cv2.resize(tile, (x1 - x0, y1 - y0), interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0
+    neon = np.clip(np.maximum(core, cv2.GaussianBlur(core, (0, 0), 4.0) * 0.85), 0, 1)[..., None]
+    hot = np.clip(core * 0.55, 0, 1)[..., None]
+    lrgb = (np.array(col, np.float32) * (1 - hot) + 255.0 * hot)
+    roi = frame_rgb[y0:y1, x0:x1].astype(np.float32)
+    roi = roi * (1 - neon * opacity) + lrgb * neon * opacity
+    pil = Image.new("RGBA", (x1 - x0, y1 - y0), (0, 0, 0, 0))
+    d = ImageDraw.Draw(pil)
+    tx, ty = bx - x0 - nb[0] + 2, by - y0 - nb[1] + 2
+    d.text((tx + 1, ty + 2), num, font=f_num, fill=(0, 0, 0, 150))
+    d.text((tx, ty), num, font=f_num, fill=(255, 255, 255, 255))
+    if label:
+        ly = by - y0 + (nb[3] - nb[1]) + 8 - lb[1] + 2
+        d.text((bx - x0 - lb[0] + 3, ly + 1), label, font=f_lab, fill=(0, 0, 0, 140))
+        d.text((bx - x0 - lb[0] + 2, ly), label, font=f_lab, fill=(*col, 255))
+    t = np.asarray(pil, np.float32)
+    ta = t[..., 3:4] / 255.0 * opacity
+    roi = roi * (1 - ta) + t[..., :3] * ta
+    out = frame_rgb.copy()
+    out[y0:y1, x0:x1] = np.clip(roi, 0, 255).astype(np.uint8)
+    return out
