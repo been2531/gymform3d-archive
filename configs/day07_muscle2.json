@@ -47,10 +47,10 @@
     "question": "Where do you feel your cable rows most, arms or lats?",
     "save": "Save this for your next back day."
   },
-  "sheet_title": "Day 7 Seated Cable Row \u2014 native grade (clip pixels kept)",
+  "sheet_title": "Day 7 Seated Cable Row — native grade (clip pixels kept)",
   "sheet_labels": [
-    "Step 1: wrong \u00b7 arm pull + shrug \u00b7 biceps / upper trap fibres",
-    "Step 2: right \u00b7 elbows back, shoulders down \u00b7 lat fibres"
+    "Step 1: wrong · arm pull + shrug · biceps / upper trap fibres",
+    "Step 2: right · elbows back, shoulders down · lat fibres"
   ],
   "out_mp4": "output/day7_seated_cable_row_muscle2_master.mp4",
   "out_sheet": "output/day7_muscle2_sheet.jpg",
@@ -100,7 +100,7 @@
         }
       },
       "callout": {
-        "deg": "105\u00b0",
+        "deg": "105°",
         "l1": "ARM PULL + SHRUG",
         "l2": "BICEPS + TRAPS TAKE IT"
       }
@@ -119,7 +119,7 @@
         }
       },
       "callout": {
-        "deg": "105\u00b0",
+        "deg": "105°",
         "l1": "ELBOWS BACK",
         "l2": "LATS TAKE IT"
       }
@@ -172,5 +172,22 @@
   "native_anchor_smooth": 2.0,
   "callout_note": "deg = ELBOW FLEXION at the end of the pull, fixed (2-step (z): one coached angle per step): 105 deg is inside the MOTION_STANDARDS seated_cable_row band 80-140 and matches the measured near-arm 106-109 (2D) in BOTH clips - the elbow bend is the same; the difference (shrug vs elbows past the torso) is carried by the labels. l2 is plain text: no invented percentages.",
   "native_skin_p90_why": "Day 4 lock p90 (spec skin_lock_all_steps 88); 84 (Day 6 v5) left Day 7 p90 at 79-83 under the (f) band 81-95",
-  "native_glow_form_hue": true
+  "native_glow_form_hue": true,
+  "target_regions": {
+    "wrong": {
+      "erector_spinae": 1.0,
+      "biceps": 1.0,
+      "forearm": 1.0,
+      "upper_trap": 1.0
+    },
+    "right": {
+      "lats": 1.0,
+      "mid_trap_rhomboid": 1.0,
+      "rear_delt": 1.0,
+      "biceps": 0.35
+    }
+  },
+  "native_muscle_shader": "day4",
+  "muscle_glow_clamp": true,
+  "native_muscle_shader_why": "t648u: muscle fibre/colour/glow = Day 4 muscle.day4_fibre (unchanged) on the source's native glow (act_dom, _glow_gain calibrated); muscle_glow_clamp = allowed anatomy regions (gymform/region_glow.py) multiplied into act_dom so colour cannot spill. Both opt-in, default off: Day 4/5/6 configs unchanged."
 }

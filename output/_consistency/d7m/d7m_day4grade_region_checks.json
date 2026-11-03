@@ -1,0 +1,50 @@
+{
+ "wrong_t1": {
+  "erector_spinae": {
+   "cover": 0.286
+  },
+  "biceps": {
+   "cover": 0.856
+  },
+  "forearm": {
+   "cover": 0.593
+  },
+  "upper_trap": {
+   "cover": 0.847
+  },
+  "spill_px": 0,
+  "glow_px": 11409
+ },
+ "right_t1": {
+  "lats": {
+   "cover": 0.347
+  },
+  "mid_trap_rhomboid": {
+   "cover": 0.685
+  },
+  "rear_delt": {
+   "cover": 0.136
+  },
+  "biceps": {
+   "cover": 0.0
+  },
+  "spill_px": 0,
+  "glow_px": 6911
+ },
+ "right_t2": {
+  "lats": {
+   "cover": 0.556
+  },
+  "mid_trap_rhomboid": {
+   "cover": 0.675
+  },
+  "rear_delt": {
+   "cover": 0.578
+  },
+  "biceps": {
+   "cover": 0.37
+  },
+  "spill_px": 0,
+  "glow_px": 9809
+ }
+}

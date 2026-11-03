@@ -24,6 +24,8 @@ cfg["tmp_dir"] = os.path.join(out, "_tmp_mock")
 for form in ("wrong", "right"):
     m = cfg["motions"][form]; fn = f"{form}_static.mp4"
     m["base"] = fn; m["i0"] = 0; m["i1"] = 11; m["renders"]["front"]["file"] = fn
+    if os.environ.get("MOCK_MIRROR") == "1":   # D7 concept: whole-frame flip so the tower sits right, callout left
+        m["mirror"] = True; m["renders"]["front"]["mirror"] = True
 # t637u framing: the whole real machine (tower + stack + footplate) must stay in frame, so this mock uses the
 # floor-line framing (no target_zoom crop) at scale MOCK_SCALE; head/shoulders then sit under the title band,
 # which is the see-through overlap case of t638u.
@@ -54,6 +56,11 @@ for s in ctx.steps():
     info = {"step": s, "path": path, "overlap_alpha": {"title": a_t, "preview": a_p},
             "occluder_frac_in_preview_roi": round(float((occ[ry0:ry1, rx0:rx1] > 0.5).mean()), 4),
             "occluder_frac_in_title_roi": round(float((occ[ty0:ty1] > 0.5).mean()), 4)}
+    if os.environ.get("MOCK_DUMP") == "1":   # t648u: per-region QC inputs (Day 4 fibre weight + allowed-region masks)
+        from gymform import region_glow as _rg
+        rg = native.LAST_MASKS.get("region_glow") or {}
+        np.savez_compressed(os.path.join(out, f"mock_day4_{tag}{SUF}_regions.npz"), core_w=rg.get("core_w", np.zeros(1)).astype(np.float16),
+                            **{k: v.astype(np.uint8) for k, v in (rg.get("regions") or {}).items()})
     json.dump(info, open(os.path.join(out, f"mock_day4_{tag}{SUF}.json"), "w"), indent=1)
     print(info)
     outs.append(fr)

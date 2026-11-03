@@ -1,0 +1,10 @@
+{
+ "step": 2,
+ "path": "/workspace/daily_info_reels/output/_consistency/d7m/mock_right_t2/mock_day4_right_1080.jpg",
+ "overlap_alpha": {
+  "title": 0.4,
+  "preview": 0.4
+ },
+ "occluder_frac_in_preview_roi": 0.0,
+ "occluder_frac_in_title_roi": 0.021
+}
