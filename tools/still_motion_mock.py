@@ -25,12 +25,14 @@ ap.add_argument("--arm-limit", type=float, default=None,
                 help="right form: cap the allowed glow on the VISIBLE upper arm (shoulder->elbow, past the rear delt) at this "
                      "weight. In a rear-3/4 view the near arm's triceps overlaps the lats / rear-delt polygons in 2D, so the "
                      "clamp alone lets it glow full; biceps are meant to be faint. Tool-local wrapper, region_glow unchanged")
+ap.add_argument("--name", default="peak", help="output tag (start / peak)")
+ap.add_argument("--callout", default="joint", choices=["joint", "corner"], help="joint = t678u angle at the elbow (default); corner = legacy top-left block")
 ap.add_argument("--config", default=f"{ROOT}/configs/day07_muscle2.json")
 ap.add_argument("--cfg-json", default="{}", help="calibration overrides, e.g. {\"glow_gain_override\": {\"2\": 12}}")
 a = ap.parse_args()
 T0 = time.time()
 os.makedirs(a.out, exist_ok=True)
-assets = os.path.join(a.out, "_static_assets"); os.makedirs(assets, exist_ok=True)
+assets = os.path.join(a.out, f"_static_assets_{a.name}"); os.makedirs(assets, exist_ok=True)
 
 
 def prep(p):
@@ -58,7 +60,7 @@ from gymform import ctx, render, native, layout
 import build_4step_bone_muscle_master as b4
 cfg = copy.deepcopy(json.load(open(a.config)))
 cfg["assets_dir"] = assets
-cfg["kp_cache"] = os.path.join(a.out, "_kps_still.pkl")
+cfg["kp_cache"] = os.path.join(a.out, f"_kps_still_{a.name}.pkl")
 cfg["tmp_dir"] = os.path.join(ROOT, "_tmp_still_motion")
 for form in ("wrong", "right"):
     m = cfg["motions"][form]; fn = f"{form}_static.avi"
@@ -96,17 +98,24 @@ native._ST.clear(); gc.collect()
 t1 = time.time()
 fr2, base, sh_m, w_fg, kp = render.render_pose(step, raw[step], kps[step], 0, icons, qc=True)
 grade_s = time.time() - t1
-pre = ctx.LAST_MASKS["pre_ui"]
-one = [icons[step - 1]]
-fr = layout.composite_title_and_preview_v4(pre, layout.fg_for_preview(w_fg), one, 0, a.form == "wrong", cfg["exercise_name"])
-p = os.path.join(a.out, f"still_{a.form}_peak_1080.jpg")
-cv2.imwrite(p, cv2.cvtColor(fr, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 94])
-cv2.imwrite(os.path.join(a.out, f"still_{a.form}_peak_base_1080.png"), cv2.cvtColor(base, cv2.COLOR_RGB2BGR))
-# region QC inputs
 from gymform import region_glow as rg
 cm, ms = rg.clamp_mask(kp, a.form == "wrong", w_fg.shape)
-np.savez_compressed(os.path.join(a.out, f"still_{a.form}_regions.npz"), allowed=(cm > 0.02).astype(np.uint8), w_fg=(w_fg * 255).astype(np.uint8))
-json.dump({"frame": p, "step": step, "callout": ctx.LAST_MASKS.get("callout"), "grade_s": round(grade_s, 2),
+info_c = {}
+if a.callout == "joint":
+    from gymform import joint_callout as jc
+    lay, info_c = jc.draw(base, kp, protect=cm, is_wrong=a.form == "wrong", label=cfg["motions"][a.form]["callout"]["l1"])
+    pre = jc.composite(base, lay)
+    cv2.imwrite(os.path.join(a.out, f"still_{a.form}_{a.name}_callout_rgba.png"),
+                cv2.cvtColor((np.clip(lay, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGBA2BGRA))
+else:
+    pre = ctx.LAST_MASKS["pre_ui"]
+one = [icons[step - 1]]
+fr = layout.composite_title_and_preview_v4(pre, layout.fg_for_preview(w_fg), one, 0, a.form == "wrong", cfg["exercise_name"])
+p = os.path.join(a.out, f"still_{a.form}_{a.name}_1080.jpg")
+cv2.imwrite(p, cv2.cvtColor(fr, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 94])
+cv2.imwrite(os.path.join(a.out, f"still_{a.form}_{a.name}_base_1080.png"), cv2.cvtColor(base, cv2.COLOR_RGB2BGR))
+np.savez_compressed(os.path.join(a.out, f"still_{a.form}_{a.name}_regions.npz"), allowed=(cm > 0.02).astype(np.uint8), w_fg=(w_fg * 255).astype(np.uint8))
+json.dump({"frame": p, "step": step, "joint_callout": info_c, "callout": ctx.LAST_MASKS.get("callout"), "grade_s": round(grade_s, 2),
            "total_s_incl_imports": round(time.time() - T0, 2), "kp": {k: [round(float(v[0]), 1), round(float(v[1]), 1)] for k, v in kp.items() if isinstance(v, (tuple, list, np.ndarray)) and len(v) == 2}},
-          open(os.path.join(a.out, f"still_{a.form}_peak.json"), "w"), indent=1)
-print(json.dumps({"frame": p, "grade_s": round(grade_s, 2), "total_s": round(time.time() - T0, 2), "callout": ctx.LAST_MASKS.get("callout")}))
+          open(os.path.join(a.out, f"still_{a.form}_{a.name}.json"), "w"), indent=1)
+print(json.dumps({"frame": p, "joint_callout": info_c, "grade_s": round(grade_s, 2), "total_s": round(time.time() - T0, 2), "callout": ctx.LAST_MASKS.get("callout")}))

@@ -1,0 +1,86 @@
+{
+ "frame": "output/_consistency/still_motion/still_right_start_1080.jpg",
+ "step": 2,
+ "joint_callout": {
+  "deg": "53\u00b0",
+  "side": "l",
+  "joint": [
+   371,
+   1386
+  ],
+  "leader_to": [
+   368,
+   1298
+  ],
+  "text_box": [
+   376,
+   1242,
+   119,
+   62
+  ],
+  "text_dist_px": 130,
+  "text_box_obstacle_frac": 0.0,
+  "leader_on_target_muscle_frac": 0.0
+ },
+ "callout": {
+  "deg": "53\u00b0",
+  "l1": "ELBOWS BACK",
+  "l2": ""
+ },
+ "grade_s": 10.7,
+ "total_s_incl_imports": 34.32,
+ "kp": {
+  "sh": [
+   198.3,
+   1229.1
+  ],
+  "sh_r": [
+   118.5,
+   1227.7
+  ],
+  "sh_l": [
+   278.2,
+   1230.5
+  ],
+  "elb_r": [
+   168.7,
+   1352.0
+  ],
+  "elb_l": [
+   371.2,
+   1386.4
+  ],
+  "wr_r": [
+   278.3,
+   1336.0
+  ],
+  "wr_l": [
+   480.6,
+   1397.6
+  ],
+  "hip_r": [
+   214.5,
+   1531.8
+  ],
+  "hip_l": [
+   282.5,
+   1514.3
+  ],
+  "kn_r": [
+   390.1,
+   1533.2
+  ],
+  "kn_l": [
+   499.1,
+   1495.4
+  ],
+  "ank_r": [
+   545.5,
+   1636.3
+  ],
+  "ank_l": [
+   639.6,
+   1659.3
+  ]
+ }
+}

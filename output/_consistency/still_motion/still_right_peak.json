@@ -1,13 +1,34 @@
 {
  "frame": "output/_consistency/still_motion/still_right_peak_1080.jpg",
  "step": 2,
+ "joint_callout": {
+  "deg": "79\u00b0",
+  "side": "l",
+  "joint": [
+   270,
+   1402
+  ],
+  "leader_to": [
+   329,
+   1299
+  ],
+  "text_box": [
+   337,
+   1243,
+   119,
+   62
+  ],
+  "text_dist_px": 180,
+  "text_box_obstacle_frac": 0.0,
+  "leader_on_target_muscle_frac": 0.0
+ },
  "callout": {
   "deg": "79\u00b0",
   "l1": "ELBOWS BACK",
   "l2": ""
  },
- "grade_s": 9.82,
- "total_s_incl_imports": 35.41,
+ "grade_s": 10.24,
+ "total_s_incl_imports": 34.99,
  "kp": {
   "sh": [
    150.4,
