@@ -1,0 +1,41 @@
+{
+ "mock": "/workspace/daily_info_reels/output/_consistency/pen_style/pen_mock_d7_wrong_1080.jpg",
+ "deg": "44\u00b0",
+ "visible_arm": "l",
+ "label": "ARMS + SHRUG",
+ "spill_px_outside_regions": 1290,
+ "torso_px": 296.8,
+ "time_s": {
+  "wrong_pen_frame": 1.83,
+  "whole_mock_incl_imports": 7.88
+ },
+ "generations": 0,
+ "metrics_vs_day4": {
+  "d4w": {
+   "core_hue_deg": 359.1,
+   "core_sat": 155.6,
+   "core_val": 175.1,
+   "fibre_contrast": 13.33,
+   "fibre_density_per100px": 7.08,
+   "falloff_px": 2.2,
+   "core_px": 46394,
+   "glow_px": 77272,
+   "torso_px_onscreen": 356.4,
+   "scale_to_ref": 1.0,
+   "cover_glow_per_torso2": 0.608
+  },
+  "pen_w": {
+   "core_hue_deg": 358.0,
+   "core_sat": 155.0,
+   "core_val": 173.3,
+   "fibre_contrast": 6.14,
+   "fibre_density_per100px": 9.01,
+   "falloff_px": 2.2,
+   "core_px": 18424,
+   "glow_px": 25497,
+   "torso_px_onscreen": 296.8,
+   "scale_to_ref": 1.201,
+   "cover_glow_per_torso2": 0.201
+  }
+ }
+}

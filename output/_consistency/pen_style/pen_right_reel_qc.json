@@ -1,0 +1,177 @@
+{
+ "mp4": "/workspace/daily_info_reels/output/day7_pen_right_seated_cable_row.mp4",
+ "sheet": "/workspace/daily_info_reels/output/_consistency/pen_style/pen_right_reel_sheet.jpg",
+ "frames_unique": 120,
+ "fps": 24.0,
+ "loops": 2,
+ "duration_s": 10.0,
+ "peak_frame": 41,
+ "deg": "80\u00b0",
+ "label": "ELBOWS BACK",
+ "voice_line": "Chest up, shoulders down. Drive your elbows back, and let your lats do the work.",
+ "voice_end_s": 3.48,
+ "render_s_frames": 245.1,
+ "total_s": 257.2,
+ "s_per_frame": 2.04,
+ "qc": {
+  "spill_px_max": 0,
+  "frames": [
+   {
+    "t": 0,
+    "spill_px_outside_regions": 0,
+    "glow_px": 15723,
+    "head_L": 53.3,
+    "body_L": 54.5
+   },
+   {
+    "t": 6,
+    "spill_px_outside_regions": 0,
+    "glow_px": 15517,
+    "head_L": 53.3,
+    "body_L": 55.0
+   },
+   {
+    "t": 12,
+    "spill_px_outside_regions": 0,
+    "glow_px": 19564,
+    "head_L": 53.3,
+    "body_L": 54.4
+   },
+   {
+    "t": 18,
+    "spill_px_outside_regions": 0,
+    "glow_px": 10578,
+    "head_L": 53.3,
+    "body_L": 53.4
+   },
+   {
+    "t": 24,
+    "spill_px_outside_regions": 0,
+    "glow_px": 6694,
+    "head_L": 53.3,
+    "body_L": 52.0
+   },
+   {
+    "t": 30,
+    "spill_px_outside_regions": 0,
+    "glow_px": 7708,
+    "head_L": 53.3,
+    "body_L": 51.5
+   },
+   {
+    "t": 36,
+    "spill_px_outside_regions": 0,
+    "glow_px": 7806,
+    "head_L": 53.4,
+    "body_L": 51.4
+   },
+   {
+    "t": 41,
+    "spill_px_outside_regions": 0,
+    "glow_px": 12854,
+    "head_L": 53.3,
+    "body_L": 52.0
+   },
+   {
+    "t": 42,
+    "spill_px_outside_regions": 0,
+    "glow_px": 12374,
+    "head_L": 53.3,
+    "body_L": 52.0
+   },
+   {
+    "t": 48,
+    "spill_px_outside_regions": 0,
+    "glow_px": 11217,
+    "head_L": 53.3,
+    "body_L": 53.0
+   },
+   {
+    "t": 54,
+    "spill_px_outside_regions": 0,
+    "glow_px": 14230,
+    "head_L": 53.3,
+    "body_L": 54.5
+   },
+   {
+    "t": 60,
+    "spill_px_outside_regions": 0,
+    "glow_px": 15151,
+    "head_L": 53.3,
+    "body_L": 55.0
+   },
+   {
+    "t": 66,
+    "spill_px_outside_regions": 0,
+    "glow_px": 6270,
+    "head_L": 53.3,
+    "body_L": 54.0
+   },
+   {
+    "t": 72,
+    "spill_px_outside_regions": 0,
+    "glow_px": 6299,
+    "head_L": 53.4,
+    "body_L": 54.3
+   },
+   {
+    "t": 78,
+    "spill_px_outside_regions": 0,
+    "glow_px": 6569,
+    "head_L": 53.4,
+    "body_L": 54.3
+   },
+   {
+    "t": 84,
+    "spill_px_outside_regions": 0,
+    "glow_px": 6904,
+    "head_L": 53.3,
+    "body_L": 54.3
+   },
+   {
+    "t": 90,
+    "spill_px_outside_regions": 0,
+    "glow_px": 14896,
+    "head_L": 53.3,
+    "body_L": 55.0
+   },
+   {
+    "t": 96,
+    "spill_px_outside_regions": 0,
+    "glow_px": 15792,
+    "head_L": 53.3,
+    "body_L": 55.0
+   },
+   {
+    "t": 102,
+    "spill_px_outside_regions": 0,
+    "glow_px": 15956,
+    "head_L": 53.3,
+    "body_L": 55.0
+   },
+   {
+    "t": 108,
+    "spill_px_outside_regions": 0,
+    "glow_px": 15050,
+    "head_L": 53.4,
+    "body_L": 54.5
+   },
+   {
+    "t": 114,
+    "spill_px_outside_regions": 0,
+    "glow_px": 15026,
+    "head_L": 53.3,
+    "body_L": 54.5
+   }
+  ],
+  "ink_flicker_mean": 0.007,
+  "ink_flicker_p99": 0.0124,
+  "ink_flicker_max_over_median": 1.61,
+  "machine_ssim_outside_person_min": 0.9625,
+  "machine_lines_source": "static empty plate (identical every frame)",
+  "loop_seam_mean_abs": 0.62,
+  "frame_step_mean_abs": 1.26,
+  "head_minus_body_L_max": 2.0
+ },
+ "generations": 0
+}
