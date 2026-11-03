@@ -1,13 +1,13 @@
 {
   "_doc": "Day-4-look pilot set (Wide-Grip Lat Pulldown only). Does not replace studio3d/set_v1.json. Flat RGB 35/39/43 backdrop, shadowless even light, fibre-striation skin, muscle emission glow (not bone X-ray), warm-grey lat machine, palette-A bar.",
-  "version": "pilot-1",
+  "version": "pilot-2",
   "units": "metres, Blender Z-up, mannequin faces -Y",
   "asset_dir": "/agent/repos/gymform3d-archive/assets3d",
   "inherits_mannequin_from": "../set_v1.json",
   "world_srgb": [35, 39, 43],
   "mannequin": {
     "scale_from_mh": 0.1,
-    "skin_srgb": [42, 44, 48],
+    "skin_srgb": [48, 50, 54],
     "skin_roughness": 0.72,
     "skin_specular": 0.08,
     "fibre_bump_strength": 0.22,
@@ -35,7 +35,7 @@
     "wrong_srgb": [220, 48, 42],
     "right_srgb": [32, 210, 120],
     "emission_strength": 2.8,
-    "mix": 0.62,
+    "mix": 0.48,
     "regions_wrong": ["biceps", "front_delt"],
     "regions_right": ["lat"]
   },
@@ -75,6 +75,9 @@
   },
   "attribution": {
     "makehuman": "CC0 1.0",
+    "ecorche": "Charleeh/ecorche CC BY-SA 4.0 — owner approval required; SA applies to adapted mesh exports",
+    "bodyparts3d": "BodyParts3D CC BY-SA 2.1 Japan (upstream of ecorche)",
     "blender": "GPL-3.0+ (tool; render output is yours)"
-  }
+  },
+  "sources_v2": "docs/mission/PILOT_BLENDER_LATPULLDOWN.md#source-shortlist"
 }

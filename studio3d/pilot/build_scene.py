@@ -20,7 +20,12 @@ from bpy_extras.object_utils import world_to_camera_view
 
 PILOT = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(PILOT))
+sys.path.insert(0, PILOT)
 sys.path.insert(0, os.path.join(ROOT, "studio3d"))
+
+from anatomy_ecorche import glow_targets, import_upper_muscles  # noqa: E402
+from equipment import make_bar as make_bar_v2, make_lat_machine as make_lat_machine_v2  # noqa: E402
+from shaders import assign as assign_mat, mat_muscle_fibre  # noqa: E402
 
 from build_scene import (  # noqa: E402
     load_mh,
@@ -51,8 +56,16 @@ def srgb_to_linear(c):
 
 def set_hash(S):
     h = hashlib.sha256(json.dumps(S, sort_keys=True).encode())
-    for fn in ("build_scene.py", "set_pilot.json"):
-        h.update(open(os.path.join(PILOT, fn), "rb").read())
+    for fn in (
+        "build_scene.py",
+        "set_pilot.json",
+        "anatomy_ecorche.py",
+        "shaders.py",
+        "equipment.py",
+    ):
+        p = os.path.join(PILOT, fn)
+        if os.path.isfile(p):
+            h.update(open(p, "rb").read())
     return h.hexdigest()[:16]
 
 
@@ -382,22 +395,33 @@ def main():
 
     body, arm, _J = make_mannequin(S_mh)
     shorts = make_shorts(S_mh, body)
+    body.hide_render = True
+    egg = bpy.data.objects.get("head_egg")
+    muscles = import_upper_muscles(arm)
     bar_y, bar_z = pose_lat(arm, EX, a.form, a.phase)
     seat_character(arm, body, S)
-    machine = make_lat_machine(S)
-    bar_root, bar_parts = make_bar(S)
+    seat_y = float(arm.location.y)
+    machine = make_lat_machine_v2(S, seat_y=seat_y)
+    bar_root, bar_parts = make_bar_v2(S, arm)
     upd()
-    wr_l = arm.matrix_world @ arm.pose.bones["wrist.L"].tail
-    wr_r = arm.matrix_world @ arm.pose.bones["wrist.R"].tail
-    center = (wr_l + wr_r) / 2
-    bar_root.location = center
-    wr_l = np.array(arm.matrix_world @ arm.pose.bones["wrist.L"].tail)
-    wr_r = np.array(arm.matrix_world @ arm.pose.bones["wrist.R"].tail)
-    bar_axis = wr_r - wr_l
-    if np.linalg.norm(bar_axis) > 1e-6:
-        bar_axis = bar_axis / np.linalg.norm(bar_axis)
-        bar_root.rotation_euler = Vector((1.0, 0, 0)).rotation_difference(Vector(bar_axis)).to_euler()
-    upd()
+    glow_cfg = S["glow"]
+    gt = glow_targets(a.form)
+    m_charcoal = mat_muscle_fibre("muscle_charcoal", S["mannequin"]["skin_srgb"])
+    glow_srgb = glow_cfg["wrong_srgb" if a.form == "wrong" else "right_srgb"]
+    m_glow = mat_muscle_fibre(
+        "muscle_glow",
+        S["mannequin"]["skin_srgb"],
+        glow_srgb=glow_srgb,
+        glow_strength=glow_cfg["emission_strength"],
+        mix_glow=glow_cfg["mix"],
+    )
+    glow_objs = []
+    for o in muscles:
+        if gt.search(o.name):
+            assign_mat(o, m_glow)
+            glow_objs.append(o)
+        else:
+            assign_mat(o, m_charcoal)
 
     skin_lin = srgb_to_linear(S["mannequin"]["skin_srgb"])
     m_skin = mat_fibre_skin(
@@ -408,12 +432,8 @@ def main():
         S["mannequin"]["fibre_bump_strength"],
         S["mannequin"]["fibre_scale"],
     )
-    assign(body, m_skin)
-    egg = bpy.data.objects.get("head_egg")
     if egg:
         assign(egg, m_skin)
-    assign(shorts, mat_emit("shorts", srgb_to_linear(S["mannequin"]["shorts_srgb"]), 0.0))
-    shorts.active_material.use_nodes = False
     sm = mat_fibre_skin("shorts_m", srgb_to_linear(S["mannequin"]["shorts_srgb"]), S["mannequin"]["shorts_roughness"], 0.05, 0.05, 20)
     assign(shorts, sm)
 
@@ -426,21 +446,12 @@ def main():
     m_cob = mat_fibre_skin("cobalt", srgb_to_linear(b["cobalt_srgb"]), 0.55, 0.15, 0.02, 40)
     m_gold = mat_fibre_skin("gold", srgb_to_linear(b["gold_srgb"]), 0.4, 0.35, 0.03, 60)
     for p in bar_parts:
-        if "handle" in p.name:
-            assign(p, m_steel)
-        elif "rim" in p.name:
-            assign(p, m_gold)
-        else:
-            assign(p, m_cob)
-
-    glow_cfg = S["glow"]
-    glow_rgb = srgb_to_linear(glow_cfg["wrong_srgb" if a.form == "wrong" else "right_srgb"])
-    regions = glow_cfg["regions_wrong"] if a.form == "wrong" else glow_cfg["regions_right"]
-    glow_objs = []
-    for reg in regions:
-        g = make_glow_shell(body, arm, reg, f"glow_{reg}")
-        assign(g, mat_glow_shell(f"glow_mat_{reg}", glow_rgb, glow_cfg["emission_strength"], glow_cfg["mix"]))
-        glow_objs.append(g)
+        assign(p, m_steel)
+    for o in machine:
+        if o.name.startswith("stack_pin"):
+            assign(o, m_cob)
+        elif o.name.startswith("stack_rim"):
+            assign(o, m_gold)
 
     chest = arm.matrix_world @ arm.pose.bones["spine02"].head
     to = S["cameras"][a.camera].get("target_offset_m", [0, 0, 0])
@@ -460,7 +471,13 @@ def main():
         sc.cycles.use_denoising = False
         sc.cycles.pixel_filter_type = "BOX"
         sc.cycles.filter_width = 0.01
-        ids = {"skin": [body] + ([egg] if egg else []), "shorts": [shorts], "machine": machine, "bar": bar_parts, "glow": glow_objs}
+        ids = {
+            "skin": muscles + ([egg] if egg else []),
+            "shorts": [shorts],
+            "machine": machine,
+            "bar": bar_parts,
+            "glow": glow_objs,
+        }
         saved = {}
         for k, obs in ids.items():
             mi = mat_emit("id_" + k, ID_COL[k])

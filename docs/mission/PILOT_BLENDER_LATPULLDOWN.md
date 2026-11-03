@@ -1,92 +1,93 @@
 # Pilot: Blender Day-4 set — Wide-Grip Lat Pulldown
 
-## Summary
+## Summary (v2)
 
-This pilot adds `studio3d/pilot/`, a **deterministic** headless-Blender pipeline for one exercise (wide-grip lat pulldown). It does not replace `studio3d/set_v1.json` or the generated-clip production path.
+`studio3d/pilot/` is a **deterministic** headless-Blender pipeline for **wide-grip lat pulldown**.  
+**v1** failed on look (smooth MH body, opaque glow blobs, wrong A/B reference, floating bar plates).  
+**v2** rebuilds the figure from **[Charleeh/écorché](https://github.com/Charleeh/ecorche)** segmented muscle meshes (CC BY-SA 4.0 — **owner approval pending**), UV-aligned fibre striations, muscle-local emissive glow, fixed lat stack behind the athlete, and A/B against **Day 4 locked RDL** reference frames.
 
-Deliverables live under `output/pilot/lat/` and `/opt/cursor/artifacts/screenshots/ab_keypose_vs_day4.jpg`.
+Deliverables: `output/pilot/lat/` and `/opt/cursor/artifacts/screenshots/ab_keypose_vs_day4_v2.jpg`.
 
-## Reused from the repo
+---
 
-| Piece | Role |
+## Source shortlist (Step A research, ranked)
+
+Licences verified from primary pages/repos (Nov 2026). **NC = excluded.**
+
+| Rank | Source | What it gives | Licence | Commercial | Fit to Day 4 look | Pilot use |
+|---|---|---|---|---|---|---|
+| 1 | **[Charleeh/écorché](https://github.com/Charleeh/ecorche)** `ecorche.glb` | ~575 named muscle/bone meshes; lats filled vs raw BP3D; cleaned layering | **CC BY-SA 4.0** | Yes, with attribution + **SA on adapted 3D** | **Best** open segmented écorché we found | **Adopted v2** (74 upper-body muscles) |
+| 2 | **BodyParts3D** 4.0 OBJ (ISA/partof) | Individual FMA muscle OBJs | **CC BY-SA 2.1 Japan** | Yes, with SA | Good geometry, weak alone (no lats in ISA); striations need shaders | Already in repo; upstream of écorché |
+| 3 | **[Z-Anatomy](https://github.com/Z-Anatomy/Models-of-human-anatomy)** | Blender template, BP3D-derived + extras | **CC BY-SA 4.0** (+ **NC** kidney etc.) | Yes for clean subset; NC parts must be removed | High detail; heavy template; SA | **Not imported** — flagged for owner; écorché is lighter |
+| 4 | **MyoGeneratorRemix** ([GPL-3.0](https://github.com/MiguelDLM/myoGeneratorRemix)) | Procedural muscle loft + Voronoi fibre material | GPL addon | Yes for renders; addon is GPL | Fibres are procedural/Voronoi, not Day-4 photographic | Reference only for fibre node ideas |
+| 5 | **MakeHuman + MPFB2** CC0 base | Rigged body, no écorché surface | **CC0** | Yes | Poor fibre read (owner rejection) | Rig + shorts + head only (body hidden v2) |
+| 6 | **CMU mocap BVH** + Blender import | Motion reference | **Free research use** (CMU terms) | Generally yes for derived animation | Motion only | Not used yet (FK posing from motion standards) |
+| 7 | **Mixamo** | Rigged characters + mocap | **[Adobe terms](https://www.adobe.com/legal/terms.html)** — **no redistribution** of assets; game/video use allowed with limits | Restrictive for **locked OSS set** in git | N/A | **Not used** |
+| 8 | **Sketchfab CC0/CC-BY écorché** | Various artist models | Per-model | Many OK | Uneven quality; licence hunt cost | Not selected (écorché ranked higher) |
+| 9 | **NIH 3D Print Exchange** | Anatomical meshes | Mixed (many NC) | Case-by-case | Not tuned for real-time | Not used |
+| 10 | **Poly Haven / ambientCG** | PBR materials, not anatomy | CC0 | Yes | No muscle topology | Not used |
+| 11 | **Blender Studio** open assets | General production assets | CC0 / project-specific | Yes | No écorché hero | Not used |
+| 12 | **Open3DModel / random mirrors** | Inconsistent provenance | Often **unclear/NC** | Risk | — | **Avoided** |
+
+**Gym equipment:** no satisfactory **CC0 wide-grip lat pulldown** mesh found in time budget → **procedural** warm-grey stack + palette-A pins (`studio3d/pilot/equipment.py`).
+
+**Shaders:** no drop-in Day-4 fibre node group found → custom **`shaders.py`**: UV principal-axis bands + emission modulated by striation ( fibres stay visible through glow).
+
+---
+
+## v2 architecture
+
+| Piece | Module |
 |---|---|
-| `studio3d/build_scene.py` | MakeHuman load, faceless head, shorts shell, bone `aim()` posing, camera helper |
-| `studio3d/set_v1.json` | CC0 rig/morph asset URLs and lock hashes (via `fetch_assets.py` → `assets3d/`) |
-| `configs/motion_standards.json` | `wide_grip_lat_pulldown` trunk/arm signatures for QC |
-| `gymform/qc.py` thresholds | Backdrop flatness (≤4 lum span), separation spirit (skin vs BG vs machine) |
-| `output/day2_scene1_wrong.jpg` | Day-4-**look** reference frame for A/B (same exercise family as Day 2) |
+| Rig + head + shorts | MakeHuman CC0 via `studio3d/build_scene.py` |
+| Visible anatomy | `anatomy_ecorche.py` → glTF import, upper-body filter, bone parenting |
+| Fibre + glow | `shaders.py` |
+| Lat machine + steel bar | `equipment.py` (stack **behind** +Y; **no** floating end plates) |
+| Motion | `exercises/wide_grip_lat_pulldown.json` |
+| QC | `qc_pilot.py` |
 
-## Open-source tools (commercial use verified)
+---
 
-| Tool | Licence | Use in pilot |
+## Honest gap vs Day 4 (after v2)
+
+| Day 4 reference | v2 pilot | Still blocking “match or beat” |
 |---|---|---|
-| **Blender 4.0.2** (system package) | GPL-3.0+; rendered output is yours | Headless Cycles CPU, scene build |
-| **MakeHuman** base mesh + default rig + macro targets | CC0 1.0 | Mannequin mesh + deformation |
-| **OpenCV**, **NumPy**, **Pillow** | Apache/BSD | QC, A/B sheet, reel concat |
-| **FFmpeg** | LGPL/GPL (dynamic link via CLI) | Loop + 4-step test reel |
-| **MediaPipe** | Apache 2.0 | Available for future 2D angle cross-check (not required for 3D meta QC) |
+| Continuous écorché with fine fibre **throughout** the silhouette | Segmented BP3D/Z-Anatomy-derived meshes; fibres from **UV bands** | Mesh **faceting** and part boundaries visible; fibres not as tight as generative Day 4 |
+| Glow = muscle lights up, fibres visible | Emission × striation ramp on **muscle objects only** | Glow **strength/softness** still below Day 4; wrong-form traps/delts need tuning |
+| Single cohesive skin tone | Charcoal muscle material ~48/50/54 sRGB | Slightly **lighter** than Day 4 lock in places |
+| Photographic depth in striations | Bump + wave | **No** high-frequency albedo map |
+| Lat pulldown scene | Same mannequin rig + procedural gym | Exercise mismatch in A/B (RDL ref = **look** only) |
 
-**Not used:** SMPL-X, GVHMR, Bandai Namco mocap, Z-Anatomy (share-alike), `/workspace/bgm` music, paid APIs.
+**Verdict:** v2 is a **major** step up from v1 and proves the **asset path** (écorché + muscle-local glow). It does **not** yet match Day 4 fibre density and photographic polish; closing that gap likely needs **owner-approved Z-Anatomy/écorché SA workflow** plus baked **normal maps** (or retained generative grade on deterministic geometry).
 
-**BodyParts3D** (CC BY 4.0) is used in legacy `studio3d` but **not** in this pilot glow path (vertex-group glow shells instead).
+---
 
-## Look vs Day 4 (honest gaps)
+## Performance
 
-| Target | Pilot approach | Gap vs Day 4 master sheet |
-|---|---|---|
-| Flat RGB 35/39/43 backdrop | World background, no floor shadow catcher | Match is good; slight GPU colour noise at 16 spp |
-| Muscle-fibre striations | Procedural Noise + Wave → Bump on Principled BSDF | **Weaker** than photographic / generative fibre in Day 4; reads as subtle bump, not fine écorché striations |
-| Faceless écorché silhouette | Same MakeHuman + egg head as `set_v1` | Torso still **smooth** compared with Day 4 reference; owner rejection reason unchanged at mesh level |
-| Red / emerald muscle glow | Thin emission shells on rig-weight regions (lats vs biceps/delt) | Area and softness approximate; no flow-tracked native glow |
-| Palette A bar | Procedural cobalt plates + gold rim + steel bar | Stable and separable; lacks brushed metal detail |
-| Warm-grey machine | Procedural lat stack + seat | Stable; simpler than real gym geometry |
-
-## Motion
-
-- **Wrong:** trunk lean up to ~42° at contraction, elbows forward (high `arm_torso`), red glow on biceps + front delt regions.
-- **Right:** trunk ~18–25°, elbows down (`arm_torso` ≤ ~40°), emerald glow on lat-weighted back shells.
-- Tempo for loops: cosine 0→1→0, 1.67 s per half-cycle (Day 4 cosine spec), 24 fps.
-
-3D angles and trunk lean are written to `*_meta.json` per frame.
-
-## Render performance (this VM: 8 CPU, no GPU)
-
-| Setting | Wall time (measured) |
+| Step | Wall time (8 CPU, 1080×1920) |
 |---|---|
-| 1080×1920, 16 spp, one beauty frame | **~15 s** (~0.015 s/px-spp effective) |
-| 24-frame loop (12 spp) | ~6–8 min |
-| 8 key-pose stills | ~2–3 min |
+| glTF import (74 muscles) | ~2 s (per frame today) |
+| Cycles 16 spp beauty | ~15–25 s |
+| 8 key poses | ~3–4 min total |
+| 24-frame loop | ~8–10 min |
 
-Video rate: **~15 s per frame** → **~0.6 s of 24 fps video per minute** of render wall time at 16 spp (pilot loops use 12 spp).
-
-## Reuse for another exercise
-
-1. Add `studio3d/pilot/exercises/<slug>.json` with `forms.{wrong,right}.stretch|contract` joint targets (same schema as `wide_grip_lat_pulldown.json`).
-2. Implement or reuse a `pose_<slug>()` in `build_scene.py` (or split `pose_lat.py` pattern).
-3. Add equipment builder if not lat machine (keep `set_pilot.json` equipment block or extend).
-4. Set `glow.regions_wrong` / `regions_right` to rig-weight region keys.
-5. Register cameras in `set_pilot.json` (`front`, `side` — same four-step layout).
-6. Run `render_keyposes.py` → `make_ab_sheet.py` → `qc_pilot.py`.
-
-Optional: wire `meta.json` into `gymform/motion_check.py` for 2D projection checks on composited output.
+---
 
 ## Commands
 
 ```bash
 python3 studio3d/fetch_assets.py
+curl -sL -o assets3d/ecorche.glb https://github.com/Charleeh/ecorche/raw/main/model/ecorche.glb
 python3 studio3d/pilot/render_keyposes.py
 python3 studio3d/pilot/make_ab_sheet.py
-python3 studio3d/pilot/render_loop.py right front 24
-python3 studio3d/pilot/render_loop.py wrong front 24
 python3 studio3d/pilot/assemble_reel.py
 python3 studio3d/pilot/qc_pilot.py
 ```
 
-## QC checklist (automated in `qc_pilot.py`)
+See `studio3d/pilot/ATTRIBUTION.md` for licence obligations.
 
-- Deterministic re-render (max pixel diff ≤ 1)
-- Hand–bar clearance (`grip_distance_m` vs bar half-width)
-- Trunk / arm angles vs motion standard
-- Backdrop flatness, skin/machine/backdrop separation
-- Glow mask area (ID pass)
-- Temporal mean frame delta on loop PNG sequence
+---
+
+## Reuse for another exercise
+
+Same as v1: add `exercises/<slug>.json`, extend `glow_targets()` / pose function, keep `set_pilot.json` cameras and QC gates.

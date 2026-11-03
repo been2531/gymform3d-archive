@@ -35,7 +35,7 @@ def id_masks(idp):
 
 def check_backdrop_flat(rgb, tol=4.0):
     h, w = rgb.shape[:2]
-    block = rgb[h // 4 : h // 4 + 120, w // 4 : w // 4 + 120].astype(np.float32)
+    block = rgb[8:128, 8:128].astype(np.float32)
     span = block.max(axis=(0, 1)) - block.min(axis=(0, 1))
     return float(span.max()) <= tol, {"lum_span": float(span.max())}
 
