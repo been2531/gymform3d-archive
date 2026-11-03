@@ -23,8 +23,9 @@ ROOT = os.path.dirname(os.path.dirname(PILOT))
 sys.path.insert(0, PILOT)
 sys.path.insert(0, os.path.join(ROOT, "studio3d"))
 
-from anatomy_ecorche import glow_targets, import_upper_muscles  # noqa: E402
+from anatomy_bind import import_and_bind_muscles, muscle_glow_pattern  # noqa: E402
 from equipment import make_bar as make_bar_v2, make_lat_machine as make_lat_machine_v2  # noqa: E402
+from pose_seated_lat import pose_seated_lat_pulldown, pose_seated_legs  # noqa: E402
 from shaders import assign as assign_mat, mat_muscle_fibre  # noqa: E402
 
 from build_scene import (  # noqa: E402
@@ -60,6 +61,8 @@ def set_hash(S):
         "build_scene.py",
         "set_pilot.json",
         "anatomy_ecorche.py",
+        "anatomy_bind.py",
+        "pose_seated_lat.py",
         "shaders.py",
         "equipment.py",
     ):
@@ -395,17 +398,44 @@ def main():
 
     body, arm, _J = make_mannequin(S_mh)
     shorts = make_shorts(S_mh, body)
-    body.hide_render = True
     egg = bpy.data.objects.get("head_egg")
-    bar_y, bar_z = pose_lat(arm, EX, a.form, a.phase)
-    muscles = import_upper_muscles(arm)
+    pose_seated_legs(arm, seat_h=S["equipment"]["seat_h"])
     seat_character(arm, body, S)
     seat_y = float(arm.location.y)
-    machine = make_lat_machine_v2(S, seat_y=seat_y)
-    bar_root, bar_parts = make_bar_v2(S, arm)
+    bar_w = S["equipment"]["bar"]["width"]
+    center, axis, wl, wr = pose_seated_lat_pulldown(arm, EX, a.form, a.phase, bar_w)
+    # Nudge bar toward motion-standard height while keeping grip on wrists
+    f0, f1 = EX["forms"][a.form]["stretch"], EX["forms"][a.form]["contract"]
+    target_z = f0["bar_y_m"] + (f1["bar_y_m"] - f0["bar_y_m"]) * a.phase
+    center = np.array(center, float)
+    center[2] += (target_z - center[2]) * 0.35
+    bar_root, bar_parts = make_bar_v2(S, center, axis)
+    axv = Vector(axis.tolist())
+    for sd, w in (("L", wl), ("R", wr)):
+        g = bpy.data.objects.new(f"grip_{sd}", None)
+        bpy.context.collection.objects.link(g)
+        g.parent = bar_root
+        off = float(np.dot(np.array(w) - center, axis))
+        g.location = axv * off
+        pb = arm.pose.bones.get(f"hand.{sd}") or arm.pose.bones.get(f"wrist.{sd}")
+        if pb:
+            c = pb.constraints.new("COPY_LOCATION")
+            c.target = g
+            c.influence = 0.62
     upd()
+    machine = make_lat_machine_v2(S, seat_y=seat_y, bar_attach=Vector(center))
+    upd()
+    muscles = import_and_bind_muscles(arm, body)
     glow_cfg = S["glow"]
-    gt = glow_targets(a.form)
+    gt = muscle_glow_pattern(a.form)
+    assign(body, mat_fibre_skin(
+        "body_under",
+        skin_lin := srgb_to_linear(S["mannequin"]["skin_srgb"]),
+        S["mannequin"]["skin_roughness"],
+        S["mannequin"]["skin_specular"],
+        S["mannequin"]["fibre_bump_strength"],
+        S["mannequin"]["fibre_scale"],
+    ))
     m_charcoal = mat_muscle_fibre("muscle_charcoal", S["mannequin"]["skin_srgb"])
     glow_srgb = glow_cfg["wrong_srgb" if a.form == "wrong" else "right_srgb"]
     m_glow = mat_muscle_fibre(
@@ -423,7 +453,6 @@ def main():
         else:
             assign_mat(o, m_charcoal)
 
-    skin_lin = srgb_to_linear(S["mannequin"]["skin_srgb"])
     m_skin = mat_fibre_skin(
         "skin",
         skin_lin,
@@ -472,7 +501,7 @@ def main():
         sc.cycles.pixel_filter_type = "BOX"
         sc.cycles.filter_width = 0.01
         ids = {
-            "skin": muscles + ([egg] if egg else []),
+            "skin": [body] + muscles + ([egg] if egg else []),
             "shorts": [shorts],
             "machine": machine,
             "bar": bar_parts,
@@ -534,7 +563,7 @@ def main():
         "camera": a.camera,
         "trunk_from_vertical_deg": round(trunk_from_vertical(arm), 1),
         "angles_3d": angles,
-        "bar_world": [float(bar_y), float(bar_z)],
+        "bar_world": [float(center[1]), float(center[2])],
         "grip_distance_m": round(grip_d, 4),
         "grip_ok": grip_d < 0.08,
         "render_seed": sc.cycles.seed,
