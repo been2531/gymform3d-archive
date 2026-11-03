@@ -1,0 +1,403 @@
+{
+ "wrong": {
+  "clip": "output/_consistency/smoke_d7/d7_smoke_wrong_480p_t1.mp4",
+  "frames": 121,
+  "fps": 24.0,
+  "dur_s": 5.04,
+  "key_frame_idx": 60,
+  "sampled": [
+   0,
+   10,
+   20,
+   30,
+   40,
+   50,
+   60,
+   70,
+   80,
+   90,
+   100,
+   110,
+   120
+  ],
+  "G1": {
+   "ssim": 0.965,
+   "edge_iou": 0.81,
+   "pass": false
+  },
+  "G2": {
+   "end_ssim": 0.963,
+   "end_edge_iou": 0.8,
+   "key_ssim": 0.944,
+   "key_edge_iou": 0.77,
+   "key_best_pm6": [
+    0.964,
+    0.805
+   ],
+   "pass": false
+  },
+  "G3": {
+   "start_glow_pct": 21.98,
+   "keyframe_glow_pct": 19.94,
+   "clip_min_pct": 15.64,
+   "clip_max_pct": 24.33,
+   "ratio_min": 0.71,
+   "ratio_max": 1.11,
+   "cv_pct": 13.4,
+   "series_pct": [
+    24.2,
+    23.9,
+    20.0,
+    16.5,
+    15.6,
+    18.3,
+    22.7,
+    21.7,
+    22.3,
+    22.3,
+    24.3,
+    24.1,
+    24.2
+   ],
+   "pass": true
+  },
+  "G4": {
+   "max_off_body_pct": 0.05,
+   "pass": true
+  },
+  "G5": {
+   "bg_ssim_min": 0.989,
+   "pass": true
+  },
+  "G6": {
+   "bg_lum_drift": 1.0,
+   "bg_rgb_f0": [
+    35.0,
+    36.0,
+    43.0
+   ],
+   "bg_rgb_start": [
+    35.0,
+    39.0,
+    43.0
+   ],
+   "pass": true
+  },
+  "view_mean": 0.813,
+  "view_start": 0.815,
+  "motion": {
+   "kp_frames": 25,
+   "elbow_flex_min": 11.8,
+   "elbow_flex_max": 54.8,
+   "trunk_from_vertical_range": 5.1,
+   "trunk_max": 5.3,
+   "ear_to_shoulder_norm_start_vs_min": [
+    0.4,
+    0.345
+   ],
+   "elbow_flare_start_vs_max": [
+    0.254,
+    0.442
+   ],
+   "elbow_series": [
+    13,
+    12,
+    14,
+    19,
+    32,
+    46,
+    51,
+    55,
+    53,
+    51,
+    41,
+    33,
+    24,
+    19,
+    15,
+    15,
+    14,
+    13,
+    13,
+    13,
+    14,
+    13,
+    12,
+    12,
+    12
+   ]
+  },
+  "G10": {
+   "fig_minus_bg": 38.5,
+   "plate_vs_bg_p05": 44.9,
+   "bench_vs_bg": 75.2,
+   "bench_vs_skin": 31.6,
+   "startframe_gates_pass": true,
+   "pass": true
+  },
+  "skin_series": [
+   35.3,
+   37.3,
+   37.4,
+   33.6,
+   33.6,
+   35.6,
+   35.9,
+   38.5,
+   36.3,
+   35.4,
+   36.3,
+   36.9,
+   35.6
+  ],
+  "skin_start": 36.3,
+  "G9": {
+   "kind": "wrong",
+   "fired": [],
+   "pass": false,
+   "severity": "warn",
+   "items": [
+    [
+     "lean_back_rock",
+     5.13,
+     "range > 15",
+     false
+    ],
+    [
+     "rounding_forward",
+     null,
+     "unmeasurable",
+     null
+    ]
+   ]
+  },
+  "G7": {
+   "view_spread_between_clips": 0.0,
+   "view_mean": 0.813,
+   "view_start": 0.815,
+   "pass": true
+  },
+  "G8": {
+   "cobalt_frac_mean": 0.018,
+   "cobalt_cv_pct": 0.3,
+   "cobalt_rgb": [
+    23.0,
+    42.0,
+    123.0
+   ],
+   "start_cobalt_rgb": [
+    21.0,
+    44.0,
+    124.0
+   ],
+   "cobalt_rgb_dist_vs_start": 3.0,
+   "between_rel_pct": 9.5,
+   "pass": true
+  },
+  "G1_G8_all_pass": false
+ },
+ "right": {
+  "clip": "output/_consistency/smoke_d7/d7_smoke_right_480p_t1.mp4",
+  "frames": 121,
+  "fps": 24.0,
+  "dur_s": 5.04,
+  "key_frame_idx": 60,
+  "sampled": [
+   0,
+   10,
+   20,
+   30,
+   40,
+   50,
+   60,
+   70,
+   80,
+   90,
+   100,
+   110,
+   120
+  ],
+  "G1": {
+   "ssim": 0.969,
+   "edge_iou": 0.8,
+   "pass": false
+  },
+  "G2": {
+   "end_ssim": 0.958,
+   "end_edge_iou": 0.785,
+   "key_ssim": 0.933,
+   "key_edge_iou": 0.712,
+   "key_best_pm6": [
+    0.966,
+    0.773
+   ],
+   "pass": false
+  },
+  "G3": {
+   "start_glow_pct": 8.86,
+   "keyframe_glow_pct": 5.22,
+   "clip_min_pct": 4.73,
+   "clip_max_pct": 10.15,
+   "ratio_min": 0.53,
+   "ratio_max": 1.15,
+   "cv_pct": 21.9,
+   "series_pct": [
+    8.6,
+    9.0,
+    10.2,
+    9.4,
+    9.1,
+    8.0,
+    4.7,
+    5.1,
+    5.3,
+    7.8,
+    9.4,
+    9.3,
+    8.8
+   ],
+   "pass": false
+  },
+  "G4": {
+   "max_off_body_pct": 0.05,
+   "pass": true
+  },
+  "G5": {
+   "bg_ssim_min": 0.959,
+   "pass": true
+  },
+  "G6": {
+   "bg_lum_drift": 1.0,
+   "bg_rgb_f0": [
+    35.0,
+    36.0,
+    43.0
+   ],
+   "bg_rgb_start": [
+    35.0,
+    39.0,
+    43.0
+   ],
+   "pass": true
+  },
+  "view_mean": 0.813,
+  "view_start": 0.818,
+  "motion": {
+   "kp_frames": 25,
+   "elbow_flex_min": 11.9,
+   "elbow_flex_max": 50.0,
+   "trunk_from_vertical_range": 8.2,
+   "trunk_max": 9.1,
+   "ear_to_shoulder_norm_start_vs_min": [
+    0.422,
+    0.364
+   ],
+   "elbow_flare_start_vs_max": [
+    0.21,
+    0.434
+   ],
+   "elbow_series": [
+    16,
+    14,
+    12,
+    12,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    22,
+    29,
+    38,
+    50,
+    49,
+    45,
+    42,
+    32,
+    19,
+    15,
+    14,
+    15,
+    15,
+    15,
+    14
+   ]
+  },
+  "G10": {
+   "fig_minus_bg": 39.2,
+   "plate_vs_bg_p05": 49.8,
+   "bench_vs_bg": 56.1,
+   "bench_vs_skin": 15.4,
+   "startframe_gates_pass": true,
+   "pass": true
+  },
+  "skin_series": [
+   53.4,
+   55.9,
+   57.3,
+   57.3,
+   56.7,
+   55.0,
+   49.4,
+   49.4,
+   50.2,
+   54.4,
+   57.7,
+   56.7,
+   56.4
+  ],
+  "skin_start": 56.0,
+  "G9": {
+   "kind": "right",
+   "items": [
+    [
+     "torso_upright",
+     9.1,
+     "0..15 (+/-10.0)",
+     true,
+     "fail"
+    ],
+    [
+     "torso_still",
+     8.2,
+     "0..10 (+/-10.0)",
+     true,
+     "fail"
+    ],
+    [
+     "elbows_past_sides",
+     50.0,
+     "80..140 (+/-10.0)",
+     false,
+     "warn"
+    ]
+   ],
+   "pass": true
+  },
+  "G7": {
+   "view_spread_between_clips": 0.0,
+   "view_mean": 0.813,
+   "view_start": 0.818,
+   "pass": true
+  },
+  "G8": {
+   "cobalt_frac_mean": 0.0198,
+   "cobalt_cv_pct": 0.9,
+   "cobalt_rgb": [
+    29.0,
+    35.0,
+    137.0
+   ],
+   "start_cobalt_rgb": [
+    27.0,
+    36.0,
+    138.0
+   ],
+   "cobalt_rgb_dist_vs_start": 2.4,
+   "between_rel_pct": 9.5,
+   "pass": true
+  },
+  "G1_G8_all_pass": false
+ }
+}

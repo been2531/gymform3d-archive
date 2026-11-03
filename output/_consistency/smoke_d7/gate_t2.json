@@ -1,0 +1,403 @@
+{
+ "wrong": {
+  "clip": "output/_consistency/smoke_d7/d7_smoke_wrong_720p_t2.mp4",
+  "frames": 121,
+  "fps": 24.0,
+  "dur_s": 5.04,
+  "key_frame_idx": 60,
+  "sampled": [
+   0,
+   10,
+   20,
+   30,
+   40,
+   50,
+   60,
+   70,
+   80,
+   90,
+   100,
+   110,
+   120
+  ],
+  "G1": {
+   "ssim": 0.993,
+   "edge_iou": 0.897,
+   "pass": true
+  },
+  "G2": {
+   "end_ssim": 0.978,
+   "end_edge_iou": 0.879,
+   "key_ssim": 0.948,
+   "key_edge_iou": 0.796,
+   "key_best_pm6": [
+    0.986,
+    0.876
+   ],
+   "pass": false
+  },
+  "G3": {
+   "start_glow_pct": 21.98,
+   "keyframe_glow_pct": 19.94,
+   "clip_min_pct": 15.92,
+   "clip_max_pct": 24.27,
+   "ratio_min": 0.72,
+   "ratio_max": 1.1,
+   "cv_pct": 14.6,
+   "series_pct": [
+    23.1,
+    21.0,
+    17.1,
+    16.6,
+    16.9,
+    18.6,
+    21.8,
+    24.3,
+    19.4,
+    16.5,
+    15.9,
+    19.1,
+    23.8
+   ],
+   "pass": true
+  },
+  "G4": {
+   "max_off_body_pct": 0.01,
+   "pass": true
+  },
+  "G5": {
+   "bg_ssim_min": 0.982,
+   "pass": true
+  },
+  "G6": {
+   "bg_lum_drift": 1.0,
+   "bg_rgb_f0": [
+    36.0,
+    37.0,
+    44.0
+   ],
+   "bg_rgb_start": [
+    35.0,
+    39.0,
+    43.0
+   ],
+   "pass": true
+  },
+  "view_mean": 0.808,
+  "view_start": 0.815,
+  "motion": {
+   "kp_frames": 25,
+   "elbow_flex_min": 12.7,
+   "elbow_flex_max": 59.2,
+   "trunk_from_vertical_range": 5.9,
+   "trunk_max": 5.9,
+   "ear_to_shoulder_norm_start_vs_min": [
+    0.406,
+    0.312
+   ],
+   "elbow_flare_start_vs_max": [
+    0.289,
+    0.484
+   ],
+   "elbow_series": [
+    13,
+    18,
+    37,
+    53,
+    58,
+    57,
+    55,
+    52,
+    59,
+    57,
+    47,
+    32,
+    20,
+    13,
+    13,
+    28,
+    50,
+    59,
+    55,
+    54,
+    55,
+    59,
+    48,
+    29,
+    14
+   ]
+  },
+  "G10": {
+   "fig_minus_bg": 37.8,
+   "plate_vs_bg_p05": 40.4,
+   "bench_vs_bg": 74.7,
+   "bench_vs_skin": 32.0,
+   "startframe_gates_pass": true,
+   "pass": true
+  },
+  "skin_series": [
+   35.4,
+   39.3,
+   38.3,
+   40.3,
+   37.7,
+   37.6,
+   37.3,
+   36.9,
+   38.3,
+   40.6,
+   39.9,
+   38.6,
+   37.3
+  ],
+  "skin_start": 36.3,
+  "G9": {
+   "kind": "wrong",
+   "fired": [],
+   "pass": false,
+   "severity": "warn",
+   "items": [
+    [
+     "lean_back_rock",
+     5.88,
+     "range > 15",
+     false
+    ],
+    [
+     "rounding_forward",
+     null,
+     "unmeasurable",
+     null
+    ]
+   ]
+  },
+  "G7": {
+   "view_spread_between_clips": 0.015,
+   "view_mean": 0.808,
+   "view_start": 0.815,
+   "pass": true
+  },
+  "G8": {
+   "cobalt_frac_mean": 0.0176,
+   "cobalt_cv_pct": 0.3,
+   "cobalt_rgb": [
+    22.0,
+    43.0,
+    121.0
+   ],
+   "start_cobalt_rgb": [
+    21.0,
+    44.0,
+    124.0
+   ],
+   "cobalt_rgb_dist_vs_start": 3.3,
+   "between_rel_pct": 8.7,
+   "pass": true
+  },
+  "G1_G8_all_pass": false
+ },
+ "right": {
+  "clip": "output/_consistency/smoke_d7/d7_smoke_right_720p_t2.mp4",
+  "frames": 121,
+  "fps": 24.0,
+  "dur_s": 5.04,
+  "key_frame_idx": 60,
+  "sampled": [
+   0,
+   10,
+   20,
+   30,
+   40,
+   50,
+   60,
+   70,
+   80,
+   90,
+   100,
+   110,
+   120
+  ],
+  "G1": {
+   "ssim": 0.992,
+   "edge_iou": 0.894,
+   "pass": true
+  },
+  "G2": {
+   "end_ssim": 0.987,
+   "end_edge_iou": 0.875,
+   "key_ssim": 0.97,
+   "key_edge_iou": 0.843,
+   "key_best_pm6": [
+    0.989,
+    0.885
+   ],
+   "pass": false
+  },
+  "G3": {
+   "start_glow_pct": 8.86,
+   "keyframe_glow_pct": 5.22,
+   "clip_min_pct": 4.4,
+   "clip_max_pct": 9.39,
+   "ratio_min": 0.5,
+   "ratio_max": 1.06,
+   "cv_pct": 27.2,
+   "series_pct": [
+    8.6,
+    6.3,
+    5.3,
+    4.6,
+    4.4,
+    4.6,
+    5.0,
+    6.1,
+    8.1,
+    8.7,
+    9.1,
+    9.4,
+    8.7
+   ],
+   "pass": false
+  },
+  "G4": {
+   "max_off_body_pct": 0.05,
+   "pass": true
+  },
+  "G5": {
+   "bg_ssim_min": 0.958,
+   "pass": true
+  },
+  "G6": {
+   "bg_lum_drift": 1.0,
+   "bg_rgb_f0": [
+    35.0,
+    36.0,
+    43.0
+   ],
+   "bg_rgb_start": [
+    35.0,
+    39.0,
+    43.0
+   ],
+   "pass": true
+  },
+  "view_mean": 0.823,
+  "view_start": 0.818,
+  "motion": {
+   "kp_frames": 25,
+   "elbow_flex_min": 11.0,
+   "elbow_flex_max": 39.8,
+   "trunk_from_vertical_range": 6.4,
+   "trunk_max": 9.3,
+   "ear_to_shoulder_norm_start_vs_min": [
+    0.438,
+    0.398
+   ],
+   "elbow_flare_start_vs_max": [
+    0.214,
+    0.389
+   ],
+   "elbow_series": [
+    17,
+    21,
+    25,
+    28,
+    32,
+    38,
+    40,
+    40,
+    40,
+    38,
+    37,
+    36,
+    32,
+    30,
+    25,
+    25,
+    20,
+    17,
+    14,
+    11,
+    11,
+    11,
+    11,
+    12,
+    14
+   ]
+  },
+  "G10": {
+   "fig_minus_bg": 38.9,
+   "plate_vs_bg_p05": 49.0,
+   "bench_vs_bg": 59.5,
+   "bench_vs_skin": 18.3,
+   "startframe_gates_pass": false,
+   "pass": true
+  },
+  "skin_series": [
+   54.4,
+   52.7,
+   51.8,
+   51.4,
+   50.9,
+   50.6,
+   50.9,
+   51.6,
+   54.0,
+   55.6,
+   57.4,
+   56.9,
+   55.1
+  ],
+  "skin_start": 56.0,
+  "G9": {
+   "kind": "right",
+   "items": [
+    [
+     "torso_upright",
+     9.3,
+     "0..15 (+/-10.0)",
+     true,
+     "fail"
+    ],
+    [
+     "torso_still",
+     6.4,
+     "0..10 (+/-10.0)",
+     true,
+     "fail"
+    ],
+    [
+     "elbows_past_sides",
+     39.8,
+     "80..140 (+/-10.0)",
+     false,
+     "warn"
+    ]
+   ],
+   "pass": true
+  },
+  "G7": {
+   "view_spread_between_clips": 0.015,
+   "view_mean": 0.823,
+   "view_start": 0.818,
+   "pass": true
+  },
+  "G8": {
+   "cobalt_frac_mean": 0.0192,
+   "cobalt_cv_pct": 0.7,
+   "cobalt_rgb": [
+    28.0,
+    34.0,
+    135.0
+   ],
+   "start_cobalt_rgb": [
+    27.0,
+    36.0,
+    138.0
+   ],
+   "cobalt_rgb_dist_vs_start": 3.7,
+   "between_rel_pct": 8.7,
+   "pass": true
+  },
+  "G1_G8_all_pass": false
+ }
+}
