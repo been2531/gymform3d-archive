@@ -1,0 +1,33 @@
+{
+  "_doc": "tools/run_day_pipeline.py config (schema gymform.day_pipeline/v1). Reference set = D7v2 smoke t2 (the 2 GenerateVideo clips that passed G1-G8, 2026-11-03): pinned stills + contraction keyframes + clips. Copy this file per day; see docs/RUN_DAY_PIPELINE.md.",
+  "day": 7,
+  "day_config": "configs/day07_muscle2.json",
+  "out_root": "output/runs",
+  "workers": 2,
+  "generate": {"duration": 5, "resolution": "720p", "aspect_ratio": "9:16", "max_takes": 1},
+  "gates": {"hard": ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G10"], "warn": ["G9"]},
+  "gate_view": "3/4",
+  "prompt_template": "Seated cable row, done {form}: {action} Start and end exactly as in the first frame; reach the pinned contraction pose at the pinned times. One smooth rep, even tempo. Locked static camera, no zoom, no pan. Same matte charcoal-grey mannequin, same matte-black shorts, same low-row machine with matte cobalt weight plates and warm-grey frame in every frame; nothing appears or disappears. The {glow} glow stays exactly where and as large as in the pinned frames, on the {muscle} only. Flat, even, shadowless light; flat dark charcoal backdrop. No text, no logo.",
+  "forms": {
+    "wrong": {
+      "start": "output/_consistency/smoke_d7v2/frames/wrong_start_720.png",
+      "keyframes": [
+        {"path": "output/_consistency/smoke_d7v2/frames/wrong_contraction_raw_720.png", "t": 2.2},
+        {"path": "output/_consistency/smoke_d7v2/frames/wrong_contraction_raw_720.png", "t": 2.8}
+      ],
+      "clip": "output/_consistency/smoke_d7v2/d7v2_wrong_720p_t2.mp4",
+      "prompt_vars": {"action": "the arms yank the handle to the belly while the shoulders shrug up toward the ears.", "glow": "red", "muscle": "biceps and upper traps"},
+      "window": {"i0": 0, "i1": null}
+    },
+    "right": {
+      "start": "output/_consistency/smoke_d7v2/frames/right_start_t3_720.png",
+      "keyframes": [
+        {"path": "output/_consistency/smoke_d7v2/frames/right_contraction_t3_raw_720.png", "t": 2.2},
+        {"path": "output/_consistency/smoke_d7v2/frames/right_contraction_t3_raw_720.png", "t": 2.8}
+      ],
+      "clip": "output/_consistency/smoke_d7v2/d7v2_right_720p_t2.mp4",
+      "prompt_vars": {"action": "chest up, shoulders down, the elbows drive straight back past the torso.", "glow": "emerald", "muscle": "lats and rear delts"},
+      "window": {"i0": 0, "i1": null}
+    }
+  }
+}
