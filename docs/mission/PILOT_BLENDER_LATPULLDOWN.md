@@ -70,3 +70,56 @@ Attribution: `studio3d/pilot/ATTRIBUTION.md`.
 ## Reuse
 
 Add `exercises/<slug>.json`, extend `muscle_glow_pattern()` and seated pose module; keep cameras/QC from `set_pilot.json`.
+
+---
+
+## Round 5 — DEMIC / Muscle & Motion target (`pilot-demic-1`)
+
+**Benchmark shift:** stop Day 4 pixel parity; target **true-3D reels** like DEMIC STORY and Muscle & Motion (owner reference sheets only — not redistributed).
+
+### Architecture
+
+| Piece | Module |
+|---|---|
+| Continuous MH body + shorts | `studio3d/build_scene.py` via `demic/build_scene_demic.py` |
+| Glow masks (UV/vertex, not 634 parts) | `demic/paint_glow_masks.py` — écorché centroids + MH vertex-group fallback → `assets3d/demic_glow_masks.npz` |
+| Surface fibre + emission | `demic/shaders_demic.py` |
+| Full-ROM lat pulldown | `demic/pose_lat_pull.py` (overhead → chest/belly) |
+| Machine + bar accent line | `demic/equipment_demic.py` |
+| Loops + 4-step reel | `demic/render_loop_demic.py`, `demic/assemble_reel_demic.py` |
+| QC (MediaPipe + meta) | `demic/qc_demic.py` |
+| A/B vs DEMIC refs | `demic/make_ab_sheet_demic.py` |
+
+Deliverables: `output/pilot/demic/` — `keyframes/`, `loop_*_*.mp4`, `test_reel_4step.mp4`, `ab_pilot_vs_demic.jpg`, `qc_report.json`.
+
+### Free sources & licences (Round 5)
+
+| Asset | Licence | Use |
+|---|---|---|
+| MakeHuman base + targets | **CC0 1.0** | Single skinned mannequin mesh |
+| Charleeh écorché glTF | **CC BY-SA 4.0** | **Mask projection only** (isolated under `assets3d/`; not shown in beauty pass) |
+| BodyParts3D (upstream) | **CC BY-SA 2.1 Japan** | Upstream of écorché |
+| Lat station + bar | Procedural | No suitable CC0 lat station integrated |
+| MediaPipe | Apache 2.0 | QC pose on rendered PNGs |
+| DEMIC / M&M frame sheets | External benchmark | Comparison only |
+
+### Honest gap list vs DEMIC
+
+- **Silhouette:** MH morphs are less “heroic / cut” than DEMIC’s custom mannequin; no paid sculpt or 4K normal map yet.
+- **Glow:** Centroid + rig weights ≠ hand-painted UV muscle masks; edges softer, no art-directed fibre orientation per muscle.
+- **Shader:** Procedural UV bands + fresnel rim; not DEMIC’s multi-layer albedo + inner contour art.
+- **Machine:** Beveled primitives; readable but not product-visualization quality.
+- **Motion:** Analytic two-bone IK + partial hand constraint; not mocap (Mixamo/CMU not wired this round).
+- **UI:** No floating muscle icons / target-muscle menu (DEMIC app chrome).
+
+### Commands
+
+```bash
+python3 studio3d/pilot/demic/render_keyposes_demic.py
+python3 studio3d/pilot/demic/render_loop_demic.py right front 96
+python3 studio3d/pilot/demic/assemble_reel_demic.py
+python3 studio3d/pilot/demic/make_ab_sheet_demic.py
+python3 studio3d/pilot/demic/qc_demic.py
+```
+
+Regenerate glow cache after mask logic changes: `DEMIC_REGEN_MASKS=1` on any Blender build invocation (or delete `assets3d/demic_glow_masks.npz`).
