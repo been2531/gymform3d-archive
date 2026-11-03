@@ -18,10 +18,16 @@ ECORCHE = os.path.join(ROOT, "assets3d", "ecorche.glb")
 INCLUDE_RE = re.compile(
     r"(latissimus|biceps brachii|deltoid|trapezius|pectoralis|serratus|infraspinatus|teres|"
     r"rhomboid|erector|oblique|rectus abdominis|brachialis|triceps brachii|coracobrachialis|"
-    r"subscapularis|levator scapulae|splenius)",
+    r"subscapularis|levator scapulae|splenius|quadriceps|vastus|rectus femoris|adductor|"
+    r"gracilis|extensor carpi|flexor carpi|pronator|supinator|anconeus)",
     re.I,
 )
-EXCLUDE_RE = re.compile(r"(femoris|foot|toe|tibialis|gastrocnemius|soleus|peroneus|plantar|hip|gluteus|iliac)", re.I)
+# Do not use bare "femoris" — it drops quadriceps femoris (thighs in seated lat shot).
+EXCLUDE_RE = re.compile(
+    r"(biceps femoris|semimembranosus|semitendinosus|foot|toe|tibialis|gastrocnemius|"
+    r"soleus|peroneus|plantar|gluteus|iliopsoas|piriformis)",
+    re.I,
+)
 
 BONE_FOR = [
     (re.compile(r"latissimus", re.I), "spine04"),
@@ -30,7 +36,29 @@ BONE_FOR = [
     (re.compile(r"trapezius", re.I), "spine05"),
     (re.compile(r"pectoralis", re.I), "spine02"),
     (re.compile(r"brachialis|triceps brachii", re.I), "lowerarm01"),
+    (re.compile(r"quadriceps|vastus|rectus femoris", re.I), "upperleg02"),
+    (re.compile(r"extensor carpi|flexor carpi", re.I), "lowerarm02"),
 ]
+
+
+def _shoulder_span_world(arm):
+    sh_l = arm.matrix_world @ arm.pose.bones["upperarm01.L"].head
+    sh_r = arm.matrix_world @ arm.pose.bones["upperarm01.R"].head
+    return float((sh_l - sh_r).length), (sh_l + sh_r) / 2
+
+
+def _mesh_span_x(objs, z_center, z_band=0.22):
+    xs = []
+    for o in objs:
+        for v in o.data.vertices:
+            w = o.matrix_world @ v.co
+            if abs(w.z - z_center) < z_band:
+                xs.append(w.x)
+    if not xs:
+        for o in objs:
+            for v in o.data.vertices:
+                xs.append((o.matrix_world @ v.co).x)
+    return max(xs) - min(xs) if xs else 1.0
 
 
 def _enable_gltf():
@@ -82,7 +110,7 @@ def _pick_bone(name, arm):
     return "spine03"
 
 
-def import_upper_muscles(arm, posed=False):
+def import_upper_muscles(arm):
     _enable_gltf()
     before = set(bpy.data.objects)
     bpy.ops.import_scene.gltf(filepath=ECORCHE)
@@ -99,15 +127,27 @@ def import_upper_muscles(arm, posed=False):
     if not kept:
         raise RuntimeError("no ecorche muscles imported")
     bpy.context.view_layer.update()
+    fit = bpy.data.objects.new("ecorche_fit", None)
+    bpy.context.collection.objects.link(fit)
+    for o in kept:
+        mw = o.matrix_world.copy()
+        o.parent = fit
+        o.matrix_parent_inverse = fit.matrix_world.inverted()
+        o.matrix_world = mw
+    bpy.context.view_layer.update()
+    mh_span, chest = _shoulder_span_world(arm)
+    zc = float(chest.z)
+    eco_span = _mesh_span_x(kept, zc)
+    scale = mh_span / max(eco_span, 1e-6) * 0.98
+    fit.scale = (scale, scale, scale)
+    bpy.context.view_layer.update()
     coords = []
     for o in kept:
         for v in o.data.vertices:
             coords.append(o.matrix_world @ v.co)
     coords = np.array(coords)
-    chest = arm.matrix_world @ ((arm.pose.bones["upperarm01.L"].head + arm.pose.bones["upperarm01.R"].head) / 2)
     delta = Vector(chest) - Vector(coords.mean(0))
-    for o in kept:
-        o.location += delta
+    fit.location += delta
     bpy.context.view_layer.update()
     for o in kept:
         _uv_fibre_axis(o)

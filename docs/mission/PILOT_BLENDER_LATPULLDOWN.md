@@ -1,10 +1,10 @@
 # Pilot: Blender Day-4 set — Wide-Grip Lat Pulldown
 
-## Summary (v2)
+## Summary (v2.1)
 
 `studio3d/pilot/` is a **deterministic** headless-Blender pipeline for **wide-grip lat pulldown**.  
 **v1** failed on look (smooth MH body, opaque glow blobs, wrong A/B reference, floating bar plates).  
-**v2** rebuilds the figure from **[Charleeh/écorché](https://github.com/Charleeh/ecorche)** segmented muscle meshes (CC BY-SA 4.0 — **owner approval pending**), UV-aligned fibre striations, muscle-local emissive glow, fixed lat stack behind the athlete, and A/B against **Day 4 locked RDL** reference frames.
+**v2/v2.1** rebuild the figure from **[Charleeh/écorché](https://github.com/Charleeh/ecorche)** segmented muscle meshes (CC BY-SA 4.0 — **owner approval pending**): shoulder-span scale fit after pose, quadriceps/thigh muscles restored (v2.1 fixed an over-broad `femoris` exclude), dual-band UV striations + albedo fibres, emission modulated so fibres stay visible through glow, lat stack behind the athlete, and A/B against **Day 4 locked RDL** reference frames (look-only; exercise differs).
 
 Deliverables: `output/pilot/lat/` and `/opt/cursor/artifacts/screenshots/ab_keypose_vs_day4_v2.jpg`.
 
@@ -16,7 +16,7 @@ Licences verified from primary pages/repos (Nov 2026). **NC = excluded.**
 
 | Rank | Source | What it gives | Licence | Commercial | Fit to Day 4 look | Pilot use |
 |---|---|---|---|---|---|---|
-| 1 | **[Charleeh/écorché](https://github.com/Charleeh/ecorche)** `ecorche.glb` | ~575 named muscle/bone meshes; lats filled vs raw BP3D; cleaned layering | **CC BY-SA 4.0** | Yes, with attribution + **SA on adapted 3D** | **Best** open segmented écorché we found | **Adopted v2** (74 upper-body muscles) |
+| 1 | **[Charleeh/écorché](https://github.com/Charleeh/ecorche)** `ecorche.glb` | ~575 named muscle/bone meshes; lats filled vs raw BP3D; cleaned layering | **CC BY-SA 4.0** | Yes, with attribution + **SA on adapted 3D** | **Best** open segmented écorché we found | **Adopted v2.1** (~90+ upper-body muscles incl. quads) |
 | 2 | **BodyParts3D** 4.0 OBJ (ISA/partof) | Individual FMA muscle OBJs | **CC BY-SA 2.1 Japan** | Yes, with SA | Good geometry, weak alone (no lats in ISA); striations need shaders | Already in repo; upstream of écorché |
 | 3 | **[Z-Anatomy](https://github.com/Z-Anatomy/Models-of-human-anatomy)** | Blender template, BP3D-derived + extras | **CC BY-SA 4.0** (+ **NC** kidney etc.) | Yes for clean subset; NC parts must be removed | High detail; heavy template; SA | **Not imported** — flagged for owner; écorché is lighter |
 | 4 | **MyoGeneratorRemix** ([GPL-3.0](https://github.com/MiguelDLM/myoGeneratorRemix)) | Procedural muscle loft + Voronoi fibre material | GPL addon | Yes for renders; addon is GPL | Fibres are procedural/Voronoi, not Day-4 photographic | Reference only for fibre node ideas |
@@ -48,17 +48,17 @@ Licences verified from primary pages/repos (Nov 2026). **NC = excluded.**
 
 ---
 
-## Honest gap vs Day 4 (after v2)
+## Honest gap vs Day 4 (after v2.1)
 
-| Day 4 reference | v2 pilot | Still blocking “match or beat” |
+| Day 4 reference | v2.1 pilot | Still blocking “match or beat” |
 |---|---|---|
-| Continuous écorché with fine fibre **throughout** the silhouette | Segmented BP3D/Z-Anatomy-derived meshes; fibres from **UV bands** | Mesh **faceting** and part boundaries visible; fibres not as tight as generative Day 4 |
-| Glow = muscle lights up, fibres visible | Emission × striation ramp on **muscle objects only** | Glow **strength/softness** still below Day 4; wrong-form traps/delts need tuning |
-| Single cohesive skin tone | Charcoal muscle material ~48/50/54 sRGB | Slightly **lighter** than Day 4 lock in places |
-| Photographic depth in striations | Bump + wave | **No** high-frequency albedo map |
-| Lat pulldown scene | Same mannequin rig + procedural gym | Exercise mismatch in A/B (RDL ref = **look** only) |
+| Continuous écorché with fine fibre **throughout** the silhouette | Segmented BP3D-derived meshes; **dual-band UV** striations + albedo | **Seams** between muscle parts; fibre frequency still **coarser** than generative Day 4 |
+| Glow = muscle lights up, fibres visible | Per-muscle emission × striation on **lat / bi/tri/delt/trap only** | Side-view lats read well; front contract glow **small**; not as soft/photographic as Day 4 red on RDL |
+| Single cohesive skin tone | Charcoal ~48/50/54 sRGB + albedo swing | Post **skin lock** (Day 4 p90=88) not applied in Blender yet |
+| Photographic depth in striations | Bump + dual wave | No artist-authored **normal map** per muscle |
+| Lat pulldown scene | Procedural stack + steel bar | Exercise mismatch in A/B (RDL ref = **look** only) |
 
-**Verdict:** v2 is a **major** step up from v1 and proves the **asset path** (écorché + muscle-local glow). It does **not** yet match Day 4 fibre density and photographic polish; closing that gap likely needs **owner-approved Z-Anatomy/écorché SA workflow** plus baked **normal maps** (or retained generative grade on deterministic geometry).
+**Verdict:** v2.1 **approaches** Day 4 on side-view fibre read and lat-local emerald glow (see `ab_keypose_vs_day4_v2.jpg`). It does **not** fully **match or beat** Day 4 polish (continuous surface, glow softness, tone lock). Next levers: Z-Anatomy subset with SA sign-off, baked tangent normals, optional post grade matching `gymform_spec.json` skin lock.
 
 ---
 

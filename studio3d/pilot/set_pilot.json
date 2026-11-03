@@ -1,6 +1,6 @@
 {
   "_doc": "Day-4-look pilot set (Wide-Grip Lat Pulldown only). Does not replace studio3d/set_v1.json. Flat RGB 35/39/43 backdrop, shadowless even light, fibre-striation skin, muscle emission glow (not bone X-ray), warm-grey lat machine, palette-A bar.",
-  "version": "pilot-2",
+  "version": "pilot-2.1",
   "units": "metres, Blender Z-up, mannequin faces -Y",
   "asset_dir": "/agent/repos/gymform3d-archive/assets3d",
   "inherits_mannequin_from": "../set_v1.json",
@@ -34,8 +34,8 @@
   "glow": {
     "wrong_srgb": [220, 48, 42],
     "right_srgb": [32, 210, 120],
-    "emission_strength": 2.8,
-    "mix": 0.48,
+    "emission_strength": 3.2,
+    "mix": 0.42,
     "regions_wrong": ["biceps", "front_delt"],
     "regions_right": ["lat"]
   },

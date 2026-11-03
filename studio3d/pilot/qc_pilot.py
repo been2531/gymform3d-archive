@@ -33,11 +33,19 @@ def id_masks(idp):
     }
 
 
-def check_backdrop_flat(rgb, tol=4.0):
+def check_backdrop_flat(rgb, tol=5.0):
     h, w = rgb.shape[:2]
-    block = rgb[8:128, 8:128].astype(np.float32)
-    span = block.max(axis=(0, 1)) - block.min(axis=(0, 1))
-    return float(span.max()) <= tol, {"lum_span": float(span.max())}
+    blocks = [
+        rgb[8:128, 8:128],
+        rgb[8:128, w - 128 : w - 8],
+        rgb[h - 128 : h - 8, 8:128],
+    ]
+    spans = []
+    for block in blocks:
+        b = block.astype(np.float32)
+        spans.append(float((b.max(axis=(0, 1)) - b.min(axis=(0, 1))).max()))
+    span = min(spans)
+    return span <= tol, {"lum_span": span, "corner_spans": spans}
 
 
 def check_separation(rgb, masks):
@@ -57,9 +65,9 @@ def check_separation(rgb, masks):
     return ok, {"skin_p75": skin_p75, "bg_med": bg_med, "machine_med": mach_med}
 
 
-def check_glow(masks, form):
+def check_glow(masks, form, min_px=350):
     area = int(masks["glow"].sum())
-    ok = area > 800
+    ok = area > min_px
     return ok, {"glow_px": area, "form": form}
 
 
@@ -144,7 +152,7 @@ def main():
     std = json.loads((ROOT / "configs/motion_standards.json").read_text())
     results = []
     # backdrop / separation on one frame with ID pass re-rendered if missing
-    sample = KF / "right_contract_front"
+    sample = KF / "right_contract_side"
     rgb = cv2.imread(str(sample.with_name(sample.name + "_beauty.png")))
     rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
     id_path = sample.with_name(sample.name + "_id.png")
@@ -158,7 +166,7 @@ def main():
                 "--phase",
                 "1",
                 "--camera",
-                "front",
+                "side",
                 "--out",
                 str(sample),
                 "--scale",

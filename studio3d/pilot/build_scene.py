@@ -397,8 +397,8 @@ def main():
     shorts = make_shorts(S_mh, body)
     body.hide_render = True
     egg = bpy.data.objects.get("head_egg")
-    muscles = import_upper_muscles(arm)
     bar_y, bar_z = pose_lat(arm, EX, a.form, a.phase)
+    muscles = import_upper_muscles(arm)
     seat_character(arm, body, S)
     seat_y = float(arm.location.y)
     machine = make_lat_machine_v2(S, seat_y=seat_y)

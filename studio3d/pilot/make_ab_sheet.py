@@ -42,7 +42,7 @@ def main():
     draw = ImageDraw.Draw(sheet)
     draw.text(
         (cw, 36),
-        "Pilot v2 (écorché) vs Day 4 locked reference (look)",
+        "Pilot v2.1 (écorché) vs Day 4 locked reference (look)",
         fill=(255, 255, 255),
         font=title_f,
         anchor="mm",
@@ -58,7 +58,7 @@ def main():
             draw.text((cw // 2, y + 20), f"Day 4 ref · {form.upper()} · {phase}", fill=(255, 200, 200), font=label_f, anchor="mm")
         pilot = cell(Image.open(KF / f"{name}_beauty.png"), cw, ch)
         sheet.paste(pilot, (cw, y))
-        draw.text((cw + cw // 2, y + 20), f"Pilot v2 · {name.replace('_', ' ')}", fill=(180, 255, 210), font=label_f, anchor="mm")
+        draw.text((cw + cw // 2, y + 20), f"Pilot v2.1 · {name.replace('_', ' ')}", fill=(180, 255, 210), font=label_f, anchor="mm")
     OUT.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(OUT, quality=92)
     ART.mkdir(parents=True, exist_ok=True)
