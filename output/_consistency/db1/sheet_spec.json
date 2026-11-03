@@ -1,0 +1,17 @@
+{"title": "덤벨 파일럿 · 벤트오버 로우 시작 스틸",
+ "sub": ["Grok Bot 이미지 3장 (마스터 1 + 틀림 1 + 바름 1) · 영상 0", "같은 마스터 마네킹 · 뒤 3/4 옆 카메라 · 덤벨 2개 전부 보임"],
+ "verdict": "틀림 PASS · 바름 FAIL(몸통 덜 숙임) → 승인 필요",
+ "out": "output/_consistency/db1/DB1_ROW_STILLS_sheet.jpg",
+ "ref": "output/_consistency/db1/ref_day4_step4_f1s.png",
+ "ref_zoom": [380, 640, 180, 440],
+ "master": "output/_consistency/db1/master_mannequin_gen1.jpg",
+ "zoom": [260, 520, 180, 440],
+ "stills": [
+  {"label": "틀림: 너무 서 있음 + 으쓱", "img": "output/_consistency/db1/db_row_wrong_start_gen1.jpg", "json": "output/_consistency/db1/precheck_wrong_gen1.json",
+   "eye": {"glow": ["WARN", "승모 빨강만 · 이두 없음"], "look": ["PASS", "근육결·톤 Day 4와 같음"]}},
+  {"label": "바름: 힙힌지 + 평평한 등", "img": "output/_consistency/db1/db_row_right_start_gen1.jpg", "json": "output/_consistency/db1/precheck_right_gen1.json",
+   "eye": {"torso": ["FAIL", "숙임 얕음 · 틀림과 차이 작음"], "glow": ["PASS", "광배·능형·중부승모"], "look": ["PASS", "근육결·톤 Day 4와 같음"]}}],
+ "notes": ["덤벨: 2개 · 육각 · 금테 · 크기 같음 (눈 확인)",
+  "몸통: 틀림 22° vs 바름 33° → 차이 11°뿐 (목표 바름 ≥35~45°)",
+  "검사기 보정: 덤벨 한 개 지운 그림 FAIL · 흐린 그림 FAIL",
+  "다음(승인 후): 바름 스틸 1장 재생성(더 숙이기) 또는 그대로 영상"]}

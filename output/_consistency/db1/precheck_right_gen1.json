@@ -1,0 +1,98 @@
+{
+ "file": "output/_consistency/db1/db_row_right_start_gen1.jpg",
+ "form": "right",
+ "size": {
+  "height_frac": 0.674,
+  "touches_border": false,
+  "pass": true
+ },
+ "torso": {
+  "lean_deg": 33.2,
+  "range": [
+   35,
+   65
+  ],
+  "pass": false
+ },
+ "arm": {
+  "elbow_flex_deg": 10.5,
+  "range": [
+   0,
+   25
+  ],
+  "sides_seen": 1,
+  "pass": true
+ },
+ "dumbbell": {
+  "found": 2,
+  "expected": 2,
+  "height_ratio": 0.88,
+  "pair_dy_torso": 0.08,
+  "items": [
+   {
+    "area": 8853,
+    "blue_parts": 3,
+    "solidity": 0.967,
+    "near_visible_hand": 0.13,
+    "bbox": [
+     399,
+     707,
+     185,
+     118
+    ]
+   },
+   {
+    "area": 3328,
+    "blue_parts": 2,
+    "solidity": 0.918,
+    "near_visible_hand": 1.29,
+    "bbox": [
+     133,
+     696,
+     88,
+     104
+    ]
+   }
+  ],
+  "pass": true
+ },
+ "head": {
+  "dL": 8.6,
+  "pass": true
+ },
+ "light": {
+  "diff": 2.3,
+  "pass": true
+ },
+ "sharp": {
+  "lap_var": 719.7,
+  "ref": 704.7,
+  "frac": 1.02,
+  "pass": true
+ },
+ "glow": {
+  "colour": "green",
+  "frac": 0.0951,
+  "other_frac": 0.0,
+  "centroid_band": 0.22,
+  "band": [
+   0.0,
+   0.85
+  ],
+  "pass": true
+ },
+ "fails": [
+  "torso"
+ ],
+ "pass": false,
+ "kp": {
+  "sh_mid": [
+   409.4,
+   417.7
+  ],
+  "hip_mid": [
+   272.0,
+   627.4
+  ]
+ }
+}

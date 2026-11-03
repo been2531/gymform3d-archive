@@ -1,0 +1,96 @@
+{
+ "file": "output/_consistency/db1/db_row_wrong_start_gen1.jpg",
+ "form": "wrong",
+ "size": {
+  "height_frac": 0.751,
+  "touches_border": false,
+  "pass": true
+ },
+ "torso": {
+  "lean_deg": 22.1,
+  "range": [
+   0,
+   25
+  ],
+  "pass": true
+ },
+ "arm": {
+  "elbow_flex_deg": 13.0,
+  "range": [
+   0,
+   25
+  ],
+  "sides_seen": 2,
+  "pass": true
+ },
+ "dumbbell": {
+  "found": 2,
+  "expected": 2,
+  "height_ratio": 0.92,
+  "pair_dy_torso": 0.13,
+  "items": [
+   {
+    "area": 10493,
+    "blue_parts": 3,
+    "solidity": 0.967,
+    "near_visible_hand": 0.1,
+    "bbox": [
+     393,
+     677,
+     202,
+     122
+    ]
+   },
+   {
+    "area": 4409,
+    "blue_parts": 2,
+    "solidity": 0.908,
+    "near_visible_hand": 1.23,
+    "bbox": [
+     118,
+     650,
+     103,
+     112
+    ]
+   }
+  ],
+  "pass": true
+ },
+ "head": {
+  "dL": 3.1,
+  "pass": true
+ },
+ "light": {
+  "diff": 2.5,
+  "pass": true
+ },
+ "sharp": {
+  "lap_var": 547.3,
+  "ref": 704.7,
+  "frac": 0.78,
+  "pass": true
+ },
+ "glow": {
+  "colour": "red",
+  "frac": 0.0399,
+  "other_frac": 0.0,
+  "centroid_band": -0.08,
+  "band": [
+   -0.35,
+   0.4
+  ],
+  "pass": true
+ },
+ "fails": [],
+ "pass": true,
+ "kp": {
+  "sh_mid": [
+   396.6,
+   370.7
+  ],
+  "hip_mid": [
+   295.4,
+   619.7
+  ]
+ }
+}
