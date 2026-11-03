@@ -1,0 +1,127 @@
+{
+ "D4": {
+  "path": "output/day4_romanian_deadlift_4step_master.mp4",
+  "steps": [
+   {
+    "skin_L_p50": 37.3,
+    "skin_L_p90": 65.0,
+    "view_ratio": 0.556,
+    "body_h_frac": 0.538,
+    "bg_rgb": [
+     35.0,
+     39.0,
+     43.0
+    ]
+   },
+   {
+    "skin_L_p50": null,
+    "skin_L_p90": null,
+    "view_ratio": null,
+    "body_h_frac": null,
+    "bg_rgb": [
+     35.0,
+     39.0,
+     43.0
+    ]
+   },
+   {
+    "skin_L_p50": 48.0,
+    "skin_L_p90": 63.3,
+    "view_ratio": 0.581,
+    "body_h_frac": 0.519,
+    "bg_rgb": [
+     35.0,
+     39.0,
+     43.0
+    ]
+   },
+   {
+    "skin_L_p50": 44.0,
+    "skin_L_p90": 73.0,
+    "view_ratio": 0.563,
+    "body_h_frac": 0.647,
+    "bg_rgb": [
+     35.0,
+     39.0,
+     43.0
+    ]
+   }
+  ]
+ },
+ "D5": {
+  "path": "output/day5_dumbbell_lateral_raise_4step_master_v5.mp4",
+  "steps": [
+   {
+    "skin_L_p50": 145.0,
+    "skin_L_p90": 207.0,
+    "view_ratio": 0.586,
+    "body_h_frac": 0.75,
+    "bg_rgb": [
+     20.0,
+     20.0,
+     18.0
+    ]
+   },
+   {
+    "skin_L_p50": 101.0,
+    "skin_L_p90": 218.7,
+    "view_ratio": 0.719,
+    "body_h_frac": 0.434,
+    "bg_rgb": [
+     20.0,
+     20.0,
+     18.0
+    ]
+   },
+   {
+    "skin_L_p50": 64.1,
+    "skin_L_p90": 82.4,
+    "view_ratio": 0.518,
+    "body_h_frac": 0.597,
+    "bg_rgb": [
+     20.0,
+     20.0,
+     18.0
+    ]
+   },
+   {
+    "skin_L_p50": 150.0,
+    "skin_L_p90": 199.0,
+    "view_ratio": 0.555,
+    "body_h_frac": 0.619,
+    "bg_rgb": [
+     20.0,
+     20.0,
+     18.0
+    ]
+   }
+  ]
+ },
+ "D6": {
+  "path": "output/day6_incline_dumbbell_press_muscle2_master.mp4",
+  "steps": [
+   {
+    "skin_L_p50": 64.0,
+    "skin_L_p90": 73.0,
+    "view_ratio": 0.234,
+    "body_h_frac": 0.461,
+    "bg_rgb": [
+     26.0,
+     30.0,
+     34.0
+    ]
+   },
+   {
+    "skin_L_p50": 67.4,
+    "skin_L_p90": 94.0,
+    "view_ratio": 0.626,
+    "body_h_frac": 0.561,
+    "bg_rgb": [
+     26.0,
+     30.0,
+     34.0
+    ]
+   }
+  ]
+ }
+}
