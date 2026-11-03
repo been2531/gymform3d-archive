@@ -1,0 +1,80 @@
+{
+ "fetched_at_kst": "2026-11-03 11:52",
+ "account": {
+  "username": "gymform.3d",
+  "followers_count": 100,
+  "media_count": 5
+ },
+ "reels": [
+  {
+   "kst": "2026-10-29 23:38 KST",
+   "permalink": "https://www.instagram.com/reel/DfFPS3YFLF3/",
+   "hook": "Your lateral raises are training your traps, not your side delts.",
+   "views": 1822,
+   "reach": 1550,
+   "saved": 4,
+   "shares": 1,
+   "likes": 12,
+   "comments": 0,
+   "ig_reels_avg_watch_time": 6018,
+   "follows": "API error",
+   "profile_visits": "API error"
+  },
+  {
+   "kst": "2026-10-29 02:11 KST",
+   "permalink": "https://www.instagram.com/reel/DfC8EifoxFa/",
+   "hook": "Your Romanian deadlift should hit your hamstrings, not your lower back.",
+   "views": 5517,
+   "reach": 4242,
+   "saved": 42,
+   "shares": 16,
+   "likes": 39,
+   "comments": 0,
+   "ig_reels_avg_watch_time": 10618,
+   "follows": "API error",
+   "profile_visits": "API error"
+  },
+  {
+   "kst": "2026-10-28 23:26 KST",
+   "permalink": "https://www.instagram.com/reel/DfCpKW4IIV8/",
+   "hook": "Your squat breaks down in 2 places when it gets heavy.",
+   "views": 4062,
+   "reach": 3122,
+   "saved": 18,
+   "shares": 16,
+   "likes": 36,
+   "comments": 0,
+   "ig_reels_avg_watch_time": 10112,
+   "follows": "API error",
+   "profile_visits": "API error"
+  },
+  {
+   "kst": "2026-10-27 19:01 KST",
+   "permalink": "https://www.instagram.com/reel/De_mCcFAVTO/",
+   "hook": "Your lat pulldowns are training your arms, not your lats.",
+   "views": 15103,
+   "reach": 11370,
+   "saved": 104,
+   "shares": 36,
+   "likes": 114,
+   "comments": 0,
+   "ig_reels_avg_watch_time": 10805,
+   "follows": "API error",
+   "profile_visits": "API error"
+  },
+  {
+   "kst": "2026-10-27 17:04 KST",
+   "permalink": "https://www.instagram.com/reel/De_Yl9rAYC4/",
+   "hook": "Your rope pushdowns are leaking triceps tension.",
+   "views": 6495,
+   "reach": 5291,
+   "saved": 27,
+   "shares": 3,
+   "likes": 35,
+   "comments": 0,
+   "ig_reels_avg_watch_time": 8747,
+   "follows": "API error",
+   "profile_visits": "API error"
+  }
+ ]
+}

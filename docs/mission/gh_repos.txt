@@ -1,0 +1,16 @@
+blender/blender | NOASSERTION | pushed 2026-11-03T01:16:50Z | stars 21557 | archived False | 
+remotion-dev/remotion | NOASSERTION | pushed 2026-11-03T02:52:24Z | stars 70136 | archived False | 
+opencv/opencv | Apache-2.0 | pushed 2026-11-02T09:18:41Z | stars 91415 | archived False | 
+google-ai-edge/mediapipe | Apache-2.0 | pushed 2026-11-03T00:15:54Z | stars 37525 | archived False | 
+freemocap/freemocap | AGPL-3.0 | pushed 2026-11-03T02:49:04Z | stars 10657 | archived False | 
+FFmpeg/FFmpeg | NOASSERTION | pushed 2026-11-03T01:49:49Z | stars 66335 | archived False | 
+microsoft/playwright | Apache-2.0 | pushed 2026-11-03T02:13:37Z | stars 99139 | archived False | 
+vitest-dev/vitest | MIT | pushed 2026-11-02T16:04:36Z | stars 17322 | archived False | 
+makehumancommunity/mpfb2 | NOASSERTION | pushed 2026-10-24T12:02:27Z | stars 682 | archived False | 
+vchoutas/smplx | NOASSERTION | pushed 2024-08-12T05:09:47Z | stars 2751 | archived False | 
+LluisV/Z-Anatomy | NOASSERTION | pushed 2024-12-25T09:18:02Z | stars 410 | archived False | 
+BandaiNamcoResearchInc/Bandai-Namco-Research-Motiondataset | None | pushed 2023-07-04T05:40:13Z | stars 3378 | archived False | 
+zju3dv/GVHMR | NOASSERTION | pushed 2026-09-15T07:45:53Z | stars 2246 | archived False | 
+yohanshin/WHAM | MIT | pushed 2024-04-18T19:21:17Z | stars 1166 | archived False | 
+shubham-goel/4D-Humans | MIT | pushed 2026-02-07T16:46:00Z | stars 1727 | archived False | 
+KevinLTT/video2bvh | MIT | pushed 2020-11-09T11:22:50Z | stars 657 | archived False | 
