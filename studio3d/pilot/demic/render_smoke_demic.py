@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 CLI = ROOT / "studio3d/pilot/blender_cli.sh"
-BUILD = ROOT / "studio3d/pilot/demic/build_scene_demic.py"
+BUILD = ROOT / "studio3d/pilot/demic/build_scene_r6.py"
 OUT = ROOT / "output/pilot/demic/smoke"
 
 

@@ -193,9 +193,10 @@ def pose_arms_from_standards(arm, EX, form, phase):
         fa = unit(u * math.cos(ef) + w * math.sin(ef))
         for bn in (f"upperarm01.{sd}", f"upperarm02.{sd}"):
             aim(arm, bn, u)
-        for bn in (f"lowerarm01.{sd}", f"lowerarm02.{sd}", f"wrist.{sd}"):
+        for bn in (f"lowerarm01.{sd}", f"lowerarm02.{sd}"):
             if bn in arm.pose.bones:
                 aim(arm, bn, fa)
+        # wrist follows lowerarm02 (do not aim wrist — breaks MH chain)
     upd()
 
 
