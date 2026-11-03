@@ -1,0 +1,56 @@
+{
+ "file": "_scratch/mo/fixture_rect.png",
+ "kind": "plate_handle",
+ "machine": {
+  "ssim": {
+   "tower+stack": 1.0,
+   "foot plate+rail": 1.0,
+   "seat post": 1.0,
+   "all_outside_handle": 1.0
+  },
+  "pass": true
+ },
+ "cable_ray_hits_handle": true,
+ "unbroken": {
+  "blobs": 1,
+  "main_frac": 1.0,
+  "pass": true
+ },
+ "cable": {
+  "cover": 0.74,
+  "len_px": 249.0,
+  "pulley_used": [
+   220.0,
+   924.0
+  ],
+  "ray_deg": 4.0,
+  "pass": true
+ },
+ "attached": {
+  "max_gap_on_cable_px": 73,
+  "blob_gaps_px": [],
+  "pass": false
+ },
+ "shape": {
+  "hull_vs_minrect": 0.993,
+  "hull_corners": 4,
+  "taper_near_over_far": 1.02,
+  "rect_frame_like": true,
+  "pass": false
+ },
+ "handle_box": [
+  467,
+  898,
+  98,
+  103
+ ],
+ "eyelet_xy": [
+  468.0,
+  941.0
+ ],
+ "fails": [
+  "attached",
+  "shape"
+ ],
+ "pass": false
+}

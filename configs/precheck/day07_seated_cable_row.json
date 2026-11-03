@@ -1,19 +1,63 @@
 {
  "exercise": "D7 seated cable row (Matrix Aura Low Row G3-MS53), RIGHT form, verified plate camera",
  "plate": "output/_consistency/d7m/pin_empty_machine_720x1280.png",
- "size": [720, 1280],
- "machine_rois": {"tower+stack": [430, 1100, 0, 190], "foot plate+rail": [1080, 1280, 0, 720], "seat post": [980, 1280, 560, 720]},
- "moving_band": [700, 1000, 150, 720],
+ "size": [
+  720,
+  1280
+ ],
+ "machine_rois": {
+  "tower+stack": [
+   430,
+   1100,
+   0,
+   190
+  ],
+  "foot plate+rail": [
+   1080,
+   1280,
+   0,
+   720
+  ],
+  "seat post": [
+   980,
+   1280,
+   560,
+   720
+  ]
+ },
+ "moving_band": [
+  700,
+  1000,
+  150,
+  720
+ ],
  "machine_ssim_min": 0.95,
- "pulley_xy": [232, 900],
+ "pulley_xy": [
+  232,
+  900
+ ],
  "tower_side": "left",
  "cable_min_cover": 0.6,
- "start": {"elbow_flex_max": 20},
- "peak": {"elbow_past_shoulder_min_frac": 0.10},
+ "start": {
+  "elbow_flex_max": 20
+ },
+ "peak": {
+  "elbow_past_shoulder_min_frac": 0.1
+ },
  "torso_lean_max": 10,
  "torso_delta_max": 5,
  "head_body_dL_max": 14,
  "shaded_vs_backdrop_min": -2,
  "glow_frac_max": 0.005,
- "handle_rect_top_px_max": 60
+ "handle_rect_top_px_max": 60,
+ "remove_boxes": [
+  [
+   915,
+   995,
+   240,
+   320
+  ]
+ ],
+ "plate_machine_ssim_min": 0.99,
+ "handle_min_blob_px": 60
 }

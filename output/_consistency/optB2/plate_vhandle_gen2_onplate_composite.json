@@ -1,0 +1,13 @@
+{
+ "gen": "output/_consistency/optB2/plate_vhandle_gen2.jpg",
+ "out": "output/_consistency/optB2/plate_vhandle_gen2_onplate.png",
+ "align_scale": 0.9976,
+ "align_rot_deg": -0.01,
+ "align_shift_px": [
+  0.2,
+  2.2
+ ],
+ "inliers": 399,
+ "alpha_frac": 0.021,
+ "no_person": true
+}

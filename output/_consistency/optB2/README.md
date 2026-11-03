@@ -38,3 +38,13 @@ Generations used: **3 GenerateImage, 0 GenerateVideo**. No grok.com, no paid API
 3. Then start + peak (2 GenerateImage), pre-check, and 1 GenerateVideo as planned.
 
 The V-bar reference photo (fitness-hero.com.au product image) is third-party and is not committed; it is kept in the ignored `_scratch/ref/`.
+
+## t694u · empty plate + V handle (no person, no video)
+- 2 Grok Bot GenerateImage (budget 2), 0 video, no grok.com / xAI API / Higgsfield.
+- `plate_vhandle_gen{1,2}.jpg` raw → `tools/plate_composite_still.py --no-person` (remove_boxes erases the plate's resting handle) → `*_onplate.png`.
+- Checks: `python3 tools/still_precheck.py configs/precheck/day07_seated_cable_row.json --plate-handle IMG` → `*_handlecheck.json`
+  (machine SSIM≥0.99 outside the handle, cable ray from pulley, attached = no gap on the cable line, unbroken, V shape = not rect-like & taper≤0.6).
+- Calibration: `calib/fixture_rect.png` shape FAIL, `calib/fixture_vee.png` all PASS.
+- gen1: FAIL (machine seat 0.919, single-grip D handle, chain to side strut). gen2: auto 5/5 PASS; by eye PASS with 2 warnings
+  (handle sits near the seat front = peak position; the two grips spread along the cable axis instead of side by side).
+- Sheet: `OPTB2_PLATE_VHANDLE_sheet.jpg` (spec `plate_vhandle_sheet_spec.json`, script `tools/plate_handle_sheet.py`).
