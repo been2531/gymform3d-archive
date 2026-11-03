@@ -1,0 +1,12 @@
+{
+ "gen": "output/_consistency/optB2/start_gen1.jpg",
+ "out": "output/_consistency/optB2/start_gen1_onplate.png",
+ "align_scale": 1.0332,
+ "align_rot_deg": 0.02,
+ "align_shift_px": [
+  -0.4,
+  -6.2
+ ],
+ "inliers": 331,
+ "alpha_frac": 0.143
+}
