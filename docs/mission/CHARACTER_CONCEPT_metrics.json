@@ -1,0 +1,82 @@
+{
+ "current_D7": {
+  "head_L": 39.0,
+  "torso_L": 30.0,
+  "backdrop_L": 38.0,
+  "body_texture_lap_std": 3.93
+ },
+ "A": {
+  "head_L": 74.0,
+  "torso_L": 78.0,
+  "backdrop_L": 38.0,
+  "body_texture_lap_std": 0.36
+ },
+ "B": {
+  "head_L": 77.0,
+  "torso_L": 77.0,
+  "backdrop_L": 38.0,
+  "body_texture_lap_std": 1.77
+ },
+ "C": {
+  "head_L": 44.0,
+  "torso_L": 30.0,
+  "backdrop_L": 38.0,
+  "body_texture_lap_std": 3.92
+ },
+ "person_height_frac_of_1920": 0.357,
+ "machine_plus_person_height_frac": 0.677,
+ "fibre_metrics_vs_day4": {
+  "day4": {
+   "core_hue_deg": 147.6,
+   "core_sat": 163.5,
+   "core_val": 179.0,
+   "fibre_contrast": 20.3,
+   "fibre_density_per100px": 10.54,
+   "falloff_px": 4.0,
+   "core_px": 24737,
+   "glow_px": 28154,
+   "torso_px_onscreen": 356.4,
+   "scale_to_ref": 1.0,
+   "cover_glow_per_torso2": 0.222
+  },
+  "A": {
+   "core_hue_deg": 148.0,
+   "core_sat": 162.5,
+   "core_val": 184.0,
+   "fibre_contrast": 16.32,
+   "fibre_density_per100px": 5.26,
+   "falloff_px": 2.8,
+   "core_px": 10080,
+   "glow_px": 12275,
+   "torso_px_onscreen": 290.5,
+   "scale_to_ref": 1.227,
+   "cover_glow_per_torso2": 0.097
+  },
+  "B": {
+   "core_hue_deg": 148.0,
+   "core_sat": 162.6,
+   "core_val": 183.9,
+   "fibre_contrast": 16.41,
+   "fibre_density_per100px": 5.26,
+   "falloff_px": 2.8,
+   "core_px": 10078,
+   "glow_px": 12281,
+   "torso_px_onscreen": 290.5,
+   "scale_to_ref": 1.227,
+   "cover_glow_per_torso2": 0.097
+  },
+  "C": {
+   "core_hue_deg": 147.4,
+   "core_sat": 169.0,
+   "core_val": 198.0,
+   "fibre_contrast": 17.33,
+   "fibre_density_per100px": 1.02,
+   "falloff_px": 5.79,
+   "core_px": 9652,
+   "glow_px": 16406,
+   "torso_px_onscreen": 290.5,
+   "scale_to_ref": 1.227,
+   "cover_glow_per_torso2": 0.129
+  }
+ }
+}
