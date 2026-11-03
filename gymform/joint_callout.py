@@ -43,7 +43,7 @@ def elbow_flexion(kp, sd):
     return abs(diff), E, a0, diff, float(np.linalg.norm(E - S))
 
 
-def draw(frame_rgb, kp, protect=None, is_wrong=False, label="", ui_top=640, num_px=50, lab_px=16):
+def draw(frame_rgb, kp, protect=None, is_wrong=False, label="", ui_top=640, num_px=50, lab_px=16, max_dist=320, prefer_xy=None):
     """-> (rgba float32 HxWx4 0..1, info). protect = float mask of target-muscle regions (text never on it)."""
     H, W = frame_rgb.shape[:2]
     sd = visible_side(kp, (H, W))
@@ -76,7 +76,7 @@ def draw(frame_rgb, kp, protect=None, is_wrong=False, label="", ui_top=640, num_
     box_sum = lambda x0_, y0_, x1_, y1_: ii[y1_, x1_] - ii[y0_, x1_] - ii[y1_, x0_] + ii[y0_, x0_]
     best = None
     m_ = 10
-    for dist in range(80, 320, 10):
+    for dist in range(80, max_dist, 10):
         for k in range(24):
             th = 2 * math.pi * k / 24
             bx = int(cx + dist * math.cos(th) - bw / 2); by = int(cy + dist * math.sin(th) - bh / 2)
@@ -90,6 +90,8 @@ def draw(frame_rgb, kp, protect=None, is_wrong=False, label="", ui_top=640, num_
             # the leader should leave the body quickly: penalise its length over non-backdrop (body / machine) pixels
             on_b = np.mean([obst[min(H - 1, max(0, y)), min(W - 1, max(0, x))] > 0.5 for x, y in pts[4:]]) if len(pts) > 4 else 0.0
             cost = 100.0 * o + 40.0 * on_m + 12.0 * on_b + dist / 60.0 + (2.0 if by > cy else 0.0)   # prefer above the joint
+            if prefer_xy is not None:   # optional: pull the box toward a preferred clean-backdrop point
+                cost += 0.012 * math.hypot(bx + bw / 2 - prefer_xy[0], by + bh / 2 - prefer_xy[1])
             if best is None or cost < best[0]:
                 best = (cost, bx, by, dist, o, on_m)
     _, bx, by, dist, ovl, on_m = best
