@@ -144,7 +144,11 @@ def apply(base_rgb, src_rgb, w_fg, shorts, kp, is_wrong, pulse_phase=0.75):
         F = mask.features(np.clip(s * (1.0 - an) + glow_src * an, 0, 255))
         F["act_dom"] = act
     else:
-        F = mask.features(s)
+        # t654u day4_input_scale: source level calibration (Day 4 glowing source R ~145 median); scales the channels
+        # day4_fibre reads its colour volume from. act_dom scales with it -> use glow_gain_override to re-level.
+        k_in = CFG.get("day4_input_scale", 1.0)
+        k_in = float(k_in.get(str(CFG.get("_cur_step")), 1.0)) if isinstance(k_in, dict) else float(k_in)
+        F = mask.features(np.clip(s * k_in, 0, 255))
         if CFG.get("muscle_glow_clamp"):
             cm, ms = clamp_mask(kp, is_wrong, w_fg.shape)
             F["act_dom"] = F["act_dom"] * cm      # -> w_act and core_seed (hence core_w) are zero outside the regions

@@ -163,3 +163,31 @@ scales with source frames (~50–70 per step), not the 150 output frames.
 - Already in place: per-pose cache, per-clip kp cache, cached TTS, `--workers 2`.
 - Pulse phase is fixed (0.75, like the Day 4 static) so the per-pose cache stays valid.
 - Not worth more: the clamp is 4% of the frame cost, and the Day 4 shader blurs are the look.
+
+## Simplified layout + Day 4 look calibration (t652u–t654u)
+
+**Layout** (config flags, all additive and default off elsewhere):
+- `hide_lines`: no laser/alignment line, no leader, no dot.
+- `callout_single_label`: the big number plus ONE label (`ARMS + SHRUG` / `ELBOWS BACK`).
+- `callout_text_y: 560`: text block at a fixed spot on the left, clear of the body and the tower.
+- `callout_measure {metric: arm_torso, frame: last}`: the number is measured from keypoints, never typed in. It is
+  the shoulder angle between trunk and upper arm on the visible arm, at the slice's last (= peak) frame.
+  - Pinned stills (same start pose): wrong 37°, right 36°.
+  - Real wrong/right values appear once the i2v slices end at the contraction. Earlier v2 clips measured 48° vs 68°.
+- `frame_override {scale 1.53, dx 62, dy 247}`: one whole-frame crop/scale for every step, used for stills and
+  clips alike, no cut-out. Mannequin and machine fill the 9:16 frame and the tower stays whole.
+
+**Day 4 look, measured at equal torso scale** (`tools/day4_look_metrics.py`, sheet `d7m_day4_look_sheet.jpg`):
+- Knobs only: `glow_gain_override {1: 12, 2: 30}` and `day4_input_scale {1: 0.45, 2: 0.25}`. day4_fibre unchanged.
+- Native fix: with the linear recolour off, `native_keep_chroma` had been passing the source glow colour into the
+  grey base (too bright, soft edge). It is now excluded on the body's glow regions only, so the machine's orange
+  pin is the same in both steps.
+- Mock fix: static clips are written lossless (FFV1). mp4v blocking had turned into a fibre-sharpened checkerboard.
+- Matches Day 4: hue, glow V median (wrong 153 vs 157, right 190 vs 190), fibre contrast, wrong fibre density.
+- Close: saturation (+6–15%).
+- Gaps:
+  - Right fibre density is about 5% of Day 4.
+  - The core edge is 4–5× wider.
+  - Both come from the source: the right t2 glow is smooth green, and the figure is small at 720p (2.3× upscale).
+  - The fix is in the i2v source: prompt fibre striations visible through the glow and a larger figure (camera
+    closer, tower top may crop). Re-measure with the same tool on the clips.

@@ -322,6 +322,7 @@ def grade(step, p_i, is_wrong):
             dom = np.maximum(r_ - np.maximum(g_, b_), g_ - np.maximum(r_, b_))
         a = np.maximum(dom - 0.8 * np.maximum(0.0, np.minimum(r_, g_) - b_ - 20.0), 0.0)
     w = (np.clip((a - 8.0) / max(S["A95"] - 8.0, 20.0), 0.0, 1.0) * float(CFG.get("native_glow_max", 0.9)))[..., None]
+    a_glow = a   # the step's source glow dominance: keep_chroma must never pass the source glow colour through
     if CFG.get("native_muscle_shader") == "day4":
         w = w * 0.0   # t648u: muscle colour comes from the Day 4 fibre shader (region_glow.apply), not the linear recolour
     if is_wrong:
@@ -335,6 +336,16 @@ def grade(step, p_i, is_wrong):
         c_src = f - _lum(f)[..., None]
         sat = np.linalg.norm(c_src, axis=-1)
         kw = (np.clip((sat - float(CFG.get("native_keep_chroma_sat", 8.0))) / 6.0, 0.0, 1.0) * kc)[..., None] * (1.0 - w)
+        if CFG.get("native_muscle_shader") == "day4":
+            # t654u: with the linear recolour off (w = 0) the source's red/green glow chroma leaked into the grey base
+            # here (too bright, soft source-glow edge under the Day 4 core). Glow pixels get the plain grey base, as in
+            # Day 4 (day4_fibre blends its colour over grey); plates / rim keep their chroma (w_glow ~ 0 there).
+            ex = np.clip((a_glow - 4.0) / 10.0, 0.0, 1.0)
+            if CFG.get("muscle_glow_clamp"):   # only on the body's glow regions: machine colours (orange pin) stay as in every step
+                from gymform import region_glow as _rg
+                cm_, _ = _rg.clamp_mask(S["kp"][p_i], is_wrong, ex.shape)
+                ex = ex * np.clip(cv2.GaussianBlur((cm_ > 0.02).astype(np.float32), (0, 0), 6.0) * 3.0, 0.0, 1.0)
+            kw = kw * (1.0 - ex)[..., None]
         grey = grey + c_src * (Lg / np.maximum(_lum(f), 4.0))[..., None].clip(0.6, 2.0) * kw
     base = grey * (1.0 - w) + np.clip(col, 0, 255) * w
     pm = S["plate"][p_i] if S.get("plate") is not None else None

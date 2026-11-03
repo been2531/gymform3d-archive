@@ -11,9 +11,11 @@ from gymform import ctx, render, native, layout
 wpng, rpng, out = sys.argv[1:4]
 os.makedirs(out, exist_ok=True)
 assets = os.path.join(out, "_static_assets"); os.makedirs(assets, exist_ok=True)
-for name, p in (("wrong_static.mp4", wpng), ("right_static.mp4", rpng)):
+# t654u: LOSSLESS static clips (FFV1). mp4v blocked the still into 8x8 JPEG-like blocks that the Day 4 fibre
+# shader then sharpened into a checker pattern; the production i2v clips are decoded as delivered.
+for name, p in (("wrong_static.avi", wpng), ("right_static.avi", rpng)):
     im = cv2.resize(cv2.imread(p), (720, 1280), interpolation=cv2.INTER_AREA)
-    vw = cv2.VideoWriter(os.path.join(assets, name), cv2.VideoWriter_fourcc(*"mp4v"), 24.0, (720, 1280))
+    vw = cv2.VideoWriter(os.path.join(assets, name), cv2.VideoWriter_fourcc(*"FFV1"), 24.0, (720, 1280))
     for _ in range(12):
         vw.write(im)
     vw.release()
@@ -22,7 +24,7 @@ cfg["assets_dir"] = assets
 cfg["kp_cache"] = os.path.join(out, "_kps_mock.pkl")
 cfg["tmp_dir"] = os.path.join(out, "_tmp_mock")
 for form in ("wrong", "right"):
-    m = cfg["motions"][form]; fn = f"{form}_static.mp4"
+    m = cfg["motions"][form]; fn = f"{form}_static.avi"
     m["base"] = fn; m["i0"] = 0; m["i1"] = 11; m["renders"]["front"]["file"] = fn
     if os.environ.get("MOCK_MIRROR") == "1":   # D7 concept: whole-frame flip so the tower sits right, callout left
         m["mirror"] = True; m["renders"]["front"]["mirror"] = True
@@ -33,6 +35,7 @@ MOCK_SCALE = float(os.environ.get("MOCK_SCALE", "1.0"))
 cfg.pop("target_zoom", None)
 cfg["step_scale"] = {"1": MOCK_SCALE, "2": MOCK_SCALE}
 cfg["step_dy"] = {"1": int(os.environ.get("MOCK_DY", "0")), "2": int(os.environ.get("MOCK_DY", "0"))}
+cfg.update(json.loads(os.environ.get("MOCK_CFG", "{}")))   # t654u calibration sweeps (glow_gain_override, day4_input_scale)
 ctx.configure(cfg)
 raw, kps = render.load_inputs()
 # overlap stress case (t638u): optional extra shift AFTER the normal framing so the head runs under the title

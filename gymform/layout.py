@@ -135,13 +135,55 @@ def callout_for(step_idx, pose_frac):
     l2 [label, a, b] -> 'round(a + b*frac)% label'."""
     c = CFG["callouts"][str(step_idx)]
     deg = c["deg"]
-    if isinstance(deg, dict):
+    if CFG.get("callout_measure"):
+        # t652u: the number is MEASURED from this step's keypoints (side camera, so the 2D angle is the real angle),
+        # never typed in the config. Value at the step's coached frame (default: last frame of the slice = peak).
+        deg = f"{int(round(measure_angle(step_idx)))}\u00b0"
+    elif isinstance(deg, dict):
         deg = f"{int(round(deg['from'] + (deg['to'] - deg['from']) * pose_frac))}\u00b0"
     elif not isinstance(deg, str):
         raise ValueError(f"callouts.{step_idx}.deg must be 'N\u00b0' or {{'from','to'}}, got {deg!r}")
     l2 = c["l2"] if isinstance(c["l2"], str) else f"{int(round(c['l2'][1] + c['l2'][2] * pose_frac))}% {c['l2'][0]}"
+    if CFG.get("callout_single_label"):
+        l2 = ""   # t652u: big number + ONE short label only
     LAST_MASKS["callout"] = {"deg": deg, "l1": c["l1"], "l2": l2}
     return int(c["slot"]), deg, c["l1"], l2
+
+
+def measure_angle(step_idx):
+    """t652u callout_measure: angle in degrees from the step's cached keypoints.
+    metric "arm_torso": angle at the shoulder between the trunk (shoulder -> hip midpoint) and the upper arm
+    (shoulder -> elbow) of the VISIBLE arm (the arm whose shoulder->wrist line lies least inside the torso quad).
+    metric "elbow": elbow flexion angle shoulder-elbow-wrist of the visible arm. metric "trunk_lean": trunk vs vertical.
+    frame: "last" (peak of a stretch->contraction slice, default), "first", or an int index."""
+    from gymform import render as _r
+    m = CFG["callout_measure"]
+    m = m if isinstance(m, dict) else {"metric": str(m)}
+    seq = _r.KPS[step_idx]
+    fr = m.get("frame", "last")
+    k = seq[-1] if fr == "last" else seq[0] if fr == "first" else seq[int(fr)]
+    P = lambda j: np.asarray(k[j], np.float64)
+    hip = 0.5 * (P("hip_r") + P("hip_l"))
+
+    def inside(sd):
+        quad = np.array([P("sh_r"), P("sh_l"), P("hip_l"), P("hip_r")], np.float32)
+        pts = [P(f"sh_{sd}") + t * (P(f"wr_{sd}") - P(f"sh_{sd}")) for t in np.linspace(0.15, 1.0, 12)]
+        return sum(cv2.pointPolygonTest(quad, (float(q[0]), float(q[1])), False) >= 0 for q in pts)
+    sd = min(("r", "l"), key=inside)
+
+    def ang(a, v, b):
+        u, w = a - v, b - v
+        return float(np.degrees(np.arccos(np.clip(np.dot(u, w) / max(np.linalg.norm(u) * np.linalg.norm(w), 1e-6), -1, 1))))
+    met = m.get("metric", "arm_torso")
+    if met == "elbow":
+        val = ang(P(f"sh_{sd}"), P(f"elb_{sd}"), P(f"wr_{sd}"))
+    elif met == "trunk_lean":
+        sh = 0.5 * (P("sh_r") + P("sh_l"))
+        val = ang(sh, hip, hip + np.array([0.0, -100.0]))
+    else:
+        val = ang(hip, P(f"sh_{sd}"), P(f"elb_{sd}"))
+    LAST_MASKS["callout_measured"] = {"metric": met, "side": sd, "value": round(val, 1), "frame": fr}
+    return val
 
 
 _NUM = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
@@ -284,6 +326,8 @@ def draw_callout_day4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_st
     cross2 = p62._extend_segment(b, v, 0.66, 1.32)
     canvas = Image.fromarray(base_rgb).convert("RGBA")
     laser = _DEMIC_LASER_DAY4 if variant == "day4" else draw_crisp_laser_joint_axis
+    if CFG.get("hide_lines"):   # t652u: no laser / alignment line, no leader, no dot
+        laser = lambda *a_, **k_: None
     laser(canvas, main_chains_1x=[[a_top, v, b_ext]], aux_ext_chains_1x=[list(cross1), list(cross2)],
           vertex_pts_1x=[v] if is_wrong else [v, nxt], is_wrong=is_wrong)
     target_pt = (int(0.48 * v[0] + 0.52 * b[0]), int(0.48 * v[1] + 0.52 * b[1]))
@@ -302,12 +346,16 @@ def draw_callout_day4(base_rgb, shorts_mask_1080, step_idx, kp, is_wrong, deg_st
     ty = int(np.clip(target_pt[1] - 24 - 76, ty_min, 1460))
     elbow_y = ty + 76
     elbow_x = max(286, target_pt[0] - 42)
-    d5.bcd._draw_precision_leader(rd, target_pt, (elbow_x, elbow_y), (278, elbow_y), col)
+    if CFG.get("callout_text_y") is not None:
+        ty = int(CFG["callout_text_y"])
+    if not CFG.get("hide_lines"):
+        d5.bcd._draw_precision_leader(rd, target_pt, (elbow_x, elbow_y), (278, elbow_y), col)
     f_big = v30.f_pretendard(big, "extrabold")
     rd.text((tx + 2, ty + 3), deg_str, font=f_big, fill=(0, 0, 0, 210))
     rd.text((tx, ty), deg_str, font=f_big, fill=(255, 255, 255, 255))
     rd.text((tx + 2, ty + big + 6), l1_str, font=v30.f_pretendard(21, "extrabold"), fill=(*col, 255))
-    rd.text((tx + 2, ty + big + 33), l2_str, font=v30.f_pretendard(16, "bold"), fill=(215, 222, 232, 235))
+    if l2_str:
+        rd.text((tx + 2, ty + big + 33), l2_str, font=v30.f_pretendard(16, "bold"), fill=(215, 222, 232, 235))
     return np.array(Image.alpha_composite(base_pil, ovl).convert("RGB"))
 
 

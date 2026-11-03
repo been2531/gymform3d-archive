@@ -313,6 +313,11 @@ def normalize_scale(kps_seqs):
         for s, (sc, dx, dy) in out.items():
             STEP_SCALE[s], STEP_DX[s], b4.STEP_DY[s] = sc, dx, dy
         zoom = zm
+    fo = CFG.get("frame_override")
+    if fo:   # t652u: one fixed crop/scale for every step (stills and the later clips alike; whole-frame, no cut-out)
+        for s in steps():
+            STEP_SCALE[s], STEP_DX[s], b4.STEP_DY[s] = float(fo["scale"]), int(fo.get("dx", 0)), int(fo.get("dy", 0))
+        note = (note + "; " if note else "") + "frame_override"
     CFG["_normalized"] = {"scale": dict(STEP_SCALE), "dy": dict(b4.STEP_DY), "dx": dict(STEP_DX), "target_size": round(base * zoom, 1),
                           "zoom": zoom, "upscale_vs_720p": round(1.5 * float(np.median(list(STEP_SCALE.values()))), 3), "note": note}
 
