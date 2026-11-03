@@ -101,7 +101,7 @@
       },
       "callout": {
         "deg": "105°",
-        "l1": "ARM PULL + SHRUG",
+        "l1": "ARMS + SHRUG",
         "l2": "BICEPS + TRAPS TAKE IT"
       }
     },
@@ -189,5 +189,27 @@
   },
   "native_muscle_shader": "day4",
   "muscle_glow_clamp": true,
-  "native_muscle_shader_why": "t648u: muscle fibre/colour/glow = Day 4 muscle.day4_fibre (unchanged) on the source's native glow (act_dom, _glow_gain calibrated); muscle_glow_clamp = allowed anatomy regions (gymform/region_glow.py) multiplied into act_dom so colour cannot spill. Both opt-in, default off: Day 4/5/6 configs unchanged."
+  "native_muscle_shader_why": "t648u: muscle fibre/colour/glow = Day 4 muscle.day4_fibre (unchanged) on the source's native glow (act_dom, _glow_gain calibrated); muscle_glow_clamp = allowed anatomy regions (gymform/region_glow.py) multiplied into act_dom so colour cannot spill. Both opt-in, default off: Day 4/5/6 configs unchanged.",
+  "hide_lines": true,
+  "callout_single_label": true,
+  "callout_measure": {
+    "metric": "arm_torso",
+    "frame": "last"
+  },
+  "frame_override": {
+    "scale": 1.53,
+    "dx": 62,
+    "dy": 247
+  },
+  "callout_text_y": 560,
+  "simplify_why": "t652u-t653u: no laser/leader/dot, no sub-label; big MEASURED angle (shoulder angle trunk->upper arm of the visible arm, at the slice's last = peak frame) + one short label; one fixed crop/scale for stills and clips (frame_override) so mannequin + machine fill 9:16",
+  "day4_input_scale": {
+    "1": 0.45,
+    "2": 0.25
+  },
+  "glow_gain_override": {
+    "1": 12,
+    "2": 30
+  },
+  "day4_calibration_why": "t654u: measured at equal torso scale vs the Day 4 master (tools/day4_look_metrics.py, sweeps A-J in output/_consistency/d7m/sweep_*): glow-pixel V median wrong 155 vs D4 157, right 194 vs D4 190; hue/sat/fibre contrast within ~10%. Set for the locked stills (wrong t1, right t2); re-measure on the i2v clips (their glow level differs)."
 }

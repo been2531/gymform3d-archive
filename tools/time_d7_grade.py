@@ -9,7 +9,7 @@ out = sys.argv[1]
 cfg = copy.deepcopy(json.load(open("/workspace/daily_info_reels/configs/day07_muscle2.json")))
 cfg.update(assets_dir=os.path.join(out, "_static_assets"), kp_cache=os.path.join(out, "_kps_mock.pkl"), tmp_dir=os.path.join(out, "_tmp_mock"))
 for form in ("wrong", "right"):
-    m = cfg["motions"][form]; fn = f"{form}_static.mp4"
+    m = cfg["motions"][form]; fn = f"{form}_static.avi"
     m.update(base=fn, i0=0, i1=11, mirror=True); m["renders"]["front"].update(file=fn, mirror=True)
 cfg.pop("target_zoom", None); cfg["step_scale"] = {"1": 1.0, "2": 1.0}; cfg["step_dy"] = {"1": 0, "2": 0}
 for off in (False, True):

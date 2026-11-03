@@ -303,6 +303,8 @@ def load_inputs():
         v = np.concatenate(v) if v else np.zeros(0)
         p50 = float(np.median(v)) if v.size > 2000 else ref
         CFG["_glow_gain"][str(s)] = round(float(np.clip(ref / max(p50, 1.0), 1.0, 2.5)), 3)
+        if str(s) in (CFG.get("glow_gain_override") or {}):   # t654u: explicit Day 4 calibration knob (measured)
+            CFG["_glow_gain"][str(s)] = float(CFG["glow_gain_override"][str(s)])
     SEQS.update(raw_seqs)
     KPS.update({s: kps_seqs[s] for s in ctx.steps()})
     return raw_seqs, kps_seqs
