@@ -43,8 +43,11 @@ def kps(fr):
 
 def clip_gate(name, clip, start, key, key_t):
     frs, fps = read_all(clip); n = len(frs)
-    st = rs(cv2.imread(start)); ky = rs(cv2.imread(key)); ki = min(n - 1, int(round(key_t * fps)))
-    idx = sorted(set([int(round(i * (n - 1) / 12)) for i in range(13)] + [ki]))
+    keys = key.split(","); kts = [float(t) for t in str(key_t).split(",")]
+    if len(keys) == 1 and len(kts) > 1: keys = keys * len(kts)
+    st = rs(cv2.imread(start)); ky = rs(cv2.imread(keys[0])); ki = min(n - 1, int(round(kts[0] * fps)))
+    kis = [min(n - 1, int(round(t * fps))) for t in kts]
+    idx = sorted(set([int(round(i * (n - 1) / 12)) for i in range(13)] + kis))
     per = {i: cm.frame_metrics(frs[i]) for i in idx}
     ms_start, _ = cm.frame_metrics(st); ms_key, _ = cm.frame_metrics(ky)
     union = np.zeros((H, W), bool)
@@ -59,18 +62,38 @@ def clip_gate(name, clip, start, key, key_t):
     # G1 start hold, G2 end + keyframe hold
     s1 = hold(st, frs[0]); s2 = hold(st, frs[-1]); sk = hold(ky, frs[ki])
     # best keyframe match within +-6 frames (timing tolerance)
-    skb = max((hold(ky, frs[j]) for j in range(max(0, ki - 6), min(n, ki + 7))), key=lambda t: t[0] + t[1])
+    kbest = []
+    for kp_, kf_ in zip(keys, kis):
+        kim = rs(cv2.imread(kp_))
+        kbest.append(max((hold(kim, frs[j]) for j in range(max(0, kf_ - 6), min(n, kf_ + 7))), key=lambda t: t[0] + t[1]))
+    skb = min(kbest, key=lambda t: t[0] + t[1])
     r["G1"] = {"ssim": s1[0], "edge_iou": s1[1], "pass": s1[0] >= 0.97 and s1[1] >= 0.88}
     r["G2"] = {"end_ssim": s2[0], "end_edge_iou": s2[1], "key_ssim": sk[0], "key_edge_iou": sk[1],
                "key_best_pm6": list(skb),
                "pass": s2[0] >= 0.97 and s2[1] >= 0.88 and skb[0] >= 0.97 and skb[1] >= 0.88}
     gs = [glow(m) for m in M]; g0s = glow(ms_start); gk = glow(ms_key)
     arr = np.array(gs); cv = float(arr.std() / arr.mean() * 100) if arr.mean() > 0 else 0
+    # G3 v1 (start-only, kept for reference)
     if g0s >= 0.02:
-        ok3 = all(0.6 * g0s <= g <= 1.6 * g0s for g in gs) and cv <= 30
+        ok3_v1 = all(0.6 * g0s <= g <= 1.6 * g0s for g in gs) and cv <= 30
     else:
-        ok3 = (max(gs) - min(gs)) <= 0.015
-    r["G3"] = {"start_glow_pct": round(g0s * 100, 2), "keyframe_glow_pct": round(gk * 100, 2),
+        ok3_v1 = (max(gs) - min(gs)) <= 0.015
+    # G3 v2 (t636): expected glow = the PINNED frames (start @0, keyframes @t_k, last frame = start @end) linearly
+    # interpolated over time; each sample within 0.6-1.6x of expected, and cv of (glow/expected) <= 30%.
+    # Why: a pinned contraction pose can legitimately hide part of the target muscle (arms over the lats), so the
+    # start-only rule rejects clips that follow their pins exactly; the generator's job is to hold the pins.
+    pin_t = [0] + kis + [n - 1]
+    pin_g = [g0s] + [glow(cm.frame_metrics(rs(cv2.imread(kp_)))[0]) for kp_ in keys] + [g0s]
+    exp_ = [float(np.interp(i, pin_t, pin_g)) for i in idx]
+    rat = np.array([g / max(e, 1e-6) for g, e in zip(gs, exp_)])
+    rcv = float(rat.std() / rat.mean() * 100) if rat.mean() > 0 else 999
+    if min(pin_g) >= 0.02:
+        ok3 = bool(rat.min() >= 0.6 and rat.max() <= 1.6 and rcv <= 30)
+    else:
+        ok3 = bool(max(abs(g - e) for g, e in zip(gs, exp_)) <= 0.015)
+    r["G3"] = {"rule": "v2 vs pinned frames (interpolated)", "pin_glow_pct": [round(x * 100, 2) for x in pin_g],
+               "ratio_vs_pins_min": round(float(rat.min()), 2), "ratio_vs_pins_max": round(float(rat.max()), 2),
+               "ratio_cv_pct": round(rcv, 1), "v1_start_only_pass": bool(ok3_v1),"start_glow_pct": round(g0s * 100, 2), "keyframe_glow_pct": round(gk * 100, 2),
                "clip_min_pct": round(min(gs) * 100, 2), "clip_max_pct": round(max(gs) * 100, 2),
                "ratio_min": round(min(gs) / max(g0s, 1e-6), 2), "ratio_max": round(max(gs) / max(g0s, 1e-6), 2),
                "cv_pct": round(cv, 1), "series_pct": [round(g * 100, 1) for g in gs], "pass": bool(ok3)}
@@ -125,7 +148,7 @@ def clip_gate(name, clip, start, key, key_t):
 def main():
     out = sys.argv[1]; res = {}
     for spec in sys.argv[2:]:
-        name, clip, start, key, kt = spec.split(":"); res[name] = clip_gate(name, clip, start, key, float(kt))
+        name, clip, start, key, kt = spec.split(":"); res[name] = clip_gate(name, clip, start, key, kt)
     names = list(res)
     std = mc.load_standards(); ex = (std.get("exercises") or std)["seated_cable_row"]
     for nm in names:
