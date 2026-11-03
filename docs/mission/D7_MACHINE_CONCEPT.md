@@ -7,6 +7,18 @@ Evidence: `output/_consistency/machine_ref/machine_match_sheet.jpg`, references 
 Our frame measured = `smoke_d7v2/frames/v3_wrong_start_720.png` (720×1280; right start is an edit of it, same machine).
 Real frame measured = `ref_matrix_aura_low_row_g3ms53_silver.jpg` (1200×1200).
 
+
+## 0. Hard rules (t643u, t644u) — override everything below
+- **Machine geometry is FIXED** = the real Matrix G3-MS53 photo. Never bend, rotate or re-arrange any part (footplate, rail,
+  seat, tower, pulley) to show an angle. Only the CAMERA moves. Every frame gets the check "machine geometry fixed".
+- **Cameras are defined relative to the fixed machine** (long axis = tower → footplate → rail → seat post):
+  - SIDE view: camera beside the rail, perpendicular to the long axis, at seat-to-shoulder height (the real photo's view).
+  - FRONT view: camera at or behind the tower end, looking down the long axis at the athlete's front; machine unchanged
+    (the tower is then in the foreground/edge of frame, the athlete faces the camera).
+  - REAR view: camera behind the seat end on the axis, looking toward the tower over the athlete's back.
+  - Any 3/4 = a camera position between these, still around the unchanged machine.
+  Prompts state the camera this way ("camera beside the rail, perpendicular to the long axis"), never "turn the machine".
+
 ## 1. Component comparison
 | # | Component | Real (Matrix Aura Low Row G3-MS53) | Ours (v3) | Verdict |
 |---|---|---|---|---|
@@ -94,3 +106,15 @@ Handle travels on the cable line (axis) only; feet never leave the plate; seat n
 - Tower top under the title band → see-through rule; preview pill must stay clear.
 - Reference images are third-party (product photos) — internal reference for edits only; the published reel shows our recoloured render.
 - Box load: generation is remote; local checks are light (nice -n 19).
+
+## 9. Image run 1 (t642u, 2026-11-03 ~16:55 KST) — result
+- Step 1 empty machine (edit of the real photo, try 1): PASS — same parts/positions (bbox 279–962 × 113–1046 vs real 280–934 × 115–1053),
+  one axis, single footplate, rail-end seat, horns + pin + rods kept, recoloured, logo removed; gold ring faint.
+- Step 2 mannequin: FAIL after 2 tries (stopped per rule). Seat/facing/feet/axis PASS; the handle stays a rectangular frame
+  (not V), the cable starts at the stack instead of the low pulley, head/tower 0.70 / 0.69 (target 0.50–0.60).
+  Machine kept by eye; SSIM vs empty: tower 0.83 / 0.70, rail+seat 0.66 / 0.58.
+- Step 3 glow edits and the Day 4 mock: not run (blocked on step 2).
+- Sheet: `output/_consistency/d7m/d7m_machine_first_sheet.jpg`.
+- Next idea (needs owner OK, not executed): split step 2 — (a) put the V handle and the straight low-pulley cable into the EMPTY
+  machine first (machine-only edit, easier to verify), (b) then add a smaller mannequin with an explicit size anchor
+  ("his seated head is level with the top of the weight stack's guide-rod housing / halfway up the tower").
