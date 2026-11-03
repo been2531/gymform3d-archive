@@ -1,0 +1,38 @@
+{
+  "name": "day07_seated_cable_row_still_motion",
+  "why": "t674u-t680u still + code-motion reel: 2 stills per form (start + peak) from the existing clips, Day 4 grade ONCE per still (unchanged native/day4_fibre/region clamp pipeline), motion in code. 0 generations.",
+  "base_config": "configs/day07_muscle2.json",
+  "empty_plate": "output/_consistency/d7m/pin_empty_machine_720x1280.png",
+  "forms": {
+    "wrong": {
+      "clip": "output/assets/day7_wrong_raw_v3.mp4",
+      "start": 0,
+      "peak": 57,
+      "label": "ARMS + SHRUG",
+      "voice": "Seated cable row. Shrug and yank with your arms, and your biceps and traps take the load."
+    },
+    "right": {
+      "clip": "output/assets/day7_right_raw_v3.mp4",
+      "start": 0,
+      "peak": 36,
+      "label": "ELBOWS BACK",
+      "voice": "Chest up, shoulders down, drive the elbows back, and your lats do the work."
+    }
+  },
+  "still_prep": {
+    "sharpen": 0.6,
+    "glow_detail": 0.45,
+    "arm_limit_right": 0.03,
+    "stack_from_empty": true,
+    "stack_why": "the generated peak frames lift the top plates and leave a gap (reads as a split stack); the stack region is taken from the empty plate (real machine at rest), feathered - no warp"
+  },
+  "timeline": {
+    "fps": 30,
+    "duration": 12.0,
+    "push_in": 1.04,
+    "zoom_center_x": 540,
+    "why": "push-in about x = frame centre so the whole machine (tower right edge) and the mannequin stay in frame at the max zoom"
+  },
+  "out_mp4": "output/day7_still_motion_seated_cable_row.mp4",
+  "out_dir": "output/_consistency/still_motion/reel"
+}
