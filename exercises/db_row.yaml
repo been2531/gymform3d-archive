@@ -23,6 +23,12 @@ motion:
   smooth_sigma_f: 2.5
   lock_feet: true
   spine_influence: 0.5      # spreads the hinge over Spine/Spine01/Spine02 (1.0 stretched 0.58% of edges >2x at the lats)
+  spine_aim: far             # v4: spine bones aim 3 torso lengths out along hip->shoulder (legacy shmid: chest swung 7-65 deg)
+  neck_mode: spine_follow    # v4: neck aimed along the torso line + gaze_ext_deg, Head keeps its rest relation (legacy: ears_track)
+  gaze_ext_deg: 4            # head tipped back from the spine line (neutral neck, eyes on the floor ahead of the hands)
+  legs: planted              # v4: both feet flat, constant, knees solved per frame from rig lengths (legacy: source)
+  knee_target_deg: 155      # soft static knee: hips + upper body raised rigidly until the rig knee reaches it
+  stance_scale: 0.45         # fore-aft stagger kept from the clip (1.0 = YMove's long split stance = running-stride look)
 garment:                     # black boxer briefs (드로즈): separate skinned mesh, matte black, never in the muscle mask
   enabled: true
   z_waist: 1.03
@@ -43,8 +49,9 @@ render:
     yaw_back_deg: 35
     elev_deg: 14
     lens_mm: 50
-    fill_w: 0.86              # figure width / frame width
-    feet_y: 0.86              # feet line as a fraction of frame height (title/pill stay above the head)
+    fill_w: 0.90              # figure width / frame width
+    feet_y: 0.90              # feet line as a fraction of frame height (title/pill stay above the head)
+    top_y: 0.22               # highest figure point (v4: was a fixed 0.24; bigger figure)
 grade:
   out_res: [1080, 1920]
   fps: 30
@@ -90,3 +97,15 @@ qc:
   briefs_touch_frac_max: 0.03
   briefs_tear_frac2x_max: 0.015     # provisional (body itself 0.25%; briefs inherit the hip-crease stretch)
   briefs_cover_min_rel: 0.6         # briefs pixels every frame >= 0.6 x median
+  posture:                          # generic rig-geometry checks (tools/rig3d/posture_qc.py), every exercise; limits per exercise
+    neck_line_dev_max_deg: 20       # head-to-torso line vs rest (0 = head continues the spine)
+    neck_flex_range_deg: [-20, 15]  # + chin to chest, - head tipped back; a row keeps a neutral neck, slight forward gaze
+    head_roll_max_deg: 10           # ear-to-shoulder tilt relative to the chest
+    head_yaw_max_deg: 15
+    neck_steady_max_deg: 5          # neck flexion max |dev| from its rep median
+    toe_lift_max_m: 0.02            # toe base vs floor, both feet, every frame (heel/toe up = not planted)
+    foot_pitch_dev_max_deg: 12      # foot pitch vs the rig's rest (flat-foot) pitch
+    foot_drift_max_m: 0.015         # ankle / toe base vs per-rep median
+    knee_range_deg: [140, 178]      # static split/hinge stance: soft knees, never deep lunge or locked hyper-straight
+    knee_steady_max_deg: 6
+    thigh_split_max_deg: 35         # sagittal angle between the thighs (running stride ~60+)

@@ -102,9 +102,49 @@ SCALE = float(0.5 * rig_leg / clip_leg + 0.5 * rig_tor / clip_tor)
 fc_ = (B[0, 27] + B[0, 28]) / 2; fc_[2] = 0.0; B = fc_ + SCALE * (B - fc_)
 B[..., 2] -= min(B[0, 27, 2], B[0, 28, 2]) - (Wr @ bl["LeftFoot"].head_local).z        # ankles at the rig's rest ankle height
 log(f"person->rig scale {SCALE:.3f} (leg {rig_leg:.2f}/{clip_leg:.2f}, torso {rig_tor:.2f}/{clip_tor:.2f})")
+# legs (v4). legacy "source": ankles/heels/toes locked to frame 1 of the clip, knees from MediaPipe -> long staggered
+# stride, rear heel up on its toes, knees drifting = a running-stride look. "planted": both feet flat on the floor at the
+# rig's rest foot pitch, fore-aft stagger scaled by stance_scale toward the hips, constant all rep; knees are solved per
+# frame (2-bone, rig bone lengths, bending toward the toes) from the rig's actual hip joints, so feet do not slide.
+LEGS = MO.get("legs", "source")
+if LEGS == "planted":
+    tv0 = np.mean((B[:, 11] + B[:, 12]) / 2 - (B[:, 23] + B[:, 24]) / 2, axis=0); fwd_h = np.array([tv0[0], tv0[1], 0.0]); fwd_h /= np.linalg.norm(fwd_h)
+    hg = np.median((B[:, 23] + B[:, 24]) / 2, axis=0); ss = float(MO.get("stance_scale", 0.5)); sw = float(MO.get("stance_width_m", 0.0))
+    lat_h = np.cross([0.0, 0.0, 1.0], fwd_h)
+    for aj, tj, hj, s_ in ((27, 31, 29, "Left"), (28, 32, 30, "Right")):
+        a0 = B[0, aj].copy(); dv = a0 - hg; fa = float(dv @ fwd_h); la = float(dv @ lat_h)
+        if sw > 0: la = math.copysign(sw / 2, la if abs(la) > 1e-6 else (1 if s_ == "Left" else -1))
+        an = hg + ss * fa * fwd_h + la * lat_h; an[2] = (Wr @ bl[s_ + "Foot"].head_local).z
+        fr = Wr @ bl[s_ + "Foot"].head_local; tr = Wr @ bl[s_ + "ToeBase"].head_local; hl = math.hypot(tr.x - fr.x, tr.y - fr.y)
+        td = B[0, tj] - a0; td[2] = 0; td = td / (np.linalg.norm(td) + 1e-9) if np.linalg.norm(td) > 1e-6 else fwd_h
+        td = td * 0.5 + fwd_h * 0.5; td /= np.linalg.norm(td)                # toes mostly forward (no splayed / turned-in foot)
+        to = an + hl * td; to[2] = tr.z
+        B[:, aj] = an; B[:, tj] = to; B[:, hj] = an - 0.05 * td
+    kt = math.radians(float(MO.get("knee_target_deg", 155)))      # soft knee: raise hips + upper body (rigid) to get it
+    rq = []
+    for s_, hj, aj in (("Left", 23, 27), ("Right", 24, 28)):
+        Lt, Ls = rl(s_ + "UpLeg", s_ + "Leg"), rl(s_ + "Leg", s_ + "Foot"); dt_ = math.sqrt(Lt * Lt + Ls * Ls - 2 * Lt * Ls * math.cos(kt))
+        hh = np.median(np.hypot(B[:, hj, 0] - B[0, aj, 0], B[:, hj, 1] - B[0, aj, 1]))
+        rq.append(B[0, aj, 2] + math.sqrt(max(dt_ * dt_ - hh * hh, 0.0)) - float(np.median(B[:, hj, 2])))
+    raise_z = float(np.mean(rq)) if MO.get("raise_hips", True) else 0.0
+    up_j = [j for j in range(33) if j not in (27, 28, 29, 30, 31, 32)]; B[:, up_j, 2] += raise_z
+    log(f"legs planted: hips raised {raise_z:+.3f} m for knee {math.degrees(kt):.0f}, fwd {fwd_h.round(2).tolist()}")
+    log(f"legs planted: stance_scale {ss}, ankles {B[0, 27].round(3).tolist()} / {B[0, 28].round(3).tolist()}")
 def empty(n):
     e = bpy.data.objects.new(n, None); col.objects.link(e); return e
 names = {"hipmid": lambda f: (B[f, 23] + B[f, 24]) / 2, "shmid": lambda f: (B[f, 11] + B[f, 12]) / 2, "nose": lambda f: (B[f, 7] + B[f, 8]) / 2}
+# neck/head (v4). legacy "ears_track": neck AND Head damped-tracked the ear midpoint (landmarks 7/8, mislabelled "nose").
+# The Head bone starts at the top of the neck, almost level with the ears, and its rest axis leans 34 deg forward, so
+# aiming it at the ears folded the head down toward the chest (neck flexion 30+ deg, QC neck_in_line_with_spine).
+# "spine_follow": neither bone is aimed at landmarks; the neck inherits the chest bone (Spine) orientation, so it
+# continues the spine line by construction (0 roll, 0 yaw, no face-landmark jitter), tipped back by a fixed
+# gaze_ext_deg about its lateral axis (natural slight forward gaze); the Head keeps its rest relation to the neck.
+NECK_MODE = MO.get("neck_mode", "ears_track")
+# spine aim (v4): legacy "shmid" damped-tracked the shoulder midpoint from every spine bone; the top bone (Spine) starts
+# almost AT shoulder height, so its aim was ill-conditioned and swung 7-65 deg off the thoracic line frame to frame
+# (the chest the neck/head hang from). "far": the same torso direction, but a point 3 torso lengths out.
+if MO.get("spine_aim", "shmid") == "far":
+    names["shfar"] = lambda f: (B[f, 23] + B[f, 24]) / 2 + 3.0 * ((B[f, 11] + B[f, 12]) / 2 - (B[f, 23] + B[f, 24]) / 2)
 for j, n in [(11, "lsh"), (12, "rsh"), (13, "lel"), (14, "rel"), (15, "lwr"), (16, "rwr"), (23, "lhip"), (24, "rhip"), (25, "lkn"), (26, "rkn"),
              (27, "lank"), (28, "rank"), (31, "lft"), (32, "rft"), (19, "lix"), (20, "rix")]:
     names[n] = (lambda jj: (lambda f: B[f, jj]))(j)
@@ -116,14 +156,40 @@ for b in pb: b.rotation_mode = "QUATERNION"; b.rotation_quaternion = (1, 0, 0, 0
 def track(bone, tgt_):
     c = pb[bone].constraints.new("DAMPED_TRACK"); c.target = E[tgt_]; c.track_axis = "TRACK_Y"
 c = pb["Hips"].constraints.new("COPY_LOCATION"); c.target = E["hipmid"]
-for bn in ("Hips", "Spine02", "Spine01", "Spine"): track(bn, "shmid")
+for bn in ("Hips", "Spine02", "Spine01", "Spine"): track(bn, "shfar" if "shfar" in E else "shmid")
 for bn in ("Spine02", "Spine01", "Spine"):          # < 1 spreads the bend over the chain (less skin stretch at one joint)
     pb[bn].constraints[-1].influence = float(MO.get("spine_influence", 1.0))
-track("neck", "nose"); track("Head", "nose")
+if NECK_MODE == "spine_follow":
+    pb["neck"].rotation_quaternion = mu.Quaternion((1, 0, 0), -math.radians(float(MO.get("gaze_ext_deg", 8.0))))   # local X = lateral, - = extension
+else:
+    track("neck", "nose"); track("Head", "nose")
 for s, p in (("Left", "l"), ("Right", "r")):
     track(s + "Arm", p + "el"); track(s + "ForeArm", p + "wr"); track(s + "Hand", p + "ix")
     track(s + "UpLeg", p + "kn"); track(s + "Leg", p + "ank"); track(s + "Foot", p + "ft")
 hand = ("Left" if side == 11 else "Right") + "Hand"
+if LEGS == "planted":       # per-frame 2-bone knee solve from the evaluated hip joints (hips/spine do not depend on knees)
+    # refine the hip raise on the evaluated rig (rig hip joints sit off the landmark hips once the pelvis hinges)
+    upn = [n for n in names if n not in ("lank", "rank", "lft", "rft", "lkn", "rkn")]
+    for it in range(4):
+        req = []
+        for s_, aj in (("Left", 27), ("Right", 28)):
+            Lt, Ls = rl(s_ + "UpLeg", s_ + "Leg"), rl(s_ + "Leg", s_ + "Foot"); dt_ = math.sqrt(Lt * Lt + Ls * Ls - 2 * Lt * Ls * math.cos(kt))
+            for f in (1, NF // 2, NF):
+                sc.frame_set(f); H = arm.matrix_world @ pb[s_ + "UpLeg"].head; hh = math.hypot(H.x - B[0, aj, 0], H.y - B[0, aj, 1])
+                req.append(B[0, aj, 2] + math.sqrt(max(dt_ * dt_ - hh * hh, 0.0)) - H.z)
+        dz = float(np.mean(req))
+        if abs(dz) < 0.002: break
+        B[:, up_j, 2] += dz; raise_z += dz
+        for f in range(NF):
+            for n in upn: E[n].location = mu.Vector(names[n](f).tolist()); E[n].keyframe_insert("location", frame=f + 1)
+    log(f"legs: rig-refined hip raise {raise_z:+.3f} m")
+    for s_, p_, aj in (("Left", "l", 27), ("Right", "r", 28)):
+        Lt, Ls = rl(s_ + "UpLeg", s_ + "Leg"), rl(s_ + "Leg", s_ + "Foot"); A = mu.Vector(B[0, aj].tolist())
+        pole = mu.Vector((B[0, 31 if aj == 27 else 32] - B[0, aj]).tolist()); pole.z = 0; pole.normalize()
+        for f in range(NF):
+            sc.frame_set(f + 1); H = arm.matrix_world @ pb[s_ + "UpLeg"].head; dv = A - H; d = min(dv.length, 0.999 * (Lt + Ls)); u_ = dv.normalized()
+            x_ = (Lt * Lt - Ls * Ls + d * d) / (2 * d); h_ = math.sqrt(max(Lt * Lt - x_ * x_, 0.0)); pp = (pole - pole.dot(u_) * u_).normalized()
+            E[p_ + "kn"].location = H + u_ * x_ + pp * h_; E[p_ + "kn"].keyframe_insert("location", frame=f + 1)
 log("rig constrained")
 
 # ---- rest geometry: muscle regions, shorts, hand vertices, edges ----------------------------------------------------
@@ -277,7 +343,7 @@ def ext(Dd):
     nx = px / (Dd + pz) * kf * asp; ny = py / (Dd + pz) * kf
     return (nx.max() - nx.min()) / 2, (ny.max() - ny.min()) / 2
 lo, hi = 0.5, 30.0
-fill_w = float(CAMC.get("fill_w", 0.86)); top_y = 0.24; feet_y = float(CAMC.get("feet_y", 0.86))
+fill_w = float(CAMC.get("fill_w", 0.86)); top_y = float(CAMC.get("top_y", 0.24)); feet_y = float(CAMC.get("feet_y", 0.86))
 for _ in range(60):
     mid = (lo + hi) / 2; wx, wy = ext(mid)
     if wx > fill_w or wy > (feet_y - top_y): lo = mid
@@ -293,9 +359,13 @@ framing = {"x_min": round(float(pr[:, 0].min()), 3), "x_max": round(float(pr[:, 
 log(f"camera {framing}")
 
 # ---- per-frame checks (evaluated rig + deformed mesh) -----------------------------------------------------------------
-chk = []
+chk = []; BN = [b.name for b in arm.data.bones]; BPOSE = np.zeros((NF, len(BN), 4, 4))
+def _nm(M):       # world 4x4 with an orthonormal rotation part (the armature object carries the glTF scale)
+    M = np.array(M); R = M[:3, :3]; M[:3, :3] = R / np.linalg.norm(R, axis=0, keepdims=True); return M
+BREST = np.array([_nm(arm.matrix_world @ arm.data.bones[n].matrix_local) for n in BN])
 for f in range(1, NF + 1):
     sc.frame_set(f); Wm = arm.matrix_world; Pp = lambda b: Wm @ pb[b].head
+    for bi, n in enumerate(BN): BPOSE[f - 1, bi] = _nm(Wm @ pb[n].matrix)
     lsh, rsh, lwr, rwr, hip = Pp("LeftArm"), Pp("RightArm"), Pp("LeftHand"), Pp("RightHand"), Pp("Hips"); shc = (lsh + rsh) / 2
     lr = (rsh - lsh).normalized(); cross = (rwr - lwr).dot(lr) < 0
     tv = shc - hip; torso = math.degrees(math.atan2(math.hypot(tv.x, tv.y), tv.z))
@@ -337,6 +407,7 @@ for f in range(1, NF + 1):
     chk.append(rec)
 json.dump({"frames": chk, "working": hand, "floor_tilt_fixed_deg": round(floor_tilt, 1), "rep": [f0, f1], "raw_torso_deg": [round(float(raw_torso.min()), 1), round(float(raw_torso.max()), 1)],
            "framing": framing, "regions": region_counts, "grip_offset_m": GRIP, "person_to_rig_scale": round(SCALE, 3), "kp_res": [rx, ry]}, open(a.out + "/checks.json", "w"), indent=0)
+np.savez_compressed(a.out + "/bones.npz", names=np.array(BN), rest=BREST, pose=BPOSE, neck_mode=NECK_MODE, legs=LEGS)
 log("checks done")
 if a.checks_only: sys.exit(0)
 

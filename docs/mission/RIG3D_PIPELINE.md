@@ -41,3 +41,25 @@ A QC failure with no rule writes one item to `/home/box/routinizer/ai_queue/fitn
   (`layout.composite_title_and_preview_v4`) with the peak-frame torso thumbnail.
 - **Overlay QC:** `overlay_in_safe_zone` (title/pill/callout text inside qc.safe_zone), `overlay_text_no_overlap`,
   `callout_text_clear_of_figure`, `callout_angle_matches_measured`.
+
+## v4 (2026-11-04): posture QC (neck / head / legs) + retarget root-cause fixes
+Owner feedback on 20261104_2240: the neck looked bent, the legs looked like a running stride, the figure was small.
+- **Root cause, neck:** `neck` and `Head` were both damped-tracked to the ear midpoint (landmarks 7/8, labelled
+  "nose"). The Head bone starts at the top of the neck, almost level with the ears, so its aim was ill-conditioned
+  (head folded toward the chest, flipping on some frames). In addition every spine bone tracked the *shoulder
+  midpoint*; the top bone (`Spine`) starts at shoulder height, so the chest itself swung 7-65° off the thoracic line.
+- **Fix (config `motion`):** `spine_aim: far` (spine bones aim 3 torso lengths out along hip→shoulder),
+  `neck_mode: spine_follow` (no landmark aim: the neck inherits the chest + a fixed `gaze_ext_deg` extension, the Head
+  keeps its rest relation → 0 roll / 0 yaw by construction).
+- **Root cause, legs:** feet were locked to frame 1 of YMove's long split stance (rear heel up) and the knees came
+  from MediaPipe (91-134°, thighs split ~69°) and the rig could not reach its ankle targets (7-8 cm foot drift).
+- **Fix:** `legs: planted` — both feet flat at the rig's rest foot pitch, fore-aft stagger × `stance_scale`, hips +
+  upper body raised rigidly (refined on the evaluated rig) until the knees reach ~`knee_target_deg`, knees solved
+  per frame (2-bone, rig bone lengths, bending toward the toes). Legacy behaviour = `neck_mode: ears_track`,
+  `legs: source`, `spine_aim: shmid` (defaults, so old configs reproduce).
+- **Framing:** `render.camera.top_y` (was a fixed 0.24) 0.22, `feet_y` 0.90, `fill_w` 0.90.
+- **Posture QC (`tools/rig3d/posture_qc.py`, generic, limits in `qc.posture` per exercise):** pure geometry from the
+  evaluated armature dumped per frame to `render/bones.npz` (world matrices of all bones + rest):
+  `neck_in_line_with_spine_deg`, `neck_flex_deg_min_max`, `head_roll_deg`, `head_yaw_deg`, `neck_steady_maxdev_deg`,
+  `both_feet_planted`, `foot_drift_m`, `knee_angles_deg`, `knee_steady_maxdev_deg`, `thigh_split_deg`. Per-frame
+  series go to `posture_series.json`. Auto-fix rules: `neck_follow_spine`, `plant_legs`.
