@@ -1,0 +1,54 @@
+{
+ "source": {
+  "clip": "_scratch/motion_src/ymove_sa_row.mp4",
+  "frames": 321,
+  "fps": 25.0,
+  "size": [
+   720,
+   1280
+  ],
+  "working_side": "right",
+  "full_body": {
+   "all_key_visible_frac": 0.682,
+   "all_key_in_frame_frac": 1.0,
+   "pass": true
+  },
+  "hinge": {
+   "median_deg": 67.5,
+   "p10_p90": [
+    55.8,
+    85.1
+   ],
+   "pass": false
+  },
+  "reps": {
+   "peaks_f": [
+    50,
+    127,
+    210,
+    278
+   ],
+   "bottoms_f": [
+    92,
+    173,
+    259
+   ],
+   "flex_range": [
+    21.4,
+    95.8
+   ],
+   "pass": true
+  },
+  "jitter": {
+   "wrist3d_m_per_f2": 0.0343,
+   "wrist2d_torso_per_f2": 0.0359,
+   "pass": false
+  },
+  "pass": false
+ },
+ "render_checks_summary": {
+  "arm_cross_frames": 0,
+  "torso_min": 64.0,
+  "torso_max": 91.5
+ }
+}
