@@ -7,6 +7,7 @@ paid APIs, never posts anywhere (ig_publish.py is not imported or called).
   ... --force grade        re-run one stage (and everything after it)
   ... --short 12           render only the first N frames (cost probe: time + RAM), stops after the render stage
   ... --deliver-dry-run    build the delivery but do not commit/push/alert
+  ... --no-email           commit/push/alert for real, but do not send the owner e-mail
   ... --no-gate            skip the box load gate (default: wait in /home/box/routinizer/rz_loadgate.py)
 
 Stages (each cached by a hash of its config slice + code + upstream hashes; stamps in _cache_rig3d/<slug>/stamps):
@@ -24,7 +25,7 @@ AIQ = "/home/box/routinizer/ai_queue/fitness_studio.jsonl"
 FITNESS_STUDIO_AGENT = "7c203a21-2233-41e0-92f1-189a01945890"
 STAGES = ["config", "fetch", "pose", "render", "grade", "reel", "qc", "sheet", "deliver"]
 CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
-        "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
+        "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py", "tools/rig3d/posture_qc.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
 PEAK = {"rss_mb": 0}
 
 def log(m): print(f"[{dt.datetime.now(KST):%H:%M:%S}] {m}", flush=True)
@@ -207,6 +208,8 @@ RULES = {   # qc fix name -> (config path, function old_value -> new value); eac
     "spine_spread": ("motion.spine_influence", lambda v: max(0.3, float(v) - 0.2)),
     "camera_margin": ("render.camera.fill_w", lambda v: float(v) - 0.08),
     "camera_tighter": ("render.camera.fill_w", lambda v: min(0.95, float(v) + 0.06)),
+    "neck_follow_spine": ("motion.neck_mode", lambda v: "spine_follow"),
+    "plant_legs": ("motion.legs", lambda v: "planted"),
 }
 
 def getp(c, path):
@@ -247,7 +250,7 @@ def resolve_ai(slug, run_id, qc):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--exercise", required=True); ap.add_argument("--force", choices=STAGES)
-    ap.add_argument("--short", type=int, default=0); ap.add_argument("--deliver-dry-run", action="store_true"); ap.add_argument("--no-gate", action="store_true")
+    ap.add_argument("--short", type=int, default=0); ap.add_argument("--deliver-dry-run", action="store_true"); ap.add_argument("--no-email", action="store_true", help="real repo commit + alert, but build the owner e-mail without sending it (one e-mail per run budget)"); ap.add_argument("--no-gate", action="store_true")
     ap.add_argument("--gate-timeout", type=int, default=6 * 3600); ap.add_argument("--no-retry", action="store_true")
     args = ap.parse_args()
     try: os.nice(max(0, 19 - os.nice(0)))
@@ -292,7 +295,7 @@ def main():
     cfg_d = dict(cfg); jdump(cfg_d, run.p("cfg.json"))
     res = [deliver.backend_repo(run.work, cfg_d, args.deliver_dry_run)]
     url = res[0].get("url")
-    res.append(deliver.backend_ntfy(run.work, cfg_d, args.deliver_dry_run, url)); res.append(deliver.backend_smtp(run.work, cfg_d, args.deliver_dry_run, url))
+    res.append(deliver.backend_ntfy(run.work, cfg_d, args.deliver_dry_run, url)); res.append(deliver.backend_smtp(run.work, cfg_d, args.deliver_dry_run or args.no_email, url))
     meta["delivery"] = res; jdump(meta, run.p("run.json"))
     if not qc["pass"]:
         deliver.alert("rig3d_needs_ai", f"{run.slug} rig3d QC FAIL -> AI queue {meta.get('ai_queue')}", {"slug": run.slug, "run_id": run_id}, args.deliver_dry_run, severity="warn")

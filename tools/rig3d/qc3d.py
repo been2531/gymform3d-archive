@@ -47,6 +47,14 @@ def run(run_dir, cfg):
     out[-1]["where"] = {"frame": worst["f"], "bones": worst.get("tear_where"), "max_ratio": worst["tear_max_ratio"]}
     el = np.array([f["elbow_deg"] for f in F]); rom = float(el.max() - el.min())
     out.append(ck("working_elbow_rom_deg", round(rom, 1), f">= {Q['elbow_rom_min_deg']}", rom >= Q["elbow_rom_min_deg"]))
+    # posture (generic, tools/rig3d/posture_qc.py): neck/head in line with the spine, feet planted, knees, stance
+    if Q.get("posture"):
+        bz = os.path.join(run_dir, "render/bones.npz")
+        if not os.path.exists(bz): out.append(ck("posture_bones_present", False, True, False, None, "posture"))
+        else:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import posture_qc
+            pc, series = posture_qc.checks(bz, Q["posture"]); out += pc
+            json.dump(series, open(os.path.join(run_dir, "posture_series.json"), "w"))
     # Day 4 look
     L = json.load(open(os.path.join(run_dir, "grade/look.json")))["frames"]
     def rng(key, lim, fix, name=None):
