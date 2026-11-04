@@ -24,8 +24,10 @@ motion:
   lock_feet: true
   spine_influence: 0.5      # spreads the hinge over Spine/Spine01/Spine02 (1.0 stretched 0.58% of edges >2x at the lats)
 render:
-  res: [720, 1280]
-  spp: 12
+  res: [1080, 1920]          # render at delivery size (720 + upscale measured 0.18x Day 4 sharpness)
+  spp: 16
+  denoise_prefilter: ACCURATE # OIDN guided by albedo + normal passes keeps the sculpt texture
+  normal_strength: 1.5
   denoise: true
   mask_spp: 4
   camera:
@@ -39,6 +41,8 @@ grade:
   out_res: [1080, 1920]
   fps: 30
   loops: 2                    # rep played N times
+  detail_amount: 1.0          # unsharp detail pass on the body surface (sigma 1.6)
+  detail_sigma: 1.6
   backdrop_rgb: [35, 39, 43]
   target_muscles: [lats, rhomboids, mid_trap]
   glow: right                 # green (correct form)

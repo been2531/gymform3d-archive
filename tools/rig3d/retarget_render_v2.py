@@ -261,7 +261,19 @@ for m_ in body_mats:
     for l in list(bsdf.inputs["Base Color"].links): nt.links.remove(l)
     at = nt.nodes.new("ShaderNodeAttribute"); at.attribute_name = "shorts"; mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"
     mix.inputs[6].default_value = (0.20, 0.205, 0.215, 1); mix.inputs[7].default_value = (0.012, 0.012, 0.014, 1)
-    nt.links.new(at.outputs["Fac"], mix.inputs[0]); nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"]); bsdf.inputs["Roughness"].default_value = 0.62
+    nt.links.new(at.outputs["Fac"], mix.inputs[0]); bsdf.inputs["Roughness"].default_value = 0.62
+    tex = [n for n in nt.nodes if n.type == "TEX_IMAGE" and n.image and "basecolor" in n.image.name.lower()]
+    ad = float(RC.get("albedo_detail", 0.0))
+    if tex and ad > 0:   # keep the asset's painted fibre detail: grey x (albedo luminance, contrast-boosted)
+        bw = nt.nodes.new("ShaderNodeRGBToBW"); nt.links.new(tex[0].outputs["Color"], bw.inputs[0])
+        mr = nt.nodes.new("ShaderNodeMapRange"); mr.inputs["From Min"].default_value = 0.15; mr.inputs["From Max"].default_value = 0.8
+        mr.inputs["To Min"].default_value = 1.0 - ad; mr.inputs["To Max"].default_value = 1.0 + ad; nt.links.new(bw.outputs[0], mr.inputs["Value"])
+        mul = nt.nodes.new("ShaderNodeMix"); mul.data_type = "RGBA"; mul.blend_type = "MULTIPLY"; mul.inputs[0].default_value = 1.0
+        nt.links.new(mix.outputs[2], mul.inputs[6]); nt.links.new(mr.outputs[0], mul.inputs[7]); nt.links.new(mul.outputs[2], bsdf.inputs["Base Color"])
+    else:
+        nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"])
+    for nm in [n for n in nt.nodes if n.type == "NORMAL_MAP"]:   # sculpt detail (fibres) from the asset's normal map
+        nm.inputs["Strength"].default_value = float(RC.get("normal_strength", 1.0))
 sc.render.engine = "CYCLES"; sc.cycles.device = "CPU"; sc.render.film_transparent = True
 wd = bpy.data.worlds.new("w"); sc.world = wd; wd.use_nodes = True; bg = wd.node_tree.nodes["Background"]
 hdri = C["asset"]["hdri"]; envn = wd.node_tree.nodes.new("ShaderNodeTexEnvironment"); envn.image = bpy.data.images.load(hdri["file"])
@@ -278,8 +290,10 @@ def render_set(prefix):
 tim = {}
 if not a.mask_only:
     sc.cycles.samples = int(RC.get("spp", 12)); sc.cycles.use_denoising = bool(RC.get("denoise", True))
-    try: sc.cycles.denoiser = "OPENIMAGEDENOISE"
-    except Exception: pass
+    try:
+        sc.cycles.denoiser = "OPENIMAGEDENOISE"; sc.cycles.denoising_prefilter = RC.get("denoise_prefilter", "ACCURATE")   # albedo+normal guided: keeps texture
+        sc.cycles.denoising_input_passes = "RGB_ALBEDO_NORMAL"
+    except Exception as e: log(f"denoise option: {e}")
     sc.view_settings.view_transform = "AgX"
     t = time.time(); render_set("f"); tim["beauty_s"] = round(time.time() - t, 1); log(f"beauty {tim['beauty_s']} s")
 if not a.no_mask:

@@ -23,8 +23,8 @@ KST = dt.timezone(dt.timedelta(hours=9))
 AIQ = "/home/box/routinizer/ai_queue/fitness_studio.jsonl"
 FITNESS_STUDIO_AGENT = "7c203a21-2233-41e0-92f1-189a01945890"
 STAGES = ["config", "fetch", "pose", "render", "grade", "reel", "qc", "sheet", "deliver"]
-CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py"], "grade": ["tools/rig3d/grade3d.py", "gymform/muscle.py", "gymform/layout.py"],
-        "reel": ["tools/rig3d/pipeline.py", "gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
+CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
+        "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
 PEAK = {"rss_mb": 0}
 
 def log(m): print(f"[{dt.datetime.now(KST):%H:%M:%S}] {m}", flush=True)
@@ -53,7 +53,7 @@ def run_child(cmd, env=None, cwd=ROOT, logf=None):
     p = subprocess.Popen(["nice", "-n", "19"] + cmd, cwd=cwd, env=env, stdout=out, stderr=subprocess.STDOUT); peak = 0
     while p.poll() is None:
         peak = max(peak, rss_tree(p.pid)); time.sleep(0.5)
-    PEAK["rss_mb"] = max(PEAK["rss_mb"], peak)
+    PEAK["rss_mb"] = max(PEAK["rss_mb"], peak); PEAK["stage"] = max(PEAK.get("stage", 0), peak)
     if p.returncode: raise RuntimeError(f"{os.path.basename(cmd[1] if len(cmd) > 1 else cmd[0])} exit {p.returncode} (log {logf})")
     return peak
 
@@ -84,9 +84,10 @@ class Run:
         h = hsh(name, key, [fsha(c) for c in CODE.get(name, [])], [self.h.get(s) for s in STAGES[:STAGES.index(name)]])
         sp = os.path.join(self.stamps, name + ".json"); st = json.load(open(sp)) if os.path.exists(sp) else {}
         if name not in self.forced and st.get("hash") == h and all(os.path.exists(o) for o in outputs):
-            self.h[name] = h; log(f"{name}: cached"); self.times[name] = {"cached": True}; return st.get("info")
-        t = time.time(); log(f"{name}: run"); info = fn()
-        self.h[name] = h; self.times[name] = {"s": round(time.time() - t, 1)}; jdump({"hash": h, "at": dt.datetime.now(KST).isoformat(timespec="seconds"), "info": info}, sp)
+            self.h[name] = h; log(f"{name}: cached"); self.times[name] = {"cached": True, "computed_s": st.get("s"), "computed_at": st.get("at")}; return st.get("info")
+        t = time.time(); log(f"{name}: run"); PEAK["stage"] = 0; info = fn()
+        self.h[name] = h; self.times[name] = {"s": round(time.time() - t, 1)}
+        jdump({"hash": h, "at": dt.datetime.now(KST).isoformat(timespec="seconds"), "s": round(time.time() - t, 1), "peak_rss_mb": PEAK.get("stage", 0), "info": info}, sp)
         self.forced.discard(name); return info
 
     # 1 ------------------------------------------------------------------------------------------------------------------
@@ -230,6 +231,20 @@ def enqueue_ai(run, qc, meta):
     with open(AIQ, "a", encoding="utf-8") as f: f.write(json.dumps(item, ensure_ascii=False) + "\n")
     log(f"ai_queue: queued {iid} -> {AIQ}"); return iid
 
+def resolve_ai(slug, run_id, qc):
+    """QC passed: mark this exercise's pending Fitness Studio items done (rewritten in place, never deleted)."""
+    if not os.path.exists(AIQ): return []
+    lines, done = open(AIQ, encoding="utf-8").read().splitlines(), []
+    for i, line in enumerate(lines):
+        try: it = json.loads(line)
+        except ValueError: continue
+        if it.get("topic_id") == slug and it.get("step") == "rig3d_qc_review" and it.get("status") == "pending":
+            it.update({"status": "done", "done_at": dt.datetime.now(KST).isoformat(timespec="seconds"),
+                       "resolution": f"auto: rig3d run {run_id} QC PASS {qc['n_pass']}/{qc['n']}"}); lines[i] = json.dumps(it, ensure_ascii=False); done.append(it["id"])
+    if done:
+        tmp = AIQ + ".tmp"; open(tmp, "w", encoding="utf-8").write("\n".join(lines) + "\n"); os.replace(tmp, AIQ)
+    return done
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--exercise", required=True); ap.add_argument("--force", choices=STAGES)
     ap.add_argument("--short", type=int, default=0); ap.add_argument("--deliver-dry-run", action="store_true"); ap.add_argument("--no-gate", action="store_true")
@@ -259,13 +274,20 @@ def main():
             fixes.append({"rule": f, "path": path, "old": old, "new": new}); log(f"auto-fix {f}: {path} {old} -> {new}")
     meta = {"run_id": run_id, "slug": run.slug, "code_commit": commit, "stages": run.times, "fixes_applied": fixes, "rep": pinfo["rep"],
             "render": rinfo, "reel": reel["mp4"], "sheet": run.p("sheet.png"), "qc_pass": qc["pass"]}
-    meta["wall_s"] = round(time.time() - T0, 1); meta["peak_rss_mb"] = PEAK["rss_mb"] or rinfo.get("peak_rss_mb")
+    def production():   # real cost of producing THIS output = latest computed run of every stage (cached re-runs don't reset it)
+        st = [json.load(open(os.path.join(run.stamps, f + ".json"))) for f in STAGES if os.path.exists(os.path.join(run.stamps, f + ".json"))]
+        return {"chain_s": round(sum(x.get("s") or 0 for x in st), 1), "peak_rss_mb": max([x.get("peak_rss_mb") or 0 for x in st] + [rinfo.get("peak_rss_mb") or 0]),
+                "render_s": rinfo.get("wall_s"), "render_peak_rss_mb": rinfo.get("peak_rss_mb")}
+    meta["production"] = production(); meta["wall_s_this_invocation"] = round(time.time() - T0, 1)
+    meta["wall_s"] = meta["production"]["chain_s"]; meta["peak_rss_mb"] = meta["production"]["peak_rss_mb"]
     jdump(meta, run.p("run.json"))
     sys.path.insert(0, HERE); import sheet
     run.stage("sheet", [run_id, qc], lambda: sheet.build(run.work, cfg, run.p("sheet.png")), [run.p("sheet.png")])
     if not qc["pass"]:
         meta["ai_queue"] = enqueue_ai(run, qc, meta)
-    meta["wall_s"] = round(time.time() - T0, 1); jdump(meta, run.p("run.json"))
+    else:
+        meta["ai_queue_resolved"] = resolve_ai(run.slug, run_id, qc)
+    meta["production"] = production(); meta["wall_s"] = meta["production"]["chain_s"]; meta["wall_s_this_invocation"] = round(time.time() - T0, 1); jdump(meta, run.p("run.json"))
     import deliver
     cfg_d = dict(cfg); jdump(cfg_d, run.p("cfg.json"))
     res = [deliver.backend_repo(run.work, cfg_d, args.deliver_dry_run)]
@@ -274,7 +296,7 @@ def main():
     meta["delivery"] = res; jdump(meta, run.p("run.json"))
     if not qc["pass"]:
         deliver.alert("rig3d_needs_ai", f"{run.slug} rig3d QC FAIL -> AI queue {meta.get('ai_queue')}", {"slug": run.slug, "run_id": run_id}, args.deliver_dry_run, severity="warn")
-    log(f"DONE qc={'PASS' if qc['pass'] else 'FAIL'} {qc['n_pass']}/{qc['n']} wall {meta['wall_s']} s peak RSS {meta['peak_rss_mb']} MB sheet {meta['sheet']}")
+    log(f"DONE qc={'PASS' if qc['pass'] else 'FAIL'} {qc['n_pass']}/{qc['n']} chain {meta['wall_s']} s (this invocation {meta['wall_s_this_invocation']} s) peak RSS {meta['peak_rss_mb']} MB sheet {meta['sheet']}")
     print(json.dumps({"qc_pass": qc["pass"], "sheet": meta["sheet"], "delivery": res}, ensure_ascii=False))
 
 if __name__ == "__main__":

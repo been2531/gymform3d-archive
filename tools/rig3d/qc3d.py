@@ -9,16 +9,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 DAY4 = os.path.join(ROOT, "output/day4_romanian_deadlift_4step_master.mp4")
 
 def day4_sharp_ref(cache):
+    """Day 4 muscle-step frames (7.5 s, 18.5 s), figure only: neutral-grey body pixels below the title, barbell band and
+    plates cut out, glow/laser/callouts excluded by sharp.neutral_lapvar (same metric as our frames)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from sharp import neutral_lapvar
     if os.path.exists(cache):
-        return json.load(open(cache))["lapvar"]
+        c = json.load(open(cache))
+        if c.get("metric") == "neutral_lapvar_v2": return c["lapvar"]
     vals = []
-    for t in (13.5, 18.5):
+    for t in (7.5, 18.5):
         p = subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", str(t), "-i", DAY4, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
-        f = np.frombuffer(p, np.uint8).reshape(1920, 1080, 3).astype(np.float32)
-        body = (np.abs(f - np.array([35, 39, 43], np.float32)).max(-1) > 22); body[:600] = False; body[:, :300] = False; body[:, 780:] = False   # figure only (no plates, callouts, UI)
-        body = cv2.erode(body.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
-        lap = cv2.Laplacian(cv2.cvtColor(f.astype(np.uint8), cv2.COLOR_RGB2GRAY), cv2.CV_32F); vals.append(float(lap[body].var()))
-    v = float(np.median(vals)); json.dump({"lapvar": v, "src": DAY4}, open(cache, "w")); return v
+        f = np.frombuffer(p, np.uint8).reshape(1920, 1080, 3)
+        body = np.abs(f.astype(np.float32) - np.array([35, 39, 43], np.float32)).max(-1) > 10
+        body[:600] = False; body[:, :280] = False; body[:, 800:] = False
+        vals.append(neutral_lapvar(f, body, [(930, 1130)])[0])
+    v = float(np.median(vals)); json.dump({"lapvar": v, "per_frame": vals, "metric": "neutral_lapvar_v2", "src": DAY4}, open(cache, "w")); return v
 
 def probe(mp4):
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height,r_frame_rate:format=duration", "-of", "json", mp4], capture_output=True, text=True)

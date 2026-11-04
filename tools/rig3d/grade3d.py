@@ -16,6 +16,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 from gymform.ctx import SPEC                      # noqa: E402  (locked spec)
 from gymform import muscle as gm, layout as gl   # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sharp import neutral_lapvar   # noqa: E402
 
 def skin_lock_lut(lum_skin):
     """Monotone luminance map whose skin percentiles land on the Day 4 lock."""
@@ -35,6 +37,11 @@ def grade_frame(beauty, mask, cfg, fi, n):
     regs = m[..., [2, 1, 0]] / 255.0                                   # R lats, G rhomboids, B mid trap
     reg_any = np.clip(regs.max(-1), 0, 1) * body
     lum = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
+    da = float(G.get("detail_amount", 0.0))
+    if da > 0:   # detail pass: unsharp mask of the render's own surface (fibre / sculpt relief), body only
+        hp = lum - cv2.GaussianBlur(lum, (0, 0), float(G.get("detail_sigma", 1.6)))
+        bm = cv2.erode((body > 0.5).astype(np.uint8), np.ones((5, 5), np.uint8)).astype(np.float32)
+        d = da * hp * bm; lum = lum + d; rgb = np.clip(rgb + d[..., None], 0, 255)
     shorts = ((lum < 28.0) & (body > 0.5) & (reg_any < 0.05)).astype(np.float32)
     shorts = cv2.GaussianBlur(cv2.morphologyEx(shorts, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)), (0, 0), 1.0)
     skin = (body > 0.9) & (shorts < 0.2) & (reg_any < 0.05)
@@ -80,7 +87,7 @@ def grade_frame(beauty, mask, cfg, fi, n):
           "glow_in_mask": round(float((green & regd).sum() / max(green.sum(), 1)), 4),
           "red_px": int((bodyb & (rdom > 40)).sum()),
           "region_px": {k: int(((regs[..., i] > 0.5) & bodyb).sum()) for i, k in enumerate(("lats", "rhomboids", "mid_trap"))},
-          "sharp_lapvar": round(float(lap[er].var()), 1) if er.sum() > 1000 else 0.0,
+          "sharp_lapvar": round(neutral_lapvar(out8, bodyb)[0], 1),
           "bbox": [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())] if len(ys) else None}
     return out8, st
 
