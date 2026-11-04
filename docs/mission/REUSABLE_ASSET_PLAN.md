@@ -104,3 +104,57 @@
 - MediaPipe depth noise for the far arm. Side view and planar exercises keep this small; the code gates catch crossing.
 - The look gap to Day 4 may need the grade tuned once. The eye check decides.
 - The owner must supply clips: 1 short phone clip per exercise.
+
+## t701u/t702u: free motion source + first 3D proof (0 generations)
+**Motion source used:** YMove "Single Arm Dumbbell Row - Legs apart"
+- Page: https://ymove.app/free-exercise-videos; clip: `https://ymove.app/api/free/d3fece95-c7e2-4794-ba8f-65a5b3e30a28` (720×1280, 25 fps, 12.8 s).
+- Licence (page section "The licence"): free for commercial use incl. social media, no sign-up, attribution appreciated not required, do not resell/redistribute the videos.
+- We use only the extracted pose. The clip is not committed (it stays in `_scratch/motion_src`).
+- Also downloaded: the YMove bent-over *barbell* row (`/mkt/tim-bent-over-barbell-row.mp4`, 480×854, 6 s) as a backup.
+
+**Other sources checked:**
+- Quaternius Universal Animation Library 1/2 (CC0, https://quaternius.com/packs/universalanimationlibrary.html): locomotion/combat, no gym exercises.
+- Pexels / Pixabay: free licences, but the search results showed no clear side-view full-body dumbbell row clip, so they were not used.
+- Mixamo: free but needs an Adobe login. Noted only.
+
+**MediaPipe source check** (`tools/rig3d/clip_pose.py`, `_check.json`):
+
+| Clip | Body in frame | Reps | Hinge | Jitter (wrist 2D, torso/f²) | Working arm |
+|---|---|---|---|---|---|
+| single-arm row | 100% | 4 | 67.5° → FAIL vs 35–60° (deeper, near-parallel hinge) | 0.036 → FAIL raw (smoothed σ2.5 f in the retarget) | right |
+| barbell row | 100% | 3 | 65.1° | 0.029 | left |
+
+**3D proof** (`tools/rig3d/retarget_render.py`):
+- Pipeline: landmarks → Gaussian smoothing → feet pinned → Damped-Track retarget onto the Grab3D CC0 rig → code hex dumbbell on the hand.
+- Green back region is painted by rest geometry.
+- Render: Cycles CPU 540×960, 8 spp, 81 frames in 119 s (nice 19).
+- Output: `output/_consistency/rig3d_p1/row_proof_540x960_raw3d.mp4`, sheet `RIG3D_ROW_PROOF_sheet.jpg`.
+- Per-frame checks:
+  - arm crossing 0/81 PASS;
+  - torso 64–91.5° → FAIL (±5° bar);
+  - dumbbell-in-hand check broken (unit bug: the armature's object scale is not applied). By eye the dumbbell stays in the hand.
+- By eye vs Day 4: the motion reads as a row. The look is NOT Day 4: figure small, fibres soft, knees/head awkward, no grade yet.
+- Day 4 grading of the render: not done (time-box).
+
+## End-to-end stages
+Target command: `nice -n 19 python3 tools/rig3d/pipeline.py --exercise db_row`
+
+| # | Stage | Status |
+|---|---|---|
+| 1 | exercise config (`exercises/<slug>.yaml`) | missing; db1 configs exist |
+| 2 | free source fetch | manual this turn (URL recorded) → needs a script |
+| 3 | MediaPipe extraction + source check | **working** (`clip_pose.py`) |
+| 4 | retarget + dumbbell + feet pin | **working, rough** (`retarget_render.py`): needs a torso-stability fix, a hand grip, a scale fix in the checks |
+| 5 | Blender render | **working** (CPU low res ~1.5 s/frame); long renders go to the cloud |
+| 6 | Day 4 grading | missing for 3D frames (`still_motion_mock.py` / `run_day.py` are 2D-clip based; needs a hook using the rendered mask pass) |
+| 7 | layout / TTS / caption | exist in `run_day.py` / `gymform` (`tts.py`, `layout.py`, `caption.py`); not wired |
+| 8 | auto QC | per-frame rig checks exist; Day 4 look checks (`free_weight_precheck` sharp/glow/head) need wiring |
+| 9 | approval-gated upload | exists (`tools/ig_publish.py`: needs `--publish --approved`) + an APPROVED file; not wired |
+
+## Other free quality boosters
+Licences are as published by each project. They were not re-verified this turn; check them before use.
+- Poly Haven HDRIs/textures: CC0.
+- ambientCG materials: CC0.
+- RIFE frame interpolation (Practical-RIFE): MIT.
+- Real-ESRGAN upscaler: BSD-3.
+- Blender's Cycles denoiser (OpenImageDenoise): Apache-2.0. Renders with 8 spp look clean.
