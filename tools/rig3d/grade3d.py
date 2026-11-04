@@ -69,6 +69,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
         sh = np.exp(-(((XX - cx) / sw) ** 2 + ((YY - fy - 6) / 18.0) ** 2) * 2.2); bg *= (1 - 0.38 * sh)[..., None]
     out = bg * (1 - fg[..., None]) + fg_rgb * fg[..., None]
     out8 = np.clip(out, 0, 255).astype(np.uint8)
+    base8 = out8                     # look stats are measured on the figure BEFORE the UI (laser/leader/pill have their own QC)
     ui = {}
     if kp is not None and cfg.get("layout", {}).get("callout"):
         out8, ui["callout"] = draw_torso_callout(out8, shorts, kp, cfg)
@@ -84,15 +85,15 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
         o_[ty0:ty1] = o_[ty0:ty1] * (1 - eff) + t_rgb * eff; out8 = np.clip(o_, 0, 255).astype(np.uint8)
     ty0, ty1 = gl.TITLE_ROI; t_rgb, t_a = gl._title_layer(cfg["name"]); ys_, xs_ = np.nonzero(t_a[..., 0] > 0.1)
     ui["title"] = [int(xs_.min()), int(ty0 + ys_.min()), int(xs_.max()), int(ty0 + ys_.max())]
-    # look stats (on the graded frame, before the title rows are judged)
-    o = out8.astype(np.float32); L = 0.299 * o[..., 0] + 0.587 * o[..., 1] + 0.114 * o[..., 2]
+    # look stats (graded figure without UI)
+    o = base8.astype(np.float32); L = 0.299 * o[..., 0] + 0.587 * o[..., 1] + 0.114 * o[..., 2]
     gdom = o[..., 1] - np.maximum(o[..., 0], o[..., 2]); rdom = o[..., 0] - np.maximum(o[..., 1], o[..., 2])
     bodyb = body > 0.5; green = bodyb & (gdom > 30)
     regd = cv2.dilate((reg_any > 0.15).astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
     skin_q = bodyb & (shorts < 0.2) & (core_w < 0.03) & (L > 46)
     far = (cv2.dilate((fg > 0.02).astype(np.uint8), np.ones((61, 61), np.uint8)) == 0); far[ty0 - 10:ty1 + 10] = False
     er = cv2.erode(bodyb.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
-    lap = cv2.Laplacian(cv2.cvtColor(out8, cv2.COLOR_RGB2GRAY), cv2.CV_32F)
+    lap = cv2.Laplacian(cv2.cvtColor(base8, cv2.COLOR_RGB2GRAY), cv2.CV_32F)
     st = {"f": fi, "body_px": int(bodyb.sum()),
           "skin_p50": round(float(np.percentile(L[skin_q], 50)), 1) if skin_q.sum() > 500 else None,
           "skin_p75": round(float(np.percentile(L[skin_q], 75)), 1) if skin_q.sum() > 500 else None,
@@ -103,7 +104,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
           "glow_in_mask": round(float((green & regd).sum() / max(green.sum(), 1)), 4),
           "red_px": int((bodyb & (rdom > 40)).sum()),
           "region_px": {k: int(((regs[..., i] > 0.5) & bodyb).sum()) for i, k in enumerate(("lats", "rhomboids", "mid_trap"))},
-          "sharp_lapvar": round(neutral_lapvar(out8, bodyb)[0], 1),
+          "sharp_lapvar": round(neutral_lapvar(base8, bodyb)[0], 1),
           "bbox": [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())] if len(ys) else None, "ui": ui}
     gb_ = garment > 0.5
     if gb_.any():
