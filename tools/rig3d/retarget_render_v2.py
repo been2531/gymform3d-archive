@@ -155,6 +155,72 @@ rest_len = np.linalg.norm(co[ev[:, 0]] - co[ev[:, 1]], axis=1); ok_e = rest_len 
 region_counts = {"lats": int(lats.sum()), "rhomboids": int(rhomb.sum()), "mid_trap": int(mid_trap.sum()), "shorts": int(shorts.sum()), "hand_verts": int(len(hand_vi))}
 log(f"regions {region_counts}")
 
+# ---- black boxer briefs (드로즈): a separate garment mesh copied from the body's own pelvis/upper-thigh faces, pushed out
+# along the normals, keeping the body's vertex groups + armature modifier -> skinned exactly like the body (no sim).
+GC = C.get("garment", {"enabled": False})
+garm, g_src = None, None
+if GC.get("enabled"):
+    import bmesh
+    gz0, gz1, gx = float(GC.get("z_hem", 0.78)), float(GC.get("z_waist", 1.03)), float(GC.get("max_abs_x", 0.22))
+    sel = (z >= gz0) & (z <= gz1) & (ax_ <= gx)
+    garm = body.copy(); garm.data = body.data.copy(); garm.name = "briefs"; col.objects.link(garm)
+    gm_ = garm.data
+    for at_ in list(gm_.color_attributes): gm_.color_attributes.remove(at_)
+    src = gm_.attributes.new("src_vi", "INT", "POINT"); src.data.foreach_set("value", np.arange(nv, dtype=np.int32))
+    bm = bmesh.new(); bm.from_mesh(gm_)
+    # straight waistband + leg hems: cut the body along the two horizontal planes (rest pose, world z) instead of
+    # keeping whole triangles (that left a saw-tooth fringe), then keep the faces whose centre lies in the band
+    Mi = np.linalg.inv(M4)
+    for zc in (gz0, gz1):
+        co_l = Mi[:3, :3] @ np.array([0, 0, zc]) + Mi[:3, 3]; no_l = M4[:3, :3].T @ np.array([0, 0, 1.0])   # plane normal: local = M^T world
+        bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-6, plane_co=tuple(co_l), plane_no=tuple(no_l / np.linalg.norm(no_l)))
+    def wz(v_): return float(M4[2, :3] @ np.array(v_.co) + M4[2, 3])
+    def wx(v_): return float(M4[0, :3] @ np.array(v_.co) + M4[0, 3])
+    drop = [f_ for f_ in bm.faces if not (gz0 - 1e-4 <= sum(wz(v_) for v_ in f_.verts) / len(f_.verts) <= gz1 + 1e-4 and all(abs(wx(v_)) <= gx for v_ in f_.verts))]
+    bmesh.ops.delete(bm, geom=drop, context="FACES_ONLY")
+    bmesh.ops.delete(bm, geom=[v_ for v_ in bm.verts if not v_.link_faces], context="VERTS")
+    # weld the asset's UV-seam duplicates (else the offset opens hairline cracks)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=0.02)
+    bm.verts.ensure_lookup_table(); bm.normal_update()
+    # offset outward (the Meshy-made body has some inward-facing normals: orient each normal away from its limb axis,
+    # pelvis = vertical axis through x=0 above the crotch, thighs = x=+-0.09 below it)
+    off_local = float(GC.get("offset_m", 0.008)) / float(np.array(body.matrix_world.to_scale()).mean())
+    gco = np.array([v_.co for v_ in bm.verts]); lnr_g = np.array([v_.normal for v_ in bm.verts])
+    vw = gco @ M4[:3, :3].T + M4[:3, 3]; nw_g = lnr_g @ M4[:3, :3].T; cx_ = np.where((vw[:, 2] < 0.92) & (np.abs(vw[:, 0]) > 0.03), np.sign(vw[:, 0]) * 0.09, 0.0)
+    outw = np.stack([vw[:, 0] - cx_, vw[:, 1], np.zeros(len(vw))], 1)
+    g_sign = np.where((nw_g * outw).sum(1) < 0, -1.0, 1.0); dn = lnr_g * g_sign[:, None]; n_flip = int((g_sign < 0).sum())
+    for i_, v_ in enumerate(bm.verts): v_.co = tuple(gco[i_] + off_local * dn[i_])
+    # hem/waist lip: fold every open edge back in to ~1.5 mm off the skin so no skin shows under the band edge
+    bnd_e = [e_ for e_ in bm.edges if e_.is_boundary]; bvi = {v_ for e_ in bnd_e for v_ in e_.verts}
+    dn_of = {v_: dn[v_.index] for v_ in bvi}
+    ret = bmesh.ops.extrude_edge_only(bm, edges=bnd_e)
+    newv = [g_ for g_ in ret["geom"] if isinstance(g_, bmesh.types.BMVert)]
+    lip_back = off_local * (1.0 - float(GC.get("lip_offset_frac", 0.12)))
+    # each new vert was extruded from a boundary vert: find it through the connecting (non-boundary) edge
+    for v_ in newv:
+        src_v = next((o_ for e_ in v_.link_edges for o_ in e_.verts if o_ is not v_ and o_ in dn_of), None)
+        if src_v is not None: v_.co = tuple(np.array(v_.co) - lip_back * dn_of[src_v])
+    bm.verts.ensure_lookup_table()
+    for v_ in bm.verts: v_.select_set(False)
+    for v_ in bvi: v_.select_set(True)                                   # waist/hem rim (for the QC dump)
+    bm.normal_update(); bm.to_mesh(gm_); bm.free(); gm_.update()
+    gnv = len(gm_.vertices); g_bnd = np.array([v_.select for v_ in gm_.vertices]); g_src = np.empty(gnv, np.int32); gm_.attributes["src_vi"].data.foreach_get("value", g_src)
+    g_src = np.clip(g_src, 0, nv - 1)
+    gco = np.empty(gnv * 3); gm_.vertices.foreach_get("co", gco); gco = gco.reshape(-1, 3)
+    vw = gco @ M4[:3, :3].T + M4[:3, 3]
+    cx_ = np.where((vw[:, 2] < 0.92) & (np.abs(vw[:, 0]) > 0.03), np.sign(vw[:, 0]) * 0.09, 0.0); outw = np.stack([vw[:, 0] - cx_, vw[:, 1], np.zeros(len(vw))], 1)
+    region_counts["briefs_flipped_normals"] = n_flip
+    b_sign = np.where((nr[g_src] * outw).sum(1) < 0, -1.0, 1.0)   # same outward rule for the body's own normals
+    gmat = bpy.data.materials.new("briefs_black"); gmat.use_nodes = True; gb = gmat.node_tree.nodes["Principled BSDF"]
+    gb.inputs["Base Color"].default_value = (0.012, 0.012, 0.014, 1); gb.inputs["Roughness"].default_value = 0.95
+    for k_, v_ in (("Specular IOR Level", 0.15), ("Coat Weight", 0.0), ("Sheen Weight", 0.0)):
+        if k_ in gb.inputs: gb.inputs[k_].default_value = v_
+    gm_.materials.clear(); gm_.materials.append(gmat)
+    gev = np.empty(len(gm_.edges) * 2, np.int64); gm_.edges.foreach_get("vertices", gev); gev = gev.reshape(-1, 2)
+    gco_w = gco @ M4[:3, :3].T + M4[:3, 3]; g_rest = np.linalg.norm(gco_w[gev[:, 0]] - gco_w[gev[:, 1]], axis=1); g_ok = g_rest > 1e-4
+    region_counts.update({"briefs_verts": int(gnv), "briefs_faces": len(gm_.polygons)})
+    log(f"briefs garment: {gnv} verts, {len(gm_.polygons)} faces, offset {GC.get('offset_m', 0.008)} m")
+
 # ---- dumbbell ---------------------------------------------------------------------------------------------------------
 def hexhead(xx):
     bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=0.06, depth=0.07, location=(xx, 0, 0), rotation=(0, math.pi / 2, 0)); return bpy.context.object
@@ -237,6 +303,10 @@ for f in range(1, NF + 1):
     sh_, el_, wr_ = (Pp("LeftArm"), Pp("LeftForeArm"), Pp("LeftHand")) if side == 11 else (Pp("RightArm"), Pp("RightForeArm"), Pp("RightHand"))
     elbow = math.degrees((sh_ - el_).angle(wr_ - el_))
     rec = {"f": f, "arm_cross": bool(cross), "torso_deg": round(torso, 2), "db_grip_m": round(d_bone, 4), "elbow_deg": round(elbow, 1)}
+    def p2(v_):
+        q_ = world_to_camera_view(sc, CAM, v_); return [round(q_.x * rx, 1), round((1 - q_.y) * ry, 1)]
+    kn_ = Pp("LeftLeg") if side == 11 else Pp("RightLeg")
+    rec["kp2d"] = {"hip": p2(hip), "sh": p2(shc), "sh_w": p2(sh_), "el": p2(el_), "wr": p2(wr_), "kn": p2(kn_), "db": p2(dbp)}
     if f % 3 == 1 or f == NF:
         dg = bpy.context.evaluated_depsgraph_get(); eb = body.evaluated_get(dg); m_ = eb.to_mesh()
         c2 = np.empty(len(m_.vertices) * 3); m_.vertices.foreach_get("co", c2); Mw = np.array(eb.matrix_world)
@@ -248,9 +318,25 @@ for f in range(1, NF + 1):
         if len(bad):
             u_, n_ = np.unique(dom[bad], return_counts=True); o_ = np.argsort(-n_)[:3]
             rec["tear_where"] = {GN.get(int(u_[i]), "?"): int(n_[i]) for i in o_}
+    if garm is not None and (f % 3 == 1 or f == NF):
+        from mathutils.bvhtree import BVHTree
+        dg = bpy.context.evaluated_depsgraph_get(); eb = body.evaluated_get(dg); mb = eb.to_mesh(); Mw = eb.matrix_world.copy()
+        bc = np.empty(len(mb.vertices) * 3); mb.vertices.foreach_get("co", bc); bc = bc.reshape(-1, 3) @ np.array(Mw)[:3, :3].T + np.array(Mw)[:3, 3]
+        tri = [tuple(pl.vertices) for pl in mb.polygons]; eb.to_mesh_clear()
+        tree = BVHTree.FromPolygons([tuple(v_) for v_ in bc], tri)
+        eg = garm.evaluated_get(dg); mg = eg.to_mesh(); gc_ = np.empty(len(mg.vertices) * 3); mg.vertices.foreach_get("co", gc_)
+        Mg = np.array(eg.matrix_world); gc_ = gc_.reshape(-1, 3) @ Mg[:3, :3].T + Mg[:3, 3]; eg.to_mesh_clear()
+        # clearance = distance from each garment vertex to the deformed body surface (normal-free: the asset's normals
+        # are inconsistent). The body folding through the briefs shows up as clearance ~0.
+        gap = np.array([tree.find_nearest(mu.Vector(q_))[3] for q_ in gc_.tolist()])
+        gr = np.linalg.norm(gc_[gev[g_ok, 0]] - gc_[gev[g_ok, 1]], axis=1) / g_rest[g_ok]
+        cmin = float(GC.get("clearance_min_m", 0.002))
+        rec.update({"briefs_gap_min_m": round(float(gap.min()), 4), "briefs_poke_frac": round(float((gap < cmin).mean()), 6),
+                    "briefs_tear_frac2x": round(float((gr > 2.0).mean()), 6), "briefs_tear_max_ratio": round(float(gr.max()), 3),
+                    "briefs_cover_frac": round(float((gap >= cmin).mean()), 6), "briefs_verts": int(len(gc_))})
     chk.append(rec)
 json.dump({"frames": chk, "working": hand, "floor_tilt_fixed_deg": round(floor_tilt, 1), "rep": [f0, f1], "raw_torso_deg": [round(float(raw_torso.min()), 1), round(float(raw_torso.max()), 1)],
-           "framing": framing, "regions": region_counts, "grip_offset_m": GRIP, "person_to_rig_scale": round(SCALE, 3)}, open(a.out + "/checks.json", "w"), indent=0)
+           "framing": framing, "regions": region_counts, "grip_offset_m": GRIP, "person_to_rig_scale": round(SCALE, 3), "kp_res": [rx, ry]}, open(a.out + "/checks.json", "w"), indent=0)
 log("checks done")
 if a.checks_only: sys.exit(0)
 
@@ -260,7 +346,7 @@ for m_ in body_mats:
     nt = m_.node_tree; bsdf = [n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"][0]
     for l in list(bsdf.inputs["Base Color"].links): nt.links.remove(l)
     at = nt.nodes.new("ShaderNodeAttribute"); at.attribute_name = "shorts"; mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"
-    mix.inputs[6].default_value = (0.20, 0.205, 0.215, 1); mix.inputs[7].default_value = (0.012, 0.012, 0.014, 1)
+    mix.inputs[6].default_value = (0.20, 0.205, 0.215, 1); mix.inputs[7].default_value = (0.20, 0.205, 0.215, 1) if garm is not None else (0.012, 0.012, 0.014, 1)
     nt.links.new(at.outputs["Fac"], mix.inputs[0]); bsdf.inputs["Roughness"].default_value = 0.62
     tex = [n for n in nt.nodes if n.type == "TEX_IMAGE" and n.image and "basecolor" in n.image.name.lower()]
     ad = float(RC.get("albedo_detail", 0.0))
@@ -304,6 +390,10 @@ if not a.no_mask:
     ho = bpy.data.materials.new("hold"); ho.use_nodes = True; hn = ho.node_tree.nodes.new("ShaderNodeHoldout")
     ho.node_tree.links.new(hn.outputs[0], [n for n in ho.node_tree.nodes if n.type == "OUTPUT_MATERIAL"][0].inputs["Surface"])
     db.data.materials.clear(); db.data.materials.append(ho)
+    if garm is not None:
+        gw = bpy.data.materials.new("briefs_mask"); gw.use_nodes = True; ge = gw.node_tree.nodes.new("ShaderNodeEmission"); ge.inputs["Color"].default_value = (1, 1, 1, 1)
+        gw.node_tree.links.new(ge.outputs[0], [n for n in gw.node_tree.nodes if n.type == "OUTPUT_MATERIAL"][0].inputs["Surface"])
+        garm.data.materials.clear(); garm.data.materials.append(gw)
     sc.cycles.samples = int(RC.get("mask_spp", 4)); sc.cycles.use_denoising = False; sc.cycles.max_bounces = 0
     sc.view_settings.view_transform = "Standard"; bg.inputs["Strength"].default_value = 0.0
     for o in bpy.data.objects:

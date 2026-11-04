@@ -72,6 +72,42 @@ def run(run_dir, cfg):
     fillw = float(np.median((bb[:, 2] - bb[:, 0]) / W)); fillh = float(np.median((bb[:, 3] - bb[:, 1]) / H))
     out.append(ck("figure_fully_in_frame", inside, True, inside, "camera_margin", "look"))
     out.append(ck("figure_fill_w_h", [round(fillw, 3), round(fillh, 3)], "w >= 0.60 or h >= 0.55", fillw >= 0.60 or fillh >= 0.55, "camera_tighter", "look"))
+    # Day 4 overlay: callout + title + preview pill
+    if cfg.get("layout"):
+        sz = Q["safe_zone"]; LF = json.load(open(os.path.join(run_dir, "grade/look.json")))
+        def inside_sz(b): return b[0] >= sz[0] and b[1] >= sz[1] and b[2] <= sz[2] and b[3] <= sz[3]
+        def inter(a, b): return max(a[0], b[0]) < min(a[2], b[2]) and max(a[1], b[1]) < min(a[3], b[3])
+        bad_sz, bad_ov, n_ui, figov, d2 = [], [], 0, [], []
+        for f in L:
+            u = f.get("ui") or {}; boxes = {k: u[k] for k in ("title", "pill") if k in u}
+            if "callout" in u: boxes["callout_text"] = u["callout"]["text_box"]; figov.append(f.get("callout_fig_overlap", 1.0)); d2.append(u["callout"]["angle_2d_deg"])
+            n_ui += len(boxes)
+            bad_sz += [f"{f['f']}:{k}" for k, b in boxes.items() if not inside_sz(b)]
+            ks = list(boxes); bad_ov += [f"{f['f']}:{a}/{b}" for i, a in enumerate(ks) for b in ks[i + 1:] if inter(boxes[a], boxes[b])]
+        out.append(ck("overlay_in_safe_zone", bad_sz[:5] or f"{n_ui} boxes ok", sz, not bad_sz and n_ui > 0, None, "overlay"))
+        out.append(ck("overlay_text_no_overlap", bad_ov[:5] or "ok", "title / pill / callout text disjoint", not bad_ov, None, "overlay"))
+        if cfg["layout"].get("callout"):
+            mo = max(figov) if figov else 1.0
+            out.append(ck("callout_text_clear_of_figure", round(mo, 4), Q["callout_figure_overlap_max"], bool(figov) and mo <= Q["callout_figure_overlap_max"], None, "overlay"))
+            shown = LF.get("callout_shown_deg"); meas = int(round(med)); dd = float(np.max(np.abs(np.array(d2) - shown))) if d2 else 99
+            out.append(ck("callout_angle_matches_measured", {"shown": shown, "rig_median": round(med, 1), "max_2d_dev": round(dd, 1)},
+                          f"shown == round(median); |2D - shown| <= {Q['callout_2d_tol_deg']}", shown == meas and dd <= Q["callout_2d_tol_deg"], None, "overlay"))
+    # black boxer briefs (separate skinned garment mesh)
+    BF = [f for f in F if "briefs_poke_frac" in f]
+    if cfg.get("garment", {}).get("enabled"):
+        if not BF:
+            out.append(ck("briefs_present", False, True, False, None, "briefs"))
+        else:
+            tch = max(f["briefs_poke_frac"] for f in BF); tr = max(f["briefs_tear_frac2x"] for f in BF)
+            out.append(ck("briefs_body_touch_frac", round(tch, 5), Q["briefs_touch_frac_max"], tch <= Q["briefs_touch_frac_max"], None, "briefs"))
+            out.append(ck("briefs_no_tearing_frac2x", round(tr, 5), Q["briefs_tear_frac2x_max"], tr <= Q["briefs_tear_frac2x_max"], None, "briefs"))
+            bp = [f["briefs_px"] for f in L if "briefs_px" in f]
+            vp = max((f["briefs_poke_px"] / max(f["briefs_px"], 1)) for f in L if "briefs_px" in f) if bp else 1.0
+            out.append(ck("briefs_no_visible_poke_through", round(vp, 5), Q["briefs_visible_poke_max"], bool(bp) and vp <= Q["briefs_visible_poke_max"], None, "briefs"))
+            cov = (min(bp) / float(np.median(bp))) if bp else 0.0; gob = max((f.get("green_on_briefs_px", 0) for f in L), default=0)
+            okc = len(bp) == len(L) and cov >= Q["briefs_cover_min_rel"] and gob == 0
+            out.append(ck("briefs_coverage_every_frame", {"frames": f"{len(bp)}/{len(L)}", "min_rel": round(cov, 3), "green_on_briefs_px": gob},
+                          f"all frames, >= {Q['briefs_cover_min_rel']} x median, 0 green", okc, None, "briefs"))
     # reel
     mp4 = os.path.join(run_dir, "reel", f"{cfg['slug']}_rig3d_v2.mp4"); pr = probe(mp4) if os.path.exists(mp4) else {}
     st = pr.get("streams", []); v = [s for s in st if s.get("codec_type") == "video"]; a = [s for s in st if s.get("codec_type") == "audio"]

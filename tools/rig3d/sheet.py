@@ -36,7 +36,7 @@ def build(run_dir, cfg, out):
     gp = cv2.resize(cv2.imread(G[pick[2]]), (mk.shape[1], mk.shape[0]))
     ov = gp.copy(); col = mk[..., :3].astype(np.float32); a = (col.max(-1, keepdims=True) > 40) * 0.65
     ov = (ov * (1 - a) + col * a).astype(np.uint8); ov = cv2.resize(ov, (tw, th))
-    txt(ov, "mask: red lats, green rhomb, blue midtrap", 6, th - 10, 0.42, WH)
+    txt(ov, "mask: red lats, green rhomb, blue midtrap, white briefs", 6, th - 10, 0.42, WH)
     pl = np.full((th, 2 * tw, 3), 30, np.uint8); t = np.array([f["torso_deg"] for f in R])
     def curve(v, lo, hi, c, y0, y1, label):
         xs = np.linspace(20, 2 * tw - 20, len(v)); ys = y1 - (np.clip(v, lo, hi) - lo) / (hi - lo) * (y1 - y0)

@@ -25,3 +25,19 @@ Every stage is resumable: stamps are kept in `_cache_rig3d/<slug>/stamps`, and o
 
 ## AI wake
 A QC failure with no rule writes one item to `/home/box/routinizer/ai_queue/fitness_studio.jsonl`, in the rz_ai_queue item shape and deduped by id, plus a warn alert.
+
+## v3 additions (2026-11-04): Day 4 layout + black boxer briefs
+- **Briefs (드로즈):** a separate garment mesh built from the body's own pelvis/upper-thigh surface (bisected at
+  z 0.80 / 1.03 m for a straight waistband and leg hems), welded, offset 12 mm outward, with an inward lip at
+  every open edge so no skin shows under the band. It keeps the body's vertex groups + armature modifier, so it
+  is skinned exactly like the body (no cloth sim). Matte black Principled (base 0.012, roughness 0.95); white
+  emission in the mask pass, so the grade treats it as the Day 4 shorts and never puts green on it.
+- **Briefs QC:** `briefs_body_touch_frac` (BVH clearance garment→deformed body < 0.5 mm, every 3rd frame),
+  `briefs_no_tearing_frac2x`, `briefs_no_visible_poke_through` (body pixels inside the closed briefs silhouette,
+  every frame), `briefs_coverage_every_frame` (pixels ≥ 0.6× median, 0 green on briefs).
+- **Layout:** Day 4 callout (laser joint axis: vertical ray → hip → torso, precision leader, Pretendard 84/21/16
+  at x=86, y ≥ 600). The number is the rig-measured median torso-from-vertical, not the 2D projection. Day 4
+  shows one callout per step, so there is no separate elbow callout. 1-slot preview pill
+  (`layout.composite_title_and_preview_v4`) with the peak-frame torso thumbnail.
+- **Overlay QC:** `overlay_in_safe_zone` (title/pill/callout text inside qc.safe_zone), `overlay_text_no_overlap`,
+  `callout_text_clear_of_figure`, `callout_angle_matches_measured`.

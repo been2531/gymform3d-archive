@@ -23,6 +23,14 @@ motion:
   smooth_sigma_f: 2.5
   lock_feet: true
   spine_influence: 0.5      # spreads the hinge over Spine/Spine01/Spine02 (1.0 stretched 0.58% of edges >2x at the lats)
+garment:                     # black boxer briefs (드로즈): separate skinned mesh, matte black, never in the muscle mask
+  enabled: true
+  z_waist: 1.03
+  z_hem: 0.80                # short snug leg (trunks), not baggy shorts
+  max_abs_x: 0.22
+  offset_m: 0.012
+  hem_smooth_iters: 12
+  clearance_min_m: 0.0005      # geometric touch = garment vertex within 0.5 mm of the deformed body surface
 render:
   res: [1080, 1920]          # render at delivery size (720 + upscale measured 0.18x Day 4 sharpness)
   spp: 16
@@ -46,6 +54,12 @@ grade:
   backdrop_rgb: [35, 39, 43]
   target_muscles: [lats, rhomboids, mid_trap]
   glow: right                 # green (correct form)
+layout:
+  callout:
+    metric: torso_from_vertical   # rig-measured (3D), rep median, shown as N°
+    l1: TORSO HINGE
+    l2: LATS & MID BACK
+  preview_pill: true          # Day 4 frosted pill, 1-segment reel = one centred slot (peak thumbnail)
 tts:
   line: "Pull the elbow back to your hip. Feel your lats and mid back squeeze."
   question_spoken: "Where do you feel it most?"
@@ -69,3 +83,10 @@ qc:
   glow_in_mask_min: 0.9
   sharp_rel_min: 0.35         # body Laplacian variance vs the Day 4 master reference
   dur_s: [5, 15]
+  safe_zone: [60, 220, 960, 1500]   # x0, y0, x1, y1: IG Reels (top bar, right buttons, bottom caption) for every overlay box
+  callout_figure_overlap_max: 0.02
+  callout_2d_tol_deg: 12            # drawn 2D axis vs shown 3D value (15 deg yaw side camera projection)
+  briefs_visible_poke_max: 0.002    # body pixels inside the briefs silhouette / briefs pixels (render)
+  briefs_touch_frac_max: 0.03
+  briefs_tear_frac2x_max: 0.015     # provisional (body itself 0.25%; briefs inherit the hip-crease stretch)
+  briefs_cover_min_rel: 0.6         # briefs pixels every frame >= 0.6 x median
