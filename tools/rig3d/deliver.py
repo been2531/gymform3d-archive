@@ -3,7 +3,11 @@
 Backends (tried in this order when enabled; --dry-run never sends, pushes or writes the alert):
   ntfy        true phone push. Needs env GYMFORM_NTFY_TOPIC (a private topic he subscribes to in the ntfy app;
               optional GYMFORM_NTFY_SERVER, default https://ntfy.sh). Sends title + the sheet link (Click) + the PNG.
-  smtp        e-mail with the PNG attached. Needs env GYMFORM_SMTP_USER + GYMFORM_SMTP_APP_PASSWORD (Gmail app password)
+  gmail_api   PREFERRED owner channel: e-mail via the Gmail API over HTTPS (SMTP 465/587 is blocked on the box) using
+              /home/box/routinizer/rz_notify_mail.py (token /home/box/.gymform/gmail_token.json, scope gmail.send, recipient is
+              always notify_to in /home/box/.gymform/notify.json). Attaches sheet.png + the 540p preview (<= 20 MB total).
+              Token missing/expired -> rz_notify_mail writes one alert line and the smtp backend below is tried.
+  smtp        (fallback) e-mail with the PNG attached. Needs env GYMFORM_SMTP_USER + GYMFORM_SMTP_APP_PASSWORD (Gmail app password)
               + GYMFORM_NOTIFY_TO (optional GYMFORM_SMTP_HOST, default smtp.gmail.com:465).
   repo        (always available, default) commit sheet + qc + caption + 540p preview to
               results/rig3d/<slug>/<run_id>/ in this repo (public been2531/gymform3d-archive), push with the repo's own
@@ -11,7 +15,7 @@ Backends (tried in this order when enabled; --dry-run never sends, pushes or wri
               phone-viewable GitHub link. Allow-listed paths only + secret scan; never `git add -A`.
   pages       DRY-RUN ONLY in this version: stages results into a local clone of been2531/been2531.github.io
               (gymform/<slug>/<run_id>/index.html) and prints the URL it would get. Publishing would make it public.
-usage: python3 tools/rig3d/deliver.py RUN_DIR CFG.json [--backend auto|repo|ntfy|smtp|pages] [--dry-run]"""
+usage: python3 tools/rig3d/deliver.py RUN_DIR CFG.json [--backend auto|repo|ntfy|gmail|smtp|pages] [--dry-run]"""
 import argparse, datetime as dt, json, os, re, shutil, smtplib, subprocess, sys, urllib.request
 from email.message import EmailMessage
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -83,7 +87,36 @@ def backend_ntfy(run_dir, cfg, dry, url=None):
     if dry: print("DRY ntfy PUT", f"{server}/<topic>", len(req.data), "bytes", line); return {"backend": "ntfy", "dry_run": True}
     urllib.request.urlopen(req, timeout=60).read(); return {"backend": "ntfy", "sent": True}
 
+RZ_HOME = os.environ.get("RZ_HOME", "/home/box/routinizer")
+
+def backend_gmail(run_dir, cfg, dry, url=None):
+    """Owner e-mail through the Gmail API (rz_notify_mail). Never raises: problems come back as {'sent': False, ...}."""
+    try:
+        if RZ_HOME not in sys.path: sys.path.insert(0, RZ_HOME)
+        import rz_notify_mail
+    except Exception as e:
+        return {"backend": "gmail_api", "skipped": f"rz_notify_mail unavailable: {type(e).__name__}"}
+    try: qc, meta, line = summary(run_dir)
+    except (OSError, ValueError, KeyError) as e: return {"backend": "gmail_api", "sent": False, "error": f"no run summary: {type(e).__name__}"}
+    fails = [c["name"] + (f" ({c.get('value')}, limit {c.get('limit')})" if "value" in c else "") for c in qc["checks"] if not c["pass"]]
+    body = "\n".join([line, "", f"결과 페이지: {url}" if url else "", "자동 QC 실패: " + ", ".join(fails) if fails else "자동 QC 전부 통과",
+                      f"run {meta.get('run_id')} | {meta.get('wall_s')} s | 0 generations", f"mp4 (box): {meta.get('reel')}"])
+    att = [meta["sheet"]]
+    if url and "/blob/main/" in url:
+        prev = os.path.join(ROOT, url.split("/blob/main/", 1)[1], "preview_540p.mp4")
+        if os.path.exists(prev): att.append(prev)
+    try:
+        return rz_notify_mail.send(f"[GymForm 3D] {line}", body, att, dry_run=dry)
+    except Exception as e:
+        return {"backend": "gmail_api", "sent": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}
+
 def backend_smtp(run_dir, cfg, dry, url=None):
+    """Owner e-mail: Gmail API first (preferred); classic SMTP only if the Gmail API did not send."""
+    g = backend_gmail(run_dir, cfg, dry, url)
+    if g.get("sent") or g.get("dry_run"): return g
+    s = _smtp(run_dir, cfg, dry, url); s["gmail_api"] = g; return s
+
+def _smtp(run_dir, cfg, dry, url=None):
     u, pw, to = (os.environ.get(k) for k in ("GYMFORM_SMTP_USER", "GYMFORM_SMTP_APP_PASSWORD", "GYMFORM_NOTIFY_TO"))
     if not (u and pw and to): return {"backend": "smtp", "skipped": "env GYMFORM_SMTP_USER / GYMFORM_SMTP_APP_PASSWORD / GYMFORM_NOTIFY_TO not set"}
     qc, meta, line = summary(run_dir); m = EmailMessage(); m["Subject"] = line; m["From"] = u; m["To"] = to
@@ -111,6 +144,7 @@ def main():
     url = out[0].get("url") if out else None
     if a.backend in ("auto", "ntfy"): out.append(backend_ntfy(a.run_dir, cfg, a.dry_run, url))
     if a.backend in ("auto", "smtp"): out.append(backend_smtp(a.run_dir, cfg, a.dry_run, url))
+    if a.backend == "gmail": out.append(backend_gmail(a.run_dir, cfg, a.dry_run, url))
     if a.backend == "pages": out.append(backend_pages(a.run_dir, cfg))
     print(json.dumps(out, ensure_ascii=False))
 
