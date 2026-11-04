@@ -75,7 +75,8 @@ def backend_repo(run_dir, cfg, dry, code_paths=()):
         sh(["git", "commit", "-m", f"rig3d {meta['slug']} {meta['run_id']}: {line} (pipeline result, 0 generations)", "--", *paths, *code_paths])
         sh(["git", "push", "origin", "HEAD:main"]); res = {"backend": "repo", "url": blob, "commit": sh(["git", "rev-parse", "--short", "HEAD"])}
     alert("rig3d_ready_for_review", f"{line} -> {blob}", {"slug": meta["slug"], "run_id": meta["run_id"], "url": blob, "sheet": meta["sheet"],
-          "notify_owner": bool(cfg.get("_notify_owner", False)), "note": "repo fallback: no push channel to the owner configured"}, dry)
+          "notify_owner": not cfg.get("_no_email"), "mail": not cfg.get("_no_email"),
+          "attach": [meta["sheet"]], "note": "owner e-mail via Routinizer rz_mail_digest (batched Gmail)" if not cfg.get("_no_email") else "--no-email: no owner e-mail"}, dry)
     return res
 
 def backend_ntfy(run_dir, cfg, dry, url=None):
@@ -112,6 +113,9 @@ def backend_gmail(run_dir, cfg, dry, url=None):
 
 def backend_smtp(run_dir, cfg, dry, url=None):
     """Owner e-mail: Gmail API first (preferred); classic SMTP only if the Gmail API did not send."""
+    if not (cfg.get("_mail_direct") or os.environ.get("RIG3D_MAIL_DIRECT")):
+        # 중현 님 t71u: results by Gmail only, batched -> the rig3d_ready_for_review alert is mailed by rz_mail_digest
+        return {"backend": "rz_mail_digest", "queued": not (dry or cfg.get("_no_email")), "skipped_direct_mail": True}
     g = backend_gmail(run_dir, cfg, dry, url)
     if g.get("sent") or g.get("dry_run"): return g
     s = _smtp(run_dir, cfg, dry, url); s["gmail_api"] = g; return s

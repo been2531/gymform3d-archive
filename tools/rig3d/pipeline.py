@@ -292,7 +292,7 @@ def main():
         meta["ai_queue_resolved"] = resolve_ai(run.slug, run_id, qc)
     meta["production"] = production(); meta["wall_s"] = meta["production"]["chain_s"]; meta["wall_s_this_invocation"] = round(time.time() - T0, 1); jdump(meta, run.p("run.json"))
     import deliver
-    cfg_d = dict(cfg); jdump(cfg_d, run.p("cfg.json"))
+    cfg_d = dict(cfg); cfg_d["_no_email"] = bool(args.no_email); jdump(cfg_d, run.p("cfg.json"))
     res = [deliver.backend_repo(run.work, cfg_d, args.deliver_dry_run)]
     url = res[0].get("url")
     res.append(deliver.backend_ntfy(run.work, cfg_d, args.deliver_dry_run, url)); res.append(deliver.backend_smtp(run.work, cfg_d, args.deliver_dry_run or args.no_email, url))
