@@ -1,0 +1,67 @@
+# Exercise config for tools/rig3d/pipeline.py (0 generations). Edit here; every stage re-runs only if its inputs change.
+slug: db_row
+name: Dumbbell Row            # on-screen title (Day 4 Kaushan title)
+source:
+  provider: YMove
+  page: https://ymove.app/free-exercise-videos
+  url: https://ymove.app/api/free/d3fece95-c7e2-4794-ba8f-65a5b3e30a28
+  file: _scratch/motion_src/ymove_sa_row.mp4     # gitignored: third-party clip never committed
+  licence: "YMove free licence: commercial use incl. social media OK, no resale/redistribution of the videos; we use only the extracted pose"
+  min_bytes: 200000
+asset:
+  glb: _scratch/assets_probe/human-muscles-rigged.glb   # Grab3D Human Muscles, CC0 1.0
+  hdri:
+    name: studio_small_09           # Poly Haven, CC0
+    url: https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr
+    file: _scratch/hdri/studio_small_09_1k.hdr       # gitignored
+    strength: 0.55
+motion:
+  rep: auto                  # auto = the first full rep (bottom -> bottom) of the working elbow
+  rep_index: 0
+  torso_target_deg: 45       # forward hinge from vertical; upper body re-aimed per frame, arms keep their world direction
+  torso_smooth_sigma_f: 4.0
+  smooth_sigma_f: 2.5
+  lock_feet: true
+  spine_influence: 0.5      # spreads the hinge over Spine/Spine01/Spine02 (1.0 stretched 0.58% of edges >2x at the lats)
+render:
+  res: [720, 1280]
+  spp: 12
+  denoise: true
+  mask_spp: 4
+  camera:
+    mode: side_tight          # camera on the working-arm side, turned toward the back (Day 4 back-3/4 feel)
+    yaw_back_deg: 35
+    elev_deg: 14
+    lens_mm: 50
+    fill_w: 0.86              # figure width / frame width
+    feet_y: 0.86              # feet line as a fraction of frame height (title/pill stay above the head)
+grade:
+  out_res: [1080, 1920]
+  fps: 30
+  loops: 2                    # rep played N times
+  backdrop_rgb: [35, 39, 43]
+  target_muscles: [lats, rhomboids, mid_trap]
+  glow: right                 # green (correct form)
+tts:
+  line: "Pull the elbow back to your hip. Feel your lats and mid back squeeze."
+  question_spoken: "Where do you feel it most?"
+caption:
+  title: "One-arm dumbbell row: drive the elbow, not the hand."
+  question: "Where do you feel your dumbbell rows most right now?"
+  save: "Save this for your next back day."
+qc:
+  torso_band_deg: [35, 60]
+  torso_tol_deg: 5
+  grip_max_m: 0.03            # dumbbell handle centre vs grip point on the hand bone
+  grip_mesh_max_m: 0.06       # nearest hand-mesh vertex to the handle centre
+  tear_ratio_max: 3.0         # max deformed/rest edge length
+  tear_frac2x_max: 0.003      # fraction of edges stretched > 2x (provisional: a visible lat crease measured 0.0058)
+  elbow_rom_min_deg: 40
+  skin_p75: [69, 81]
+  skin_p90: [81, 95]
+  skin_max: 160
+  backdrop_tol: 4
+  glow_frac: [0.02, 0.30]     # green body pixels / body pixels
+  glow_in_mask_min: 0.9
+  sharp_rel_min: 0.35         # body Laplacian variance vs the Day 4 master reference
+  dur_s: [5, 15]
