@@ -22,7 +22,8 @@ def build(run_dir, cfg, out):
     W = 1080; tw, th = 270, 480
     head = np.full((150, W, 3), 24, np.uint8)
     ok = qc["pass"]; txt(head, f"{cfg['name']}  rig3d v2  -  QC {'PASS' if ok else 'FAIL'} {qc['n_pass']}/{qc['n']}", 24, 52, 1.05, GR if ok else RD, 2)
-    txt(head, f"run {meta['run_id']}   commit {meta.get('code_commit', '?')}   {meta.get('wall_s', '?')} s wall   peak RAM {meta.get('peak_rss_mb', '?')} MB", 24, 92, 0.6, MU)
+    pr = meta.get("production", {})
+    txt(head, f"run {meta['run_id']}  commit {meta.get('code_commit', '?')}  chain {pr.get('chain_s', meta.get('wall_s', '?'))} s (render {pr.get('render_s', '?')} s)  peak RAM {pr.get('peak_rss_mb', meta.get('peak_rss_mb', '?'))} MB", 24, 92, 0.58, MU)
     txt(head, f"0 generations - source pose: {cfg['source']['provider']} (pose only) - body Grab3D CC0 - HDRI Poly Haven CC0", 24, 124, 0.55, MU)
     row1 = np.hstack([tile(G[i], tw, th) for i in pick])
     lab = np.full((34, W, 3), 24, np.uint8)
