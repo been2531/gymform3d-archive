@@ -120,6 +120,9 @@ if LEGS == "planted":
         td = td * 0.5 + fwd_h * 0.5; td /= np.linalg.norm(td)                # toes mostly forward (no splayed / turned-in foot)
         to = an + hl * td; to[2] = tr.z
         B[:, aj] = an; B[:, tj] = to; B[:, hj] = an - 0.05 * td
+    if MO.get("lock_hips", False):   # v5: static stance = static pelvis; the clip's hip sway moved the knees 12 deg per rep
+        hm_ = (B[:, 23] + B[:, 24]) / 2; dh_ = np.median(hm_, axis=0) - hm_
+        upj_ = [j for j in range(33) if j not in (27, 28, 29, 30, 31, 32)]; B[:, upj_] += dh_[:, None, :]
     kt = math.radians(float(MO.get("knee_target_deg", 155)))      # soft knee: raise hips + upper body (rigid) to get it
     rq = []
     for s_, hj, aj in (("Left", 23, 27), ("Right", 24, 28)):
@@ -157,14 +160,29 @@ def track(bone, tgt_):
     c = pb[bone].constraints.new("DAMPED_TRACK"); c.target = E[tgt_]; c.track_axis = "TRACK_Y"
 c = pb["Hips"].constraints.new("COPY_LOCATION"); c.target = E["hipmid"]
 for bn in ("Hips", "Spine02", "Spine01", "Spine"): track(bn, "shfar" if "shfar" in E else "shmid")
+if MO.get("lock_hips", False) and "shfar" in E:     # v5: the pelvis aims at the rep-median torso direction (static), the
+    _hv = np.median(np.stack([names["shfar"](f) - names["hipmid"](f) for f in range(NF)]), axis=0)   # spine takes the rest
+    eh = bpy.data.objects.new("T_hipaim", None); col.objects.link(eh)
+    for f in range(NF): eh.location = mu.Vector((names["hipmid"](f) + _hv).tolist()); eh.keyframe_insert("location", frame=f + 1)
+    pb["Hips"].constraints[-1].target = eh
 for bn in ("Spine02", "Spine01", "Spine"):          # < 1 spreads the bend over the chain (less skin stretch at one joint)
     pb[bn].constraints[-1].influence = float(MO.get("spine_influence", 1.0))
 if NECK_MODE == "spine_follow":
     pb["neck"].rotation_quaternion = mu.Quaternion((1, 0, 0), -math.radians(float(MO.get("gaze_ext_deg", 8.0))))   # local X = lateral, - = extension
 else:
     track("neck", "nose"); track("Head", "nose")
+if MO.get("pelvis_yaw", False):
+    # v5: face the pelvis along the torso's horizontal forward BEFORE the hinge track. Without it the minimal-rotation
+    # DAMPED_TRACK tipped the (rig-forward) pelvis diagonally toward the person's lean = a 9 cm sideways pelvis roll,
+    # one hip joint high enough to lock that leg straight (175 deg) whatever the stance.
+    tvy = np.mean((B[:, 11] + B[:, 12]) / 2 - (B[:, 23] + B[:, 24]) / 2, axis=0); fy_ = np.array([tvy[0], tvy[1]]); fy_ /= np.linalg.norm(fy_)
+    yaw_ = math.atan2(0.0 * fy_[1] - (-1.0) * fy_[0], 0.0 * fy_[0] + (-1.0) * fy_[1])     # rig forward (0,-1) -> fy_, about +Z
+    pb["Hips"].rotation_quaternion = mu.Quaternion((0, 1, 0), yaw_); log(f"pelvis yaw {math.degrees(yaw_):.1f} deg")
+WRIST_NEUTRAL = MO.get("grip_mode", "shoulder_line") in ("palm", "palm_neutral") and MO.get("wrist_neutral", True)
 for s, p in (("Left", "l"), ("Right", "r")):
-    track(s + "Arm", p + "el"); track(s + "ForeArm", p + "wr"); track(s + "Hand", p + "ix")
+    track(s + "Arm", p + "el"); track(s + "ForeArm", p + "wr")
+    if not (WRIST_NEUTRAL and s + "Hand" == ("Left" if side == 11 else "Right") + "Hand"):
+        track(s + "Hand", p + "ix")   # v5: the working hand keeps its rest line with the forearm (neutral wrist, no 77 deg wrist curl)
     track(s + "UpLeg", p + "kn"); track(s + "Leg", p + "ank"); track(s + "Foot", p + "ft")
 hand = ("Left" if side == 11 else "Right") + "Hand"
 if LEGS == "planted":       # per-frame 2-bone knee solve from the evaluated hip joints (hips/spine do not depend on knees)
@@ -183,6 +201,22 @@ if LEGS == "planted":       # per-frame 2-bone knee solve from the evaluated hip
         for f in range(NF):
             for n in upn: E[n].location = mu.Vector(names[n](f).tolist()); E[n].keyframe_insert("location", frame=f + 1)
     log(f"legs: rig-refined hip raise {raise_z:+.3f} m")
+    if MO.get("balance_knees", False):
+        # v5: one shared hip height cannot give both legs the same knee (the rear ankle sits farther from its hip), so
+        # each ankle (+ heel/toe) slides along the fore-aft axis until ITS hip-ankle distance gives knee_target_deg
+        # on the evaluated rig (lateral width kept). Removes the locked-straight rear leg / standing look.
+        sc.frame_set(NF // 2 + 1); moved = []
+        for s_, aj, tj, hj in (("Left", 27, 31, 29), ("Right", 28, 32, 30)):
+            Lt, Ls = rl(s_ + "UpLeg", s_ + "Leg"), rl(s_ + "Leg", s_ + "Foot"); dt_ = math.sqrt(Lt * Lt + Ls * Ls - 2 * Lt * Ls * math.cos(kt))
+            H = np.array(arm.matrix_world @ pb[s_ + "UpLeg"].head); A = B[0, aj].copy(); hv = A - H; hv[2] = 0
+            fa, la = float(hv @ fwd_h), float(hv @ lat_h); dz = float(H[2] - A[2]); hreq = math.sqrt(max(dt_ * dt_ - dz * dz, 0.0))
+            fa_new = math.copysign(math.sqrt(max(hreq * hreq - la * la, 1e-4)), fa if abs(fa) > 1e-6 else 1.0)
+            dv = (fa_new - fa) * fwd_h
+            for j in (aj, tj, hj): B[:, j] += dv
+            moved.append(round(fa_new - fa, 3))
+        for f in range(NF):
+            for n in ("lank", "rank", "lft", "rft"): E[n].location = mu.Vector(names[n](f).tolist()); E[n].keyframe_insert("location", frame=f + 1)
+        log(f"legs: knees balanced, ankles moved fore-aft {moved} m")
     for s_, p_, aj in (("Left", "l", 27), ("Right", "r", 28)):
         Lt, Ls = rl(s_ + "UpLeg", s_ + "Leg"), rl(s_ + "Leg", s_ + "Foot"); A = mu.Vector(B[0, aj].tolist())
         pole = mu.Vector((B[0, 31 if aj == 27 else 32] - B[0, aj]).tolist()); pole.z = 0; pole.normalize()
@@ -190,6 +224,24 @@ if LEGS == "planted":       # per-frame 2-bone knee solve from the evaluated hip
             sc.frame_set(f + 1); H = arm.matrix_world @ pb[s_ + "UpLeg"].head; dv = A - H; d = min(dv.length, 0.999 * (Lt + Ls)); u_ = dv.normalized()
             x_ = (Lt * Lt - Ls * Ls + d * d) / (2 * d); h_ = math.sqrt(max(Lt * Lt - x_ * x_, 0.0)); pp = (pole - pole.dot(u_) * u_).normalized()
             E[p_ + "kn"].location = H + u_ * x_ + pp * h_; E[p_ + "kn"].keyframe_insert("location", frame=f + 1)
+if LEGS == "planted" and MO.get("support_hand", "") == "front_thigh":
+    # v5: the free hand rests on the front thigh just above the knee (classic split-stance row brace) instead of
+    # floating ~30 cm in front of it after the stance/hip changes. Elbow from a 2-bone solve (rig arm lengths), out to the side.
+    sp_ = "Left" if side == 12 else "Right"; pp_ = sp_[0].lower()
+    fl = max((("Left", 27), ("Right", 28)), key=lambda t: float(B[0, t[1]] @ np.append(fwd_h[:2], 0.0)))[0]
+    La, Lf = rl(sp_ + "Arm", sp_ + "ForeArm"), rl(sp_ + "ForeArm", sp_ + "Hand"); latv = mu.Vector(lat_h.tolist()) * (1 if sp_ == "Left" else -1)
+    if float(np.dot(np.array(arm.matrix_world @ pb[sp_ + "Arm"].head)[:2] - np.array(arm.matrix_world @ pb[("Right" if sp_ == "Left" else "Left") + "Arm"].head)[:2], lat_h[:2])) * (1 if sp_ == "Left" else -1) < 0: latv = -latv
+    for f in range(NF):
+        sc.frame_set(f + 1); Hh = arm.matrix_world @ pb[fl + "UpLeg"].head; Kk = E[fl[0].lower() + "kn"].location.copy()
+        td_ = (Kk - Hh).normalized(); upn_ = mu.Vector((0, 0, 1)); upn_ = (upn_ - upn_.dot(td_) * td_).normalized()
+        Sh = arm.matrix_world @ pb[sp_ + "Arm"].head
+        cand = [Hh + (Kk - Hh) * t_ + upn_ * 0.075 for t_ in np.linspace(0.35, float(MO.get("support_hand_thigh_frac", 0.75)), 9)]
+        Wt = min(cand, key=lambda c_: max((c_ - Sh).length - 0.97 * (La + Lf), 0.0) - 0.001 * (c_ - Hh).length)   # lowest reachable point
+        Sh = arm.matrix_world @ pb[sp_ + "Arm"].head; dv = Wt - Sh; d = min(dv.length, 0.995 * (La + Lf)); u_ = dv.normalized()
+        x_ = (La * La - Lf * Lf + d * d) / (2 * d); h_ = math.sqrt(max(La * La - x_ * x_, 0.0)); pole = (latv - latv.dot(u_) * u_).normalized()
+        E[pp_ + "el"].location = Sh + u_ * x_ + pole * h_; E[pp_ + "wr"].location = Sh + u_ * d; E[pp_ + "ix"].location = Sh + u_ * d + td_ * 0.09
+        for n_ in ("el", "wr", "ix"): E[pp_ + n_].keyframe_insert("location", frame=f + 1)
+    log(f"support hand on the front ({fl}) thigh")
 log("rig constrained")
 
 # ---- rest geometry: muscle regions, shorts, hand vertices, edges ----------------------------------------------------
@@ -216,6 +268,38 @@ for v in me.vertices:
         if g.group == gi and g.weight > 0.5: hand_vi.append(v.index)
     dom[v.index] = best[1]
 hand_vi = np.array(hand_vi); GN = {g.index: g.name for g in body.vertex_groups}
+# palm axis (v5): the across-palm direction (index knuckle -> little finger) in the HAND bone's local frame = the
+# middle principal axis of the rest hand-mesh vertices (largest = fingers, smallest = palm normal). On this GLB the
+# bone X/Z axes sit ~45 deg off the palm, so the legacy handle (shoulder line projected off the hand axis) was tilted.
+def palm_local(bn):
+    gi_ = body.vertex_groups[bn].index; vi_ = [v.index for v in me.vertices if any(g.group == gi_ and g.weight > 0.8 for g in v.groups)]
+    P_ = co[vi_] - co[vi_].mean(0); w_, V_ = np.linalg.eigh(np.cov(P_.T)); R_ = np.array((arm.matrix_world @ arm.data.bones[bn].matrix_local).to_3x3().normalized())
+    a_ = R_.T @ V_[:, 1]; a_[1] = 0.0; return a_ / np.linalg.norm(a_)           # perpendicular to the bone (Y) axis
+PALM = {bn: palm_local(bn) for bn in ("LeftHand", "RightHand")}
+GRIP_MODE = MO.get("grip_mode", "shoulder_line")
+tvg = np.mean((B[:, 11] + B[:, 12]) / 2 - (B[:, 23] + B[:, 24]) / 2, axis=0); FWH = mu.Vector((tvg[0], tvg[1], 0.0)).normalized()
+def palm_world(bn):
+    R_ = (arm.matrix_world @ pb[bn].matrix).to_3x3().normalized(); return (R_ @ mu.Vector(PALM[bn].tolist())).normalized(), (R_ @ mu.Vector((0, 1, 0))).normalized()
+if GRIP_MODE == "palm_neutral":
+    # neutral grip: twist the working forearm (share) + hand about their own axes per frame so the across-palm axis
+    # lines up with the body's horizontal forward axis (palm toward the torso, handle front-to-back)
+    fa_b = hand.replace("Hand", "ForeArm"); share = float(MO.get("grip_twist_forearm_share", 0.6)); TH = np.zeros(NF)
+    def _resid(f):
+        sc.frame_set(f); pa, u_ = palm_world(hand); want = FWH - FWH.dot(u_) * u_
+        if want.length < 1e-3: return 0.0
+        want.normalize()
+        if pa.dot(want) < 0: want = -want                                         # the handle has no direction: nearest of +-
+        return math.atan2(pa.cross(want).dot(u_), pa.dot(want))
+    # a twist about the bone's own axis survives DAMPED_TRACK, so the palm turns about the hand axis by ~theta; pass 1
+    # with no twist keys (frame_set would otherwise re-apply the keys), then 2 residual passes on the keyed rig
+    for ps in range(3):
+        for f in range(1, NF + 1): TH[f - 1] += _resid(f)
+        if ps == 0: TH = gsmooth(np.unwrap(TH)[:, None], 1.5)[:, 0]               # radians, smooth over the rep
+        for f in range(1, NF + 1):
+            pb[fa_b].rotation_quaternion = mu.Quaternion((0, 1, 0), share * TH[f - 1]); pb[hand].rotation_quaternion = mu.Quaternion((0, 1, 0), (1 - share) * TH[f - 1])
+            pb[fa_b].keyframe_insert("rotation_quaternion", frame=f); pb[hand].keyframe_insert("rotation_quaternion", frame=f)
+    TW = np.degrees(TH).tolist()
+    region_counts_twist = [round(min(TW), 1), round(max(TW), 1)]; log(f"neutral grip twist {region_counts_twist} deg (forearm share {share})")
 ev = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ev); ev = ev.reshape(-1, 2)
 rest_len = np.linalg.norm(co[ev[:, 0]] - co[ev[:, 1]], axis=1); ok_e = rest_len > 1e-4
 region_counts = {"lats": int(lats.sum()), "rhomboids": int(rhomb.sum()), "mid_trap": int(mid_trap.sum()), "shorts": int(shorts.sum()), "hand_verts": int(len(hand_vi))}
@@ -304,8 +388,12 @@ GRIP = float(MO.get("grip_offset_m", 0.075))
 def grip_frame():
     Mb = arm.matrix_world @ pb[hand].matrix; R = Mb.to_3x3().normalized()
     u = (R @ mu.Vector((0, 1, 0))).normalized(); w = Mb.translation          # bone head = wrist, Y axis = bone direction
-    lr = (arm.matrix_world @ pb["RightArm"].head - arm.matrix_world @ pb["LeftArm"].head).normalized()
-    ha = (lr - lr.dot(u) * u).normalized(); third = ha.cross(u).normalized()
+    if GRIP_MODE in ("palm", "palm_neutral"):
+        ha, _ = palm_world(hand); ha = (ha - ha.dot(u) * u).normalized()                # handle across the palm
+    else:
+        lr = (arm.matrix_world @ pb["RightArm"].head - arm.matrix_world @ pb["LeftArm"].head).normalized()
+        ha = (lr - lr.dot(u) * u).normalized()
+    third = ha.cross(u).normalized()
     return w + GRIP * u, mu.Matrix((ha, u, third)).transposed().to_quaternion()
 # pass 1: evaluate the rig per frame, bake the dumbbell, collect framing points
 dg = bpy.context.evaluated_depsgraph_get(); samp = np.arange(0, nv, 23)
@@ -362,10 +450,11 @@ log(f"camera {framing}")
 chk = []; BN = [b.name for b in arm.data.bones]; BPOSE = np.zeros((NF, len(BN), 4, 4))
 def _nm(M):       # world 4x4 with an orthonormal rotation part (the armature object carries the glTF scale)
     M = np.array(M); R = M[:3, :3]; M[:3, :3] = R / np.linalg.norm(R, axis=0, keepdims=True); return M
-BREST = np.array([_nm(arm.matrix_world @ arm.data.bones[n].matrix_local) for n in BN])
+DBM = np.zeros((NF, 4, 4)); BREST = np.array([_nm(arm.matrix_world @ arm.data.bones[n].matrix_local) for n in BN])
 for f in range(1, NF + 1):
     sc.frame_set(f); Wm = arm.matrix_world; Pp = lambda b: Wm @ pb[b].head
     for bi, n in enumerate(BN): BPOSE[f - 1, bi] = _nm(Wm @ pb[n].matrix)
+    DBM[f - 1] = _nm(db.matrix_world)
     lsh, rsh, lwr, rwr, hip = Pp("LeftArm"), Pp("RightArm"), Pp("LeftHand"), Pp("RightHand"), Pp("Hips"); shc = (lsh + rsh) / 2
     lr = (rsh - lsh).normalized(); cross = (rwr - lwr).dot(lr) < 0
     tv = shc - hip; torso = math.degrees(math.atan2(math.hypot(tv.x, tv.y), tv.z))
@@ -407,7 +496,8 @@ for f in range(1, NF + 1):
     chk.append(rec)
 json.dump({"frames": chk, "working": hand, "floor_tilt_fixed_deg": round(floor_tilt, 1), "rep": [f0, f1], "raw_torso_deg": [round(float(raw_torso.min()), 1), round(float(raw_torso.max()), 1)],
            "framing": framing, "regions": region_counts, "grip_offset_m": GRIP, "person_to_rig_scale": round(SCALE, 3), "kp_res": [rx, ry]}, open(a.out + "/checks.json", "w"), indent=0)
-np.savez_compressed(a.out + "/bones.npz", names=np.array(BN), rest=BREST, pose=BPOSE, neck_mode=NECK_MODE, legs=LEGS)
+np.savez_compressed(a.out + "/bones.npz", names=np.array(BN), rest=BREST, pose=BPOSE, neck_mode=NECK_MODE, legs=LEGS, dumbbell=DBM,
+                    handle_axis_local=np.array([1.0, 0.0, 0.0]), working_hand=hand, palm_left=PALM["LeftHand"], palm_right=PALM["RightHand"], grip_mode=GRIP_MODE)
 log("checks done")
 if a.checks_only: sys.exit(0)
 

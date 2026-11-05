@@ -210,6 +210,10 @@ RULES = {   # qc fix name -> (config path, function old_value -> new value); eac
     "camera_tighter": ("render.camera.fill_w", lambda v: min(0.95, float(v) + 0.06)),
     "neck_follow_spine": ("motion.neck_mode", lambda v: "spine_follow"),
     "plant_legs": ("motion.legs", lambda v: "planted"),
+    "balance_knees": ("motion.balance_knees", lambda v: True),
+    "grip_palm": ("motion.grip_mode", lambda v: "palm_neutral"),
+    "support_hand": ("motion.support_hand", lambda v: "front_thigh"),
+    "camera_top_margin": ("render.camera.top_y", lambda v: min(0.32, float(v or 0.24) + 0.04)),
 }
 
 def getp(c, path):

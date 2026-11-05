@@ -63,3 +63,24 @@ Owner feedback on 20261104_2240: the neck looked bent, the legs looked like a ru
   `neck_in_line_with_spine_deg`, `neck_flex_deg_min_max`, `head_roll_deg`, `head_yaw_deg`, `neck_steady_maxdev_deg`,
   `both_feet_planted`, `foot_drift_m`, `knee_angles_deg`, `knee_steady_maxdev_deg`, `thigh_split_deg`. Per-frame
   series go to `posture_series.json`. Auto-fix rules: `neck_follow_spine`, `plant_legs`.
+
+## v5 (2026-11-05): title clear of figure, soft balanced knees, neutral-grip dumbbell, braced support hand
+Each issue got a generic QC check first (limits in the exercise config), confirmed FAIL on 20261104_2343
+(`results/rig3d/db_row/20261104_2343/v5_recheck.json`), then a root-cause fix:
+- **`overlay_clear_of_figure_px`** (grade3d stores figure-mask px inside the title / pill boxes per frame; limit
+  `qc.overlay_figure_px_max: 0`). 2343: 5822 px of the figure under the title. Fix: `render.camera.top_y` 0.27
+  (title box ends at y 491 px = 0.256), `feet_y` 0.92.
+- **`knees_soft_and_balanced`** (`qc.posture.knee_soft_range_deg`, `knee_lr_diff_max_deg`). Root causes of the
+  175° rear leg: the pelvis was tipped diagonally toward the lean (minimal-rotation track, no yaw) → one hip joint
+  ~9 cm higher; YMove's "legs apart" stance is ~0.5 m wide; the pelvis followed the rowing torso every frame.
+  Fixes (`motion`): `pelvis_yaw`, `stance_width_m: 0.30`, `lock_hips` (pelvis aims at the rep-median torso
+  direction), `balance_knees` (each ankle slides fore-aft until its own knee hits `knee_target_deg: 160`);
+  `torso_target_deg` 49 for a slightly deeper hinge.
+- **`dumbbell_handle_orientation`** (handle vs the across-palm axis = middle PCA axis of the rest hand mesh, and vs
+  perpendicular-to-forearm) and **`dumbbell_neutral_grip_deg`** (handle vs the body's horizontal forward axis).
+  Root causes: the handle followed the shoulder line, the bone X/Z axes sit ~45° off the palm, and the hand tracked
+  the MediaPipe index point (wrist curl up to 77°). Fixes: `grip_mode: palm_neutral` (handle across the palm;
+  forearm 60% + hand 40% twisted per frame so the palm faces the torso), `wrist_neutral`.
+- **`support_hand_on_thigh_m`** (non-working wrist to nearest thigh bone line). Fix: `support_hand: front_thigh`
+  (lowest reachable point on the front thigh, elbow from a 2-bone solve, pointing out to the side).
+- `render/bones.npz` now also stores the dumbbell matrices, handle axis, palm axes and working hand.

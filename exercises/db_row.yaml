@@ -18,7 +18,7 @@ asset:
 motion:
   rep: auto                  # auto = the first full rep (bottom -> bottom) of the working elbow
   rep_index: 0
-  torso_target_deg: 45       # forward hinge from vertical; upper body re-aimed per frame, arms keep their world direction
+  torso_target_deg: 49       # forward hinge from vertical; upper body re-aimed per frame, arms keep their world direction
   torso_smooth_sigma_f: 4.0
   smooth_sigma_f: 2.5
   lock_feet: true
@@ -27,7 +27,15 @@ motion:
   neck_mode: spine_follow    # v4: neck aimed along the torso line + gaze_ext_deg, Head keeps its rest relation (legacy: ears_track)
   gaze_ext_deg: 4            # head tipped back from the spine line (neutral neck, eyes on the floor ahead of the hands)
   legs: planted              # v4: both feet flat, constant, knees solved per frame from rig lengths (legacy: source)
-  knee_target_deg: 155      # soft static knee: hips + upper body raised rigidly until the rig knee reaches it
+  knee_target_deg: 160      # soft static knee: hips + upper body raised rigidly until the rig knee reaches it
+  balance_knees: true        # v5: each ankle slides fore-aft until its own knee reaches knee_target_deg (no locked rear leg)
+  grip_mode: palm_neutral    # v5: handle across the palm (hand-mesh axis) + forearm/hand twisted to a neutral grip (legacy shoulder_line)
+  grip_twist_forearm_share: 0.6
+  wrist_neutral: true        # v5: working hand not aimed at the index landmark (MediaPipe curled the wrist up to 77 deg)
+  support_hand: front_thigh  # v5: free hand braced on the front thigh above the knee
+  lock_hips: true            # v5: pelvis static over the rep (upper body follows rigidly), knees steady
+  pelvis_yaw: true           # v5: pelvis faces the lean direction before the hinge (no sideways pelvis roll)
+  stance_width_m: 0.30       # v5: ankle-to-ankle width (YMove 'legs apart' is ~0.5 m: the wide rear leg could not bend)
   stance_scale: 0.45         # fore-aft stagger kept from the clip (1.0 = YMove's long split stance = running-stride look)
 garment:                     # black boxer briefs (드로즈): separate skinned mesh, matte black, never in the muscle mask
   enabled: true
@@ -50,8 +58,8 @@ render:
     elev_deg: 14
     lens_mm: 50
     fill_w: 0.90              # figure width / frame width
-    feet_y: 0.90              # feet line as a fraction of frame height (title/pill stay above the head)
-    top_y: 0.22               # highest figure point (v4: was a fixed 0.24; bigger figure)
+    feet_y: 0.92              # feet line as a fraction of frame height (title/pill stay above the head)
+    top_y: 0.27               # highest figure point: below the Day 4 title box (y 429-491 px = 0.256), v5 (v4 0.22 put the head under the title)
 grade:
   out_res: [1080, 1920]
   fps: 30
@@ -91,6 +99,7 @@ qc:
   sharp_rel_min: 0.35         # body Laplacian variance vs the Day 4 master reference
   dur_s: [5, 15]
   safe_zone: [60, 220, 960, 1500]   # x0, y0, x1, y1: IG Reels (top bar, right buttons, bottom caption) for every overlay box
+  overlay_figure_px_max: 0         # v5: figure mask px inside the title / pill text boxes, every frame
   callout_figure_overlap_max: 0.02
   callout_2d_tol_deg: 12            # drawn 2D axis vs shown 3D value (15 deg yaw side camera projection)
   briefs_visible_poke_max: 0.002    # body pixels inside the briefs silhouette / briefs pixels (render)
@@ -108,4 +117,9 @@ qc:
     foot_drift_max_m: 0.015         # ankle / toe base vs per-rep median
     knee_range_deg: [140, 178]      # static split/hinge stance: soft knees, never deep lunge or locked hyper-straight
     knee_steady_max_deg: 6
+    knee_soft_range_deg: [150, 170] # v5: soft AND balanced knees (athletic hinge, no locked rear leg)
+    knee_lr_diff_max_deg: 20
+    handle_palm_max_deg: 15        # v5: handle vs across-palm axis and vs perpendicular-to-forearm, every frame
+    handle_body_forward_max_deg: 20 # v5: neutral-grip row: handle runs front-to-back
+    support_hand_thigh_max_m: 0.12  # v5: wrist to thigh bone line (thigh radius ~0.07 + hand)
     thigh_split_max_deg: 35         # sagittal angle between the thighs (running stride ~60+)
