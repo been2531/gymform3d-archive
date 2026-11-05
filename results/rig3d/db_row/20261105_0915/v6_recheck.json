@@ -1,0 +1,174 @@
+{
+ "what": "v6 checks re-run on the 0915 rig (current code, legacy flags: grip_wrap off, dumbbell_axis_fix off, support_elbow_mode lateral, support_wrist_neutral off; pose.npz of 0915)",
+ "checks": [
+  {
+   "name": "dumbbell_grip_bone_m",
+   "pass_0915": true,
+   "value_0915": 0.0,
+   "limit": 0.03,
+   "fix_rule": null
+  },
+  {
+   "name": "dumbbell_to_hand_mesh_m",
+   "pass_0915": true,
+   "value_0915": 0.0119,
+   "limit": 0.06,
+   "fix_rule": null
+  },
+  {
+   "name": "dumbbell_handle_orientation",
+   "pass_0915": false,
+   "value_0915": {
+    "vs_palm_axis": 90.0,
+    "vs_forearm_perp": 3.3
+   },
+   "limit": "<= 15 every frame",
+   "fix_rule": "grip_palm"
+  },
+  {
+   "name": "dumbbell_neutral_grip_deg",
+   "pass_0915": false,
+   "value_0915": 89.2,
+   "limit": "<= 20 every frame",
+   "fix_rule": "grip_palm"
+  },
+  {
+   "name": "joint_ranges_no_hyperextension",
+   "pass_0915": false,
+   "value_0915": {
+    "L_elbow": [
+     -10.3,
+     -4.2
+    ],
+    "L_wrist_dev": 57.8
+   },
+   "limit": {
+    "elbow_flex_deg": [
+     -5,
+     150
+    ],
+    "knee_flex_deg": [
+     -5,
+     120
+    ],
+    "wrist_dev_max_deg": 35,
+    "ankle_dev_max_deg": 25
+   },
+   "fix_rule": "joint_range"
+  },
+  {
+   "name": "self_intersection_capsule_m",
+   "pass_0915": true,
+   "value_0915": {
+    "max": 0.02,
+    "pairs": {
+     "LeftUpLeg/LeftForeArm": 0.02,
+     "Spine01/RightArm": 0.008
+    }
+   },
+   "limit": "<= 0.02",
+   "fix_rule": null
+  },
+  {
+   "name": "center_of_mass_over_feet_m",
+   "pass_0915": false,
+   "value_0915": -0.077,
+   "limit": ">= 0.0 (inside the feet polygon)",
+   "fix_rule": "com_balance"
+  },
+  {
+   "name": "proportions_symmetric_and_rigid",
+   "pass_0915": true,
+   "value_0915": "ok",
+   "limit": "L/R and frame/rest within 4%",
+   "fix_rule": null
+  },
+  {
+   "name": "grip_finger_wrap_deg",
+   "pass_0915": false,
+   "value_0915": {
+    "min": 2.4,
+    "max": 24.8
+   },
+   "limit": [
+    120,
+    300
+   ],
+   "fix_rule": "grip_wrap"
+  },
+  {
+   "name": "grip_fingertip_gap_mm",
+   "pass_0915": false,
+   "value_0915": {
+    "min": 103.5,
+    "max": 114.4
+   },
+   "limit": "[-1.5, 5]",
+   "fix_rule": "grip_wrap"
+  },
+  {
+   "name": "grip_thumb_opposing",
+   "pass_0915": false,
+   "value_0915": {
+    "gap_mm_max": 17.4,
+    "opposition_deg_min": 97.4
+   },
+   "limit": "gap <= 6 mm, opposition >= 90",
+   "fix_rule": "grip_wrap"
+  },
+  {
+   "name": "grip_no_hand_handle_intersection",
+   "pass_0915": false,
+   "value_0915": 525,
+   "limit": 0,
+   "fix_rule": "grip_wrap"
+  },
+  {
+   "name": "mesh_no_spikes_edge_ratio",
+   "pass_0915": true,
+   "value_0915": {
+    "max": 3.04,
+    "min": 0.031,
+    "measured": "tear_max_visible",
+    "worst_groups": {
+     "Spine02": 3.04,
+     "Spine01": 2.74,
+     "RightUpLeg": 2.54,
+     "Hips": 2.43,
+     "RightShoulder": 2.18
+    }
+   },
+   "limit": "max <= 3.5, min >= 0.01",
+   "fix_rule": null
+  },
+  {
+   "name": "prop_dumbbell_heads_readable",
+   "pass_0915": false,
+   "value_0915": {
+    "visible_min": 0.0,
+    "screen_sep_min": 1.59
+   },
+   "limit": "visible >= 0.5, separation >= 1.0 head diameters",
+   "fix_rule": "camera_yaw"
+  },
+  {
+   "name": "extremities_in_frame_margin_px",
+   "pass_0915": true,
+   "value_0915": 216.0,
+   "limit": ">= 24",
+   "fix_rule": null
+  }
+ ],
+ "pixel_0915": {
+  "figure_size_not_below_target": {
+   "value": 0.649,
+   "limit": ">= 0.62",
+   "pass": true
+  },
+  "green_area_ratio_cap": {
+   "value": 0.1325,
+   "limit": "<= 0.18",
+   "pass": true
+  }
+ }
+}
