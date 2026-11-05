@@ -94,6 +94,11 @@ def run(run_dir, cfg):
             ks = list(boxes); bad_ov += [f"{f['f']}:{a}/{b}" for i, a in enumerate(ks) for b in ks[i + 1:] if inter(boxes[a], boxes[b])]
         out.append(ck("overlay_in_safe_zone", bad_sz[:5] or f"{n_ui} boxes ok", sz, not bad_sz and n_ui > 0, None, "overlay"))
         out.append(ck("overlay_text_no_overlap", bad_ov[:5] or "ok", "title / pill / callout text disjoint", not bad_ov, None, "overlay"))
+        if "overlay_figure_px_max" in Q:     # v5 generic: title / pill text boxes clear of the figure mask, every frame
+            have = [f["overlay_fig_px"] for f in L if "overlay_fig_px" in f]
+            worst = {k: max(h.get(k, 0) for h in have) for k in ("title", "pill")} if have else None
+            okf = bool(have) and len(have) == len(L) and max(worst.values()) <= Q["overlay_figure_px_max"]
+            out.append(ck("overlay_clear_of_figure_px", worst, f"<= {Q['overlay_figure_px_max']} figure px in title/pill box, every frame", okf, "camera_top_margin", "overlay"))
         if cfg["layout"].get("callout"):
             mo = max(figov) if figov else 1.0
             out.append(ck("callout_text_clear_of_figure", round(mo, 4), Q["callout_figure_overlap_max"], bool(figov) and mo <= Q["callout_figure_overlap_max"], None, "overlay"))

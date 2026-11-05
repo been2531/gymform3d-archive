@@ -15,6 +15,11 @@ Legs:
   foot drift          max distance of ankle / toe-base from their per-rep median
   knee angle          hip-knee-ankle angle per leg (range) + steadiness
   thigh split         sagittal angle between the two thighs (a running stride is one thigh forward, one back)
+  knees soft+balanced both knees inside a soft range and |median L - median R| small (v5)
+Dumbbell (v5, needs the dumbbell matrices + palm axis in the npz):
+  handle orientation  handle axis vs the across-palm axis of the working hand and vs perpendicular-to-forearm
+  neutral grip        handle (horizontal part) vs the body's horizontal forward axis (row: handle front-to-back)
+  support hand        non-working wrist to the nearest thigh bone segment (braced on the thigh, not floating)
 usage: python3 tools/rig3d/posture_qc.py RENDER_DIR/bones.npz [exercise.yaml]"""
 import json, math, sys
 import numpy as np
@@ -60,6 +65,23 @@ def measure(npz):
     lat = _u(head("LeftUpLeg") - head("RightUpLeg"))
     def proj(v): return _u(v - lat * (v * lat).sum(1, keepdims=True))
     out["thigh_split_deg"] = _ang(proj(-out["Left"]["thigh"]), proj(-out["Right"]["thigh"]))
+    # support hand (v5): distance from the non-working wrist to the nearest thigh segment (bone line, not skin)
+    if "working_hand" in D.files:
+        sp = "Right" if str(D["working_hand"]).startswith("Left") else "Left"; w = head(sp + "Hand"); best = None
+        for s in ("Left", "Right"):
+            a_, b_ = head(s + "UpLeg"), head(s + "Leg"); ab = b_ - a_; t = np.clip(((w - a_) * ab).sum(1) / (ab * ab).sum(1), 0, 1)
+            dd = np.linalg.norm(w - (a_ + ab * t[:, None]), axis=1); best = dd if best is None else np.minimum(best, dd)
+        out["support_hand_to_thigh_m"] = best
+    # dumbbell handle vs the working hand (v5): needs dumbbell (F,4,4) + handle_axis_local + palm_<side> in the npz
+    if "dumbbell" in D.files and "palm_left" in D.files:
+        hb = str(D["working_hand"]); fb = hb.replace("Hand", "ForeArm"); pl = D["palm_left" if hb.startswith("Left") else "palm_right"]
+        hax = _u(np.einsum("fij,j->fi", D["dumbbell"][:, :3, :3], D["handle_axis_local"]))
+        Rh = rot(hb); hy = Rh[:, :, 1]; palm = _u(np.einsum("fij,j->fi", Rh, pl)); palm = _u(palm - hy * (palm * hy).sum(1, keepdims=True))
+        fore = _u(head(hb) - head(fb))
+        out["handle_vs_palm_deg"] = np.minimum(_ang(hax, palm), 180 - _ang(hax, palm))            # handle has no direction
+        out["handle_vs_forearm_perp_deg"] = np.abs(90 - _ang(hax, fore))
+        tv = np.mean(head("Spine") - head("Hips"), 0); fw = np.array([tv[0], tv[1], 0.0]); fw /= np.linalg.norm(fw)
+        hh = hax.copy(); hh[:, 2] = 0; out["handle_vs_body_forward_deg"] = np.minimum(_ang(hh, fw[None]), 180 - _ang(hh, fw[None]))
     return out
 
 def _ck(name, value, limit, ok, fix=None):
@@ -92,9 +114,27 @@ def checks(npz, Q):
     if "knee_steady_max_deg" in Q:
         d = max(absmax(M[s]["knee_deg"] - np.median(M[s]["knee_deg"])) for s in ("Left", "Right"))
         out.append(_ck("knee_steady_maxdev_deg", r(d, 2), f"<= {Q['knee_steady_max_deg']}", d <= Q["knee_steady_max_deg"], "plant_legs"))
+    if "knee_soft_range_deg" in Q:      # v5: soft AND balanced (no locked-straight leg next to a bent one)
+        lo, hi = Q["knee_soft_range_deg"]; med = {s[0]: float(np.median(M[s]["knee_deg"])) for s in ("Left", "Right")}
+        mn = {s[0]: float(M[s]["knee_deg"].min()) for s in ("Left", "Right")}; mx = {s[0]: float(M[s]["knee_deg"].max()) for s in ("Left", "Right")}
+        dlr = abs(med["L"] - med["R"]); ok = all(lo <= mn[k] and mx[k] <= hi for k in mn) and dlr <= Q.get("knee_lr_diff_max_deg", 20)
+        out.append(_ck("knees_soft_and_balanced", {"L": [r(mn["L"]), r(mx["L"])], "R": [r(mn["R"]), r(mx["R"])], "LR_diff": r(dlr)},
+                       f"both in [{lo}, {hi}], |L-R| <= {Q.get('knee_lr_diff_max_deg', 20)}", ok, "balance_knees"))
+    if "handle_palm_max_deg" in Q:
+        if "handle_vs_palm_deg" not in M: out.append(_ck("dumbbell_handle_orientation", None, "bones.npz without dumbbell", False))
+        else:
+            a1, a2 = M["handle_vs_palm_deg"], M["handle_vs_forearm_perp_deg"]; v = np.maximum(a1, a2)
+            out.append(_ck("dumbbell_handle_orientation", {"vs_palm_axis": r(a1.max()), "vs_forearm_perp": r(a2.max())}, f"<= {Q['handle_palm_max_deg']} every frame",
+                           v.max() <= Q["handle_palm_max_deg"], "grip_palm")); out[-1]["where"] = {"frame": int(v.argmax()) + 1}
+    if "handle_body_forward_max_deg" in Q and "handle_vs_body_forward_deg" in M:
+        v = M["handle_vs_body_forward_deg"]; out.append(_ck("dumbbell_neutral_grip_deg", r(v.max()), f"<= {Q['handle_body_forward_max_deg']} every frame",
+                                                            v.max() <= Q["handle_body_forward_max_deg"], "grip_palm")); out[-1]["where"] = {"frame": int(v.argmax()) + 1}
+    if "support_hand_thigh_max_m" in Q and "support_hand_to_thigh_m" in M:
+        v = M["support_hand_to_thigh_m"]; out.append(_ck("support_hand_on_thigh_m", r(v.max(), 3), f"<= {Q['support_hand_thigh_max_m']} every frame", v.max() <= Q["support_hand_thigh_max_m"], "support_hand"))
     if "thigh_split_max_deg" in Q:
         v = M["thigh_split_deg"]; out.append(_ck("thigh_split_deg", r(np.median(v)), f"<= {Q['thigh_split_max_deg']} (median)", np.median(v) <= Q["thigh_split_max_deg"], "plant_legs"))
-    series = {k: [round(float(x), 2) for x in M[k]] for k in ("neck_flex_deg", "neck_line_dev_deg", "head_roll_deg", "head_yaw_deg", "thigh_split_deg")}
+    series = {k: [round(float(x), 2) for x in M[k]] for k in ("neck_flex_deg", "neck_line_dev_deg", "head_roll_deg", "head_yaw_deg", "thigh_split_deg",
+              "handle_vs_palm_deg", "handle_vs_forearm_perp_deg", "handle_vs_body_forward_deg") if k in M}
     for s in ("Left", "Right"): series[s + "_knee_deg"] = [round(float(x), 1) for x in M[s]["knee_deg"]]; series[s + "_toe_h_m"] = [round(float(x), 4) for x in M[s]["toe_h_m"]]
     return out, series
 

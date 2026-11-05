@@ -111,6 +111,8 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
         cl = cv2.morphologyEx(gb_.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
         inner = cv2.erode(cl, np.ones((9, 9), np.uint8)) > 0
         st.update({"briefs_px": int(gb_.sum()), "briefs_poke_px": int((inner & ~gb_ & (body > 0.5)).sum()), "green_on_briefs_px": int((gb_ & green).sum())})
+    # v5: figure pixels under the title text box / preview pill (the figure must never sit under the title)
+    st["overlay_fig_px"] = {k: int((fg[ui[k][1]:ui[k][3] + 1, ui[k][0]:ui[k][2] + 1] > 0.5).sum()) for k in ("title", "pill") if k in ui}
     if "callout" in ui:
         c_ = ui["callout"]["text_box"]; st["callout_fig_overlap"] = round(float((fg[c_[1]:c_[3], c_[0]:c_[2]] > 0.5).mean()), 4)
     return out8, st
