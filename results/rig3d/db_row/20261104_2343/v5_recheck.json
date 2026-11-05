@@ -161,6 +161,14 @@
    "limit": "<= 0",
    "pass": false,
    "note": "recomputed from render/f_*.png alpha (= grade fg) + look.json ui boxes"
+  },
+  {
+   "name": "support_hand_on_thigh_m",
+   "group": "posture",
+   "value": 0.317,
+   "limit": "<= 0.12 every frame",
+   "pass": false,
+   "fix": "support_hand"
   }
  ]
 }
