@@ -24,8 +24,8 @@ KST = dt.timezone(dt.timedelta(hours=9))
 AIQ = "/home/box/routinizer/ai_queue/fitness_studio.jsonl"
 FITNESS_STUDIO_AGENT = "7c203a21-2233-41e0-92f1-189a01945890"
 STAGES = ["config", "fetch", "pose", "render", "grade", "reel", "qc", "sheet", "deliver"]
-CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
-        "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py", "tools/rig3d/posture_qc.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
+CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py", "tools/rig3d/hand_grip.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
+        "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py", "tools/rig3d/posture_qc.py", "tools/rig3d/anatomy_qc.py", "tools/rig3d/hand_grip.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
 PEAK = {"rss_mb": 0}
 
 def log(m): print(f"[{dt.datetime.now(KST):%H:%M:%S}] {m}", flush=True)
@@ -197,12 +197,25 @@ class Run:
         cover = os.path.join(d, "cover.jpg"); shutil.copy2(self.p("grade", G[len(G) // 2]), cover.replace(".jpg", ".png"))
         return {"mp4": mp4, "dur_s": round(dur, 2), "loops": loops, "caption_errors": errs}
 
+    def rig_precheck(self, rep):
+        """retarget --checks-only into render_pre/ + qc3d.rig_checks (no render, no grade)."""
+        d = self.p("render_pre"); os.makedirs(d, exist_ok=True)
+        rc = dict(self.cfg); rc["_rep"] = rep; rc["asset"] = dict(rc["asset"]); rc["asset"]["glb"] = os.path.join(ROOT, rc["asset"]["glb"])
+        rc["asset"]["hdri"] = dict(rc["asset"]["hdri"]); rc["asset"]["hdri"]["file"] = os.path.join(ROOT, rc["asset"]["hdri"]["file"]); jdump(rc, os.path.join(d, "cfg.json"))
+        run_child([BPY, os.path.join(HERE, "retarget_render_v2.py"), "--npz", self.p("pose", "pose.npz"), "--cfg", os.path.join(d, "cfg.json"), "--out", d, "--checks-only"], logf=os.path.join(d, "log.txt"))
+        import importlib; sys.path.insert(0, HERE); import qc3d; importlib.reload(qc3d)
+        out = qc3d.apply_rule_map(qc3d.rig_checks(d, self.cfg)[0])
+        res = {"pass": all(c["pass"] for c in out), "checks": out, "auto_fixable": sorted({c["fix"] for c in out if not c["pass"] and c["fix"]})}
+        log(f"rig pre-check: {sum(c['pass'] for c in out)}/{len(out)}" + ("" if res["pass"] else f" fail {[c['name'] for c in out if not c['pass']]}"))
+        jdump(res, os.path.join(d, "precheck.json")); return res
+
     # 8 ------------------------------------------------------------------------------------------------------------------
     def s_qc(self):
         import importlib; sys.path.insert(0, HERE); import qc3d; importlib.reload(qc3d)
         return qc3d.run(self.work, self.cfg)
 
-RULES = {   # qc fix name -> (config path, function old_value -> new value); each applied at most once per run
+RULES = {   # qc fix name -> (config path, function old_value -> new value). v6: a rule may be applied again in a later
+            # iteration (it steps the value further); a rule whose value no longer changes is exhausted.
     "torso_smooth": ("motion.torso_smooth_sigma_f", lambda v: float(v) * 2),
     "grip_offset": ("motion.grip_offset_m", lambda v: 0.06),
     "spine_spread": ("motion.spine_influence", lambda v: max(0.3, float(v) - 0.2)),
@@ -213,7 +226,16 @@ RULES = {   # qc fix name -> (config path, function old_value -> new value); eac
     "balance_knees": ("motion.balance_knees", lambda v: True),
     "grip_palm": ("motion.grip_mode", lambda v: "palm_neutral"),
     "support_hand": ("motion.support_hand", lambda v: "front_thigh"),
-    "camera_top_margin": ("render.camera.top_y", lambda v: min(0.32, float(v or 0.24) + 0.04)),
+    "camera_top_margin": ("render.camera.top_y", lambda v: min(0.32, float(v or 0.24) + 0.02)),
+    # v6
+    "grip_wrap": ("motion.grip_wrap.mcp_back_m", lambda v: min(0.025, float(v or 0.015) + 0.005)),
+    "limb_clearance": ("motion.support_hand_lift_m", lambda v: min(0.13, float(v or 0.075) + 0.02)),
+    "joint_range": ("motion.support_elbow_out", lambda v: min(1.5, float(v if v is not None else 0.5) + 0.5)),
+    "com_balance": ("motion.stance_mode", lambda v: "feet_forward"),
+    "camera_yaw": ("render.camera.yaw_back_deg", lambda v: max(0.0, float(v or 35) - 10)),
+    "glow_cap": ("render.camera.yaw_back_deg", lambda v: max(0.0, float(v or 35) - 10)),
+    "camera_bigger": ("render.camera.feet_y", lambda v: min(0.95, float(v or 0.9) + 0.015)),
+    "torso_target": ("motion.torso_target_deg", lambda v: 47.0),
 }
 
 def getp(c, path):
@@ -256,31 +278,53 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--exercise", required=True); ap.add_argument("--force", choices=STAGES)
     ap.add_argument("--short", type=int, default=0); ap.add_argument("--deliver-dry-run", action="store_true"); ap.add_argument("--no-email", action="store_true", help="real repo commit + alert, but build the owner e-mail without sending it (one e-mail per run budget)"); ap.add_argument("--no-gate", action="store_true")
     ap.add_argument("--gate-timeout", type=int, default=6 * 3600); ap.add_argument("--no-retry", action="store_true")
+    ap.add_argument("--max-iter", type=int, default=3, help="self-healing iterations (rig pre-check loop and full render loop, each)")
     args = ap.parse_args()
     try: os.nice(max(0, 19 - os.nice(0)))
     except OSError: pass
     if "xai_edit" in sys.modules: raise SystemExit("xai module loaded: refused")
     T0 = time.time(); run = Run(args); run_id = dt.datetime.now(KST).strftime("%Y%m%d_%H%M")
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    fixes = []
-    for attempt in range(1 + len(RULES)):
+    fixes = []; max_iter = args.max_iter
+    def apply_rules(qc_, it, phase):
+        did = []
+        for f in qc_["auto_fixable"]:
+            if f not in RULES: continue
+            path, fn = RULES[f]
+            if path in [d["path"] for d in did]: continue                       # one step per path per iteration
+            old = run.overrides.get(path, getp(run.cfg, path)); new = fn(old)
+            if new == old: continue                                              # exhausted
+            run.overrides[path] = new; d = {"iter": it, "phase": phase, "rule": f, "path": path, "old": old, "new": new,
+                                            "for": [c["name"] for c in qc_["checks"] if not c["pass"] and c.get("fix") == f]}
+            did.append(d); fixes.append(d); log(f"auto-fix [{phase} {it}] {f}: {path} {old} -> {new} (for {', '.join(d['for'])})")
+        return did
+    iters = {"rig_precheck": 0, "full": 0}
+    for attempt in range(max_iter + 1):
         cfg = run.stage("config", [open(run.cfg_path).read(), run.overrides], run.s_config, [])
         run.cfg = cfg
         run.stage("fetch", [cfg["source"], cfg["asset"]], run.s_fetch, [os.path.join(ROOT, cfg["source"]["file"]), os.path.join(ROOT, cfg["asset"]["hdri"]["file"])])
         pinfo = run.stage("pose", [cfg["source"]["file"], fsha(cfg["source"]["file"])], run.s_pose, [run.p("pose", "pose.npz")])
+        # v6 cheap rig pre-check loop (retarget --checks-only, ~5 s): fix every rig/posture/anatomy/grip/prop failure
+        # with its rule BEFORE paying for a full render
+        if not args.no_retry:
+            for pit in range(max_iter):
+                pq = run.rig_precheck(pinfo["rep"])
+                if pq["pass"]: break
+                if not apply_rules(pq, pit + 1, "rig_precheck"): break
+                iters["rig_precheck"] += 1
+                cfg = run.stage("config", [open(run.cfg_path).read(), run.overrides], run.s_config, []); run.cfg = cfg
         rinfo = run.stage("render", [cfg["motion"], cfg["render"], cfg["asset"], pinfo["rep"], args.short], lambda: run.s_render(pinfo["rep"]), [run.p("render", "checks.json"), run.p("render", "render_time.json")])
         if args.short:
             log(f"short probe done: {json.dumps(rinfo)}"); return
         run.stage("grade", [cfg["grade"], cfg["name"]], run.s_grade, [run.p("grade", "look.json")])
         reel = run.stage("reel", [cfg["tts"], cfg["caption"], cfg["grade"]], run.s_reel, [run.p("reel", f"{run.slug}_rig3d_v2.mp4")])
         qc = run.stage("qc", [cfg["qc"]], run.s_qc, [run.p("qc.json")])
-        todo = [f for f in qc["auto_fixable"] if f in RULES and RULES[f][0] not in [x["path"] for x in fixes]]
-        if qc["pass"] or args.no_retry or not todo: break
-        for f in todo:
-            path, fn = RULES[f]; old = getp(cfg, path); new = fn(old); run.overrides[path] = new
-            fixes.append({"rule": f, "path": path, "old": old, "new": new}); log(f"auto-fix {f}: {path} {old} -> {new}")
+        if qc["pass"] or args.no_retry or attempt == max_iter: break
+        if not apply_rules(qc, attempt + 1, "full"): break
+        iters["full"] += 1
     meta = {"run_id": run_id, "slug": run.slug, "code_commit": commit, "stages": run.times, "fixes_applied": fixes, "rep": pinfo["rep"],
-            "render": rinfo, "reel": reel["mp4"], "sheet": run.p("sheet.png"), "qc_pass": qc["pass"]}
+            "render": rinfo, "reel": reel["mp4"], "sheet": run.p("sheet.png"), "qc_pass": qc["pass"],
+            "auto_iterations": iters, "max_iter": max_iter, "needs_human": [c["name"] for c in qc["checks"] if not c["pass"] and not c.get("fix")]}
     def production():   # real cost of producing THIS output = latest computed run of every stage (cached re-runs don't reset it)
         st = [json.load(open(os.path.join(run.stamps, f + ".json"))) for f in STAGES if os.path.exists(os.path.join(run.stamps, f + ".json"))]
         return {"chain_s": round(sum(x.get("s") or 0 for x in st), 1), "peak_rss_mb": max([x.get("peak_rss_mb") or 0 for x in st] + [rinfo.get("peak_rss_mb") or 0]),

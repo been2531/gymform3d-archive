@@ -5,6 +5,7 @@ rule the pipeline may apply automatically (1 retry), or null = needs a bot (AI q
 usage: python3 tools/rig3d/qc3d.py RUN_DIR CFG.json  -> RUN_DIR/qc.json"""
 import json, os, subprocess, sys
 import cv2, numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DAY4 = os.path.join(ROOT, "output/day4_romanian_deadlift_4step_master.mp4")
 
@@ -28,12 +29,43 @@ def probe(mp4):
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height,r_frame_rate:format=duration", "-of", "json", mp4], capture_output=True, text=True)
     return json.loads(r.stdout or "{}")
 
+# v6: every check has an auto-fix rule (pipeline.RULES) or is explicitly "human" (needs a person / AI). A check missing
+# here is reported as "unmapped" in qc.json (treated as human) so new checks cannot silently go without a policy.
+RULE_MAP = {
+    "arm_crossing_frames": "human", "torso_median_deg": "torso_target", "torso_steady_maxdev_deg": "torso_smooth", "dumbbell_grip_bone_m": "grip_offset",
+    "dumbbell_to_hand_mesh_m": "grip_offset", "mesh_tear_frac_edges_gt2x": "spine_spread", "working_elbow_rom_deg": "human",
+    "neck_in_line_with_spine_deg": "neck_follow_spine", "neck_flex_deg_min_max": "neck_follow_spine", "head_roll_deg": "neck_follow_spine", "head_yaw_deg": "neck_follow_spine",
+    "neck_steady_maxdev_deg": "neck_follow_spine", "both_feet_planted": "plant_legs", "foot_drift_m": "plant_legs", "knee_angles_deg": "plant_legs",
+    "knee_steady_maxdev_deg": "plant_legs", "knees_soft_and_balanced": "balance_knees", "dumbbell_handle_orientation": "grip_palm", "dumbbell_neutral_grip_deg": "grip_palm",
+    "support_hand_on_thigh_m": "support_hand", "thigh_split_deg": "plant_legs", "posture_bones_present": "human",
+    "joint_ranges_no_hyperextension": "joint_range", "self_intersection_capsule_m": "limb_clearance", "center_of_mass_over_feet_m": "com_balance",
+    "proportions_symmetric_and_rigid": "human", "grip_present": "grip_wrap", "grip_finger_wrap_deg": "grip_wrap", "grip_fingertip_gap_mm": "grip_wrap",
+    "grip_thumb_opposing": "grip_wrap", "grip_no_hand_handle_intersection": "grip_wrap", "mesh_no_spikes_edge_ratio": "spine_spread",
+    "prop_dumbbell_heads_readable": "camera_yaw", "extremities_in_frame_margin_px": "camera_margin",
+    "skin_p75": "human", "skin_p90": "human", "skin_max": "human", "backdrop_rgb_maxdev": "human", "green_glow_frac_of_body": "glow_cap",
+    "green_only_on_lats_rhomboids_midtrap": "human", "no_red_glow_px": "human", "sharpness_vs_day4": "human", "figure_fully_in_frame": "camera_margin",
+    "figure_fill_w_h": "camera_tighter", "figure_size_not_below_target": "camera_bigger", "green_area_ratio_cap": "glow_cap",
+    "overlay_in_safe_zone": "human", "overlay_text_no_overlap": "human", "overlay_clear_of_figure_px": "camera_top_margin", "callout_text_clear_of_figure": "human",
+    "callout_angle_matches_measured": "human", "briefs_present": "human", "briefs_body_touch_frac": "human", "briefs_no_tearing_frac2x": "human",
+    "briefs_no_visible_poke_through": "human", "briefs_coverage_every_frame": "human", "reel_1080x1920_30fps": "human", "reel_has_audio": "human",
+    "reel_duration_s": "human", "tts_ends_before_reel_end": "human", "caption_lint": "human",
+}
+
+def apply_rule_map(out):
+    for c in out:
+        m = RULE_MAP.get(c["name"]); c["rule_map"] = m or "unmapped"
+        if not c["pass"]:
+            c["fix"] = None if m in (None, "human") else m
+    return out
+
 def ck(name, value, limit, ok, fix=None, group="rig"):
     return {"name": name, "group": group, "value": value, "limit": limit, "pass": bool(ok), "fix": None if ok else fix}
 
-def run(run_dir, cfg):
+def rig_checks(rdir, cfg):
+    """Every check that needs only the rig pass (retarget --checks-only): rig, posture, anatomy, grip, prop. Used by the
+    full QC and by the pipeline's cheap rig pre-check loop (no render)."""
     Q = cfg["qc"]; out = []
-    R = json.load(open(os.path.join(run_dir, "render/checks.json"))); F = R["frames"]
+    R = json.load(open(os.path.join(rdir, "checks.json"))); F = R["frames"]
     t = np.array([f["torso_deg"] for f in F]); med = float(np.median(t))
     out.append(ck("arm_crossing_frames", int(sum(f["arm_cross"] for f in F)), 0, sum(f["arm_cross"] for f in F) == 0))
     out.append(ck("torso_median_deg", round(med, 1), Q["torso_band_deg"], Q["torso_band_deg"][0] <= med <= Q["torso_band_deg"][1], None))
@@ -49,12 +81,19 @@ def run(run_dir, cfg):
     out.append(ck("working_elbow_rom_deg", round(rom, 1), f">= {Q['elbow_rom_min_deg']}", rom >= Q["elbow_rom_min_deg"]))
     # posture (generic, tools/rig3d/posture_qc.py): neck/head in line with the spine, feet planted, knees, stance
     if Q.get("posture"):
-        bz = os.path.join(run_dir, "render/bones.npz")
+        bz = os.path.join(rdir, "bones.npz")
         if not os.path.exists(bz): out.append(ck("posture_bones_present", False, True, False, None, "posture"))
         else:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import posture_qc
             pc, series = posture_qc.checks(bz, Q["posture"]); out += pc
-            json.dump(series, open(os.path.join(run_dir, "posture_series.json"), "w"))
+            json.dump(series, open(os.path.join(rdir, "posture_series.json"), "w"))
+    if Q.get("anatomy"):
+        import anatomy_qc; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        out += anatomy_qc.run(rdir, Q["anatomy"], cfg)
+    return out, F, med
+
+def run(run_dir, cfg):
+    Q = cfg["qc"]; out, F, med = rig_checks(os.path.join(run_dir, "render"), cfg)
     # Day 4 look
     L = json.load(open(os.path.join(run_dir, "grade/look.json")))["frames"]
     def rng(key, lim, fix, name=None):
@@ -80,6 +119,10 @@ def run(run_dir, cfg):
     fillw = float(np.median((bb[:, 2] - bb[:, 0]) / W)); fillh = float(np.median((bb[:, 3] - bb[:, 1]) / H))
     out.append(ck("figure_fully_in_frame", inside, True, inside, "camera_margin", "look"))
     out.append(ck("figure_fill_w_h", [round(fillw, 3), round(fillh, 3)], "w >= 0.60 or h >= 0.55", fillw >= 0.60 or fillh >= 0.55, "camera_tighter", "look"))
+    if "figure_fill_h_min" in Q:          # v6: the figure must not shrink below the target (any camera/overlay fix)
+        mh = float(np.min((bb[:, 3] - bb[:, 1]) / H)); out.append(ck("figure_size_not_below_target", round(mh, 3), f">= {Q['figure_fill_h_min']} (min over frames)", mh >= Q["figure_fill_h_min"], "camera_bigger", "look"))
+    if "glow_frac_max" in Q:              # v6: green area cap (fraction of the body that glows), every frame
+        gm_ = max(f["glow_frac"] for f in L); out.append(ck("green_area_ratio_cap", round(gm_, 4), f"<= {Q['glow_frac_max']}", gm_ <= Q["glow_frac_max"], "glow_cap", "look"))
     # Day 4 overlay: callout + title + preview pill
     if cfg.get("layout"):
         sz = Q["safe_zone"]; LF = json.load(open(os.path.join(run_dir, "grade/look.json")))
@@ -135,9 +178,11 @@ def run(run_dir, cfg):
     cj = os.path.join(run_dir, "reel/caption_lint.json")
     if os.path.exists(cj):
         C = json.load(open(cj)); out.append(ck("caption_lint", C["errors"] or "ok", "no errors", not C["errors"], None, "reel"))
+    out = apply_rule_map(out)
     res = {"pass": all(c["pass"] for c in out), "n_pass": sum(c["pass"] for c in out), "n": len(out), "checks": out,
            "auto_fixable": sorted({c["fix"] for c in out if not c["pass"] and c["fix"]}),
-           "needs_ai": [c["name"] for c in out if not c["pass"] and not c["fix"]]}
+           "needs_ai": [c["name"] for c in out if not c["pass"] and not c["fix"]],
+           "unmapped_checks": sorted(c["name"] for c in out if c.get("rule_map") == "unmapped")}
     json.dump(res, open(os.path.join(run_dir, "qc.json"), "w"), indent=1)
     return res
 

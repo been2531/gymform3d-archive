@@ -84,3 +84,45 @@ Each issue got a generic QC check first (limits in the exercise config), confirm
 - **`support_hand_on_thigh_m`** (non-working wrist to nearest thigh bone line). Fix: `support_hand: front_thigh`
   (lowest reachable point on the front thigh, elbow from a 2-bone solve, pointing out to the side).
 - `render/bones.npz` now also stores the dumbbell matrices, handle axis, palm axes and working hand.
+
+## v6 (2026-11-05): power grip, self-healing loop, anatomy audit
+
+Owner: "the script should handle it; the hand has to wrap around the dumbbell."
+
+**Power grip (`tools/rig3d/hand_grip.py`).** The rig has no finger bones, so the fist is a geometric shape key
+("fist", working hand only). The hand frame comes from the mesh: the web line from the thumb-cluster gap; the
+across-palm axis from the four finger centroids; the palm side = the side the relaxed thumb sits on. The handle axis
+runs across the palm at the knuckle line, at the closest distance where every non-thumb vertex clears r + 2 mm.
+Each finger hug-bends with arc length kept. The thumb flexes about its base, ramped in from the thenar seam, and is
+searched for a 2-6 mm gap with the best opposition. Displacement is Gaussian-blended across finger/palm seams, so the
+web doesn't tear. Config key: `motion.grip_wrap`.
+
+**Dumbbell axis bug (v1-v5).** The joined dumbbell kept its (0, 90 deg, 0) rotation, so the handle's long axis was
+object Z, not X. The v5 handle-orientation check measured X, so it passed while the handle was really 90 deg off
+the palm. That is the "stacked heads" look. `render.dumbbell_axis_fix: true` fixes it, and the bones.npz
+`handle_axis_local` field records the true axis. Because the handle has no direction, the neutral-grip twist is
+now solved with period pi.
+
+**Anatomy audit (`tools/rig3d/anatomy_qc.py`, `qc.anatomy`).** Checks:
+- signed elbow/knee flexion (hyperextension), wrist and ankle deviation;
+- bone-capsule self-intersection;
+- whole-body + dumbbell centre of mass inside the feet polygon;
+- L/R bone-length symmetry;
+- grip: wrap per finger, fingertip gap, thumb gap + opposition, hand/handle intersection;
+- visible mesh spikes (stretch relative to the median edge, edges under the shorts excluded);
+- dumbbell heads visible and separated on screen;
+- extremities inside the frame;
+- figure height not below target, green-area cap.
+
+**Self-healing loop (`pipeline.py --max-iter 3`).** Every QC check maps to a fix rule or to "human" in
+`qc3d.RULE_MAP`; unmapped checks are listed in qc.json. The loop runs:
+1. A rig pre-check (seconds, checks-only) until the rig and anatomy checks pass or the rules are exhausted.
+2. render, grade, QC.
+3. Pixel fix rules (camera / glow), then a re-render, up to N times.
+
+`run.json` records `auto_iterations` and each applied override. The owner is told only what still fails.
+
+**v6 support-arm fixes.** In v5 the support elbow pointed laterally and was hyperextended by 10 deg, and the wrist
+was bent 58 deg. Now `support_elbow_mode: back_out` and `support_wrist_neutral: true`. COM fix rule
+`stance_mode: feet_forward` puts both ankles in front of the hip joints, so the hips sit back over the feet, and the
+support hand braces on the same-side thigh.

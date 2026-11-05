@@ -210,7 +210,8 @@ if LEGS == "planted":       # per-frame 2-bone knee solve from the evaluated hip
             Lt, Ls = rl(s_ + "UpLeg", s_ + "Leg"), rl(s_ + "Leg", s_ + "Foot"); dt_ = math.sqrt(Lt * Lt + Ls * Ls - 2 * Lt * Ls * math.cos(kt))
             H = np.array(arm.matrix_world @ pb[s_ + "UpLeg"].head); A = B[0, aj].copy(); hv = A - H; hv[2] = 0
             fa, la = float(hv @ fwd_h), float(hv @ lat_h); dz = float(H[2] - A[2]); hreq = math.sqrt(max(dt_ * dt_ - dz * dz, 0.0))
-            fa_new = math.copysign(math.sqrt(max(hreq * hreq - la * la, 1e-4)), fa if abs(fa) > 1e-6 else 1.0)
+            sgn_ = 1.0 if MO.get("stance_mode", "source") == "feet_forward" else (fa if abs(fa) > 1e-6 else 1.0)   # v6: hips back over the feet
+            fa_new = math.copysign(math.sqrt(max(hreq * hreq - la * la, 1e-4)), sgn_)
             dv = (fa_new - fa) * fwd_h
             for j in (aj, tj, hj): B[:, j] += dv
             moved.append(round(fa_new - fa, 3))
@@ -229,17 +230,22 @@ if LEGS == "planted" and MO.get("support_hand", "") == "front_thigh":
     # floating ~30 cm in front of it after the stance/hip changes. Elbow from a 2-bone solve (rig arm lengths), out to the side.
     sp_ = "Left" if side == 12 else "Right"; pp_ = sp_[0].lower()
     fl = max((("Left", 27), ("Right", 28)), key=lambda t: float(B[0, t[1]] @ np.append(fwd_h[:2], 0.0)))[0]
+    if MO.get("stance_mode", "source") == "feet_forward": fl = sp_                   # v6: both feet ahead of the hips: brace on the same-side thigh
     La, Lf = rl(sp_ + "Arm", sp_ + "ForeArm"), rl(sp_ + "ForeArm", sp_ + "Hand"); latv = mu.Vector(lat_h.tolist()) * (1 if sp_ == "Left" else -1)
     if float(np.dot(np.array(arm.matrix_world @ pb[sp_ + "Arm"].head)[:2] - np.array(arm.matrix_world @ pb[("Right" if sp_ == "Left" else "Left") + "Arm"].head)[:2], lat_h[:2])) * (1 if sp_ == "Left" else -1) < 0: latv = -latv
     for f in range(NF):
         sc.frame_set(f + 1); Hh = arm.matrix_world @ pb[fl + "UpLeg"].head; Kk = E[fl[0].lower() + "kn"].location.copy()
         td_ = (Kk - Hh).normalized(); upn_ = mu.Vector((0, 0, 1)); upn_ = (upn_ - upn_.dot(td_) * td_).normalized()
         Sh = arm.matrix_world @ pb[sp_ + "Arm"].head
-        cand = [Hh + (Kk - Hh) * t_ + upn_ * 0.075 for t_ in np.linspace(0.35, float(MO.get("support_hand_thigh_frac", 0.75)), 9)]
+        cand = [Hh + (Kk - Hh) * t_ + upn_ * float(MO.get("support_hand_lift_m", 0.075)) for t_ in np.linspace(0.35, float(MO.get("support_hand_thigh_frac", 0.75)), 9)]
         Wt = min(cand, key=lambda c_: max((c_ - Sh).length - 0.97 * (La + Lf), 0.0) - 0.001 * (c_ - Hh).length)   # lowest reachable point
         Sh = arm.matrix_world @ pb[sp_ + "Arm"].head; dv = Wt - Sh; d = min(dv.length, 0.995 * (La + Lf)); u_ = dv.normalized()
-        x_ = (La * La - Lf * Lf + d * d) / (2 * d); h_ = math.sqrt(max(La * La - x_ * x_, 0.0)); pole = (latv - latv.dot(u_) * u_).normalized()
-        E[pp_ + "el"].location = Sh + u_ * x_ + pole * h_; E[pp_ + "wr"].location = Sh + u_ * d; E[pp_ + "ix"].location = Sh + u_ * d + td_ * 0.09
+        x_ = (La * La - Lf * Lf + d * d) / (2 * d); h_ = math.sqrt(max(La * La - x_ * x_, 0.0))
+        if MO.get("support_elbow_mode", "lateral") == "back_out":                 # v6: elbow points back/out (no hyperextension)
+            pv_ = latv * float(MO.get("support_elbow_out", 0.5)) - mu.Vector(fwd_h.tolist()) * float(MO.get("support_elbow_back", 1.0))
+        else: pv_ = latv                                                            # v5 legacy
+        pole = (pv_ - pv_.dot(u_) * u_).normalized()
+        E[pp_ + "el"].location = Sh + u_ * x_ + pole * h_; E[pp_ + "wr"].location = Sh + u_ * d; E[pp_ + "ix"].location = Sh + u_ * d + ((u_ * 0.6 + td_ * 0.4).normalized() if MO.get("support_wrist_neutral") else td_) * 0.09   # v6: wrist ~neutral
         for n_ in ("el", "wr", "ix"): E[pp_ + n_].keyframe_insert("location", frame=f + 1)
     log(f"support hand on the front ({fl}) thigh")
 log("rig constrained")
@@ -276,6 +282,20 @@ def palm_local(bn):
     P_ = co[vi_] - co[vi_].mean(0); w_, V_ = np.linalg.eigh(np.cov(P_.T)); R_ = np.array((arm.matrix_world @ arm.data.bones[bn].matrix_local).to_3x3().normalized())
     a_ = R_.T @ V_[:, 1]; a_[1] = 0.0; return a_ / np.linalg.norm(a_)           # perpendicular to the bone (Y) axis
 PALM = {bn: palm_local(bn) for bn in ("LeftHand", "RightHand")}
+# power grip (v6, tools/rig3d/hand_grip.py): the rig has no finger bones, so the fist is a geometric shape key on the
+# working hand (fingers bent around the handle axis, thumb flexed to oppose). Its refined across-palm axis replaces the
+# PCA axis for the handle + neutral-grip twist; the handle centre sits in the palm instead of on the bone line.
+sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(__file__))); import hand_grip as HGR
+GW = MO.get("grip_wrap", {}) or {}; HG = None
+_gi = body.vertex_groups[hand].index; _W = np.zeros(nv)
+for v in me.vertices:
+    for g in v.groups:
+        if g.group == _gi: _W[v.index] = g.weight
+HIDX = np.nonzero(_W > 0.5)[0]; _Mh = np.array(arm.matrix_world @ arm.data.bones[hand].matrix_local); _Mh[:3, :3] /= np.linalg.norm(_Mh[:3, :3], axis=0)
+HG = HGR.build(co, HIDX, _Mh, hand.startswith("Left"), r=float(GW.get("handle_r_m", 0.016)), clear=float(GW.get("clear_m", 0.002)),
+               max_wrap_deg=float(GW.get("max_wrap_deg", 250)), mcp_back=float(GW.get("mcp_back_m", 0.015)))
+if GW.get("enabled"):
+    PALM[hand] = np.array(HG["handle_local"]["axis"]); log(f"grip wrap: {HG['info']}")
 GRIP_MODE = MO.get("grip_mode", "shoulder_line")
 tvg = np.mean((B[:, 11] + B[:, 12]) / 2 - (B[:, 23] + B[:, 24]) / 2, axis=0); FWH = mu.Vector((tvg[0], tvg[1], 0.0)).normalized()
 def palm_world(bn):
@@ -294,14 +314,17 @@ if GRIP_MODE == "palm_neutral":
     # with no twist keys (frame_set would otherwise re-apply the keys), then 2 residual passes on the keyed rig
     for ps in range(3):
         for f in range(1, NF + 1): TH[f - 1] += _resid(f)
-        if ps == 0: TH = gsmooth(np.unwrap(TH)[:, None], 1.5)[:, 0]               # radians, smooth over the rep
+        if ps == 0:
+            TH = np.unwrap(2 * TH) / 2                                             # the handle has no direction: period pi, continuous
+            TH -= np.pi * np.round(np.median(TH) / np.pi)                          # branch nearest zero twist
+            TH = gsmooth(TH[:, None], 1.5)[:, 0]                                   # radians, smooth over the rep
         for f in range(1, NF + 1):
             pb[fa_b].rotation_quaternion = mu.Quaternion((0, 1, 0), share * TH[f - 1]); pb[hand].rotation_quaternion = mu.Quaternion((0, 1, 0), (1 - share) * TH[f - 1])
             pb[fa_b].keyframe_insert("rotation_quaternion", frame=f); pb[hand].keyframe_insert("rotation_quaternion", frame=f)
     TW = np.degrees(TH).tolist()
     region_counts_twist = [round(min(TW), 1), round(max(TW), 1)]; log(f"neutral grip twist {region_counts_twist} deg (forearm share {share})")
 ev = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ev); ev = ev.reshape(-1, 2)
-rest_len = np.linalg.norm(co[ev[:, 0]] - co[ev[:, 1]], axis=1); ok_e = rest_len > 1e-4
+rest_len = np.linalg.norm(co[ev[:, 0]] - co[ev[:, 1]], axis=1); ok_e = rest_len > 1e-4; MED_E = float(np.median(rest_len[ok_e]))
 region_counts = {"lats": int(lats.sum()), "rhomboids": int(rhomb.sum()), "mid_trap": int(mid_trap.sum()), "shorts": int(shorts.sum()), "hand_verts": int(len(hand_vi))}
 log(f"regions {region_counts}")
 
@@ -371,6 +394,10 @@ if GC.get("enabled"):
     region_counts.update({"briefs_verts": int(gnv), "briefs_faces": len(gm_.polygons)})
     log(f"briefs garment: {gnv} verts, {len(gm_.polygons)} faces, offset {GC.get('offset_m', 0.008)} m")
 
+if GW.get("enabled"):      # after the garment copy (the briefs never carry the fist key)
+    if not me.shape_keys: body.shape_key_add(name="Basis", from_mix=False)
+    sk = body.shape_key_add(name="fist", from_mix=False); lc = np.empty(nv * 3); sk.data.foreach_get("co", lc); lc = lc.reshape(-1, 3)
+    Minv = np.linalg.inv(M4); lc[HIDX] = HG["new_world"] @ Minv[:3, :3].T + Minv[:3, 3]; sk.data.foreach_set("co", lc.ravel()); sk.value = 1.0
 # ---- dumbbell ---------------------------------------------------------------------------------------------------------
 def hexhead(xx):
     bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=0.06, depth=0.07, location=(xx, 0, 0), rotation=(0, math.pi / 2, 0)); return bpy.context.object
@@ -383,11 +410,21 @@ for o in (h1, h2): o.data.materials.append(blue)
 hd.data.materials.append(steel)
 bpy.ops.object.select_all(action="DESELECT")
 for o in (h1, h2, hd): o.select_set(True)
-bpy.context.view_layer.objects.active = hd; bpy.ops.object.join(); db = bpy.context.object; db.name = "dumbbell"; db.rotation_mode = "QUATERNION"
+bpy.context.view_layer.objects.active = hd; bpy.ops.object.join(); db = bpy.context.object; db.name = "dumbbell"
+# v6 bug fix: the join keeps the handle cylinder's (0, 90 deg, 0) object rotation, so the long axis is LOCAL Z, while
+# grip_frame() puts the intended handle direction on local X -> through v5 the handle actually pointed along the
+# third axis (and the v5 handle QC measured local X). Apply the rotation so local X = handle axis.
+DB_FIX = bool(RC.get("dumbbell_axis_fix", False))
+if DB_FIX: bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+DB_AX = (1.0, 0.0, 0.0) if DB_FIX else (0.0, 0.0, 1.0)
+db.rotation_mode = "QUATERNION"
 GRIP = float(MO.get("grip_offset_m", 0.075))
 def grip_frame():
     Mb = arm.matrix_world @ pb[hand].matrix; R = Mb.to_3x3().normalized()
     u = (R @ mu.Vector((0, 1, 0))).normalized(); w = Mb.translation          # bone head = wrist, Y axis = bone direction
+    if GW.get("enabled"):                                                           # handle in the palm, across it
+        ha = (R @ mu.Vector(HG["handle_local"]["axis"])).normalized(); third = ha.cross(u).normalized()
+        return Mb.translation + R @ mu.Vector(HG["handle_local"]["center"]), mu.Matrix((ha, u, third)).transposed().to_quaternion()
     if GRIP_MODE in ("palm", "palm_neutral"):
         ha, _ = palm_world(hand); ha = (ha - ha.dot(u) * u).normalized()                # handle across the palm
     else:
@@ -450,6 +487,29 @@ log(f"camera {framing}")
 chk = []; BN = [b.name for b in arm.data.bones]; BPOSE = np.zeros((NF, len(BN), 4, 4))
 def _nm(M):       # world 4x4 with an orthonormal rotation part (the armature object carries the glTF scale)
     M = np.array(M); R = M[:3, :3]; M[:3, :3] = R / np.linalg.norm(R, axis=0, keepdims=True); return M
+HANDF, HANDP = [], []      # v6: deformed working-hand vertices (every 3rd frame) for the grip QC
+# v6 anatomy: capsule radius per bone (rest): median distance of its dominant vertices to the bone segment
+_kids = {b.name: [c.name for c in b.children] for b in arm.data.bones}
+def _seg(bn):
+    b = arm.data.bones[bn]; h = np.array(arm.matrix_world @ b.head_local)
+    if _kids[bn]: t = np.mean([np.array(arm.matrix_world @ arm.data.bones[c].head_local) for c in _kids[bn]], axis=0)
+    else: t = h + np.array((arm.matrix_world.to_3x3().normalized() @ (b.matrix_local.to_3x3().normalized() @ mu.Vector((0, 1, 0))))) * 0.12
+    return h, t
+CAPR = {}
+for bn in [b.name for b in arm.data.bones]:
+    g_ = body.vertex_groups.get(bn)
+    if g_ is None: continue
+    vv = np.nonzero(dom == g_.index)[0]
+    if len(vv) < 30: continue
+    h_, t_ = _seg(bn); ab = t_ - h_; tt = np.clip(((co[vv] - h_) @ ab) / max(ab @ ab, 1e-9), 0, 1); dd = np.linalg.norm(co[vv] - (h_ + np.outer(tt, ab)), axis=1)
+    CAPR[bn] = float(np.percentile(dd, 30))     # ~ the minor radius (the torso is flat, not round)
+DBH = [mu.Vector(tuple(sx * c_ for c_ in DB_AX)) for sx in (-0.12, 0.12)]   # dumbbell head centres (object local)
+def _visible_frac(pts, dist_eps=0.004):
+    dg_ = bpy.context.evaluated_depsgraph_get(); ok_ = 0
+    for p_ in pts:
+        d_ = p_ - CAM.location; L_ = d_.length; hit, loc_, nrm_, ix_, ob_, mt_ = sc.ray_cast(dg_, CAM.location, d_.normalized(), distance=L_ - dist_eps)
+        ok_ += (not hit) or ob_.name == "dumbbell"
+    return ok_ / max(len(pts), 1)
 DBM = np.zeros((NF, 4, 4)); BREST = np.array([_nm(arm.matrix_world @ arm.data.bones[n].matrix_local) for n in BN])
 for f in range(1, NF + 1):
     sc.frame_set(f); Wm = arm.matrix_world; Pp = lambda b: Wm @ pb[b].head
@@ -465,12 +525,41 @@ for f in range(1, NF + 1):
     def p2(v_):
         q_ = world_to_camera_view(sc, CAM, v_); return [round(q_.x * rx, 1), round((1 - q_.y) * ry, 1)]
     kn_ = Pp("LeftLeg") if side == 11 else Pp("RightLeg")
+    _ex = {"head_top": Wm @ pb["head_end"].head if "head_end" in pb else Wm @ pb["Head"].head}
+    for s_ in ("Left", "Right"):
+        _ex[s_ + "_fingers"] = Wm @ pb[s_ + "Hand"].head + (Wm.to_3x3().normalized() @ pb[s_ + "Hand"].matrix.to_3x3().normalized() @ mu.Vector((0, 0.19, 0)))
+        _ex[s_ + "_toe"] = Wm @ pb[s_ + "ToeBase"].head
+    for k_, hc_ in zip(("db_head_a", "db_head_b"), DBH): _ex[k_] = db.matrix_world @ hc_
+    rec["extrem2d"] = {k_: p2(v_) for k_, v_ in _ex.items()}
     rec["kp2d"] = {"hip": p2(hip), "sh": p2(shc), "sh_w": p2(sh_), "el": p2(el_), "wr": p2(wr_), "kn": p2(kn_), "db": p2(dbp)}
     if f % 3 == 1 or f == NF:
         dg = bpy.context.evaluated_depsgraph_get(); eb = body.evaluated_get(dg); m_ = eb.to_mesh()
         c2 = np.empty(len(m_.vertices) * 3); m_.vertices.foreach_get("co", c2); Mw = np.array(eb.matrix_world)
         c2 = c2.reshape(-1, 3) @ Mw[:3, :3].T + Mw[:3, 3]; eb.to_mesh_clear()
         ratio = np.linalg.norm(c2[ev[ok_e, 0]] - c2[ev[ok_e, 1]], axis=1) / rest_len[ok_e]
+        HANDF.append(f); HANDP.append(c2[HIDX].astype(np.float32))
+        # v6 prop readability: share of each dumbbell head's sample points not hidden by the body/briefs, and the
+        # on-screen separation of the two heads (centre distance / head diameter)
+        Mdb = db.matrix_world; vis_ = []
+        for hc_ in DBH:
+            e1_ = mu.Vector((0, 1, 0)); e2_ = mu.Vector(DB_AX).cross(e1_)
+            pts_ = [Mdb @ (hc_ + mu.Vector(DB_AX) * dx + 0.055 * math.cos(t_) * e1_ + 0.055 * math.sin(t_) * e2_) for dx in (-0.03, 0.0, 0.03) for t_ in np.linspace(0, 2 * math.pi, 8, endpoint=False)]
+            vis_.append(round(_visible_frac(pts_), 3))
+        hp_ = [np.array(p2(Mdb @ hc_)) for hc_ in DBH]; rim_ = [np.array(p2(Mdb @ (hc_ + mu.Vector((0, 0.06, 0))))) for hc_ in DBH]
+        hd_ = 2 * max(np.linalg.norm(rim_[0] - hp_[0]), np.linalg.norm(rim_[1] - hp_[1]), 1.0)
+        for key_, sel_ in (("spike_where", np.argsort(-ratio)[:40]), ("collapse_where", np.argsort(ratio)[:40])):
+            u_, n_ = np.unique(dom[ev[ok_e][sel_][:, 0]], return_counts=True); rec[key_] = {GN.get(int(u_[i]), "?"): int(n_[i]) for i in np.argsort(-n_)[:3]}
+        e2_ = ev[ok_e]; vis_e = ~(shorts[e2_[:, 0]] | shorts[e2_[:, 1]])         # edges not under the shorts/briefs
+        # visible spike = stretch relative to the local mesh scale: a 1 mm edge pulled to 4 mm is still smaller than a
+        # median edge (3.6 mm) and invisible; L_deformed / max(L_rest, median rest edge)
+        sr_ = ratio * rest_len[ok_e] / np.maximum(rest_len[ok_e], MED_E)
+        rec["tear_max_visible"] = round(float(sr_[vis_e].max()), 3); rec["tear_max_raw_visible"] = round(float(ratio[vis_e].max()), 3)
+        we_ = e2_[vis_e][int(np.argmax(sr_[vis_e]))]; rec["spike_at_rest"] = [round(float(v), 3) for v in (co[we_[0]] + co[we_[1]]) / 2]
+        gm_ = {}
+        for gi_ in np.unique(dom[e2_[:, 0]]):
+            mm_ = (dom[e2_[:, 0]] == gi_) & vis_e; gm_[GN.get(int(gi_), "?")] = round(float(sr_[mm_].max()), 2) if mm_.any() else 0.0
+        rec["spike_max_by_group"] = dict(sorted(gm_.items(), key=lambda kv: -kv[1])[:5])
+        rec.update({"db_head_visible": vis_, "db_head_sep_rel": round(float(np.linalg.norm(hp_[0] - hp_[1]) / hd_), 3), "tear_min_ratio": round(float(ratio.min()), 3)})
         rec.update({"tear_max_ratio": round(float(ratio.max()), 3), "tear_frac2x": round(float((ratio > 2.0).mean()), 6),
                     "grip_mesh_m": round(float(np.linalg.norm(c2[hand_vi] - np.array(dbp), axis=1).min()), 4)})
         bad = ev[ok_e][ratio > 2.0][:, 0]
@@ -496,8 +585,11 @@ for f in range(1, NF + 1):
     chk.append(rec)
 json.dump({"frames": chk, "working": hand, "floor_tilt_fixed_deg": round(floor_tilt, 1), "rep": [f0, f1], "raw_torso_deg": [round(float(raw_torso.min()), 1), round(float(raw_torso.max()), 1)],
            "framing": framing, "regions": region_counts, "grip_offset_m": GRIP, "person_to_rig_scale": round(SCALE, 3), "kp_res": [rx, ry]}, open(a.out + "/checks.json", "w"), indent=0)
+np.savez_compressed(a.out + "/hand.npz", frames=np.array(HANDF), P=np.array(HANDP), labels=HG["labels"], s_finger=HG["s_finger"],
+                    handle_r=float(GW.get("handle_r_m", 0.016)), wrap=bool(GW.get("enabled", False)), info=json.dumps(HG["info"]))
 np.savez_compressed(a.out + "/bones.npz", names=np.array(BN), rest=BREST, pose=BPOSE, neck_mode=NECK_MODE, legs=LEGS, dumbbell=DBM,
-                    handle_axis_local=np.array([1.0, 0.0, 0.0]), working_hand=hand, palm_left=PALM["LeftHand"], palm_right=PALM["RightHand"], grip_mode=GRIP_MODE)
+                    capsule_names=np.array(list(CAPR)), capsule_r=np.array(list(CAPR.values())),
+                    handle_axis_local=np.array(DB_AX), working_hand=hand, palm_left=PALM["LeftHand"], palm_right=PALM["RightHand"], grip_mode=GRIP_MODE)
 log("checks done")
 if a.checks_only: sys.exit(0)
 
