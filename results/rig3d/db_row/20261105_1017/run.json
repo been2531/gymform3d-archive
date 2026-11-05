@@ -1,0 +1,78 @@
+{
+ "run_id": "20261105_1017",
+ "slug": "db_row",
+ "code_commit": "9a0e1dc",
+ "stages": {
+  "config": {
+   "s": 0.0
+  },
+  "fetch": {
+   "s": 0.0
+  },
+  "pose": {
+   "s": 198.2
+  },
+  "render": {
+   "s": 785.7
+  },
+  "grade": {
+   "s": 150.1
+  },
+  "reel": {
+   "s": 6.5
+  },
+  "qc": {
+   "s": 0.7
+  },
+  "sheet": {
+   "s": 0.9
+  }
+ },
+ "fixes_applied": [
+  {
+   "iter": 1,
+   "phase": "rig_precheck",
+   "rule": "com_balance",
+   "path": "motion.stance_mode",
+   "old": null,
+   "new": "feet_forward",
+   "for": [
+    "center_of_mass_over_feet_m"
+   ]
+  }
+ ],
+ "rep": [
+  92,
+  173
+ ],
+ "render": {
+  "beauty_s": 688.9,
+  "mask_s": 70.8,
+  "frames": 81,
+  "res": [
+   1080,
+   1920
+  ],
+  "wall_s": 785.7,
+  "peak_rss_mb": 3299
+ },
+ "reel": "/workspace/daily_info_reels/output/_rig3d/db_row/reel/db_row_rig3d_v2.mp4",
+ "sheet": "/workspace/daily_info_reels/output/_rig3d/db_row/sheet.png",
+ "qc_pass": true,
+ "auto_iterations": {
+  "rig_precheck": 1,
+  "full": 0
+ },
+ "max_iter": 3,
+ "needs_human": [],
+ "production": {
+  "chain_s": 1142.1,
+  "peak_rss_mb": 3299,
+  "render_s": 785.7,
+  "render_peak_rss_mb": 3299
+ },
+ "wall_s_this_invocation": 1186.6,
+ "wall_s": 1142.1,
+ "peak_rss_mb": 3299,
+ "ai_queue_resolved": []
+}

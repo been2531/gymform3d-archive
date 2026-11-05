@@ -1,0 +1,703 @@
+{
+ "pass": true,
+ "n_pass": 58,
+ "n": 58,
+ "checks": [
+  {
+   "name": "arm_crossing_frames",
+   "group": "rig",
+   "value": 0,
+   "limit": 0,
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "torso_median_deg",
+   "group": "rig",
+   "value": 46.9,
+   "limit": [
+    35,
+    60
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "torso_target"
+  },
+  {
+   "name": "torso_steady_maxdev_deg",
+   "group": "rig",
+   "value": 0.07,
+   "limit": 5,
+   "pass": true,
+   "fix": null,
+   "rule_map": "torso_smooth"
+  },
+  {
+   "name": "dumbbell_grip_bone_m",
+   "group": "rig",
+   "value": 0.0,
+   "limit": 0.03,
+   "pass": true,
+   "fix": null,
+   "rule_map": "grip_offset"
+  },
+  {
+   "name": "dumbbell_to_hand_mesh_m",
+   "group": "rig",
+   "value": 0.0169,
+   "limit": 0.06,
+   "pass": true,
+   "fix": null,
+   "rule_map": "grip_offset"
+  },
+  {
+   "name": "mesh_tear_frac_edges_gt2x",
+   "group": "rig",
+   "value": 0.0004,
+   "limit": 0.003,
+   "pass": true,
+   "fix": null,
+   "where": {
+    "frame": 67,
+    "bones": {
+     "RightHand": 57,
+     "Hips": 48,
+     "RightUpLeg": 43
+    },
+    "max_ratio": 4.804
+   },
+   "rule_map": "spine_spread"
+  },
+  {
+   "name": "working_elbow_rom_deg",
+   "group": "rig",
+   "value": 92.7,
+   "limit": ">= 40",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "neck_in_line_with_spine_deg",
+   "group": "posture",
+   "value": 2.3,
+   "limit": "<= 20",
+   "pass": true,
+   "fix": null,
+   "where": {
+    "frame": 29
+   },
+   "rule_map": "neck_follow_spine"
+  },
+  {
+   "name": "neck_flex_deg_min_max",
+   "group": "posture",
+   "value": [
+    -2.3,
+    -2.3
+   ],
+   "limit": [
+    -20,
+    15
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "neck_follow_spine"
+  },
+  {
+   "name": "head_roll_deg",
+   "group": "posture",
+   "value": 0.0,
+   "limit": "<= 10",
+   "pass": true,
+   "fix": null,
+   "where": {
+    "frame": 11
+   },
+   "rule_map": "neck_follow_spine"
+  },
+  {
+   "name": "head_yaw_deg",
+   "group": "posture",
+   "value": 0.0,
+   "limit": "<= 15",
+   "pass": true,
+   "fix": null,
+   "rule_map": "neck_follow_spine"
+  },
+  {
+   "name": "neck_steady_maxdev_deg",
+   "group": "posture",
+   "value": 0.06,
+   "limit": "<= 5",
+   "pass": true,
+   "fix": null,
+   "rule_map": "neck_follow_spine"
+  },
+  {
+   "name": "both_feet_planted",
+   "group": "posture",
+   "value": {
+    "toe_off_floor_m": 0.0,
+    "foot_pitch_dev_deg": 0.0
+   },
+   "limit": "toe <= 0.02 m, pitch dev <= 12",
+   "pass": true,
+   "fix": null,
+   "rule_map": "plant_legs"
+  },
+  {
+   "name": "foot_drift_m",
+   "group": "posture",
+   "value": 0.0,
+   "limit": "<= 0.015",
+   "pass": true,
+   "fix": null,
+   "rule_map": "plant_legs"
+  },
+  {
+   "name": "knee_angles_deg",
+   "group": "posture",
+   "value": {
+    "L": [
+     160.0,
+     160.0
+    ],
+    "R": [
+     160.0,
+     160.0
+    ]
+   },
+   "limit": [
+    140,
+    178
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "plant_legs"
+  },
+  {
+   "name": "knee_steady_maxdev_deg",
+   "group": "posture",
+   "value": 0.0,
+   "limit": "<= 6",
+   "pass": true,
+   "fix": null,
+   "rule_map": "plant_legs"
+  },
+  {
+   "name": "knees_soft_and_balanced",
+   "group": "posture",
+   "value": {
+    "L": [
+     160.0,
+     160.0
+    ],
+    "R": [
+     160.0,
+     160.0
+    ],
+    "LR_diff": 0.0
+   },
+   "limit": "both in [150, 170], |L-R| <= 20",
+   "pass": true,
+   "fix": null,
+   "rule_map": "balance_knees"
+  },
+  {
+   "name": "dumbbell_handle_orientation",
+   "group": "posture",
+   "value": {
+    "vs_palm_axis": 0.0,
+    "vs_forearm_perp": 3.3
+   },
+   "limit": "<= 15 every frame",
+   "pass": true,
+   "fix": null,
+   "where": {
+    "frame": 25
+   },
+   "rule_map": "grip_palm"
+  },
+  {
+   "name": "dumbbell_neutral_grip_deg",
+   "group": "posture",
+   "value": 6.4,
+   "limit": "<= 20 every frame",
+   "pass": true,
+   "fix": null,
+   "where": {
+    "frame": 12
+   },
+   "rule_map": "grip_palm"
+  },
+  {
+   "name": "support_hand_on_thigh_m",
+   "group": "posture",
+   "value": 0.086,
+   "limit": "<= 0.12 every frame",
+   "pass": true,
+   "fix": null,
+   "rule_map": "support_hand"
+  },
+  {
+   "name": "thigh_split_deg",
+   "group": "posture",
+   "value": 2.1,
+   "limit": "<= 35 (median)",
+   "pass": true,
+   "fix": null,
+   "rule_map": "plant_legs"
+  },
+  {
+   "name": "joint_ranges_no_hyperextension",
+   "group": "anatomy",
+   "value": "ok",
+   "limit": {
+    "elbow_flex_deg": [
+     -5,
+     150
+    ],
+    "knee_flex_deg": [
+     -5,
+     120
+    ],
+    "wrist_dev_max_deg": 35,
+    "ankle_dev_max_deg": 25
+   },
+   "pass": true,
+   "fix": null,
+   "values": {
+    "L_elbow": [
+     6.6,
+     15.1
+    ],
+    "L_knee": [
+     17.7,
+     17.7
+    ],
+    "L_wrist_dev": 17.2,
+    "L_ankle_dev": 8.5,
+    "R_elbow": [
+     2.9,
+     116.4
+    ],
+    "R_knee": [
+     19.4,
+     19.4
+    ],
+    "R_wrist_dev": 3.5,
+    "R_ankle_dev": 6.9
+   },
+   "rule_map": "joint_range"
+  },
+  {
+   "name": "self_intersection_capsule_m",
+   "group": "anatomy",
+   "value": {
+    "max": 0.02,
+    "pairs": {
+     "LeftUpLeg/LeftForeArm": 0.02,
+     "Spine01/RightArm": 0.008
+    }
+   },
+   "limit": "<= 0.02",
+   "pass": true,
+   "fix": null,
+   "rule_map": "limb_clearance"
+  },
+  {
+   "name": "center_of_mass_over_feet_m",
+   "group": "anatomy",
+   "value": 0.055,
+   "limit": ">= 0.0 (inside the feet polygon)",
+   "pass": true,
+   "fix": null,
+   "rule_map": "com_balance"
+  },
+  {
+   "name": "proportions_symmetric_and_rigid",
+   "group": "anatomy",
+   "value": "ok",
+   "limit": "L/R and frame/rest within 4%",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "grip_finger_wrap_deg",
+   "group": "grip",
+   "value": {
+    "min": 142.6,
+    "max": 190.0
+   },
+   "limit": [
+    120,
+    300
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "grip_wrap"
+  },
+  {
+   "name": "grip_fingertip_gap_mm",
+   "group": "grip",
+   "value": {
+    "min": -0.0,
+    "max": 3.3
+   },
+   "limit": "[-1.5, 5]",
+   "pass": true,
+   "fix": null,
+   "rule_map": "grip_wrap"
+  },
+  {
+   "name": "grip_thumb_opposing",
+   "group": "grip",
+   "value": {
+    "gap_mm_max": 3.0,
+    "opposition_deg_min": 170.1
+   },
+   "limit": "gap <= 6 mm, opposition >= 90",
+   "pass": true,
+   "fix": null,
+   "rule_map": "grip_wrap"
+  },
+  {
+   "name": "grip_no_hand_handle_intersection",
+   "group": "grip",
+   "value": 0,
+   "limit": 0,
+   "pass": true,
+   "fix": null,
+   "rule_map": "grip_wrap"
+  },
+  {
+   "name": "mesh_no_spikes_edge_ratio",
+   "group": "anatomy",
+   "value": {
+    "max": 3.06,
+    "min": 0.014,
+    "measured": "tear_max_visible",
+    "worst_groups": {
+     "RightUpLeg": 3.06,
+     "RightHand": 2.72,
+     "Spine02": 2.66,
+     "Hips": 2.58,
+     "Spine01": 2.45
+    }
+   },
+   "limit": "max <= 3.5, min >= 0.01",
+   "pass": true,
+   "fix": null,
+   "rule_map": "spine_spread"
+  },
+  {
+   "name": "prop_dumbbell_heads_readable",
+   "group": "anatomy",
+   "value": {
+    "visible_min": 0.75,
+    "screen_sep_min": 1.72
+   },
+   "limit": "visible >= 0.5, separation >= 1.0 head diameters",
+   "pass": true,
+   "fix": null,
+   "rule_map": "camera_yaw"
+  },
+  {
+   "name": "extremities_in_frame_margin_px",
+   "group": "anatomy",
+   "value": 218.0,
+   "limit": ">= 24",
+   "pass": true,
+   "fix": null,
+   "rule_map": "camera_margin"
+  },
+  {
+   "name": "skin_p75",
+   "group": "look",
+   "value": [
+    74.0,
+    74.0
+   ],
+   "limit": [
+    69,
+    81
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "skin_p90",
+   "group": "look",
+   "value": [
+    87.0,
+    87.0
+   ],
+   "limit": [
+    81,
+    95
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "skin_max",
+   "group": "look",
+   "value": 135.0,
+   "limit": 160,
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "backdrop_rgb_maxdev",
+   "group": "look",
+   "value": 0.0,
+   "limit": 4,
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "green_glow_frac_of_body",
+   "group": "look",
+   "value": [
+    0.087,
+    0.129
+   ],
+   "limit": [
+    0.02,
+    0.3
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "green_only_on_lats_rhomboids_midtrap",
+   "group": "look",
+   "value": 1.0,
+   "limit": ">= 0.9",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "no_red_glow_px",
+   "group": "look",
+   "value": 0,
+   "limit": 0,
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "sharpness_vs_day4",
+   "group": "look",
+   "value": 0.595,
+   "limit": ">= 0.35",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "figure_fully_in_frame",
+   "group": "look",
+   "value": true,
+   "limit": true,
+   "pass": true,
+   "fix": null,
+   "rule_map": "camera_margin"
+  },
+  {
+   "name": "figure_fill_w_h",
+   "group": "look",
+   "value": [
+    0.555,
+    0.651
+   ],
+   "limit": "w >= 0.60 or h >= 0.55",
+   "pass": true,
+   "fix": null,
+   "rule_map": "camera_tighter"
+  },
+  {
+   "name": "figure_size_not_below_target",
+   "group": "look",
+   "value": 0.65,
+   "limit": ">= 0.62 (min over frames)",
+   "pass": true,
+   "fix": null,
+   "rule_map": "camera_bigger"
+  },
+  {
+   "name": "green_area_ratio_cap",
+   "group": "look",
+   "value": 0.1285,
+   "limit": "<= 0.18",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "overlay_in_safe_zone",
+   "group": "overlay",
+   "value": "243 boxes ok",
+   "limit": [
+    60,
+    220,
+    960,
+    1500
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "overlay_text_no_overlap",
+   "group": "overlay",
+   "value": "ok",
+   "limit": "title / pill / callout text disjoint",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "overlay_clear_of_figure_px",
+   "group": "overlay",
+   "value": {
+    "title": 0,
+    "pill": 0
+   },
+   "limit": "<= 0 figure px in title/pill box, every frame",
+   "pass": true,
+   "fix": null,
+   "rule_map": "camera_top_margin"
+  },
+  {
+   "name": "callout_text_clear_of_figure",
+   "group": "overlay",
+   "value": 0.0,
+   "limit": 0.02,
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "callout_angle_matches_measured",
+   "group": "overlay",
+   "value": {
+    "shown": 47,
+    "rig_median": 46.9,
+    "max_2d_dev": 9.0
+   },
+   "limit": "shown == round(median); |2D - shown| <= 12",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "briefs_body_touch_frac",
+   "group": "briefs",
+   "value": 0.01533,
+   "limit": 0.03,
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "briefs_no_tearing_frac2x",
+   "group": "briefs",
+   "value": 0.00284,
+   "limit": 0.015,
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "briefs_no_visible_poke_through",
+   "group": "briefs",
+   "value": 0.00177,
+   "limit": 0.002,
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "briefs_coverage_every_frame",
+   "group": "briefs",
+   "value": {
+    "frames": "81/81",
+    "min_rel": 0.83,
+    "green_on_briefs_px": 0
+   },
+   "limit": "all frames, >= 0.6 x median, 0 green",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "reel_1080x1920_30fps",
+   "group": "reel",
+   "value": [
+    1080,
+    1920,
+    "30/1"
+   ],
+   "limit": [
+    1080,
+    1920,
+    "30/1"
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "reel_has_audio",
+   "group": "reel",
+   "value": true,
+   "limit": true,
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "reel_duration_s",
+   "group": "reel",
+   "value": 6.47,
+   "limit": [
+    5,
+    15
+   ],
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "tts_ends_before_reel_end",
+   "group": "reel",
+   "value": 4.086,
+   "limit": "<= 6.27",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  },
+  {
+   "name": "caption_lint",
+   "group": "reel",
+   "value": "ok",
+   "limit": "no errors",
+   "pass": true,
+   "fix": null,
+   "rule_map": "human"
+  }
+ ],
+ "auto_fixable": [],
+ "needs_ai": [],
+ "unmapped_checks": []
+}
