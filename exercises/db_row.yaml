@@ -31,6 +31,15 @@ motion:
   balance_knees: true        # v5: each ankle slides fore-aft until its own knee reaches knee_target_deg (no locked rear leg)
   grip_mode: palm_neutral    # v5: handle across the palm (hand-mesh axis) + forearm/hand twisted to a neutral grip (legacy shoulder_line)
   grip_twist_forearm_share: 0.6
+  grip_wrap:                 # v6: power grip shape key (tools/rig3d/hand_grip.py): fingers wrap the handle, thumb opposes
+    enabled: true
+    handle_r_m: 0.016
+    clear_m: 0.002
+    max_wrap_deg: 250
+    mcp_back_m: 0.015        # bend starts this far proximal to the finger web (knuckle line)
+  support_elbow_mode: back_out # v6: support elbow points back/out (v5 'lateral' hyperextended it -10 deg)
+  support_wrist_neutral: true  # v6: hand continues the forearm onto the thigh (v5: 58 deg wrist bend)
+  support_hand_lift_m: 0.075 # support wrist target above the thigh bone line (thigh radius + hand)
   wrist_neutral: true        # v5: working hand not aimed at the index landmark (MediaPipe curled the wrist up to 77 deg)
   support_hand: front_thigh  # v5: free hand braced on the front thigh above the knee
   lock_hips: true            # v5: pelvis static over the rep (upper body follows rigidly), knees steady
@@ -46,6 +55,7 @@ garment:                     # black boxer briefs (드로즈): separate skinned 
   hem_smooth_iters: 12
   clearance_min_m: 0.0005      # geometric touch = garment vertex within 0.5 mm of the deformed body surface
 render:
+  dumbbell_axis_fix: true   # v6: handle long axis = object X (v1-v5 bug: the joined dumbbell kept a 90 deg rotation, handle on the wrong axis)
   res: [1080, 1920]          # render at delivery size (720 + upscale measured 0.18x Day 4 sharpness)
   spp: 16
   denoise_prefilter: ACCURATE # OIDN guided by albedo + normal passes keeps the sculpt texture
@@ -99,6 +109,8 @@ qc:
   sharp_rel_min: 0.35         # body Laplacian variance vs the Day 4 master reference
   dur_s: [5, 15]
   safe_zone: [60, 220, 960, 1500]   # x0, y0, x1, y1: IG Reels (top bar, right buttons, bottom caption) for every overlay box
+  figure_fill_h_min: 0.62          # v6: figure height / frame height, every frame (no shrinking from camera/overlay fixes)
+  glow_frac_max: 0.09              # v6: green area cap (green body px / body px), every frame
   overlay_figure_px_max: 0         # v5: figure mask px inside the title / pill text boxes, every frame
   callout_figure_overlap_max: 0.02
   callout_2d_tol_deg: 12            # drawn 2D axis vs shown 3D value (15 deg yaw side camera projection)
@@ -123,3 +135,24 @@ qc:
     handle_body_forward_max_deg: 20 # v5: neutral-grip row: handle runs front-to-back
     support_hand_thigh_max_m: 0.12  # v5: wrist to thigh bone line (thigh radius ~0.07 + hand)
     thigh_split_max_deg: 35         # sagittal angle between the thighs (running stride ~60+)
+  anatomy:                          # v6 generic proactive audit (tools/rig3d/anatomy_qc.py)
+    joint_ranges:
+      elbow_flex_deg: [-5, 150]     # signed (+ flexion as at rest); < -5 = hyperextension
+      knee_flex_deg: [-5, 120]
+      wrist_dev_max_deg: 35         # hand axis vs forearm
+      ankle_dev_max_deg: 25         # shin-foot angle change vs rest
+    capsule_penetration_max_m: 0.02
+    capsule_allowed_pairs: []       # e.g. [[LeftHand, LeftUpLeg]] for a deliberate brace contact
+    com_margin_min_m: 0.0           # whole-body + dumbbell COM inside the feet polygon
+    dumbbell_mass_frac: 0.15
+    proportion_tol: 0.035           # the CC0 asset's own shins differ 3.2% L/R at rest
+    grip:
+      finger_wrap_deg: [120, 300]   # each finger's wrap around the handle (knuckle -> tip)
+      tip_gap_mm: [-1.5, 5]         # fingertip palmar surface to the handle surface
+      thumb_gap_max_mm: 6
+      thumb_opposition_min_deg: 90  # thumb tip vs fingertips, around the handle axis
+    edge_ratio_max: 3.5             # visible spikes: deformed length / max(rest length, median rest edge 3.6 mm), edges under the shorts excluded
+    edge_ratio_min: 0.01            # total collapse only (elbow-crease LBS compression reaches ~0.02-0.03 and is hidden in the fold)
+    db_head_visible_min: 0.5        # share of each dumbbell head not hidden by the body
+    db_head_sep_min: 1.0            # on-screen head centre distance / head diameter (no stacked heads)
+    extremity_margin_px: 24         # head top, fingers, toes, dumbbell heads inside the frame
