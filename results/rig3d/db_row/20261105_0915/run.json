@@ -1,0 +1,60 @@
+{
+ "run_id": "20261105_0915",
+ "slug": "db_row",
+ "code_commit": "95cb68a",
+ "stages": {
+  "config": {
+   "s": 0.0
+  },
+  "fetch": {
+   "s": 0.0
+  },
+  "pose": {
+   "s": 23.2
+  },
+  "render": {
+   "s": 603.2
+  },
+  "grade": {
+   "s": 210.2
+  },
+  "reel": {
+   "s": 6.8
+  },
+  "qc": {
+   "s": 0.1
+  },
+  "sheet": {
+   "s": 1.0
+  }
+ },
+ "fixes_applied": [],
+ "rep": [
+  92,
+  173
+ ],
+ "render": {
+  "beauty_s": 526.8,
+  "mask_s": 59.0,
+  "frames": 81,
+  "res": [
+   1080,
+   1920
+  ],
+  "wall_s": 603.1,
+  "peak_rss_mb": 3103
+ },
+ "reel": "/workspace/daily_info_reels/output/_rig3d/db_row/reel/db_row_rig3d_v2.mp4",
+ "sheet": "/workspace/daily_info_reels/output/_rig3d/db_row/sheet.png",
+ "qc_pass": true,
+ "production": {
+  "chain_s": 844.5,
+  "peak_rss_mb": 3103,
+  "render_s": 603.1,
+  "render_peak_rss_mb": 3103
+ },
+ "wall_s_this_invocation": 844.4,
+ "wall_s": 844.5,
+ "peak_rss_mb": 3103,
+ "ai_queue_resolved": []
+}
