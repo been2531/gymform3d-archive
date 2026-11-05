@@ -7,7 +7,10 @@ paid APIs, never posts anywhere (ig_publish.py is not imported or called).
   ... --force grade        re-run one stage (and everything after it)
   ... --short 12           render only the first N frames (cost probe: time + RAM), stops after the render stage
   ... --deliver-dry-run    build the delivery but do not commit/push/alert
-  ... --no-email           commit/push/alert for real, but do not send the owner e-mail
+  (default)                e-mail the result (sheet + QC summary) to the owner's Gmail (rz_notify_mail notify_to) via
+                           Routinizer rz_mail_digest (batched, <= 30 min) -- 중현 님 t719u "Gmail로 결과보내주면 되자나"
+  ... --mail-direct        send that e-mail now through the Gmail API (message id in run.json deliver results)
+  ... --no-email           opt-out: commit/push/alert for real, but no owner e-mail
   ... --no-gate            skip the box load gate (default: wait in /home/box/routinizer/rz_loadgate.py)
 
 Stages (each cached by a hash of its config slice + code + upstream hashes; stamps in _cache_rig3d/<slug>/stamps):
@@ -276,7 +279,7 @@ def resolve_ai(slug, run_id, qc):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--exercise", required=True); ap.add_argument("--force", choices=STAGES)
-    ap.add_argument("--short", type=int, default=0); ap.add_argument("--deliver-dry-run", action="store_true"); ap.add_argument("--no-email", action="store_true", help="real repo commit + alert, but build the owner e-mail without sending it (one e-mail per run budget)"); ap.add_argument("--no-gate", action="store_true")
+    ap.add_argument("--short", type=int, default=0); ap.add_argument("--deliver-dry-run", action="store_true"); ap.add_argument("--no-email", action="store_true", help="real repo commit + alert, but build the owner e-mail without sending it (one e-mail per run budget)"); ap.add_argument("--no-gate", action="store_true"); ap.add_argument("--mail-direct", action="store_true", help="send the owner e-mail now via the Gmail API instead of the batched digest")
     ap.add_argument("--gate-timeout", type=int, default=6 * 3600); ap.add_argument("--no-retry", action="store_true")
     ap.add_argument("--max-iter", type=int, default=3, help="self-healing iterations (rig pre-check loop and full render loop, each)")
     args = ap.parse_args()
@@ -340,7 +343,7 @@ def main():
         meta["ai_queue_resolved"] = resolve_ai(run.slug, run_id, qc)
     meta["production"] = production(); meta["wall_s"] = meta["production"]["chain_s"]; meta["wall_s_this_invocation"] = round(time.time() - T0, 1); jdump(meta, run.p("run.json"))
     import deliver
-    cfg_d = dict(cfg); cfg_d["_no_email"] = bool(args.no_email); jdump(cfg_d, run.p("cfg.json"))
+    cfg_d = dict(cfg); cfg_d["_no_email"] = bool(args.no_email); cfg_d["_mail_direct"] = bool(args.mail_direct) and not args.no_email; jdump(cfg_d, run.p("cfg.json"))
     res = [deliver.backend_repo(run.work, cfg_d, args.deliver_dry_run)]
     url = res[0].get("url")
     res.append(deliver.backend_ntfy(run.work, cfg_d, args.deliver_dry_run, url)); res.append(deliver.backend_smtp(run.work, cfg_d, args.deliver_dry_run or args.no_email, url))

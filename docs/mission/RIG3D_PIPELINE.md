@@ -126,3 +126,14 @@ now solved with period pi.
 was bent 58 deg. Now `support_elbow_mode: back_out` and `support_wrist_neutral: true`. COM fix rule
 `stance_mode: feet_forward` puts both ankles in front of the hip joints, so the hips sit back over the feet, and the
 support hand braces on the same-side thigh.
+
+## Owner e-mail (2026-11-05, 중현 님 t719u: "Gmail로 결과보내주면 되자나")
+
+E-mail is the default. Every pipeline run mails the result (sheet.png + QC summary + results link) to the owner's
+Gmail (`notify_to` in Routinizer `rz_notify_mail`, daily25310@gmail.com):
+- **Default:** batched through Routinizer `rz_mail_digest` within 30 min.
+- **`--mail-direct`:** sends at once through the Gmail API and records the message id in the deliver results.
+- **`--no-email`:** opt-out only.
+- **Re-send:** for a finished run, without re-rendering:
+  `python3 tools/rig3d/deliver.py output/_rig3d/<slug> output/_rig3d/<slug>/cfg.json --backend gmail --url <results blob url>`
+(20261105_1017 was sent this way: Gmail message id 1a1a9623e1ede604).

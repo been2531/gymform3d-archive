@@ -142,10 +142,10 @@ def backend_pages(run_dir, cfg, dry=True):
     return {"backend": "pages", "dry_run": True, "url": url}
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("run_dir"); ap.add_argument("cfg"); ap.add_argument("--backend", default="auto"); ap.add_argument("--dry-run", action="store_true")
+    ap = argparse.ArgumentParser(); ap.add_argument("run_dir"); ap.add_argument("cfg"); ap.add_argument("--backend", default="auto"); ap.add_argument("--dry-run", action="store_true"); ap.add_argument("--url", default=None, help="results link for --backend gmail (adds the preview mp4)")
     a = ap.parse_args(); cfg = json.load(open(a.cfg)); out = []
     if a.backend in ("auto", "repo"): out.append(backend_repo(a.run_dir, cfg, a.dry_run))
-    url = out[0].get("url") if out else None
+    url = out[0].get("url") if out else a.url
     if a.backend in ("auto", "ntfy"): out.append(backend_ntfy(a.run_dir, cfg, a.dry_run, url))
     if a.backend in ("auto", "smtp"): out.append(backend_smtp(a.run_dir, cfg, a.dry_run, url))
     if a.backend == "gmail": out.append(backend_gmail(a.run_dir, cfg, a.dry_run, url))
