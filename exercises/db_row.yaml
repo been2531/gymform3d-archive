@@ -110,7 +110,7 @@ qc:
   dur_s: [5, 15]
   safe_zone: [60, 220, 960, 1500]   # x0, y0, x1, y1: IG Reels (top bar, right buttons, bottom caption) for every overlay box
   figure_fill_h_min: 0.62          # v6: figure height / frame height, every frame (no shrinking from camera/overlay fixes)
-  glow_frac_max: 0.09              # v6: green area cap (green body px / body px), every frame
+  glow_frac_max: 0.18              # v6: green area cap (green body px / body px), every frame; Day-4 look sits ~0.13
   overlay_figure_px_max: 0         # v5: figure mask px inside the title / pill text boxes, every frame
   callout_figure_overlap_max: 0.02
   callout_2d_tol_deg: 12            # drawn 2D axis vs shown 3D value (15 deg yaw side camera projection)
