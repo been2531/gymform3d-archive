@@ -4,6 +4,7 @@
 paid APIs, never posts anywhere (ig_publish.py is not imported or called).
 
   nice -n 19 python3 tools/rig3d/pipeline.py --exercise db_row            # resumable: finished stages are skipped
+  nice -n 19 python3 tools/rig3d/pipeline.py --next                       # next ready/ready_proxy slug from playlist.yaml
   ... --force grade        re-run one stage (and everything after it)
   ... --short 12           render only the first N frames (cost probe: time + RAM), stops after the render stage
   ... --deliver-dry-run    build the delivery but do not commit/push/alert
@@ -23,6 +24,8 @@ import numpy as np, yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT); sys.path.insert(0, "/home/box/routinizer")
 HERE = os.path.join(ROOT, "tools/rig3d"); BPY = os.environ.get("RIG3D_BPY", "/workspace/.bpyenv/bin/python")
+sys.path.insert(0, HERE)
+from config_load import load_exercise, next_from_playlist  # modules/_shared + modules/<module> + exercises/<slug>
 KST = dt.timezone(dt.timedelta(hours=9))
 AIQ = "/home/box/routinizer/ai_queue/fitness_studio.jsonl"
 FITNESS_STUDIO_AGENT = "7c203a21-2233-41e0-92f1-189a01945890"
@@ -96,9 +99,12 @@ class Run:
 
     # 1 ------------------------------------------------------------------------------------------------------------------
     def s_config(self):
-        c = yaml.safe_load(open(self.cfg_path))
+        c = load_exercise(self.slug, ROOT)
         for k in ("slug", "name", "source", "asset", "motion", "render", "grade", "tts", "caption", "qc"):
             if k not in c: raise SystemExit(f"exercise config missing '{k}'")
+        src = c.get("source") or {}
+        if not src.get("url") and (c.get("motion_status") == "blocked_needs_motion" or src.get("provider") in (None, "", "none")):
+            raise SystemExit(f"{self.slug}: blocked — no free motion source yet (see playlist.yaml). Do not fetch/render.")
         for path, val in self.overrides.items():
             d = c
             for k in path.split(".")[:-1]: d = d[k]
@@ -278,11 +284,18 @@ def resolve_ai(slug, run_id, qc):
     return done
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--exercise", required=True); ap.add_argument("--force", choices=STAGES)
+    ap = argparse.ArgumentParser(); ap.add_argument("--exercise", default=None, help="exercise slug under exercises/"); ap.add_argument("--next", action="store_true", help="pick the next ready/ready_proxy slug from playlist.yaml")
+    ap.add_argument("--force", choices=STAGES)
     ap.add_argument("--short", type=int, default=0); ap.add_argument("--deliver-dry-run", action="store_true"); ap.add_argument("--no-email", action="store_true", help="real repo commit + alert, but build the owner e-mail without sending it (one e-mail per run budget)"); ap.add_argument("--no-gate", action="store_true"); ap.add_argument("--mail-direct", action="store_true", help="send the owner e-mail now via the Gmail API instead of the batched digest")
     ap.add_argument("--gate-timeout", type=int, default=6 * 3600); ap.add_argument("--no-retry", action="store_true")
     ap.add_argument("--max-iter", type=int, default=3, help="self-healing iterations (rig pre-check loop and full render loop, each)")
     args = ap.parse_args()
+    if args.next:
+        slug, item = next_from_playlist()
+        args.exercise = slug
+        log(f"--next -> {slug} (status={item.get('status')}, module={item.get('module')})")
+    if not args.exercise:
+        raise SystemExit("pass --exercise <slug> or --next")
     try: os.nice(max(0, 19 - os.nice(0)))
     except OSError: pass
     if "xai_edit" in sys.modules: raise SystemExit("xai module loaded: refused")

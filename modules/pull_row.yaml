@@ -1,0 +1,33 @@
+# Primitive: one-arm horizontal pull / row (db_row).
+primitive: pull_row
+_doc: "Hinged torso, working elbow drives to hip, support hand on front thigh."
+fault:
+  id: elbow_flare_torso_rise
+  wrong: "Torso stands up / elbow flares wide — traps and momentum steal the lat."
+  right: "Torso stays hinged; elbow tracks to the hip; lats + mid-back squeeze."
+motion_hint:
+  torso_target_deg: 49
+  legs: planted
+  knee_target_deg: 160
+  grip_mode: palm_neutral
+  support_hand: front_thigh
+  lock_hips: true
+  pelvis_yaw: true
+  stance_width_m: 0.30
+  stance_scale: 0.45
+grade:
+  target_muscles: [lats, rhomboids, mid_trap]
+qc:
+  torso_band_deg: [35, 60]
+  torso_tol_deg: 5
+  elbow_rom_min_deg: 40
+  posture:
+    knee_range_deg: [140, 178]
+    knee_steady_max_deg: 6
+    knee_soft_range_deg: [150, 170]
+    knee_lr_diff_max_deg: 20
+    handle_palm_max_deg: 15
+    handle_body_forward_max_deg: 20
+    support_hand_thigh_max_m: 0.12
+    thigh_split_max_deg: 35
+risks: ["support hand hidden behind thigh from side camera", "callout near dumbbell at peak"]

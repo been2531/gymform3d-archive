@@ -1,0 +1,34 @@
+# Stub — BLOCKED: no free YMove motion. Do not fetch/render until a free clip exists.
+slug: push_up
+name: Push-Up
+module: push_up
+motion_status: blocked_needs_motion
+source:
+  provider: none
+  page: ""
+  url: ""
+  file: _scratch/motion_src/OWNER_PHONE_push_up.mp4
+  licence: "Needs owner-filmed side-view clip (free bodyweight)."
+  min_bytes: 200000
+motion:
+  rep: auto
+  rep_index: 0
+  torso_target_deg: 90
+  smooth_sigma_f: 2.5
+  lock_feet: true
+  legs: source
+  grip_wrap:
+    enabled: false
+layout:
+  callout:
+    metric: elbow_flexion
+    l1: ELBOW PATH
+    l2: CHEST & TRICEPS
+  preview_pill: true
+tts:
+  line: "Keep a straight body line. Tuck the elbows and lower the chest."
+  question_spoken: "Where do you feel it most?"
+caption:
+  title: "Push-up: body line locked, elbows tucked."
+  question: "Where do you feel your push-ups most right now?"
+  save: "Save this for your next push day."

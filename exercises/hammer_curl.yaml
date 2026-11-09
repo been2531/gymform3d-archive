@@ -1,0 +1,48 @@
+# Stub — ready free YMove Hammer Curls (curl primitive).
+slug: hammer_curl
+name: Hammer Curls
+module: curl
+source:
+  provider: YMove
+  page: https://ymove.app/free-exercise-videos
+  url: https://ymove.app/api/free/b11e6c6f-b2e8-44ca-95dc-adf0dcd34426
+  file: _scratch/motion_src/ymove_hammer_curl.mp4
+  licence: "YMove free licence: commercial use incl. social media OK, no resale/redistribution of the videos; we use only the extracted pose"
+  min_bytes: 200000
+motion:
+  rep: auto
+  rep_index: 0
+  torso_target_deg: 0
+  torso_smooth_sigma_f: 4.0
+  smooth_sigma_f: 2.5
+  lock_feet: true
+  spine_influence: 0.3
+  spine_aim: far
+  neck_mode: spine_follow
+  gaze_ext_deg: 0
+  legs: planted
+  knee_target_deg: 175
+  balance_knees: true
+  grip_mode: palm_neutral
+  grip_wrap:
+    enabled: true
+    handle_r_m: 0.016
+    clear_m: 0.002
+    max_wrap_deg: 250
+    mcp_back_m: 0.015
+  wrist_neutral: true
+  lock_hips: true
+  stance_width_m: 0.28
+layout:
+  callout:
+    metric: elbow_flexion
+    l1: ELBOW PATH
+    l2: BRACHIALIS
+  preview_pill: true
+tts:
+  line: "Pin the upper arms. Curl without swinging the torso."
+  question_spoken: "Where do you feel it most?"
+caption:
+  title: "Hammer curl: upper arms still, no swing."
+  question: "Where do you feel your curls most right now?"
+  save: "Save this for your next arm day."

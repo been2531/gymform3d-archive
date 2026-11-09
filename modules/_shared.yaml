@@ -1,0 +1,100 @@
+# Shared across every rig3d exercise. Exercise YAML and modules/<name>.yaml override.
+# Grab3D CC0 body + Poly Haven studio HDRI + Day 4 grade defaults. Never commit the GLB/HDRI/clips.
+_doc: "rig3d shared defaults (asset, garment, render, grade, base QC). 0 generations."
+
+asset:
+  glb: _scratch/assets_probe/human-muscles-rigged.glb
+  hdri:
+    name: studio_small_09
+    url: https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr
+    file: _scratch/hdri/studio_small_09_1k.hdr
+    strength: 0.55
+
+garment:
+  enabled: true
+  z_waist: 1.03
+  z_hem: 0.80
+  max_abs_x: 0.22
+  offset_m: 0.012
+  hem_smooth_iters: 12
+  clearance_min_m: 0.0005
+
+render:
+  dumbbell_axis_fix: true
+  res: [1080, 1920]
+  spp: 16
+  denoise_prefilter: ACCURATE
+  normal_strength: 1.5
+  denoise: true
+  mask_spp: 4
+  camera:
+    mode: side_tight
+    yaw_back_deg: 35
+    elev_deg: 14
+    lens_mm: 50
+    fill_w: 0.90
+    feet_y: 0.92
+    top_y: 0.27
+
+grade:
+  out_res: [1080, 1920]
+  fps: 30
+  loops: 2
+  detail_amount: 1.0
+  detail_sigma: 1.6
+  backdrop_rgb: [35, 39, 43]
+  glow: right
+
+qc:
+  grip_max_m: 0.03
+  grip_mesh_max_m: 0.06
+  tear_ratio_max: 3.0
+  tear_frac2x_max: 0.003
+  skin_p75: [69, 81]
+  skin_p90: [81, 95]
+  skin_max: 160
+  backdrop_tol: 4
+  glow_frac: [0.02, 0.30]
+  glow_in_mask_min: 0.9
+  sharp_rel_min: 0.35
+  dur_s: [5, 15]
+  safe_zone: [60, 220, 960, 1500]
+  figure_fill_h_min: 0.62
+  glow_frac_max: 0.18
+  overlay_figure_px_max: 0
+  callout_figure_overlap_max: 0.02
+  callout_2d_tol_deg: 12
+  briefs_visible_poke_max: 0.002
+  briefs_touch_frac_max: 0.03
+  briefs_tear_frac2x_max: 0.015
+  briefs_cover_min_rel: 0.6
+  posture:
+    neck_line_dev_max_deg: 20
+    neck_flex_range_deg: [-20, 15]
+    head_roll_max_deg: 10
+    head_yaw_max_deg: 15
+    neck_steady_max_deg: 5
+    toe_lift_max_m: 0.02
+    foot_pitch_dev_max_deg: 12
+    foot_drift_max_m: 0.015
+  anatomy:
+    joint_ranges:
+      elbow_flex_deg: [-5, 150]
+      knee_flex_deg: [-5, 120]
+      wrist_dev_max_deg: 35
+      ankle_dev_max_deg: 25
+    capsule_penetration_max_m: 0.02
+    capsule_allowed_pairs: []
+    com_margin_min_m: 0.0
+    dumbbell_mass_frac: 0.15
+    proportion_tol: 0.035
+    grip:
+      finger_wrap_deg: [120, 300]
+      tip_gap_mm: [-1.5, 5]
+      thumb_gap_max_mm: 6
+      thumb_opposition_min_deg: 90
+    edge_ratio_max: 3.5
+    edge_ratio_min: 0.01
+    db_head_visible_min: 0.5
+    db_head_sep_min: 1.0
+    extremity_margin_px: 24

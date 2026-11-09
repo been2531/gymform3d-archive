@@ -1,0 +1,23 @@
+# Primitive: standing overhead press / push press.
+primitive: press_overhead
+_doc: "Press overhead without lumbar arch; elbows finish under the load."
+fault:
+  id: lumbar_arch_elbow_flare
+  wrong: "Lower back arches / elbows flare — shoulder + disc risk."
+  right: "Ribs down; press to ears; delts + triceps take the load."
+motion_hint:
+  torso_target_deg: 0
+  legs: planted
+  knee_target_deg: 170
+  lock_hips: true
+  grip_mode: palm_neutral
+grade:
+  target_muscles: [front_delt, side_delt, triceps]
+qc:
+  torso_band_deg: [0, 12]
+  torso_tol_deg: 5
+  elbow_rom_min_deg: 90
+  posture:
+    neck_flex_range_deg: [-10, 10]
+    knee_range_deg: [150, 178]
+risks: ["YMove free has kettlebell push press only (no pure DB OHP)", "push-press dip adds knee ROM the press module must allow"]
