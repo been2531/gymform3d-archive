@@ -25,3 +25,91 @@
 {"day": 6, "at": "2026-10-30 10:23:21", "ok": false, "stage": "preflight", "t": {"icons": 14.1, "preflight_1": 83.0, "total": 100.1}}
 {"day": 6, "at": "2026-10-30 10:33:24", "ok": true, "t": {"preflight_1": 94.6, "composite_1": 236.1, "steps_rendered": [[1, 2, 3, 4]], "encode_1": 4.6, "qc_1": 34.5, "total": 373.2}}
 {"day": 6, "at": "2026-10-30 10:33:53", "run": "t526u override render", "ok": true, "t": {"preflight": 94.6, "composite": 236.1, "encode": 4.6, "qc": 34.5, "total": 373.2}, "baseline_total": 301.9, "xai_edit_s": [46.5, 52.5]}
+{"day": 6, "at": "2026-10-30 11:38:12", "ok": false, "stage": "preflight", "t": {"icons": 29.6, "preflight_1": 97.5, "total": 130.3}}
+{"day": 6, "at": "2026-10-30 11:41:21", "ok": false, "stage": "preflight", "t": {"icons": 20.4, "preflight_1": 95.7, "total": 123.8}}
+{"day": 6, "at": "2026-10-30 11:47:17", "ok": false, "stage": "preflight", "t": {"icons": 20.6, "preflight_1": 99.1, "total": 126.8}}
+{"day": 6, "at": "2026-10-30 11:50:08", "ok": false, "stage": "preflight", "t": {"icons": 20.1, "preflight_1": 98.1, "total": 125.0}}
+{"day": 6, "at": "2026-10-30 11:52:21", "ok": false, "stage": "preflight", "t": {"icons": 19.5, "preflight_1": 94.3, "total": 119.0}}
+{"day": 6, "at": "2026-10-30 11:54:31", "ok": true, "stage": "preflight", "t": {"icons": 21.1, "preflight_1": 96.8, "total": 121.5}}
+{"day": 6, "at": "2026-10-30 12:04:05", "ok": true, "stage": "preflight", "t": {"icons": 19.9, "preflight_1": 104.9, "total": 131.8}}
+{"day": 6, "at": "2026-10-30 12:10:04", "ok": true, "stage": "preflight", "t": {"icons": 20.6, "preflight_1": 107.5, "total": 131.3}}
+{"day": 6, "at": "2026-10-30 13:15:03", "ok": false, "stage": "preflight", "t": {"icons": 43.1, "tts": 7.8, "preflight_1": 96.0, "total": 152.6}}
+{"day": 6, "at": "2026-10-30 13:17:59", "ok": true, "stage": "preflight", "t": {"icons": 22.3, "preflight_1": 104.9, "total": 134.0}}
+{"day": 6, "at": "2026-10-30 13:39:37", "ok": false, "stage": "preflight", "t": {"icons": 28.4, "preflight_1": 97.6, "total": 129.2}}
+{"day": 6, "at": "2026-10-30 13:57:37", "ok": false, "stage": "preflight", "t": {"icons": 14.3, "tts": 5.5, "preflight_1": 35.5, "total": 58.5}}
+{"day": 6, "at": "2026-10-30 14:02:47", "ok": false, "stage": "preflight", "t": {"icons": 7.5, "preflight_1": 40.7, "total": 51.4}}
+{"day": 6, "at": "2026-10-30 14:04:28", "ok": false, "stage": "preflight", "t": {"icons": 7.2, "preflight_1": 38.9, "total": 49.2}}
+{"day": 6, "at": "2026-10-30 14:06:36", "ok": false, "stage": "preflight", "t": {"icons": 17.3, "preflight_1": 40.3, "total": 61.3}}
+{"day": 6, "at": "2026-10-30 14:08:13", "ok": false, "stage": "preflight", "t": {"icons": 8.6, "preflight_1": 39.7, "total": 52.5}}
+{"day": 6, "at": "2026-10-30 14:09:28", "ok": false, "stage": "preflight", "t": {"icons": 7.4, "preflight_1": 38.2, "total": 48.8}}
+{"day": 6, "at": "2026-10-30 14:10:29", "ok": false, "stage": "preflight", "t": {"icons": 7.6, "preflight_1": 37.6, "total": 48.7}}
+{"day": 6, "at": "2026-10-30 14:11:54", "ok": false, "stage": "preflight", "t": {"preflight_1": 37.2, "total": 40.3}}
+{"day": 6, "at": "2026-10-30 14:22:35", "ok": false, "stage": "preflight", "t": {"icons": 8.0, "preflight_1": 44.2, "total": 55.4}}
+{"day": 6, "at": "2026-10-30 14:24:27", "ok": false, "stage": "preflight", "t": {"icons": 7.5, "preflight_1": 37.0, "total": 48.0}}
+{"day": 6, "at": "2026-10-30 14:26:49", "ok": true, "stage": "preflight", "t": {"preflight_1": 38.2, "total": 41.4}}
+{"day": 6, "at": "2026-10-30 14:36:36", "ok": true, "t": {"preflight_1": 37.2, "composite_1": 76.0, "steps_rendered": [[1, 2]], "encode_1": 3.9, "qc_1": 19.5, "total": 139.8}}
+{"day": 6, "at": "2026-10-30 14:56:20", "ok": false, "stage": "preflight", "t": {"icons": 20.5, "tts": 5.6, "preflight_1": 40.5, "total": 70.1}}
+{"day": 6, "at": "2026-10-30 14:57:58", "ok": false, "stage": "preflight", "t": {"icons": 7.9, "preflight_1": 41.4, "total": 52.7}}
+{"day": 6, "at": "2026-10-30 15:00:23", "ok": false, "stage": "preflight", "t": {"icons": 20.3, "preflight_1": 40.0, "total": 63.7}}
+{"day": 6, "at": "2026-10-30 15:01:32", "ok": false, "stage": "preflight", "t": {"icons": 7.9, "preflight_1": 40.0, "total": 51.7}}
+{"day": 6, "at": "2026-10-30 15:02:56", "ok": false, "stage": "preflight", "t": {"icons": 7.9, "preflight_1": 40.5, "total": 51.8}}
+{"day": 6, "at": "2026-10-30 15:04:29", "ok": false, "stage": "preflight", "t": {"icons": 7.7, "preflight_1": 41.2, "total": 52.4}}
+{"day": 6, "at": "2026-10-30 15:05:33", "ok": false, "stage": "preflight", "t": {"icons": 7.6, "preflight_1": 42.4, "total": 53.4}}
+{"day": 6, "at": "2026-10-30 15:06:45", "ok": false, "stage": "preflight", "t": {"icons": 8.1, "preflight_1": 41.9, "total": 53.3}}
+{"day": 6, "at": "2026-10-30 15:09:07", "ok": false, "stage": "preflight", "t": {"icons": 17.5, "preflight_1": 44.2, "total": 65.2}}
+{"day": 6, "at": "2026-10-30 15:11:04", "ok": false, "stage": "preflight", "t": {"icons": 11.3, "preflight_1": 41.5, "total": 56.4}}
+{"day": 6, "at": "2026-10-30 15:12:44", "ok": false, "stage": "preflight", "t": {"icons": 8.2, "preflight_1": 40.7, "total": 53.3}}
+{"day": 6, "at": "2026-10-30 15:21:00", "ok": false, "stage": "preflight", "t": {"preflight_1": 41.6, "total": 44.9}}
+{"day": 6, "at": "2026-10-30 15:22:18", "ok": false, "stage": "preflight", "t": {"icons": 8.2, "preflight_1": 41.5, "total": 53.1}}
+{"day": 6, "at": "2026-10-30 15:23:23", "ok": false, "stage": "preflight", "t": {"icons": 7.9, "preflight_1": 40.1, "total": 51.4}}
+{"day": 6, "at": "2026-10-30 15:24:46", "ok": false, "stage": "preflight", "t": {"icons": 7.8, "preflight_1": 39.9, "total": 51.1}}
+{"day": 6, "at": "2026-10-30 15:25:43", "ok": false, "stage": "preflight", "t": {"preflight_1": 39.1, "total": 44.4}}
+{"day": 6, "at": "2026-10-30 15:29:23", "ok": true, "t": {"preflight_1": 39.2, "composite_1": 72.5, "steps_rendered": [[1, 2]], "encode_1": 4.2, "qc_1": 20.8, "total": 140.0}}
+{"day": 6, "at": "2026-10-30 15:38:02", "ok": false, "stage": "preflight", "t": {"icons": 7.3, "preflight_1": 41.6, "total": 51.9}}
+{"day": 6, "at": "2026-10-30 15:41:02", "ok": true, "t": {"preflight_1": 40.9, "composite_1": 74.0, "steps_rendered": [[1, 2]], "encode_1": 3.7, "qc_1": 21.4, "total": 143.4}}
+{"day": 6, "at": "2026-10-30 16:19:30", "ok": false, "stage": "preflight", "t": {"icons": 43.4, "preflight_1": 69.1, "total": 116.0}}
+{"day": 6, "at": "2026-10-30 16:25:33", "ok": false, "stage": "preflight", "t": {"icons": 40.9, "preflight_1": 63.9, "total": 107.9}}
+{"day": 6, "at": "2026-10-30 16:31:06", "ok": false, "stage": "preflight", "t": {"icons": 41.9, "preflight_1": 68.0, "total": 113.1}}
+{"day": 6, "at": "2026-10-30 16:34:51", "ok": false, "stage": "preflight", "t": {"icons": 39.9, "preflight_1": 63.9, "total": 106.8}}
+{"day": 6, "at": "2026-10-30 16:39:05", "ok": false, "stage": "preflight", "t": {"icons": 41.9, "preflight_1": 63.5, "total": 108.5}}
+{"day": 6, "at": "2026-10-30 16:43:58", "ok": false, "stage": "preflight", "t": {"icons": 40.9, "preflight_1": 69.2, "total": 113.6}}
+{"day": 6, "at": "2026-10-30 16:47:23", "ok": false, "stage": "preflight", "t": {"icons": 40.9, "preflight_1": 67.4, "total": 111.8}}
+{"day": 6, "at": "2026-10-30 16:56:01", "ok": false, "stage": "preflight", "t": {"icons": 70.8, "preflight_1": 90.0, "total": 164.2}}
+{"day": 6, "at": "2026-10-30 17:00:18", "ok": false, "stage": "preflight", "t": {"icons": 72.1, "preflight_1": 87.4, "total": 162.6}}
+{"day": 6, "at": "2026-10-30 17:03:59", "ok": false, "stage": "preflight", "t": {"icons": 72.4, "preflight_1": 94.0, "total": 169.8}}
+{"day": 6, "at": "2026-10-30 17:26:11", "ok": false, "stage": "preflight", "t": {"icons": 48.7, "preflight_1": 69.2, "total": 121.3}}
+{"day": 6, "at": "2026-10-30 17:29:18", "ok": false, "stage": "preflight", "t": {"icons": 42.8, "preflight_1": 68.4, "total": 114.6}}
+{"day": 6, "at": "2026-10-30 17:32:26", "ok": false, "stage": "preflight", "t": {"icons": 43.1, "preflight_1": 72.2, "total": 118.5}}
+{"day": 6, "at": "2026-10-30 17:38:19", "ok": false, "stage": "preflight", "t": {"icons": 48.4, "preflight_1": 71.6, "total": 123.5}}
+{"day": 6, "at": "2026-10-30 17:44:43", "ok": false, "stage": "preflight", "t": {"icons": 41.6, "preflight_1": 68.0, "total": 112.8}}
+{"day": 6, "at": "2026-10-30 17:48:11", "ok": false, "stage": "preflight", "t": {"icons": 41.4, "preflight_1": 70.6, "total": 115.3}}
+{"day": 6, "at": "2026-10-30 17:51:18", "ok": false, "stage": "preflight", "t": {"icons": 40.4, "preflight_1": 74.8, "total": 118.5}}
+{"day": 6, "at": "2026-10-30 17:54:31", "ok": false, "stage": "preflight", "t": {"icons": 41.7, "preflight_1": 76.8, "total": 121.9}}
+{"day": 6, "at": "2026-10-30 17:58:03", "ok": false, "stage": "preflight", "t": {"icons": 45.1, "preflight_1": 80.0, "total": 128.6}}
+{"day": 6, "at": "2026-10-30 18:01:11", "ok": false, "stage": "preflight", "t": {"icons": 43.8, "preflight_1": 80.5, "total": 127.8}}
+{"day": 6, "at": "2026-10-30 18:04:19", "ok": false, "stage": "preflight", "t": {"icons": 41.3, "preflight_1": 82.0, "total": 126.3}}
+{"day": 6, "at": "2026-10-30 18:08:50", "ok": false, "stage": "preflight", "t": {"icons": 47.5, "preflight_1": 82.4, "total": 133.6}}
+{"day": 6, "at": "2026-10-30 18:12:07", "ok": false, "stage": "preflight", "t": {"icons": 46.5, "preflight_1": 86.0, "total": 136.7}}
+{"day": 6, "at": "2026-10-30 18:15:22", "ok": true, "stage": "preflight", "t": {"icons": 43.7, "preflight_1": 80.3, "total": 127.4}}
+{"day": 6, "at": "2026-10-30 18:18:20", "ok": true, "stage": "preflight", "t": {"icons": 42.6, "preflight_1": 77.9, "total": 123.9}}
+{"day": 6, "at": "2026-10-30 18:20:53", "ok": true, "stage": "preflight", "t": {"preflight_1": 78.0, "total": 81.3}}
+{"day": 6, "at": "2026-10-30 18:24:26", "ok": false, "t": {"preflight_1": 0.0, "composite_1": 72.0, "steps_rendered": [[1, 2]], "encode_1": 4.5, "qc_1": 124.7, "total": 204.5}}
+{"day": 7, "at": "2026-10-30 19:47:34", "ok": false, "stage": "preflight", "t": {"icons": 69.6, "tts": 10.2, "preflight_1": 98.0, "total": 183.9}}
+{"day": 7, "at": "2026-10-30 19:51:36", "ok": false, "stage": "preflight", "t": {"icons": 57.6, "preflight_1": 97.1, "total": 161.9}}
+{"day": 7, "at": "2026-10-30 19:55:48", "ok": false, "stage": "preflight", "t": {"icons": 56.0, "preflight_1": 97.8, "total": 161.4}}
+{"day": 7, "at": "2026-11-03 18:15:09", "ok": false, "stage": "preflight", "t": {"preflight_1": 131.7, "total": 135.3}}
+{"day": 7, "at": "2026-11-03 18:27:40", "ok": false, "stage": "preflight", "t": {"preflight_1": 135.4, "total": 144.8}}
+{"day": 7, "at": "2026-11-03 18:30:32", "ok": false, "stage": "preflight", "t": {"preflight_1": 155.4, "total": 159.0}}
+{"day": 7, "at": "2026-11-03 18:32:58", "ok": false, "stage": "preflight", "t": {"preflight_1": 129.7, "total": 133.1}}
+{"day": 7, "at": "2026-11-03 18:53:18", "ok": false, "stage": "preflight", "t": {"icons": 60.6, "preflight_1": 161.3, "total": 228.7}}
+{"day": 7, "at": "2026-11-03 18:58:40", "ok": false, "stage": "preflight", "t": {"icons": 54.6, "preflight_1": 179.0, "total": 237.7}}
+{"day": 7, "at": "2026-11-03 19:01:28", "ok": false, "stage": "preflight", "t": {"preflight_1": 153.6, "total": 157.6}}
+{"day": 7, "at": "2026-11-03 19:33:24", "ok": false, "stage": "preflight", "t": {"preflight_1": 148.0, "total": 152.1}}
+{"day": 7, "at": "2026-11-03 19:37:36", "ok": false, "stage": "preflight", "t": {"icons": 57.0, "preflight_1": 141.3, "total": 201.2}}
+{"day": 7, "at": "2026-11-03 19:40:23", "ok": false, "stage": "preflight", "t": {"preflight_1": 141.5, "total": 144.9}}
+{"day": 7, "at": "2026-11-03 19:56:55", "ok": false, "stage": "preflight", "t": {"icons": 63.1, "preflight_1": 156.6, "total": 223.3}}
+{"day": 7, "at": "2026-11-03 20:03:21", "ok": false, "stage": "preflight", "t": {"icons": 66.4, "preflight_1": 146.3, "total": 216.5}}
+{"day": 7, "at": "2026-11-03 20:07:14", "ok": false, "stage": "preflight", "t": {"preflight_1": 154.4, "total": 158.1}}
+{"day": 7, "at": "2026-11-03 20:20:32", "ok": false, "stage": "preflight", "t": {"icons": 58.8, "preflight_1": 151.9, "total": 215.1}}
+{"day": 7, "at": "2026-11-03 20:30:50", "ok": false, "stage": "preflight", "t": {"icons": 67.9, "preflight_1": 154.7, "total": 225.8}}
+{"day": 7, "at": "2026-11-03 20:37:53", "ok": false, "stage": "preflight", "t": {"icons": 68.0, "preflight_1": 160.5, "total": 232.0}}

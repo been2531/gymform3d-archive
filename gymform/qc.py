@@ -722,6 +722,13 @@ def flat_look_checks(meta, frames_meta, vids, qc_dir):
             continue
         f = fr.astype(np.float32)
         l = lum_of(f)
+        if cable_profile() and os.path.exists(pre + "_base.png"):
+            # t665u: (sh) judges LIGHTING -> measured on the graded base (as (f)), not on the day4_fibre output whose
+            # drawn fibre grooves inside the colour (act < 12 at the groove itself) read as "dark shaded side"
+            l_sh = lum_of(cv2.cvtColor(cv2.imread(pre + "_base.png"), cv2.COLOR_BGR2RGB).astype(np.float32))
+            gz_ = cv2.dilate((act_of(f) >= 12.0).astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
+        else:
+            l_sh, gz_ = l, None
         occ = (wfg > 0.02) | ((st if st is not None else 0) > 0.02) | ((eq if eq is not None else 0) > 0.02)
         occ = cv2.dilate(occ.astype(np.uint8), np.ones((25, 25), np.uint8)) > 0
         bgm = ~occ
@@ -754,9 +761,11 @@ def flat_look_checks(meta, frames_meta, vids, qc_dir):
             if s_c is not None:
                 skin &= ~nonbody(cv2.cvtColor(s_c, cv2.COLOR_BGR2RGB), fm["kp"])
         skin[:620] = False
+        if gz_ is not None:
+            skin &= ~gz_          # cable profile: the coloured fibre zone (and its drawn grooves) is (mf)'s domain
         if skin.sum() > 2000:
-            dark = float((l[skin] < 46.0).mean())
-            p5 = float(np.percentile(l[skin], 5))
+            dark = float((l_sh[skin] < 46.0).mean())
+            p5 = float(np.percentile(l_sh[skin], 5))
             s_rows.append(f"{key}: dark<46 {100 * dark:.1f}% p5 {p5:.0f}")
             if dark > 0.06 or p5 < 44.0:
                 s_bad.append(s_rows[-1])
