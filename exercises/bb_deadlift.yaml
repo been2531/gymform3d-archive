@@ -1,0 +1,46 @@
+# Stub — YMove free Barbell Deadlift. Do not render until 중현 님 asks.
+slug: bb_deadlift
+name: Barbell Deadlift
+module: deadlift
+props:
+  barbell: barbell_olympic
+source:
+  provider: YMove
+  page: https://ymove.app/free-exercise-videos
+  url: https://ymove.app/api/free/b59952ca-1551-4c07-835d-ab78bfe9953c
+  file: _scratch/motion_src/ymove_bb_deadlift.mp4
+  licence: "YMove free licence: commercial use incl. social media OK, no resale/redistribution of the videos; we use only the extracted pose"
+  min_bytes: 200000
+motion:
+  rep: auto
+  rep_index: 0
+  torso_target_deg: 45
+  torso_smooth_sigma_f: 4.0
+  smooth_sigma_f: 2.5
+  lock_feet: true
+  spine_influence: 0.5
+  spine_aim: far
+  neck_mode: spine_follow
+  gaze_ext_deg: 2
+  legs: source
+  grip_mode: palm_neutral
+  grip_wrap:
+    enabled: true
+    handle_r_m: 0.014
+    clear_m: 0.002
+    max_wrap_deg: 250
+    mcp_back_m: 0.015
+  wrist_neutral: true
+layout:
+  callout:
+    metric: torso_from_vertical
+    l1: BAR PATH
+    l2: HIPS & BACK
+  preview_pill: true
+tts:
+  line: "Push the floor away. Keep the bar close. Lock out tall without leaning back."
+  question_spoken: "Where do you feel it most?"
+caption:
+  title: "Deadlift: bar close, hips and shoulders rise together."
+  question: "Where do you feel your deadlifts most right now?"
+  save: "Save this for your next pull day."

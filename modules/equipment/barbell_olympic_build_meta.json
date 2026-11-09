@@ -1,0 +1,61 @@
+{
+  "name": "barbell_olympic",
+  "bar_len_m": 2.2,
+  "shaft_r_m": 0.014,
+  "plate_r_m": 0.225,
+  "plate_t_m": 0.045,
+  "n_plates_each": 2,
+  "handle_axis_local": [
+    1.0,
+    0.0,
+    0.0
+  ],
+  "grips": {
+    "left": {
+      "empty": "grip.L",
+      "local": [
+        -0.4,
+        0.0,
+        0.0
+      ]
+    },
+    "right": {
+      "empty": "grip.R",
+      "local": [
+        0.4,
+        0.0,
+        0.0
+      ]
+    },
+    "wide_left": {
+      "empty": "grip_wide.L",
+      "local": [
+        -0.55,
+        0.0,
+        0.0
+      ]
+    },
+    "wide_right": {
+      "empty": "grip_wide.R",
+      "local": [
+        0.55,
+        0.0,
+        0.0
+      ]
+    },
+    "center": {
+      "empty": "bar_center",
+      "local": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "materials": {
+    "plates": "paletteA_cobalt matte",
+    "ring": "paletteA thin brushed gold",
+    "bar": "brushed steel + procedural knurl bump"
+  },
+  "licence": "Procedural bpy primitives; palette A colours match docs/plate_palette_A_reference.jpg. No third-party mesh."
+}

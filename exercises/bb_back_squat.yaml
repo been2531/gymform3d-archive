@@ -1,0 +1,46 @@
+# Stub — YMove free Barbell Back Squat. Do not render until 중현 님 asks.
+slug: bb_back_squat
+name: Barbell Back Squat
+module: squat_back
+props:
+  barbell: barbell_olympic
+source:
+  provider: YMove
+  page: https://ymove.app/free-exercise-videos
+  url: https://ymove.app/api/free/fd0eaa34-d14b-4421-b41c-1669f93253b3
+  file: _scratch/motion_src/ymove_bb_back_squat.mp4
+  licence: "YMove free licence: commercial use incl. social media OK, no resale/redistribution of the videos; we use only the extracted pose"
+  min_bytes: 200000
+motion:
+  rep: auto
+  rep_index: 0
+  torso_target_deg: 25
+  torso_smooth_sigma_f: 4.0
+  smooth_sigma_f: 2.5
+  lock_feet: false
+  spine_influence: 0.4
+  spine_aim: far
+  neck_mode: spine_follow
+  gaze_ext_deg: 2
+  legs: source
+  grip_mode: palm_neutral
+  grip_wrap:
+    enabled: true
+    handle_r_m: 0.014
+    clear_m: 0.002
+    max_wrap_deg: 250
+    mcp_back_m: 0.015
+  wrist_neutral: true
+layout:
+  callout:
+    metric: knee_flexion
+    l1: KNEE TRACK
+    l2: QUADS & GLUTES
+  preview_pill: true
+tts:
+  line: "Sit the hips down. Knees track over the toes. Keep the chest tall under the bar."
+  question_spoken: "Where do you feel it most?"
+caption:
+  title: "Back squat: knees track, chest stays tall under the bar."
+  question: "Where do you feel your back squats most right now?"
+  save: "Save this for your next leg day."

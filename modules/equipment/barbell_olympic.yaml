@@ -1,0 +1,34 @@
+# Reusable Olympic barbell prop (procedural). Built by tools/rig3d/props/barbell_olympic.py
+# Render wiring into retarget_render_v2 is a later step (do not edit shared render here).
+name: barbell_olympic
+kind: barbell
+builder: tools/rig3d/props/barbell_olympic.py
+still: docs/mission/barbell_olympic_prop_still.png
+licence: "Procedural bpy primitives; palette A cobalt plates + thin brushed gold ring + brushed steel knurl. No third-party mesh. 0 generations."
+dimensions_m:
+  bar_len: 2.20
+  shaft_radius: 0.014
+  sleeve_radius: 0.025
+  sleeve_len: 0.40
+  plate_radius: 0.225
+  plate_thickness: 0.045
+materials:
+  plates: {rgb: [0.02, 0.05, 0.45], finish: matte_cobalt}
+  gold_ring: {rgb: [0.72, 0.55, 0.18], finish: brushed_metal}
+  bar: {rgb: [0.55, 0.55, 0.58], finish: brushed_steel_knurl_bump}
+# Two-hand grip attachment points (object local; +X = bar long axis).
+# Any barbell exercise parents left/right hands (or constraints) to these empties.
+grips:
+  default:
+    left:  {empty: grip.L, local: [-0.40, 0.0, 0.0]}
+    right: {empty: grip.R, local: [ 0.40, 0.0, 0.0]}
+  wide:   # bench / wider press
+    left:  {empty: grip_wide.L, local: [-0.55, 0.0, 0.0]}
+    right: {empty: grip_wide.R, local: [ 0.55, 0.0, 0.0]}
+  center: {empty: bar_center, local: [0.0, 0.0, 0.0]}
+handle_axis_local: [1.0, 0.0, 0.0]
+grip_wrap_hint:
+  handle_r_m: 0.014
+  clear_m: 0.002
+  max_wrap_deg: 250
+used_by: [bb_back_squat, bb_deadlift, bb_bench_press]

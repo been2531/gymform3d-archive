@@ -1,7 +1,8 @@
 # rig3d motion playlist (after db_row). GlobeFlip-style reusable queue.
-# status: ready | ready_proxy | blocked_needs_motion | done
+# status: ready | ready_proxy | blocked_needs_motion | done | dropped
 # pipeline: nice -n 19 python3 tools/rig3d/pipeline.py --next
 # Never commits third-party clips; source.file stays under _scratch/ (gitignored).
+# Barbell items use modules/equipment/barbell_olympic.yaml (prop still built; render wiring later).
 
 after: db_row
 items:
@@ -14,7 +15,7 @@ items:
     ymove_url: https://ymove.app/api/free/a2a797d0-f6f6-436e-8616-6c1d93e73d67
     target_muscles: [quads, glutes]
     fault: knee_cave_chest_drop
-    note: "Best next: free dumbbell clip on YMove."
+    note: "Best next DB: free dumbbell clip on YMove."
 
   - slug: hammer_curl
     module: curl
@@ -36,27 +37,52 @@ items:
     ymove_url: https://ymove.app/api/free/3880aaa4-e1c0-4153-95d0-da44ea01e099
     target_muscles: [front_delt, side_delt, triceps]
     fault: lumbar_arch_elbow_flare
-    note: "No pure DB OHP on YMove free. Proxy = KB push press pose; prop may stay KB or be swapped to DB after retarget. Dip/drive knees need press_overhead QC allowance."
+    note: "No pure DB OHP on YMove free. Proxy = KB push press pose."
 
-  - slug: db_lunge
-    module: lunge
-    name: Dumbbell Lunge
-    status: blocked_needs_motion
-    motion_status: blocked_needs_motion
+  - slug: bb_back_squat
+    module: squat_back
+    name: Barbell Back Squat
+    status: ready
+    motion_status: ymove_free
+    source_title: Barbell Back Squat
+    ymove_url: https://ymove.app/api/free/fd0eaa34-d14b-4421-b41c-1669f93253b3
+    prop: barbell_olympic
     target_muscles: [quads, glutes]
-    fault: front_knee_cave_torso_lean
-    note: "Not in YMove 25 free. Needs owner side-view phone clip (or Mixamo/OpenGym3D with approval)."
+    fault: knee_cave_chest_drop
+    note: "YMove free #1. Prop module ready; render wiring pending quality-upgrade worker."
 
-  - slug: push_up
-    module: push_up
-    name: Push-Up
-    status: blocked_needs_motion
-    motion_status: blocked_needs_motion
+  - slug: bb_deadlift
+    module: deadlift
+    name: Barbell Deadlift
+    status: ready
+    motion_status: ymove_free
+    source_title: Barbell Deadlift
+    ymove_url: https://ymove.app/api/free/b59952ca-1551-4c07-835d-ab78bfe9953c
+    prop: barbell_olympic
+    target_muscles: [hamstrings, glutes, erectors]
+    fault: spine_round_hips_shoot
+    note: "YMove free #3 conventional DL (not RDL)."
+
+  - slug: bb_bench_press
+    module: press_bench
+    name: Barbell Bench Press
+    status: ready
+    motion_status: ymove_free
+    source_title: Barbell Bench Press
+    ymove_url: https://ymove.app/api/free/dd7e706c-2086-4f4b-867f-d7fece2f720d
+    prop: [barbell_olympic, bench_flat]
     target_muscles: [pecs, triceps, front_delt]
-    fault: hip_sag_elbow_flare
-    note: "Not in YMove 25 free. Needs owner phone clip (bodyweight; Mixamo has a push-up but needs Adobe login)."
+    fault: elbow_flare_leg_drive_lose
+    note: "YMove free #2. Needs bench_flat + supine retarget before first render."
 
-# Free YMove backups (not in the next-5, available if we swap):
+# Dropped from queue (중현 님 will not film; no free YMove motion)
+dropped:
+  - slug: db_lunge
+    reason: "Not in YMove 25 free; owner will not film."
+  - slug: push_up
+    reason: "Not in YMove 25 free; owner will not film. Mixamo push-up needs Adobe login — not used."
+
+# Free YMove backups / blocked barbell candidates
 backups:
   - slug: db_lateral_raise
     module: raise_lateral
@@ -65,4 +91,24 @@ backups:
   - slug: kb_rdl
     module: hinge
     ymove_url: https://ymove.app/api/free/e7175536-9d7d-4f5d-8d49-26c3411eac80
-    note: "Free KB RDL; Day 4 RDL already published in legacy pipeline."
+    note: "Free KB RDL only. Barbell RDL has no YMove free clip — see blocked."
+  - slug: bb_rdl
+    status: blocked_needs_motion
+    motion_status: blocked_needs_motion
+    note: "No barbell RDL in YMove 25 free. Proxy option = KB RDL + barbell prop swap (needs approval)."
+  - slug: bb_bent_over_row
+    status: blocked_needs_motion
+    motion_status: blocked_needs_motion
+    note: "No free YMove barbell row. Scratch ymove_bb_row was market clip — do NOT use. OpenGym3D $19 needs approval."
+  - slug: bb_overhead_press
+    status: blocked_needs_motion
+    motion_status: blocked_needs_motion
+    note: "No barbell OHP in YMove free. KB push press exists as proxy only."
+  - slug: bb_curl
+    status: blocked_needs_motion
+    motion_status: blocked_needs_motion
+    note: "No barbell curl in YMove free (hammer curls / cable curl only)."
+  - slug: hip_thrust
+    status: blocked_needs_motion
+    motion_status: blocked_needs_motion
+    note: "No hip thrust in YMove 25 free."

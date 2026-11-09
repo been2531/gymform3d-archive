@@ -1,0 +1,24 @@
+# Primitive: barbell flat bench press.
+primitive: press_bench
+_doc: "Supine on flat bench; bar to lower chest; elbows ~45–60° from torso."
+fault:
+  id: elbow_flare_leg_drive_lose
+  wrong: "Elbows flare to 90° / bar drifts to neck — shoulder risk."
+  right: "Bar path to lower chest; elbows tucked; pecs + triceps load."
+prop:
+  barbell: barbell_olympic
+  grip: wide
+  bench: bench_flat
+motion_hint:
+  torso_target_deg: 90
+  legs: planted
+  lock_hips: true
+  grip_mode: palm_neutral
+  wrist_neutral: true
+grade:
+  target_muscles: [pecs, triceps, front_delt]
+qc:
+  torso_band_deg: [80, 100]
+  torso_tol_deg: 8
+  elbow_rom_min_deg: 60
+risks: ["needs bench prop + supine retarget (not yet in render)", "wide grip empties"]
