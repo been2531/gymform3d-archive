@@ -1,0 +1,24 @@
+# Primitive: standing dumbbell curl / hammer curl.
+primitive: curl
+_doc: "Upper arm pinned to torso; elbow flexes through full ROM; no torso swing."
+fault:
+  id: torso_swing_elbow_drift
+  wrong: "Torso swings / elbows drift forward — front delt + momentum."
+  right: "Upper arms still; full elbow curl; biceps (or brachialis on hammer) load."
+motion_hint:
+  torso_target_deg: 0
+  legs: planted
+  knee_target_deg: 175
+  lock_feet: true
+  lock_hips: true
+  grip_mode: palm_neutral
+grade:
+  target_muscles: [biceps, brachialis]
+qc:
+  torso_band_deg: [0, 12]
+  torso_tol_deg: 5
+  elbow_rom_min_deg: 80
+  posture:
+    knee_range_deg: [165, 178]
+    knee_steady_max_deg: 4
+risks: ["MediaPipe may miss wrist supination; hammer curl is safer free source"]

@@ -1,0 +1,19 @@
+# Primitive: standing dumbbell lateral raise.
+primitive: raise_lateral
+_doc: "Scapular-plane raise to ~shoulder height; no shrug."
+fault:
+  id: trap_shrug_high_flare
+  wrong: "Shrugging traps / raising past shoulder — impingement risk."
+  right: "Depress scapula; lead with elbows in scapular plane; side delts."
+motion_hint:
+  torso_target_deg: 0
+  legs: planted
+  lock_hips: true
+  grip_mode: palm_neutral
+grade:
+  target_muscles: [side_delt]
+qc:
+  torso_band_deg: [0, 12]
+  torso_tol_deg: 5
+  elbow_rom_min_deg: 0
+risks: ["already published as Day 5 (legacy 4-step); useful as first rig3d raise"]

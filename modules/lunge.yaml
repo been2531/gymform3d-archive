@@ -1,0 +1,22 @@
+# Primitive: reverse / walking dumbbell lunge.
+primitive: lunge
+_doc: "Split stance; front knee tracks toes; torso tall; rear knee drops."
+fault:
+  id: front_knee_cave_torso_lean
+  wrong: "Front knee caves / torso leans — knee shear, balance fail."
+  right: "Front knee over mid-foot; torso tall; quads + glutes."
+motion_hint:
+  torso_target_deg: 10
+  legs: source
+  lock_feet: false
+  lock_hips: false
+grade:
+  target_muscles: [quads, glutes]
+qc:
+  torso_band_deg: [0, 25]
+  torso_tol_deg: 8
+  posture:
+    knee_range_deg: [70, 178]
+    knee_lr_diff_max_deg: 90
+    thigh_split_max_deg: 90
+risks: ["NO free YMove clip — needs owner phone clip or paid/Mixamo source"]

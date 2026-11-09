@@ -1,0 +1,24 @@
+# Primitive: goblet squat (front-loaded squat pattern).
+primitive: squat_goblet
+_doc: "Upright torso, knees track toes, dumbbell held at chest (goblet)."
+fault:
+  id: knee_cave_chest_drop
+  wrong: "Knees cave in / chest drops — joint risk, quads unload."
+  right: "Knees track over toes; torso stays tall; load in quads + glutes."
+motion_hint:
+  torso_target_deg: 15
+  legs: source
+  lock_feet: false
+  grip_mode: palm_neutral
+  lock_hips: false
+grade:
+  target_muscles: [quads, glutes]
+qc:
+  torso_band_deg: [0, 35]
+  torso_tol_deg: 8
+  elbow_rom_min_deg: 0
+  posture:
+    knee_range_deg: [60, 178]
+    knee_steady_max_deg: 80
+    neck_flex_range_deg: [-15, 20]
+risks: ["deep knee flexion needs source clip with clear side/front view", "goblet grip both hands on one handle"]

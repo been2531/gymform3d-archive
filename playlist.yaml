@@ -1,0 +1,68 @@
+# rig3d motion playlist (after db_row). GlobeFlip-style reusable queue.
+# status: ready | ready_proxy | blocked_needs_motion | done
+# pipeline: nice -n 19 python3 tools/rig3d/pipeline.py --next
+# Never commits third-party clips; source.file stays under _scratch/ (gitignored).
+
+after: db_row
+items:
+  - slug: db_goblet_squat
+    module: squat_goblet
+    name: Dumbbell Goblet Squat
+    status: ready
+    motion_status: ymove_free
+    source_title: Dumbbell Goblet Squat
+    ymove_url: https://ymove.app/api/free/a2a797d0-f6f6-436e-8616-6c1d93e73d67
+    target_muscles: [quads, glutes]
+    fault: knee_cave_chest_drop
+    note: "Best next: free dumbbell clip on YMove."
+
+  - slug: hammer_curl
+    module: curl
+    name: Hammer Curls
+    status: ready
+    motion_status: ymove_free
+    source_title: Hammer Curls
+    ymove_url: https://ymove.app/api/free/b11e6c6f-b2e8-44ca-95dc-adf0dcd34426
+    target_muscles: [biceps, brachialis]
+    fault: torso_swing_elbow_drift
+    note: "Free DB hammer curl; use as curl primitive (no plain DB curl on YMove free)."
+
+  - slug: db_shoulder_press
+    module: press_overhead
+    name: Dumbbell Shoulder Press
+    status: ready_proxy
+    motion_status: ymove_proxy_kb_push_press
+    source_title: Kettlebell Push Press
+    ymove_url: https://ymove.app/api/free/3880aaa4-e1c0-4153-95d0-da44ea01e099
+    target_muscles: [front_delt, side_delt, triceps]
+    fault: lumbar_arch_elbow_flare
+    note: "No pure DB OHP on YMove free. Proxy = KB push press pose; prop may stay KB or be swapped to DB after retarget. Dip/drive knees need press_overhead QC allowance."
+
+  - slug: db_lunge
+    module: lunge
+    name: Dumbbell Lunge
+    status: blocked_needs_motion
+    motion_status: blocked_needs_motion
+    target_muscles: [quads, glutes]
+    fault: front_knee_cave_torso_lean
+    note: "Not in YMove 25 free. Needs owner side-view phone clip (or Mixamo/OpenGym3D with approval)."
+
+  - slug: push_up
+    module: push_up
+    name: Push-Up
+    status: blocked_needs_motion
+    motion_status: blocked_needs_motion
+    target_muscles: [pecs, triceps, front_delt]
+    fault: hip_sag_elbow_flare
+    note: "Not in YMove 25 free. Needs owner phone clip (bodyweight; Mixamo has a push-up but needs Adobe login)."
+
+# Free YMove backups (not in the next-5, available if we swap):
+backups:
+  - slug: db_lateral_raise
+    module: raise_lateral
+    ymove_url: https://ymove.app/api/free/a16f0235-20eb-4306-b9cc-c01ae51b3b9b
+    note: "Free; already published as Day 5 legacy reel."
+  - slug: kb_rdl
+    module: hinge
+    ymove_url: https://ymove.app/api/free/e7175536-9d7d-4f5d-8d49-26c3411eac80
+    note: "Free KB RDL; Day 4 RDL already published in legacy pipeline."

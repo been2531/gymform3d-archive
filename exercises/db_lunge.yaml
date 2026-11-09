@@ -1,0 +1,39 @@
+# Stub — BLOCKED: no free YMove motion. Do not fetch/render until a free clip exists.
+slug: db_lunge
+name: Dumbbell Lunge
+module: lunge
+motion_status: blocked_needs_motion
+source:
+  provider: none
+  page: ""
+  url: ""
+  file: _scratch/motion_src/OWNER_PHONE_db_lunge.mp4
+  licence: "Needs owner-filmed side-view clip (free). Mixamo/OpenGym3D only with explicit approval."
+  min_bytes: 200000
+motion:
+  rep: auto
+  rep_index: 0
+  torso_target_deg: 10
+  smooth_sigma_f: 2.5
+  lock_feet: false
+  legs: source
+  grip_mode: palm_neutral
+  grip_wrap:
+    enabled: true
+    handle_r_m: 0.016
+    clear_m: 0.002
+    max_wrap_deg: 250
+    mcp_back_m: 0.015
+layout:
+  callout:
+    metric: knee_flexion
+    l1: FRONT KNEE
+    l2: QUADS & GLUTES
+  preview_pill: true
+tts:
+  line: "Step back. Front knee tracks over the mid-foot. Keep the chest tall."
+  question_spoken: "Where do you feel it most?"
+caption:
+  title: "Dumbbell lunge: front knee tracks, torso stays tall."
+  question: "Where do you feel your lunges most right now?"
+  save: "Save this for your next leg day."

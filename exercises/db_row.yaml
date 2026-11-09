@@ -1,5 +1,6 @@
 # Exercise config for tools/rig3d/pipeline.py (0 generations). Edit here; every stage re-runs only if its inputs change.
 slug: db_row
+module: pull_row          # motion primitive (modules/pull_row.yaml); this file still wins on conflict
 name: Dumbbell Row            # on-screen title (Day 4 Kaushan title)
 source:
   provider: YMove

@@ -1,0 +1,50 @@
+# Stub — ready_proxy: YMove Kettlebell Push Press as overhead-press motion.
+# Prop may remain kettlebell or be swapped to dumbbell after retarget; no pure DB OHP on YMove free.
+slug: db_shoulder_press
+name: Dumbbell Shoulder Press
+module: press_overhead
+source:
+  provider: YMove
+  page: https://ymove.app/free-exercise-videos
+  url: https://ymove.app/api/free/3880aaa4-e1c0-4153-95d0-da44ea01e099
+  file: _scratch/motion_src/ymove_kb_push_press.mp4
+  licence: "YMove free licence: commercial use incl. social media OK, no resale/redistribution of the videos; we use only the extracted pose"
+  min_bytes: 200000
+  note: "Proxy motion (kettlebell push press). Confirm prop handling before first render."
+motion:
+  rep: auto
+  rep_index: 0
+  torso_target_deg: 0
+  torso_smooth_sigma_f: 4.0
+  smooth_sigma_f: 2.5
+  lock_feet: true
+  spine_influence: 0.3
+  spine_aim: far
+  neck_mode: spine_follow
+  gaze_ext_deg: 0
+  legs: planted
+  knee_target_deg: 165
+  balance_knees: true
+  grip_mode: palm_neutral
+  grip_wrap:
+    enabled: true
+    handle_r_m: 0.016
+    clear_m: 0.002
+    max_wrap_deg: 250
+    mcp_back_m: 0.015
+  wrist_neutral: true
+  lock_hips: true
+  stance_width_m: 0.30
+layout:
+  callout:
+    metric: arm_torso
+    l1: PRESS PATH
+    l2: DELTS & TRICEPS
+  preview_pill: true
+tts:
+  line: "Ribs down. Press the load to the ears without arching the low back."
+  question_spoken: "Where do you feel it most?"
+caption:
+  title: "Overhead press: ribs down, finish by the ears."
+  question: "Where do you feel your shoulder presses most right now?"
+  save: "Save this for your next shoulder day."

@@ -1,0 +1,21 @@
+# Primitive: bodyweight push-up (no cable/machine).
+primitive: push_up
+_doc: "Plank line; elbows tuck ~45°; chest to floor depth."
+fault:
+  id: hip_sag_elbow_flare
+  wrong: "Hips sag / elbows flare 90° — lumbar + shoulder strain."
+  right: "Body line locked; elbows tuck; pecs + triceps."
+motion_hint:
+  torso_target_deg: 90
+  legs: source
+  lock_feet: true
+  lock_hips: false
+grade:
+  target_muscles: [pecs, triceps, front_delt]
+qc:
+  torso_band_deg: [70, 100]
+  torso_tol_deg: 10
+  elbow_rom_min_deg: 70
+  posture:
+    toe_lift_max_m: 0.05
+risks: ["NO free YMove clip — needs owner phone clip; floor contact + COM checks harder"]

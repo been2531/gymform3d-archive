@@ -1,0 +1,22 @@
+# Primitive: hip hinge (RDL / KB RDL).
+primitive: hinge
+_doc: "Soft knees; hips push back; spine neutral; hamstrings load."
+fault:
+  id: spine_round
+  wrong: "Lumbar rounds — disc risk."
+  right: "Hip hinge lock; neutral spine; hamstrings + glutes."
+motion_hint:
+  torso_target_deg: 55
+  legs: planted
+  knee_target_deg: 160
+  lock_hips: false
+  spine_aim: far
+  neck_mode: spine_follow
+grade:
+  target_muscles: [hamstrings, glutes]
+qc:
+  torso_band_deg: [35, 80]
+  torso_tol_deg: 8
+  posture:
+    knee_range_deg: [140, 175]
+risks: ["Day 4 RDL already published in legacy pipeline; KB RDL is free on YMove"]
