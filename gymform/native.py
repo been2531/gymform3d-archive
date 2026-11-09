@@ -215,6 +215,21 @@ def prepare(step, seq, kps, y_sh):
             if wj in kq:
                 cv2.circle(skel, tuple(int(c) for c in kq[wj]), 75, 0, -1)
         sk = (L1 > B0 + 10.0) & (a < 12.0) & (skel > 0)
+        if CFG.get("qc_profile") == "cable_machine":
+            # t665u: the lock population = the QC (f) skin set: keypoint body capsule (no shins / feet on the footplate),
+            # the machine (chrome handle, light frame, stack) never skin
+            from gymform.qc import machine_colour as _mc, body_capsule as _bcap
+            # source glow pixels INCLUDED: the base (what (f) measures) is graded from their luminance too, so a wide
+            # green glow left out of the lock read 83/114 on the base
+            sk = (L1 > B0 + 10.0) & _bcap(kq, (H, W)) & ~_mc(f)
+            gi = CFG.get("native_lock_glow_in_population", True)
+            gi = gi.get(str(step), True) if isinstance(gi, dict) else gi
+            if gi is False or gi == 0:   # a narrow source glow (D7 wrong) stays out of the lock, as Day 4 (a >= 12 skipped)
+                sk &= a < 12.0
+            elif gi is not True and float(gi) < 1.0:   # fraction of the glow pixels kept (deterministic stride)
+                st_ = max(1, int(round(1.0 / float(gi))))
+                keep = np.zeros_like(sk); keep.reshape(-1)[::st_] = True
+                sk &= (a < 12.0) | keep
         sk[:620] = False
         vals.append(L1[sk][::7]); actv.append(a[(a > 15.0)][::5])
     v = np.concatenate(vals)

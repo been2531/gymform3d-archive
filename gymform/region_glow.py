@@ -112,6 +112,13 @@ def act_field(kp, is_wrong, w_fg):
     for name, k in tg.items():
         a = np.maximum(a, float(k) * ms[name])
     a = cv2.GaussianBlur(a, (0, 0), float(CFG.get("region_feather_px", 9.0)))
+    cp = int(CFG.get("region_act_close_px", 0) or 0)
+    if cp > 0:
+        # t665u (opt-in): the lum matte w_fg drops in the dark fibre grooves of a charcoal mannequin, which split the
+        # synthesised colour into 30-50 specks ((mf) regions). A morphological CLOSE fills gaps narrower than cp px
+        # inside the silhouette only (never grows past the outer contour by more than the closing itself).
+        k_ = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (cp, cp))
+        w_fg = np.maximum(w_fg, cv2.morphologyEx(w_fg.astype(np.float32), cv2.MORPH_CLOSE, k_))
     return ACT_CORE * a * w_fg, ms
 
 
@@ -149,6 +156,12 @@ def apply(base_rgb, src_rgb, w_fg, shorts, kp, is_wrong, pulse_phase=0.75):
         k_in = CFG.get("day4_input_scale", 1.0)
         k_in = float(k_in.get(str(CFG.get("_cur_step")), 1.0)) if isinstance(k_in, dict) else float(k_in)
         F = mask.features(np.clip(s * k_in, 0, 255))
+        cg = int(CFG.get("muscle_glow_act_close_px", 0) or 0)
+        if cg > 0:
+            # t665u (opt-in): a source glow painted as thin fibre STROKES (D7 right) splits the Day 4 colour into 20-30
+            # specks ((mf) regions); a morphological close of act_dom joins strokes < cg px apart (never past the clamp)
+            k_ = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (cg, cg))
+            F["act_dom"] = np.maximum(F["act_dom"], cv2.morphologyEx(F["act_dom"].astype(np.float32), cv2.MORPH_CLOSE, k_))
         if CFG.get("muscle_glow_clamp"):
             cm, ms = clamp_mask(kp, is_wrong, w_fg.shape)
             F["act_dom"] = F["act_dom"] * cm      # -> w_act and core_seed (hence core_w) are zero outside the regions

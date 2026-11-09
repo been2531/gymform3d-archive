@@ -1,6 +1,21 @@
 # Day 7: Seated Cable Row, muscle-only 2-step, palette A at the source
 
-## v2 start frames (current)
+## v3 start frames (t612/t613: fix the source-side preflight fails; clips by Grok Bot GenerateVideo, not grok.com)
+
+- **Frames:** `day7_v3_{wrong,right}_start.png` (1080) and `*_720.png`. Each is a GenerateImage edit of the v2 frame, so the pose, camera and machine are the same as v2. The Day 4 step-2 peak frame was used as the glow/striation reference. Wrong took 3 tries; try 1 is kept, because try 2 removed the cobalt plate and try 3 removed the glow. Right took 3 tries; try 3 is kept.
+- **Grade:** `tools/startframe_grade.py <raw> <out> 38.3 67 35,39,43 80`. Gates → `start_frame_gates_v3.jsonl`.
+- **Known limits:**
+  - Wrong: the red also tints the pecs and front delts faintly, and the traps read weaker than the biceps.
+  - Right: the green also covers the side delts, and there is a soft green glow halo on the upper-arm edge.
+  - The machine did not become visibly lighter in the edits; the footplate stays dark.
+
+### WRONG v3 (image-to-video, start frame `day7_v3_wrong_start_720.png`)
+Seated low cable row, done wrong with the arms and a shrug. Start from the stretch exactly as in the frame: arms straight forward, both hands together on the one single V-handle at knee height. Pull the handle straight back along the cable line to the belly, mostly by bending the elbows, with both shoulders shrugging up toward the ears; the elbows stop beside the torso. Then let it travel straight forward again to full arm extension. 1.5 reps in about 5 seconds, smooth and even. The handle moves only forward and back along the straight cable line at belly height or lower; the hands stay together on the single handle; the arms never rise above the shoulders and never spread sideways; no overhead movement. Feet stay on the footplate, seat and machine stay identical. The large bright red glow stays exactly where and as large as in the start frame, covering the whole biceps and the whole upper traps, with the muscle fibres visible. Locked static camera, no zoom, no pan. Flat, even, shadowless lighting; same matte charcoal-grey skin, flat dark charcoal backdrop, light warm-grey machine, cobalt gold-rim plate, matte-black shorts. No text, no logo.
+
+### RIGHT v3 (image-to-video, start frame `day7_v3_right_start_720.png`)
+Seated low cable row, done right with the back. Start from the stretch exactly as in the frame: arms straight forward, both hands together on the one single V-handle at knee height, chest up, shoulders down. Row the handle straight back along the cable line to the lower ribs by driving both elbows back close to the sides and past the torso, squeezing the shoulder blades together; the torso stays upright and still, shoulders stay down. Then let it travel straight forward again to full arm extension. 1.5 reps in about 5 seconds, smooth and even. The handle moves only forward and back along the straight cable line at lower-rib height or lower; the hands stay together on the single handle; the arms never rise above the shoulders and never spread sideways; no overhead movement. Feet stay on the footplate, seat and machine stay identical. The large bright emerald-green glow stays exactly where and as large as in the start frame, covering the whole lats on both sides and the rear delts, with the muscle fibres visible, never on the chest, abs or arms. Locked static camera, no zoom, no pan. Flat, even, shadowless lighting; same matte charcoal-grey skin, flat dark charcoal backdrop, light warm-grey machine, cobalt gold-rim plate, matte-black shorts. No text, no logo.
+
+## v2 start frames
 
 **Why v1 failed** (clips kept as `output/assets/day7_{wrong,right}_raw_v1.mp4`):
 - Wrong turned into an overhead pulldown and an arm spread. Right turned into a chest-fly spread with green over the whole torso. Both split the V-handle in two.

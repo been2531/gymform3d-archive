@@ -15,7 +15,7 @@
     {
       "type": "cable_handle",
       "anchor": "wr_r",
-      "radius": 200
+      "radius": 300
     },
     {
       "type": "cable_stack",
@@ -87,35 +87,35 @@
   },
   "motions": {
     "wrong": {
-      "base": "day7_wrong_raw_v3.mp4",
+      "base": "day7_wrong_raw_v3_relit.avi",
       "i0": 0,
       "i1": 57,
       "y_shift": 80,
       "why": "t660u v3 (Grok Bot GenerateVideo, 720p 5 s, first=last = pin_wrong_head_t1). f0 start (pinned) -> f57 peak (2.38 s, elbow flexion 92 deg, max of the clip). Gates G1-G6/G8-G10 pass, G7 view spread 0.051 (pins differ by 0.055).",
       "renders": {
         "front": {
-          "file": "day7_wrong_raw_v3.mp4",
+          "file": "day7_wrong_raw_v3_relit.avi",
           "camera": "front",
           "camera_note": "side camera along the fixed machine (D7_MACHINE_CONCEPT), whole-frame mirror so the tower is on the right",
           "mirror": true
         }
       },
       "callout": {
-        "deg": "78°",
+        "deg": "89°",
         "l1": "ARMS + SHRUG",
         "l2": "BICEPS + TRAPS TAKE IT"
       },
       "mirror": true
     },
     "right": {
-      "base": "day7_right_raw_v3.mp4",
+      "base": "day7_right_raw_v3_relit.avi",
       "i0": 0,
       "i1": 36,
       "y_shift": 80,
       "why": "t660u v3 (Grok Bot GenerateVideo, 720p 5 s, first=last = pin_right_fibre_head_t2). f0 start -> f36 peak (1.50 s, elbow flexion 80.5 deg, elbows back). Gates as wrong.",
       "renders": {
         "front": {
-          "file": "day7_right_raw_v3.mp4",
+          "file": "day7_right_raw_v3_relit.avi",
           "camera": "front",
           "camera_note": "side camera along the fixed machine (D7_MACHINE_CONCEPT), whole-frame mirror so the tower is on the right",
           "mirror": true
@@ -144,7 +144,7 @@
   "muscle_shader": "day4",
   "out_caption": "output/day7_seated_cable_row_muscle2_master_caption.txt",
   "source_clips_note": "t660u v3: output/assets/day7_{wrong,right}_raw_v3.mp4 from pinned stills output/_consistency/d7m/pin_*_720x1280.png (already cropped to the final framing; frame_override 1:1).",
-  "static_body_lum": 20,
+  "static_body_lum": 24,
   "metal_lum_max": 42.0,
   "flat_look": false,
   "studio_bg": "output/assets/studio_flat_day4_1080p.png",
@@ -164,8 +164,8 @@
   ],
   "native_sep_dx": 8.0,
   "native_sep_dy": 10.0,
-  "native_dark_floor": 18.0,
-  "defect_playbook_sha": "bf89cb12",
+  "native_dark_floor": 22.0,
+  "defect_playbook_sha": "38de211b",
   "native_keep_chroma": 1.0,
   "native_glow_hue_strict": true,
   "native_keep_chroma_sat": 4.0,
@@ -174,7 +174,7 @@
   "native_bench_map": true,
   "native_wfg_colour": true,
   "native_anchor_smooth": 2.0,
-  "callout_note": "deg = ELBOW FLEXION (180 - shoulder-elbow-wrist) of the visible arm, MEASURED by layout.measure_angle from the pipeline keypoints at the last frame of each slice (t652u: no faked numbers): wrong 78, right 75. Inside the seated_cable_row band; the difference (shrug vs elbows past the torso) is carried by the labels. (was a fixed 105.)",
+  "callout_note": "deg = ELBOW FLEXION (180 - shoulder-elbow-wrist) of the visible arm, MEASURED by layout.measure_angle from the pipeline keypoints at the last frame of each slice (t652u: no faked numbers): wrong 89 (relit + reframed v3, t667u; 78 before the relight), right 75. Inside the seated_cable_row band; the difference (shrug vs elbows past the torso) is carried by the labels. (was a fixed 105.)",
   "native_skin_p90_why": "Day 4 lock p90 (spec skin_lock_all_steps 88); 84 (Day 6 v5) left Day 7 p90 at 79-83 under the (f) band 81-95",
   "native_glow_form_hue": true,
   "target_regions": {
@@ -202,7 +202,7 @@
   },
   "frame_override": {
     "scale": 1.0,
-    "dx": 10,
+    "dx": 14,
     "dy": 0
   },
   "callout_text_y": 560,
@@ -220,5 +220,26 @@
   "qc_profile": "cable_machine",
   "muscle_glow_clamp_chroma": "body",
   "muscle_glow_wfg_from_glow": true,
-  "native_deglow_base": false
+  "native_deglow_base": false,
+  "native_dark_floor_why": "t665u: relit D7 shorts read median 23-24 (Day 4 band 24-40) at floor 18",
+  "mannequin_relight": {
+    "module": "gymform.mannequin_relight",
+    "empty_plate": "output/_consistency/d7m/pin_empty_machine_720x1280.png",
+    "opts": {
+      "T": 82,
+      "k": 0.2,
+      "floor": 70,
+      "diff_thr": 5
+    },
+    "why": "t667u: code relight of every v3 frame (0 generations): flat frontal matte charcoal, head = body tone, machine pixels byte-identical",
+    "reframe_scale": 0.97,
+    "reframe_why": "relit back reaches x 2-10 (oc margin 24) while the swept machine reaches 1041: whole-frame zoom-out 0.97 (replicated pure-backdrop edge) + dx 14"
+  },
+  "muscle_glow_act_close_px": 15,
+  "native_lock_glow_in_population": {
+    "1": false,
+    "2": 0.5
+  },
+  "native_lock_glow_in_population_why": "t665u: (f) measures the graded base incl. glow-covered skin; the wide right-step glow must be in the lock population (else 83/114), the narrow wrong-step glow not (else 69/77)",
+  "static_body_lum_why": "t665u: native_dark_floor 18->22 lifts the darkest bench pixels by ~4; the skin/bench split follows (20->24)"
 }

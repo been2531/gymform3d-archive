@@ -1,0 +1,225 @@
+{
+  "day": 7,
+  "exercise_name": "Seated Cable Row",
+  "assets_dir": "output/_consistency/d7m/relight",
+  "kp_cache": "output/_consistency/d7m/relight/_kps_still_gate.pkl",
+  "step_scale": {
+    "1": 0.95,
+    "2": 0.95
+  },
+  "step_dy": {
+    "1": 0,
+    "2": 0
+  },
+  "equipment": [
+    {
+      "type": "cable_handle",
+      "anchor": "wr_r",
+      "radius": 300
+    },
+    {
+      "type": "cable_stack",
+      "static": true,
+      "desc": "seated cable row machine: warm-grey frame/seat, palette A cobalt weight stack (native 3D in clip)"
+    }
+  ],
+  "bone_steps": [],
+  "muscle_steps": [
+    1,
+    2
+  ],
+  "target_muscles": {
+    "1": "biceps + upper trapezius (arm pull + shrug, red)",
+    "2": "latissimus dorsi + rear delts (green)"
+  },
+  "tts_lines": [
+    [
+      0.2,
+      "Seated cable row. Shrug and yank with your arms, and your biceps and traps take the load."
+    ],
+    [
+      5.2,
+      "Chest up, shoulders down, drive the elbows back, and your lats do the work."
+    ]
+  ],
+  "caption": {
+    "title": "Your seated row is all biceps and traps, not back.",
+    "question": "Where do you feel your cable rows most, arms or lats?",
+    "save": "Save this for your next back day."
+  },
+  "sheet_title": "Day 7 Seated Cable Row — native grade (clip pixels kept)",
+  "sheet_labels": [
+    "Step 1: wrong · arm pull + shrug · biceps / upper trap fibres",
+    "Step 2: right · elbows back, shoulders down · lat fibres"
+  ],
+  "out_mp4": "output/_consistency/d7m/relight/gate_day7_seated_cable_row_muscle2_master.mp4",
+  "out_sheet": "output/_consistency/d7m/relight/gate_day7_muscle2_sheet.jpg",
+  "out_cover": "output/_consistency/d7m/relight/gate_day7_seated_cable_row_muscle2_master_cover.jpg",
+  "qc_dir": "output/qc/d7_still_gate",
+  "xray_full_steps": [],
+  "question_spoken": "Where do you feel it most?",
+  "source": {
+    "type": "native_3d_clip",
+    "generator": "grok_imagine_i2v",
+    "native": [
+      "mannequin",
+      "shorts",
+      "equipment",
+      "xray",
+      "muscle"
+    ],
+    "note": "3D mannequin with real 3D matte-black shorts, equipment and anatomy are rendered inside the source clip; the pipeline only regrades native pixels",
+    "overpaint_2d": {}
+  },
+  "auto_scale": true,
+  "target_zoom": {
+    "region": "upper_body",
+    "focus": "shoulders / upper back",
+    "zoom": 1.0,
+    "focus_x": 450,
+    "focus_y": 840,
+    "top_min_y": 140,
+    "side_min": 24,
+    "equipment_margin": 0.11,
+    "why": "Day 7: low-row station fills the 720p width already (x 151-1029 at 1.5x); keep <=1.5x upscale (sharp), scale 0.95, lift so the stack box is not cut at the bottom, centre figure+machine bbox",
+    "focus_mode": "body_bbox_x",
+    "align": "hips_ankles"
+  },
+  "motions": {
+    "wrong": {
+      "base": "wrong_relit_static.avi",
+      "i0": 0,
+      "i1": 57,
+      "y_shift": 80,
+      "why": "t660u v3 (Grok Bot GenerateVideo, 720p 5 s, first=last = pin_wrong_head_t1). f0 start (pinned) -> f57 peak (2.38 s, elbow flexion 92 deg, max of the clip). Gates G1-G6/G8-G10 pass, G7 view spread 0.051 (pins differ by 0.055).",
+      "renders": {
+        "front": {
+          "file": "wrong_relit_static.avi",
+          "camera": "front",
+          "camera_note": "side camera along the fixed machine (D7_MACHINE_CONCEPT), whole-frame mirror so the tower is on the right",
+          "mirror": true
+        }
+      },
+      "callout": {
+        "deg": "78°",
+        "l1": "ARMS + SHRUG",
+        "l2": "BICEPS + TRAPS TAKE IT"
+      },
+      "mirror": true
+    },
+    "right": {
+      "base": "right_relit_static.avi",
+      "i0": 0,
+      "i1": 36,
+      "y_shift": 80,
+      "why": "t660u v3 (Grok Bot GenerateVideo, 720p 5 s, first=last = pin_right_fibre_head_t2). f0 start -> f36 peak (1.50 s, elbow flexion 80.5 deg, elbows back). Gates as wrong.",
+      "renders": {
+        "front": {
+          "file": "right_relit_static.avi",
+          "camera": "front",
+          "camera_note": "side camera along the fixed machine (D7_MACHINE_CONCEPT), whole-frame mirror so the tower is on the right",
+          "mirror": true
+        }
+      },
+      "callout": {
+        "deg": "75°",
+        "l1": "ELBOWS BACK",
+        "l2": "LATS TAKE IT"
+      },
+      "mirror": true
+    }
+  },
+  "motion_standard": "seated_cable_row",
+  "mistake_type": "muscle",
+  "mistake_type_why": "t612u: muscle-fibre 2-step like Day 6. Mistake = pulling with the arms and shrugging (load on biceps/upper traps) vs chest up, scapulae down/back, elbows driven back (lats). Not the joint-type lumbar rounding / lean-back rock (that would need the 4-step bone format).",
+  "camera_plan_note": "2-step: both steps from the same elevated front-3/4 camera on a low-row station (stack box at lower right), identical machine (right frame made from the wrong frame).",
+  "callouts_note": "t557u: callouts are derived per motion (motions.*.callout) - steps 1/3 and 2/4 share angle + label",
+  "n_steps": 2,
+  "tmp_dir": "_tmp_gymform_day07_muscle2",
+  "callout_axis": {
+    "arm_axis": true,
+    "why": "t567u: callout axis follows the upper arm (shoulder -> elbow), short torso reference"
+  },
+  "clean_plate": false,
+  "muscle_shader": "day4",
+  "out_caption": "output/_consistency/d7m/relight/gate_day7_seated_cable_row_muscle2_master_caption.txt",
+  "source_clips_note": "t660u v3: output/assets/day7_{wrong,right}_raw_v3.mp4 from pinned stills output/_consistency/d7m/pin_*_720x1280.png (already cropped to the final framing; frame_override 1:1).",
+  "static_body_lum": 20,
+  "metal_lum_max": 42.0,
+  "flat_look": false,
+  "studio_bg": "output/assets/studio_flat_day4_1080p.png",
+  "look": "native_grade",
+  "no_sharpen": true,
+  "no_slice_cap": true,
+  "phase_continuous_cut": true,
+  "native_why": "t600: fix plan of docs/ROOTCAUSE_DAY6.md - clip's own pixels, temporal flow denoise, flat-field backdrop gain, one tone curve per step, linear glow, flow-locked callout joints, no slice cap, continuous motion phase at the cut, hips/ankles alignment; static_body_shin_r capsule and metal re-shade not used",
+  "native_skin_p90": 88.0,
+  "native_chroma_k": 0.0,
+  "native_steel_dx": 0.0,
+  "native_steel_lift": 0.0,
+  "native_dark_warm_rgb": [
+    3.0,
+    0.5,
+    -3.0
+  ],
+  "native_sep_dx": 8.0,
+  "native_sep_dy": 10.0,
+  "native_dark_floor": 22.0,
+  "native_dark_floor_why": "t665u: flat-relit D7 shorts read median 23-24 (Day 4 band 24-40) at floor 18",
+  "defect_playbook_sha": "38de211b",
+  "native_keep_chroma": 1.0,
+  "native_glow_hue_strict": true,
+  "native_keep_chroma_sat": 4.0,
+  "native_highlight_rolloff": true,
+  "shorts_evidence_strict": true,
+  "native_bench_map": true,
+  "native_wfg_colour": true,
+  "native_anchor_smooth": 2.0,
+  "callout_note": "deg = ELBOW FLEXION (180 - shoulder-elbow-wrist) of the visible arm, MEASURED by layout.measure_angle from the pipeline keypoints at the last frame of each slice (t652u: no faked numbers): wrong 78, right 75. Inside the seated_cable_row band; the difference (shrug vs elbows past the torso) is carried by the labels. (was a fixed 105.)",
+  "native_skin_p90_why": "Day 4 lock p90 (spec skin_lock_all_steps 88); 84 (Day 6 v5) left Day 7 p90 at 79-83 under the (f) band 81-95",
+  "native_glow_form_hue": true,
+  "target_regions": {
+    "wrong": {
+      "erector_spinae": 1.0,
+      "biceps": 1.0,
+      "forearm": 1.0,
+      "upper_trap": 1.0
+    },
+    "right": {
+      "lats": 1.0,
+      "mid_trap_rhomboid": 1.0,
+      "rear_delt": 1.0,
+      "biceps": 0.35
+    }
+  },
+  "native_muscle_shader": "day4",
+  "muscle_glow_clamp": true,
+  "native_muscle_shader_why": "t648u: muscle fibre/colour/glow = Day 4 muscle.day4_fibre (unchanged) on the source's native glow (act_dom, _glow_gain calibrated); muscle_glow_clamp = allowed anatomy regions (gymform/region_glow.py) multiplied into act_dom so colour cannot spill. Both opt-in, default off: Day 4/5/6 configs unchanged.",
+  "hide_lines": true,
+  "callout_single_label": true,
+  "callout_measure": {
+    "metric": "elbow_flexion",
+    "frame": "last"
+  },
+  "frame_override": {
+    "scale": 1.0,
+    "dx": 0,
+    "dy": 0
+  },
+  "callout_text_y": 560,
+  "simplify_why": "t652u-t653u: no laser/leader/dot, no sub-label; big MEASURED angle (shoulder angle trunk->upper arm of the visible arm, at the slice's last = peak frame) + one short label; one fixed crop/scale for stills and clips (frame_override) so mannequin + machine fill 9:16",
+  "day4_input_scale": {
+    "1": 0.45,
+    "2": 0.6
+  },
+  "glow_gain_override": {
+    "1": 14.0,
+    "2": 18
+  },
+  "day4_calibration_why": "t654u: measured at equal torso scale vs the Day 4 master (tools/day4_look_metrics.py, sweeps A-J in output/_consistency/d7m/sweep_*): glow-pixel V median wrong 155 vs D4 157, right 194 vs D4 190; hue/sat/fibre contrast within ~10%. Set for the locked stills (wrong t1, right t2); re-measure on the i2v clips (their glow level differs).",
+  "frame_override_why": "t660u: the pinned stills (and so the i2v clips) are already cropped to the t652u final framing (old frame_override scale 1.53/dx 62/dy 247 on the 1024 composite = window x 215.7-885.1, y -236.2-953.1), so the clip maps 1:1 onto 1080x1920; machine pixels unchanged (crop + resize only)",
+  "qc_profile": "cable_machine",
+  "muscle_glow_clamp_chroma": "body",
+  "muscle_glow_wfg_from_glow": true,
+  "native_deglow_base": false
+}
