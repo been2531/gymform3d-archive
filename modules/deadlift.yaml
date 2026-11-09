@@ -1,0 +1,25 @@
+# Primitive: conventional barbell deadlift (floor pull). Distinct from hinge/RDL.
+primitive: deadlift
+_doc: "Bar from floor; hips and shoulders rise together; lockout tall."
+fault:
+  id: spine_round_hips_shoot
+  wrong: "Lumbar rounds / hips shoot up — disc risk, hamstrings steal."
+  right: "Brace; push floor; bar close to shins; lockout tall."
+prop:
+  barbell: barbell_olympic
+  grip: default
+motion_hint:
+  torso_target_deg: 45
+  legs: source
+  lock_feet: true
+  spine_aim: far
+  neck_mode: spine_follow
+  grip_mode: palm_neutral
+grade:
+  target_muscles: [hamstrings, glutes, erectors]
+qc:
+  torso_band_deg: [15, 75]
+  torso_tol_deg: 10
+  posture:
+    knee_range_deg: [70, 178]
+risks: ["conventional DL knee ROM deeper than RDL", "barbell prop must clear floor at setup"]

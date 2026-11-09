@@ -1,0 +1,17 @@
+# Flat bench for barbell bench press. Warm grey pad — must stay distinct from mannequin charcoal.
+name: bench_flat
+kind: bench
+builder: tools/rig3d/props/bench_flat.py
+licence: "Procedural bpy primitives. No third-party mesh."
+dimensions_m:
+  pad: [1.25, 0.30, 0.08]
+  pad_top_z: 0.49
+materials:
+  pad: {rgb: [0.42, 0.40, 0.38], finish: warm_grey_matte}
+  frame: {rgb: [0.55, 0.56, 0.58], finish: brushed_steel}
+anchors:
+  pad_center: {empty: pad_center}
+  head_end: {empty: head_end}
+  foot_end: {empty: foot_end}
+used_by: [bb_bench_press]
+note: "Incline variants later; flat only for bb_bench_press stub."

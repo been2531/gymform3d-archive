@@ -1,0 +1,48 @@
+# Stub — YMove free Barbell Bench Press. Needs bench_flat prop + supine retarget later.
+slug: bb_bench_press
+name: Barbell Bench Press
+module: press_bench
+props:
+  barbell: barbell_olympic
+  bench: bench_flat
+source:
+  provider: YMove
+  page: https://ymove.app/free-exercise-videos
+  url: https://ymove.app/api/free/dd7e706c-2086-4f4b-867f-d7fece2f720d
+  file: _scratch/motion_src/ymove_bb_bench_press.mp4
+  licence: "YMove free licence: commercial use incl. social media OK, no resale/redistribution of the videos; we use only the extracted pose"
+  min_bytes: 200000
+motion:
+  rep: auto
+  rep_index: 0
+  torso_target_deg: 90
+  torso_smooth_sigma_f: 4.0
+  smooth_sigma_f: 2.5
+  lock_feet: true
+  spine_influence: 0.2
+  spine_aim: far
+  neck_mode: spine_follow
+  gaze_ext_deg: 0
+  legs: planted
+  lock_hips: true
+  grip_mode: palm_neutral
+  grip_wrap:
+    enabled: true
+    handle_r_m: 0.014
+    clear_m: 0.002
+    max_wrap_deg: 250
+    mcp_back_m: 0.015
+  wrist_neutral: true
+layout:
+  callout:
+    metric: arm_torso
+    l1: BAR TO CHEST
+    l2: PECS & TRICEPS
+  preview_pill: true
+tts:
+  line: "Lower the bar to the lower chest. Elbows tucked. Press up without flaring."
+  question_spoken: "Where do you feel it most?"
+caption:
+  title: "Bench press: bar to lower chest, elbows tucked."
+  question: "Where do you feel your bench presses most right now?"
+  save: "Save this for your next chest day."

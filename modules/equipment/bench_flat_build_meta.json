@@ -1,0 +1,30 @@
+{
+  "name": "bench_flat",
+  "pad_size_m": [
+    1.25,
+    0.3,
+    0.08
+  ],
+  "pad_top_z_m": 0.49,
+  "pad_rgb_warm_grey": [
+    0.42,
+    0.4,
+    0.38
+  ],
+  "note": "Warm grey pad \u2014 keep distinct from mannequin charcoal (Day 4 skin lock).",
+  "anchors": {
+    "pad_center": {
+      "empty": "pad_center"
+    },
+    "head_end": {
+      "empty": "head_end"
+    },
+    "foot_end": {
+      "empty": "foot_end"
+    },
+    "floor": {
+      "empty": "floor"
+    }
+  },
+  "licence": "Procedural bpy primitives. No third-party mesh."
+}

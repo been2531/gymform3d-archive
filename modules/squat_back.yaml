@@ -1,0 +1,27 @@
+# Primitive: barbell back squat.
+primitive: squat_back
+_doc: "High-bar back squat feel: bar on traps, knees track, torso braced."
+fault:
+  id: knee_cave_chest_drop
+  wrong: "Knees cave / chest collapses — joint risk, quads unload."
+  right: "Knees track over toes; chest tall; quads + glutes load."
+prop:
+  barbell: barbell_olympic
+  grip: default
+motion_hint:
+  torso_target_deg: 25
+  legs: source
+  lock_feet: false
+  grip_mode: palm_neutral
+  lock_hips: false
+grade:
+  target_muscles: [quads, glutes]
+qc:
+  torso_band_deg: [5, 45]
+  torso_tol_deg: 8
+  elbow_rom_min_deg: 0
+  posture:
+    knee_range_deg: [60, 178]
+    knee_steady_max_deg: 90
+    neck_flex_range_deg: [-15, 20]
+risks: ["bar path must stay over mid-foot", "needs two-hand barbell grip wiring in render"]
