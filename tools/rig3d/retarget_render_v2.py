@@ -706,7 +706,7 @@ if USE_MID:
             smooth_iters=int(RC.get("glow_smooth_iters", 28)),
             solid_thresh=float(RC.get("glow_solid_thresh", 0.32)),
             close_rings=int(RC.get("glow_close_rings", 3)),
-            radial=bool(RC.get("glow_radial", True)),
+            radial=bool(RC.get("glow_radial", False)),
         )
         _gw_mean, _gw_n = MIDS.write_glow_attrs(me, _gw, _grgb)
         log(f"glow bake verts>0.5={_gw_n} mean={_gw_mean:.4f} per_id={_gst}")
@@ -892,17 +892,27 @@ if GW.get("enabled"):      # after the garment copy (the briefs never carry the 
         new_w = newL @ _Mh[:3, :3].T + _Mh[:3, 3]
     Minv = np.linalg.inv(M4); lc[HIDX] = new_w @ Minv[:3, :3].T + Minv[:3, 3]; sk.data.foreach_set("co", lc.ravel()); sk.value = 1.0
 # ---- dumbbell ---------------------------------------------------------------------------------------------------------
-def hexhead(xx):
-    bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=0.06, depth=0.07, location=(xx, 0, 0), rotation=(0, math.pi / 2, 0)); return bpy.context.object
-h1, h2 = hexhead(-0.12), hexhead(0.12); bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=0.016, depth=0.2, rotation=(0, math.pi / 2, 0)); hd = bpy.context.object
+def db_plate(xx):
+    # Round gunmetal plates (32-gon) so the weight reads as a metal disc, not a blue cube.
+    bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=0.055, depth=0.034, location=(xx, 0, 0),
+                                        rotation=(0, math.pi / 2, 0))
+    return bpy.context.object
+h1, h2 = db_plate(-0.118), db_plate(0.118)
+bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=0.016, depth=0.22, rotation=(0, math.pi / 2, 0)); hd = bpy.context.object
+# slim collars so the plate-to-handle junction reads as a real hex/round dumbbell
+def db_collar(xx):
+    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.020, depth=0.012, location=(xx, 0, 0),
+                                        rotation=(0, math.pi / 2, 0))
+    return bpy.context.object
+c1, c2 = db_collar(-0.098), db_collar(0.098)
 def mat(n, rgb, metal=0.0, rough=0.6):
     m_ = bpy.data.materials.new(n); m_.use_nodes = True; bs = m_.node_tree.nodes["Principled BSDF"]
     bs.inputs["Base Color"].default_value = (*rgb, 1); bs.inputs["Metallic"].default_value = metal; bs.inputs["Roughness"].default_value = rough; return m_
-blue, steel = mat("cobalt", (0.02, 0.05, 0.45)), mat("steel", (0.5, 0.5, 0.52), 1.0, 0.35)
-for o in (h1, h2): o.data.materials.append(blue)
-hd.data.materials.append(steel)
+gun, steel = mat("gunmetal", (0.12, 0.125, 0.13), 1.0, 0.38), mat("steel", (0.55, 0.56, 0.58), 1.0, 0.28)
+for o in (h1, h2): o.data.materials.append(gun)
+for o in (c1, c2, hd): o.data.materials.append(steel)
 bpy.ops.object.select_all(action="DESELECT")
-for o in (h1, h2, hd): o.select_set(True)
+for o in (h1, h2, c1, c2, hd): o.select_set(True)
 bpy.context.view_layer.objects.active = hd; bpy.ops.object.join(); db = bpy.context.object; db.name = "dumbbell"
 # v6 bug fix: the join keeps the handle cylinder's (0, 90 deg, 0) object rotation, so the long axis is LOCAL Z, while
 # grip_frame() puts the intended handle direction on local X -> through v5 the handle actually pointed along the
@@ -1422,12 +1432,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import glow_shad
 _flex_min = float(RC.get("glow_flex_min", 0.88 if look_inscene else 0.58))
 _backend = "inscene" if look_inscene else "post"
 flex_nodes = GSH.switch_materials(
-    body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 58.0)),
+    body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 72.0)),
     tint_mix=float(RC.get("glow_tint", 0.12)),
     fibre_bump=float(RC.get("glow_fibre_bump", 0.22)),
-    rim=float(RC.get("glow_rim", 0.22)),
-    body_rim=float(RC.get("body_rim", 0.18)),
-    fibre_line=float(RC.get("glow_fibre_line", 0.32)),
+    rim=float(RC.get("glow_rim", 0.28)),
+    body_rim=float(RC.get("body_rim", 0.28)),
+    fibre_line=float(RC.get("glow_fibre_line", 0.45)),
+    opacity=float(RC.get("glow_opacity", 0.94)),
 )
 if look_inscene:
     log(f"glow backend=inscene flex_min={_flex_min} em_str={em_str}")
