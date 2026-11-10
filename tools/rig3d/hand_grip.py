@@ -112,6 +112,11 @@ def build(co_w, idx, bone_M, is_left, r=0.016, clear=0.002, max_wrap_deg=250.0, 
             Dz = np.array([(np.exp(-((Pn[nb[i]] - Pn[i]) ** 2).sum(1) / h2)[:, None] * Dn[nb[i]]).sum(0) / np.exp(-((Pn[nb[i]] - Pn[i]) ** 2).sum(1) / h2).sum() for i in zi])
             if len(zi): Dn[zi] = Dz
         newL[nt_i] = L[nt_i] + Dn
+    # Fade wrap/flexion to 0 at the wrist so the forearm seam does not ring.
+    y_lo = float(np.percentile(y, 6))
+    y_hi = y_lo + 0.060
+    ramp = np.clip((y - y_lo) / max(y_hi - y_lo, 1e-4), 0.0, 1.0)
+    newL = L + (newL - L) * ramp[:, None]
     newW = newL @ R.T + o
     handle_local = {"center": (y_h * f + n_h * n + a * float(np.mean(fu))).tolist(), "axis": a.tolist(), "n": n.tolist(), "r": r}
     info = {"y_k": round(float(y_k), 4), "n_h": round(float(n_h), 4), "R0_mm": [round(float(v) * 1000, 1) for v in (n_h - fmid)],

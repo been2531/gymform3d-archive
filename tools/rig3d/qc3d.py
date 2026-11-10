@@ -216,23 +216,35 @@ def _ensure_overlay_qc(run_dir, cfg):
 
 
 def glow_dark_seam_frac(rgb):
-    """Fraction of the closed glow sheet that is a dark gap or crack.
+    """Fraction of orange/purple glow that is a dark crack or seam line.
 
-    UV-seam holes show up as low-sat clay slivers inside orange/purple glow.
+    AO-darkened grooves and UV holes stay the glow hue, so a morph-close of
+    the glow mask misses them. Black-hat on value finds thin dark valleys
+    inside (and just beside) the glow sheet.
     """
     if rgb is None or getattr(rgb, "size", 0) == 0:
         return None
     import cv2
     hsv = cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2HSV)
     h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
-    glow = (s > 40) & (v > 55) & (((h < 28) | (h > 125)) & (h < 178))
-    n = int(glow.sum())
-    if n < 200:
+    glow = ((s > 50) & (v > 50) & (h < 25)) | ((s > 40) & (v > 50) & (h > 125) & (h < 175))
+    if int(glow.sum()) < 200:
         return 0.0
-    k = np.ones((7, 7), np.uint8)
-    closed = cv2.morphologyEx(glow.astype(np.uint8), cv2.MORPH_CLOSE, k).astype(bool)
-    gaps = closed & ~glow & (v < 170)
-    return float(gaps.sum() / max(int(closed.sum()), 1))
+    # Close thin mask holes so interior clay-coloured seams count, then erode
+    # so the glow/clay silhouette is not scored as a crack.
+    ck = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    closed = cv2.morphologyEx(glow.astype(np.uint8), cv2.MORPH_CLOSE, ck)
+    inner = cv2.erode(closed, np.ones((3, 3), np.uint8)).astype(bool)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+    bh = cv2.morphologyEx(v.astype(np.float32), cv2.MORPH_BLACKHAT, k)
+    cracks = inner & (bh > 16)
+    cracks_u = cracks.astype(np.uint8)
+    n_cc, lab, stats, _ = cv2.connectedComponentsWithStats(cracks_u, 8)
+    keep = np.zeros_like(cracks)
+    for i in range(1, n_cc):
+        if stats[i, cv2.CC_STAT_AREA] >= 12:
+            keep[lab == i] = True
+    return float(keep.sum() / max(int(glow.sum()), 1))
 
 
 def spec_checks(run_dir, cfg):

@@ -703,7 +703,7 @@ def write_rest_proj_uvs_obj(body, cam=None, facing_ny=0.12, zlo=0.96, zhi=1.62,
     # Ortho camera sits at +Y looking -Y. The anatomical back is the +Y half of the torso.
     torso = (~ex) & (zs >= zlo) & (zs <= zhi)
     ycut = float(np.median(ys[torso])) if torso.any() else 0.0
-    use = torso & (ys >= ycut)
+    use = torso & (ys >= ycut - 0.06)  # include concave groove floors on the back
     facing = 0
     for i in np.nonzero(use)[0]:
         vu[i, 0] = 0.5 - (xs[i] - cx) / scale

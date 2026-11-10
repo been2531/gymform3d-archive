@@ -1041,6 +1041,11 @@ if GC.get("enabled"):
     bmesh.ops.holes_fill(bm, edges=[e_ for e_ in bm.edges if e_.is_boundary], sides=28)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.verts.ensure_lookup_table(); bm.normal_update()
+    # Smooth copied muscle grooves into a fabric surface BEFORE the 5 mm offset
+    # so rest edge lengths already match the fitted shell (posed Smooth tore edges).
+    for _ in range(int(GC.get("smooth_iters", 6))):
+        bmesh.ops.smooth_vert(bm, verts=bm.verts[:], factor=float(GC.get("smooth_factor", 0.5)))
+    bm.verts.ensure_lookup_table(); bm.normal_update()
     # offset outward (the Meshy-made body has some inward-facing normals: orient each normal away from its limb axis,
     # pelvis = vertical axis through x=0 above the crotch, thighs = x=+-0.09 below it)
     off_local = float(GC.get("offset_m", 0.001)) / float(np.array(body.matrix_world.to_scale()).mean())
@@ -1112,17 +1117,7 @@ if GC.get("enabled"):
         log(f"waistband verts {n_wb}/{gnv} z>={z_cut:.3f}")
     except Exception as _ve:
         log(f"waistband group skipped: {_ve}")
-    try:
-        wrap = garm.modifiers.new("briefs_wrap", "SHRINKWRAP")
-        wrap.target = body
-        wrap.wrap_method = "NEAREST_SURFACEPOINT"
-        if hasattr(wrap, "wrap_mode"):
-            wrap.wrap_mode = "ABOVE_SURFACE"
-        wrap.offset = float(GC.get("wrap_offset_m", 0.005)) / _gscale
-        wrap.use_negative_direction = False
-        wrap.use_positive_direction = True
-    except Exception as _we:
-        log(f"briefs shrinkwrap skipped: {_we}")
+    # Fitted shell is the rest-pose offset of the pre-smoothed pelvis faces.
     try:
         disp = garm.modifiers.new("briefs_waistband", "DISPLACE")
         disp.mid_level = 0.0
@@ -1174,7 +1169,36 @@ if GW.get("enabled"):      # after the garment copy (the briefs never carry the 
         Rp, op = Mh_p[:3, :3], Mh_p[:3, 3]
         newL = (HG["new_world"] - op) @ Rp
         new_w = newL @ _Mh[:3, :3].T + _Mh[:3, 3]
-    Minv = np.linalg.inv(M4); lc[HIDX] = new_w @ Minv[:3, :3].T + Minv[:3, 3]; sk.data.foreach_set("co", lc.ravel()); sk.value = 1.0
+    Minv = np.linalg.inv(M4)
+    new_w = np.asarray(new_w, float)
+    y_loc = HG.get("y_local")
+    if y_loc is not None and len(y_loc) == len(HIDX):
+        y_lo = float(np.percentile(y_loc, 6)); y_hi = y_lo + 0.060
+        ramp = np.clip((y_loc - y_lo) / max(y_hi - y_lo, 1e-4), 0.0, 1.0)
+        new_w = co[HIDX] + (new_w - co[HIDX]) * ramp[:, None]
+    lc[HIDX] = new_w @ Minv[:3, :3].T + Minv[:3, 3]
+    # UV-split twins at the wrist share a rest location but not an index; copy
+    # the faded fist so one loop cannot peel off and read as a white ring.
+    key = np.round(co, 5); pos = {tuple(key[vi]): lc[vi].copy() for vi in HIDX}
+    n_prop = 0
+    for i in range(nv):
+        hit = pos.get(tuple(key[i]))
+        if hit is not None and not np.allclose(lc[i], hit, atol=1e-7):
+            lc[i] = hit; n_prop += 1
+    log(f"fist wrist fade, synced {n_prop} coincident verts")
+    sk.data.foreach_set("co", lc.ravel()); sk.value = 1.0
+    # The white wrist ring is a split-normal / sharp-edge highlight at the
+    # hand–forearm UV seam. Clear sharp edges so it does not catch a white rim.
+    try:
+        for e in me.edges:
+            e.use_edge_sharp = False
+        if hasattr(me, "shade_smooth"):
+            me.shade_smooth()
+        elif hasattr(body, "shade_smooth"):
+            body.data.polygons.foreach_set("use_smooth", [True] * len(body.data.polygons))
+        log("wrist: cleared sharp edges, shade smooth")
+    except Exception as _se:
+        log(f"shade smooth skipped: {_se}")
 # Support hand on the bench pad: no finger bones, so flatten via a geometric shape key
 # (fingers adducted, palm planar) rather than leaving the rest-pose splay.
 SUPPORT_BN = "LeftHand" if not str(hand).startswith("Left") else "RightHand"
