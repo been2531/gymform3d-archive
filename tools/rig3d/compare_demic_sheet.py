@@ -159,7 +159,7 @@ def build(ours_path, demic_sheet, out_path):
 
     sheet = Image.new("RGB", (width, height), BG)
     d = ImageDraw.Draw(sheet)
-    d.text((pad, 18), "ours (kit)  vs  demic   ·   bench one-arm row stills",
+    d.text((pad, 18), "ours (weld / attr / cloth)  vs  demic   ·   bench one-arm row stills",
            font=fonts["title"], fill=FG)
     sub = ("Look comparison only — cameras differ (demic: elevated back / barbell; "
            "ours: fixed head-end 3/4 beauty). Demicstory is the quality bar, not a source to copy.")
@@ -183,9 +183,10 @@ def build(ours_path, demic_sheet, out_path):
                fonts)
     sheet.paste(p, (x0, y))
     p = _panel(ours, full_w, full_h,
-               "ours kit  ·  full body  ·  f_0025",
-               "Cooler porcelain clay and studio lighting. Vivid peach overlay "
-               "glow, but torn. Black shorts cover the seat, but they are tattered.",
+               "ours weld/attr/cloth  ·  full body  ·  f_0025",
+               "Porcelain and lights held. Continuous peach, purple and pink "
+               "sheets (no UV-seam cracks). Shorts are one garment, not flakes, "
+               "but clay still shows through a hole on the near hip.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -200,9 +201,10 @@ def build(ours_path, demic_sheet, out_path):
                fonts)
     sheet.paste(p, (x0, y))
     p = _panel(ours_hips, hips_w, hips_h,
-               "ours kit  ·  hips  3×",
-               "The cleft is covered (no white spot) but the cloth is ripped, "
-               "with clay showing through. Not a clean mid-thigh boxer or wide elastic waistband.",
+               "ours weld/cloth  ·  hips  3×",
+               "A waistband ridge and a single cloth piece over the seat (not "
+               "shredded). A large clay hole remains on the camera-near hip. "
+               "Not a clean mid-thigh boxer wrap.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -217,21 +219,22 @@ def build(ours_path, demic_sheet, out_path):
                fonts)
     sheet.paste(p, (x0, y))
     p = _panel(ours_back, back_w, back_h,
-               "ours kit  ·  back glow  3×",
-               "Vivid peach-orange overlay (right hue, high V) on the back, "
-               "but holey and ragged. Not demic's smooth anatomical sheet.",
+               "ours attr glow  ·  back  3×",
+               "Peach-orange lats, purple mid-back, pink rear delt as geodesic "
+               "attribute sheets on the welded body. Clay grooves read through. "
+               "No seam cracks or overlay flakes. Still less painted than demic.",
                fonts)
     sheet.paste(p, (x1, y))
 
     y += row3_h + gutter
     d.rectangle((pad, y, width - pad, y + list_h), fill=CARD)
     lines = [
-        ("h", "Ranked improvements  ·  fix the base assets once, do not patch the current methods"),
-        ("sub", "Look defects should not be caught by gates after the fact. They should not exist, because the kit starts from well-made meshes and a studio light rig. See docs/specs/ROOTCAUSE_LOOK.md."),
-        ("n", "1  Drawers — still worse than demic. The lofted black shorts now cover the cleft (white spot gone) but shrinkwrap tearing leaves holes and a ragged hem. Need a clean mid-thigh boxer with a wide elastic waistband and no clay show-through."),
-        ("n", "2  Glow — still worse than demic. Overlay emission is the right vivid peach-orange and the right region, but the copied/smoothed shells are torn. Need a watertight smooth sheet (weld seams, no remesh shards) with a soft bloom edge."),
-        ("n", "3  Light/clay — closer. Porcelain is cooler and brighter; HDRI plus three-point and a contact floor are in. Still not as even or as softly bloomed as demic."),
-        ("n", "4  Equipment — closer. Padded bench and a knurled handle are in. They still read simpler than demic's commercial props."),
+        ("h", "Ranked notes  ·  welded body, attribute glow, closed cloth tube"),
+        ("sub", "Gates are a backstop only. See docs/specs/ROOTCAUSE_LOOK.md and docs/specs/KIT.md."),
+        ("n", "1  Drawers — not a pass. Headless cloth did run (ptcache.bake, ~42-59 mm shrink, not exploded). The result is one garment with a waistband ridge, not shredded flakes, but clay still shows through a hole on the near hip (gate: 4500 clay px / 4.2% of the shorts mask). Garment boundary 8 (not 0); waistband boundary 0."),
+        ("n", "2  Glow — method held. Continuous peach / purple / pink sheets on the welded manifold, clay grooves visible, no UV-seam cracks or overlay flakes. Morph-close gate still flags 3.1% as holes (soft edges and clay between the three hues). Not demic's painted-fibre look."),
+        ("n", "3  Light/clay — held. Porcelain, HDRI plus three-point and the contact floor are unchanged and still read slightly harder than demic."),
+        ("n", "4  Equipment — held. Padded bench and knurled handle are unchanged."),
     ]
     _text_block(d, (pad + 18, y + 16), lines, fonts, width=84)
 

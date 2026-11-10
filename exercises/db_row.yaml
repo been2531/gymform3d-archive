@@ -67,9 +67,9 @@ motion:
   stance_width_m: 0.30       # v5: ankle-to-ankle width (YMove 'legs apart' is ~0.5 m: the wide rear leg could not bend)
   stance_scale: 0.45         # fore-aft stagger kept from the clip (1.0 = YMove's long split stance = running-stride look)
   stance_mode: feet_forward  # persist 20261105_1017 com_balance auto-fix (COM was 8 cm behind the feet)
-garment:                     # authored lofted boxer shorts (kit); not a body-face offset
+garment:                     # closed authored tube + cloth (kit); not copied Grab3D faces
   enabled: true
-  method: loft
+  method: cloth
   z_waist: 1.03
   z_hem: 0.80                # upper-to-mid thigh openings (boxer-brief length)
   max_abs_x: 0.22
@@ -118,9 +118,9 @@ render:
   glow_smooth_iters: 40
   glow_solid_thresh: 0.28
   glow_close_rings: 5
-  glow_tint: 0.0                # no multiply-on-clay; overlay shells carry the glow
-  glow_opacity: 0.0             # body shader stays clay
-  glow_shape: shells            # kit overlay meshes; projection paint kept in repo only
+  glow_tint: 0.18               # slight clay tint under the attribute sheets
+  glow_opacity: 0.0             # clay BSDF stays; sheets are added emission
+  glow_shape: attr              # welded-mesh float attrs; no UVs / projection / shells
   glow_proj_close_px: 9          # morph-close paint alpha (seam holes, not colour flood)
   glow_proj_tex: tools/rig3d/masks/db_row_back_paint.png
   glow_fibre_bump: 0.14             # fibre relief on the still-lit clay
