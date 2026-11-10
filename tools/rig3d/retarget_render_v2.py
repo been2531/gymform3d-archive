@@ -683,20 +683,36 @@ if USE_MID:
             _gw_tgts = list(_COMP)
         except Exception:
             pass
-    _gw_ids = [name_i[n] for n in _gw_tgts if n in name_i]
-    _gw = np.isin(tid, _gw_ids).astype(np.float32)
+    _hues = dict(MIDS.DEFAULT_HUES)
+    _yh = (C.get("grade") or {}).get("muscle_hues") or {}
+    if isinstance(_yh, dict):
+        _hues.update(_yh)
+    _hstr = (C.get("grade") or {}).get("muscle_hue_strength") or {}
+    try:
+        _gw, _grgb, _gst = MIDS.bake_target_glow(
+            tid, MID["names"], _gw_tgts, _hues, _hstr, ADJ,
+            exclude=EXCLUDE, shorts=shorts,
+            erode_rings=int(RC.get("glow_erode_rings", 0)),
+            power=float(RC.get("glow_center_power", 1.2)),
+            fade_rings=int(RC.get("glow_fade_rings", 4)),
+        )
+        _gw_mean, _gw_n = MIDS.write_glow_attrs(me, _gw, _grgb)
+        log(f"glow bake verts>0.5={_gw_n} mean={_gw_mean:.4f} per_id={_gst} erode={int(RC.get('glow_erode_rings', 3))}")
+    except Exception as _e:
+        log(f"glow bake failed: {_e}")
 else:
     log(f"muscle IDs unused nv={nv} built={None if not MID else MID.get('nv')}")
-    _gw = (reg.max(axis=1) > 0.5).astype(np.float32)
-try:
-    _gw = MIDS.blur_mask(_gw, ADJ, iters=int(RC.get("glow_blur_iters", 10)),
-                         dilate=int(RC.get("glow_blur_dilate", 2)))
-    _gw[shorts] = 0.0
-    _gw[EXCLUDE] = 0.0
-    _gw_mean, _gw_n = MIDS.write_glow_w(me, _gw)
-    log(f"glow_w verts>0.5={_gw_n} mean={_gw_mean:.4f} blur_iters={int(RC.get('glow_blur_iters', 7))}")
-except Exception as _e:
-    log(f"glow_w write failed: {_e}")
+    try:
+        _gw = (reg.max(axis=1) > 0.5).astype(np.float32)
+        _gw = MIDS.center_weight(_gw > 0.5, ADJ, erode_rings=int(RC.get("glow_erode_rings", 0)),
+                                 power=float(RC.get("glow_center_power", 1.2)),
+                                 fade_rings=int(RC.get("glow_fade_rings", 4)))
+        _gw[shorts] = 0.0
+        _gw[EXCLUDE] = 0.0
+        _gw_mean, _gw_n = MIDS.write_glow_w(me, _gw)
+        log(f"glow_w fallback verts>0.5={_gw_n} mean={_gw_mean:.4f}")
+    except Exception as _e:
+        log(f"glow_w fallback failed: {_e}")
 # palm axis (v5): the across-palm direction (index knuckle -> little finger) in the HAND bone's local frame = the
 # middle principal axis of the rest hand-mesh vertices (largest = fingers, smallest = palm normal). On this GLB the
 # bone X/Z axes sit ~45 deg off the palm, so the legacy handle (shoulder line projected off the hand axis) was tilted.
@@ -1314,7 +1330,7 @@ look_inscene = (
 )
 ad = 0.0 if look_inscene else float(RC.get("albedo_detail", 0.50))
 sss_w = min(float(RC.get("sss_weight", 0.0 if look_inscene else 0.16)), 0.04 if look_inscene else 1.0)
-em_str = float(RC.get("glow_emission", 1.0 if look_inscene else 1.35))
+em_str = float(RC.get("glow_emission", 0.55 if look_inscene else 1.35))
 glow_wrong = C.get("grade", {}).get("glow") == "wrong"
 _pal = str((C.get("grade") or {}).get("palette") or "demic_peach").strip().lower()
 
@@ -1393,7 +1409,7 @@ for m_ in body_mats:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import glow_shader as GSH
 _flex_min = float(RC.get("glow_flex_min", 0.88 if look_inscene else 0.58))
 _backend = "inscene" if look_inscene else "post"
-flex_nodes = GSH.switch_materials(body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
+flex_nodes = GSH.switch_materials(body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)), tint_mix=float(RC.get("glow_tint", 0.72)))
 if look_inscene:
     log(f"glow backend=inscene flex_min={_flex_min} em_str={em_str}")
 
@@ -1593,7 +1609,19 @@ if not a.mask_only:
         pass
     if look_inscene:
         log(f"view_transform={sc.view_settings.view_transform} (colors as measured)")
+        if bool(RC.get("glow_bloom", True)):
+            try:
+                GSH.setup_compositor(sc, float(RC.get("blender_bloom", 0.22)))
+                log(f"inscene bloom={float(RC.get('blender_bloom', 0.22))}")
+            except Exception as _e:
+                log(f"inscene bloom skipped: {_e}")
+                try:
+                    sc.render.use_compositing = False
+                except Exception:
+                    pass
     t = time.time(); render_set("f"); tim["beauty_s"] = round(time.time() - t, 1); log(f"beauty {tim['beauty_s']} s")
+    if look_inscene:
+        GSH.teardown_compositor(sc)
     want_ab = (not look_inscene) and bool(RC.get("glow_ab") or str(RC.get("glow_backend", "post")).lower() in ("blender", "both"))
     if want_ab:
         flex_nodes[:] = GSH.switch_materials(body_mats, "blender", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
