@@ -151,7 +151,7 @@ def flatten_wrist_cuffs(body, log=print):
         # Broad mask over the whole junction so the visible band is covered,
         # not only the verts that happened to exceed the radius threshold.
         excess = np.clip((r - r_tgt) / 0.008, 0.0, 1.0)
-        near = win & (np.abs(t - t_j) < 0.024)
+        near = win & (np.abs(t - t_j) < 0.032)
         cuff[near] = np.maximum(cuff[near], np.maximum(excess[near], 0.85))
         cuff[bulge] = 1.0
         log(f"wrist cuff {side}: moved {int(bulge.sum())} verts "
@@ -170,10 +170,10 @@ def flatten_wrist_cuffs(body, log=print):
             ev = np.empty(len(me.edges) * 2, np.int64)
             me.edges.foreach_get("vertices", ev)
             ev = ev.reshape(-1, 2)
-            for _ in range(2):
+            for _ in range(5):
                 c2 = cuff.copy()
-                np.maximum.at(c2, ev[:, 0], cuff[ev[:, 1]] * 0.7)
-                np.maximum.at(c2, ev[:, 1], cuff[ev[:, 0]] * 0.7)
+                np.maximum.at(c2, ev[:, 0], cuff[ev[:, 1]] * 0.75)
+                np.maximum.at(c2, ev[:, 1], cuff[ev[:, 0]] * 0.75)
                 cuff = np.maximum(cuff, c2)
         except Exception:
             pass
@@ -265,47 +265,74 @@ def flatten_ankle_cuffs(body, log=print):
         if not (0.018 <= r_shin <= 0.048):
             log(f"ankle cuff {side}: skip, shin radius looks wrong ({r_shin:.4f})")
             continue
-        t_lo, t_hi = t_j - 0.040, t_j + 0.010
-        win = limb & (t >= t_lo) & (t <= t_hi) & (r < 0.058)
+        # Toe/heel axis: flatten the anterior + side retinaculum further
+        # onto the foot dorsum, but never the heel (that tears the foot).
+        foot_axis = _bone_axis(body, side + "Foot")
+        if foot_axis is not None:
+            fwd = np.asarray(foot_axis[2], dtype=np.float64)
+        else:
+            fwd = footp.mean(0) - origin
+        fn = float(np.linalg.norm(fwd))
+        fwd = fwd / max(fn, 1e-8)
+        if float((footp.mean(0) - origin) @ fwd) < 0:
+            fwd = -fwd
+        forwardness = radial @ fwd
+        heel = (t > t_j - 0.006) & (forwardness < -0.006) & (r > 0.042)
+        t_lo, t_hi = t_j - 0.050, t_j + 0.022
+        win = limb & (t >= t_lo) & (t <= t_hi) & (~heel) & (r < 0.078)
         if int(win.sum()) < 20:
             continue
-        # Blend shin radius toward the ankle-foot neck so flattening the
-        # retinaculum does not leave a shelf where the window meets the foot.
-        foot_win = limb & (t >= t_j + 0.004) & (t <= t_j + 0.012) & (r < 0.058)
-        r_foot = float(np.median(r[foot_win])) if int(foot_win.sum()) >= 8 else r_shin
-        r_foot = float(np.clip(r_foot, r_shin, r_shin + 0.012))
-        alpha = np.clip((t - t_lo) / max(t_hi - t_lo, 1e-4), 0.0, 1.0)
-        r_tgt = (1.0 - alpha) * r_shin + alpha * r_foot
-        bulge = win & (r > r_tgt + 0.0008) & (r < 0.058)
+        r_tgt = np.full(nv, r_shin)
+        bulge = win & (r > r_shin + 0.0006) & (r < 0.078)
         if int(bulge.sum()) < 8:
-            log(f"ankle cuff {side}: no bulge (r_shin={r_shin:.4f} r_foot={r_foot:.4f} "
-                f"win_n={int(win.sum())})")
+            log(f"ankle cuff {side}: no bulge (r_shin={r_shin:.4f} win_n={int(win.sum())})")
             continue
-        scale = np.clip(r_tgt[bulge] / np.maximum(r[bulge], 1e-8), 0.55, 1.0)
+        scale = np.clip(r_shin / np.maximum(r[bulge], 1e-8), 0.42, 1.0)
+        disp = r[bulge] * (1.0 - scale)
         cw[bulge] = origin + np.outer(t[bulge], u) + radial[bulge] * scale[:, None]
         n_moved += int(bulge.sum())
         excess = np.clip((r - r_tgt) / 0.008, 0.0, 1.0)
-        near = win & (np.abs(t - t_j) < 0.024)
-        cuff[near] = np.maximum(cuff[near], np.maximum(excess[near], 0.85))
+        near = win & (np.abs(t - t_j) < 0.038)
+        cuff[near] = np.maximum(cuff[near], np.maximum(excess[near], 0.88))
         cuff[bulge] = 1.0
         log(f"ankle cuff {side}: moved {int(bulge.sum())} verts "
             f"t=[{t_lo:.3f},{t_hi:.3f}] r_shin={r_shin:.4f} "
-            f"peak={float(r[bulge].max()):.4f}")
+            f"peak={float(r[bulge].max()):.4f} heel_excl={int(heel.sum())} "
+            f"mean_disp={float(disp.mean()):.4f} max_disp={float(disp.max()):.4f}")
 
     if n_moved:
         Ri = np.linalg.inv(R)
         new_co = (cw - T) @ Ri.T
         me.vertices.foreach_set("co", new_co.ravel())
         me.update()
+        try:
+            import bpy
+            prev = bpy.context.view_layer.objects.active
+            bpy.context.view_layer.objects.active = body
+            try:
+                if hasattr(bpy.ops.object, "mode_set") and bpy.ops.object.mode_set.poll():
+                    bpy.ops.object.mode_set(mode="OBJECT")
+                bpy.ops.mesh.customdata_custom_splitnormals_clear()
+            except Exception as e:
+                log(f"ankle cuff custom-normal clear skipped: {e}")
+            for poly in me.polygons:
+                poly.use_smooth = True
+            if prev is not None:
+                try:
+                    bpy.context.view_layer.objects.active = prev
+                except Exception:
+                    pass
+        except Exception as e:
+            log(f"ankle cuff shade-smooth skipped: {e}")
     if float(cuff.max()) > 0:
         try:
             ev = np.empty(len(me.edges) * 2, np.int64)
             me.edges.foreach_get("vertices", ev)
             ev = ev.reshape(-1, 2)
-            for _ in range(2):
+            for _ in range(6):
                 c2 = cuff.copy()
-                np.maximum.at(c2, ev[:, 0], cuff[ev[:, 1]] * 0.7)
-                np.maximum.at(c2, ev[:, 1], cuff[ev[:, 0]] * 0.7)
+                np.maximum.at(c2, ev[:, 0], cuff[ev[:, 1]] * 0.78)
+                np.maximum.at(c2, ev[:, 1], cuff[ev[:, 0]] * 0.78)
                 cuff = np.maximum(cuff, c2)
         except Exception:
             pass

@@ -45,26 +45,127 @@ def _anatomical_seeds(seed, pts, kind):
     zh = (z - z0) / max(z1 - z0, 1e-6)
     cx = float(np.median(pts[:, 0]))
     ax = np.abs(pts[:, 0] - cx)
+    cy = float(np.median(pts[:, 1]))
+    # Lats live on the back; the sign of (lat Y - torso Y) is the posterior side.
+    back_sign = np.sign(float(np.median(pts[seed, 1]) - cy)) or -1.0
+    post = (pts[:, 1] - cy) * back_sign
     if kind == "lats":
-        # V / fan from the armpit down the side to the lower back.
-        # Keep lateral verts at every height (the side panel); allow more
-        # medial extent only toward the lower back. Do not drop the armpit.
+        # V / fan on the BACK from the posterior armpit to the lower back.
+        # Cap lateral extent so the sheet does not become a rib-side block.
         seed_ax = ax[seed]
         lat_max = float(np.percentile(seed_ax, 92))
         t = np.clip(zh, 0.0, 1.0)
-        min_ax = (0.10 + 0.30 * t) * lat_max
-        return seed & (ax >= min_ax) & (zh > 0.02) & (zh < 0.98)
+        post_min = float(np.percentile(post[seed], 20))
+        post_span = max(float(np.percentile(post[seed], 90) - post_min), 1e-6)
+        backness = np.clip((post - post_min) / post_span, 0.0, 1.0)
+        # Inner edge stays off the spine and moves out toward the armpit.
+        min_ax = (0.06 + 0.20 * t) * lat_max
+        # Outer edge is wide on the BACK so mid-lat connects into a V,
+        # tight on the side so the sheet is not a rib-wall block.
+        max_ax = (0.48 + 0.16 * t + 0.40 * backness) * lat_max
+        return (seed & (ax >= min_ax) & (ax <= max_ax) & (post >= post_min)
+                & (zh > 0.02) & (zh < 0.96))
     if kind == "mid_back":
         # Diamond between the scapulae — not up onto the upper traps.
         seed_ax = ax[seed]
-        half = float(np.percentile(seed_ax, 42))
+        half = float(np.percentile(seed_ax, 38))
         t = np.clip(zh, 0.0, 1.0)
-        diamond = np.where(t < 0.42, t / 0.42, (1.0 - t) / 0.58)
-        return seed & (ax <= half * np.maximum(diamond, 0.15) * 1.05) & (t > 0.14) & (t < 0.76)
+        diamond = np.where(t < 0.40, t / 0.40, (1.0 - t) / 0.60)
+        return seed & (ax <= half * np.maximum(diamond, 0.14) * 1.00) & (t > 0.16) & (t < 0.74)
     if kind == "rear_delt":
         # Posterior deltoid cap only.
-        return seed & (zh > 0.22) & (ax >= float(np.percentile(ax[seed], 18)))
+        return seed & (zh > 0.22) & (ax >= float(np.percentile(ax[seed], 22)))
     return seed
+
+
+def _close_seed(seed, adj, rings=2):
+    """Mesh-graph close so seed silhouettes are solid, not ragged islands."""
+    s = np.asarray(seed, dtype=bool)
+    if int(s.sum()) < 8:
+        return s
+    for _ in range(int(rings)):
+        nxt = s.copy()
+        for i in np.flatnonzero(s):
+            nxt[adj[i]] = True
+        s = nxt
+    for _ in range(int(rings)):
+        nxt = s.copy()
+        for i in np.flatnonzero(s):
+            nbrs = adj[i]
+            if nbrs and (not all(s[j] for j in nbrs)):
+                nxt[i] = False
+        s = nxt
+    return s
+
+
+def _dilate_seed(seed, adj, rings=1):
+    s = np.asarray(seed, dtype=bool).copy()
+    for _ in range(int(rings)):
+        nxt = s.copy()
+        for i in np.flatnonzero(s):
+            nxt[adj[i]] = True
+        s = nxt
+    return s
+
+
+def _bridge_components(seed, adj, pts, allowed=None):
+    """Reconnect split islands of one muscle along an allowed corridor."""
+    s = np.asarray(seed, dtype=bool).copy()
+    idx = np.flatnonzero(s)
+    if len(idx) < 24:
+        return s
+    nv = len(s)
+    comp = np.full(nv, -1, np.int32)
+    cid = 0
+    for i in idx:
+        if comp[i] >= 0:
+            continue
+        stack = [int(i)]
+        comp[i] = cid
+        while stack:
+            u = stack.pop()
+            for v in adj[u]:
+                if s[v] and comp[v] < 0:
+                    comp[v] = cid
+                    stack.append(int(v))
+        cid += 1
+    if cid <= 1:
+        return s
+    sizes = sorted(((int((comp == c).sum()), c) for c in range(cid)), reverse=True)
+    if sizes[1][0] < 24:
+        return s
+    a, b = sizes[0][1], sizes[1][1]
+    pa, pb = pts[comp == a], pts[comp == b]
+    ia = int(np.flatnonzero(comp == a)[np.argmin(np.linalg.norm(pa - pb.mean(0), axis=1))])
+    ib = int(np.flatnonzero(comp == b)[np.argmin(np.linalg.norm(pb - pa.mean(0), axis=1))])
+    dist = np.full(nv, np.inf)
+    prev = np.full(nv, -1, np.int32)
+    dist[ia] = 0.0
+    heap = [(0.0, ia)]
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u == ib:
+            break
+        if d > dist[u]:
+            continue
+        pu = pts[u]
+        for v in adj[u]:
+            if allowed is not None and (not allowed[v]):
+                continue
+            nd = d + float(np.linalg.norm(pts[v] - pu))
+            if nd < dist[v]:
+                dist[v] = nd
+                prev[v] = u
+                heapq.heappush(heap, (nd, int(v)))
+    if not np.isfinite(dist[ib]):
+        return s
+    cur = ib
+    guard = 0
+    while cur != ia and cur >= 0 and guard < nv:
+        s[cur] = True
+        cur = int(prev[cur])
+        guard += 1
+    return s
 
 
 def geodesic_falloff(seeds, adj, pts, fade_m=0.022):
@@ -165,7 +266,24 @@ def write_weights(welded, src_body, tid, names, cfg, shorts=None, exclude=None, 
             seed &= ~shorts_w
         if excl_w is not None:
             seed &= ~excl_w
-        seed = _anatomical_seeds(seed, dst_w, str(g.get("name") or ""))
+        raw = seed.copy()
+        kind = str(g.get("name") or "")
+        seed = _anatomical_seeds(seed, dst_w, kind)
+        if kind == "lats" and int(seed.sum()) > 24:
+            # Stay on original lat IDs that face back, so the bridge cannot
+            # walk around the rib wall (that was the side block).
+            z = dst_w[:, 2]
+            z0 = float(np.percentile(z[raw], 5)) if int(raw.sum()) else 0.0
+            z1 = float(np.percentile(z[raw], 95)) if int(raw.sum()) else 1.0
+            zh = (z - z0) / max(z1 - z0, 1e-6)
+            cy = float(np.median(dst_w[:, 1]))
+            back_sign = np.sign(float(np.median(dst_w[raw, 1]) - cy)) or -1.0
+            post = (dst_w[:, 1] - cy) * back_sign
+            post_min = float(np.percentile(post[raw], 20))
+            corridor = raw & (post >= post_min) & (zh > 0.02) & (zh < 0.96)
+            seed = _bridge_components(seed, adj, dst_w, allowed=corridor)
+            seed = _dilate_seed(seed, adj, rings=3)
+        seed = _close_seed(seed, adj, rings=3)
         w = geodesic_falloff(seed, adj, dst_w, fade_m=fade)
         if shorts_w is not None:
             w[shorts_w] = 0.0

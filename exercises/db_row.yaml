@@ -91,11 +91,11 @@ render:
   sss_weight: 0.0
   sss_scale: 0.05
   glow_emission: 1.05
-  hdri_strength: 0.18            # low-strength Poly Haven studio HDRI
-  key_energy: 10                # raking key; not on-axis to the working forearm
+  hdri_strength: 0.08            # low-strength Poly Haven studio HDRI
+  key_energy: 7                 # raking key; not on-axis to the working forearm
   key_size: 3.2
   fill_size: 4.8
-  fill_energy: 6                 # weak camera-side fill; evens without blowout
+  fill_energy: 3                 # weak camera-side fill; evens without blowout
   rim_energy: 18
   floor: true
   denoise: true

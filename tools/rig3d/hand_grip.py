@@ -74,9 +74,9 @@ def build(co_w, idx, bone_M, is_left, r=0.016, clear=0.002, max_wrap_deg=250.0, 
         w_ = np.clip(bins / 0.012, 0, 1); sh = np.maximum(pal - rc, 0.0) * w_; Rm = np.maximum(mid - sh, rc + 0.003)
         # Orbit a cylinder just larger than the handle. The rest-thickness
         # radius (~40 mm) only bent ~90° and read as fingers on top of the bar.
-        Rm = np.minimum(Rm, rc + 0.006)
+        Rm = np.minimum(Rm, rc + 0.002)
         phi_b = np.concatenate([[0.0], np.cumsum(np.diff(bins) / Rm[:-1])])
-        min_wrap = np.radians(200.0)
+        min_wrap = np.radians(265.0)
         if float(phi_b[-1]) > 1e-6 and float(phi_b[-1]) < min_wrap:
             phi_b = phi_b * (min_wrap / float(phi_b[-1]))
         phi_b = np.minimum(phi_b, np.radians(max_wrap_deg))
@@ -104,19 +104,21 @@ def build(co_w, idx, bone_M, is_left, r=0.016, clear=0.002, max_wrap_deg=250.0, 
     cands = []
     for ag in np.radians(np.arange(-130, 131, 1.0)):
         g_ = gap(ag)
-        if not (-0.002 <= g_ <= 0.016):
+        if not (-0.002 <= g_ <= 0.018):
             continue
         Ltry = newL.copy(); Ltry[T] = rot(L[T], ag); mt = metrics(Ltry, labels, sF, hcen, a, r)
         opp = float(mt.get("thumb_opposition_deg", 0))
         cands.append((ag, g_, opp))
         if opp > bo + 1e-6:
             best, bg, bo = ag, g_, opp
-    # Prefer a visibly opposed thumb (not a 40-deg pinch) when several touches exist.
-    opposed = [c for c in cands if abs(c[0]) >= np.radians(70)]
+    # Prefer a visibly opposed, flexed thumb (not a 40-deg rest pose).
+    opposed = [c for c in cands if abs(c[0]) >= np.radians(85)]
     if opposed:
-        best, bg, bo = max(opposed, key=lambda c: c[2])
+        # Highest opposition (thumb opposite the fingertips), then closer gap.
+        # Min-gap alone picked +85 deg and opened the thumb away from the bar.
+        best, bg, bo = max(opposed, key=lambda c: (c[2], -c[1]))
     elif cands:
-        best, bg, bo = max(cands, key=lambda c: (abs(c[0]), c[2]))
+        best, bg, bo = max(cands, key=lambda c: (c[2], abs(c[0]), -c[1]))
     newL[T] = rot(L[T], best)
     # seams (finger web, knuckle strip): adjacent fingers bend by different radii, so blend the displacement over a few
     # mm across label changes (Gaussian, rest-space neighbours, thumb excluded: it has its own ramp)
@@ -143,7 +145,7 @@ def build(co_w, idx, bone_M, is_left, r=0.016, clear=0.002, max_wrap_deg=250.0, 
     info = {"y_k": round(float(y_k), 4), "n_h": round(float(n_h), 4), "R0_mm": [round(float(v) * 1000, 1) for v in (n_h - fmid)],
             "thumb_flex_deg": round(float(np.degrees(best)), 1), "thumb_gap_mm": round(bg * 1000, 1),
             "n_thumb": int(T.sum()), "n_fingers": int(F.sum()),
-            "min_wrap_deg": 200.0,
+            "min_wrap_deg": 265.0,
             "thumb_opposition_deg": mt.get("thumb_opposition_deg", round(float(bo), 1)),
             "finger_wrap_deg": mt.get("finger_wrap_deg")}
     return {"labels": labels, "new_world": newW, "handle_local": handle_local, "info": info, "y_local": y, "s_finger": np.where(F_full(labels), y - y_k, -1.0)}

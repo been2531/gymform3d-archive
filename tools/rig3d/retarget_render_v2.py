@@ -1335,6 +1335,15 @@ if WELDED is not None:
         KITW.apply_source_shapekey_mix(body, WELDED, log=log)
     except Exception as _se:
         log(f"kit weld shapekey transfer: {_se}")
+    # Re-apply ankle flatten on the mesh that actually renders. The source
+    # flatten can be lost when shapekeys / weld reset the basis.
+    try:
+        import wrist_cuff as WCUFF
+        if hasattr(WCUFF, "flatten_ankle_cuffs"):
+            log("ankle cuff: re-flatten on welded render mesh")
+            WCUFF.flatten_ankle_cuffs(WELDED, log)
+    except Exception as _ae:
+        log(f"welded ankle flatten skipped: {_ae}")
 # ---- dumbbell ---------------------------------------------------------------------------------------------------------
 def db_plate(xx):
     # Round gunmetal plates (32-gon) so the weight reads as a metal disc, not a blue cube.

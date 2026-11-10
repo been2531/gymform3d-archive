@@ -18,9 +18,10 @@ kit:
     pose_inflate_m: 0.0          # no seat displace (the 10 mm diaper)
     ease_thigh_m: 0.008          # slight looseness at mid-thigh hem only
     clearance_m: 0.003           # post-cloth floor vs the rest body
-    posed_fit_offset_m: 0.004    # single-shell shrinkwrap after armature
+    posed_fit_offset_m: 0.0035   # single-shell shrinkwrap after armature
     cloth_collide_m: 0.005
-    waistband_extra_m: 0.006     # band sits a bit proud of the shorts
+    waistband_extra_m: 0.000     # extra proud band read as a hip flap
+    separate_waistband: false
     solidify_m: 0.003
     waistband_solidify_m: 0.008  # thicker separate elastic ring
     smooth_iters: 6
@@ -32,7 +33,7 @@ kit:
     roughness: 0.95
   muscles:
     method: attr                 # geodesic float attributes on the welded mesh
-    fade_m: 0.015                # 1.5 cm crisp anatomical edge
+    fade_m: 0.018                # ~1.8 cm; close seeds first so edges are not ragged
     hue: {h: 12, s: 200, v: 244} # vivid peach-orange for every shell (not QC identity hues)
     groups:
       - {name: lats, ids: [lats]}
@@ -46,13 +47,13 @@ kit:
     emission: 1.15
     flex_min: 0.88
   lights:
-    hdri_strength: 0.10          # low; area lights shape the form
+    hdri_strength: 0.08          # low; area lights shape the form
     ambient_strength: 0.10
-    key_energy: 10
+    key_energy: 5
     key_size: 5.0
-    fill_energy: 6
+    fill_energy: 2
     fill_size: 5.6
-    rim_energy: 6
+    rim_energy: 4
     rim_size: 2.8
     top_energy: 0                # three-point only
     floor_receive_shadows: false # BSDF on the cyc photographed a circular crease

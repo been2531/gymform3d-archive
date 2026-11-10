@@ -74,10 +74,10 @@ camera:
   # toward the back so the glow reads without losing the exercise silhouette.
   yaw_back_deg: 18            # 0 = pure working-side; +yaw = behind the side (toward the feet)
   elev_deg: 25
-  dist_m: 2.45
+  dist_m: 2.62              # 2.45 cropped the posed figure on both sides
   look: [0.18, 0.20, 0.70]
   lens_mm: 50
-  shift_x: 0.0
+  shift_x: -0.04            # use the right margin so the left hip stays in
   shift_y: -0.05
   up: world                   # keep the bench horizontal-ish; do not roll head-up
   search: false

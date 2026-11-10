@@ -75,9 +75,9 @@ def add_three_point(col, ctr, cam_loc, cfg, log=print):
     rim_e = float(L.get("rim_energy", RC.get("rim_energy", 16)))
     # Key nearly overhead-and-side (soft, not a grazing hot rim). A weak
     # camera-side fill evens the working forearm without blowing it out.
-    add_area("key", ctr - key_from * 0.05 + upv * 3.50 + sidev * 2.40,
+    add_area("key", ctr - key_from * 0.40 + upv * 3.90 + sidev * 2.80,
              key_e, float(L.get("key_size", 6.0)), (1.00, 0.99, 0.97))
-    add_area("fill", ctr + key_from * 0.20 + upv * 1.50 - sidev * 2.60,
+    add_area("fill", ctr + key_from * 0.05 + upv * 1.90 - sidev * 3.20,
              fill_e, float(L.get("fill_size", 6.2)), (0.98, 0.99, 1.00))
     add_area("rim", ctr - key_from * 2.2 + upv * 1.55 + sidev * 0.4,
              rim_e, float(L.get("rim_size", 2.8)), (0.95, 0.97, 1.00))
