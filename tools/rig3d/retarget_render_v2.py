@@ -23,6 +23,25 @@ ap.add_argument("--mask-only", action="store_true"); ap.add_argument("--res", de
 ap.add_argument("--skip-existing", action="store_true", help="skip frames whose f_/m_ png already exists (crash recovery)")
 a = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:])
 C = json.load(open(a.cfg)); MO, RC = C["motion"], C["render"]
+def apply_form_offsets(mo):
+    """Construct a common-mistake take from the same free motion via rig offsets (v3.4).
+    Shared: not a generated clip and not a per-exercise hack. `form: wrong` overlays motion.wrong_form."""
+    if str(mo.get("form") or "right").lower() != "wrong":
+        return mo
+    mo = dict(mo); WF = dict(mo.get("wrong_form") or {})
+    if "torso_target_deg" in WF:
+        mo["torso_target_deg"] = float(WF["torso_target_deg"])
+    elif "torso_rise_deg" in WF:
+        mo["torso_target_deg"] = float(mo.get("torso_target_deg", 45)) - float(WF["torso_rise_deg"])
+    for k in ("elbow_path", "shrug_m", "round_back_deg", "scapula_retract", "elbow_flare_extra_m", "elbow_flare_max_m"):
+        if k in WF:
+            mo[k] = WF[k]
+    mo.setdefault("elbow_path", "flare")
+    mo.setdefault("shrug_m", 0.0)
+    mo.setdefault("round_back_deg", 0.0)
+    mo.setdefault("scapula_retract", False)
+    return mo
+MO = apply_form_offsets(MO); C["motion"] = MO
 if a.skip_existing: RC["skip_existing_frames"] = True
 D = np.load(a.npz); P3 = D["P3"].copy(); side = int(D["side"]); f0, f1 = int(C["_rep"][0]), int(C["_rep"][1])
 NF = f1 - f0
@@ -227,6 +246,86 @@ if LEGS == "planted":       # per-frame 2-bone knee solve from the evaluated hip
             sc.frame_set(f + 1); H = arm.matrix_world @ pb[s_ + "UpLeg"].head; dv = A - H; d = min(dv.length, 0.999 * (Lt + Ls)); u_ = dv.normalized()
             x_ = (Lt * Lt - Ls * Ls + d * d) / (2 * d); h_ = math.sqrt(max(Lt * Lt - x_ * x_, 0.0)); pp = (pole - pole.dot(u_) * u_).normalized()
             E[p_ + "kn"].location = H + u_ * x_ + pp * h_; E[p_ + "kn"].keyframe_insert("location", frame=f + 1)
+shrug_m = float(MO.get("shrug_m", 0.0) or 0.0)
+if shrug_m > 0 and (("LeftShoulder" if side == 11 else "RightShoulder") in pb):
+    # World-space translate the working Shoulder toward the head (scapular elevation),
+    # composed onto the already-keyed pose. Replacing the shoulder quaternion with a
+    # probed-axis rotation wiped the retarget and did not measure as a rise.
+    wh_ = "Left" if side == 11 else "Right"; sb = pb[wh_ + "Shoulder"]; ppw = wh_[0].lower()
+    angs = []
+    for f in range(NF):
+        sc.frame_set(f + 1); S = arm.matrix_world @ pb[wh_ + "Arm"].head; El = E[ppw + "el"].location; Wri = E[ppw + "wr"].location
+        angs.append(math.degrees((S - El).angle(Wri - El)) if (S - El).length > 1e-6 and (Wri - El).length > 1e-6 else 180.0)
+    amin, amax = min(angs), max(angs)
+    for f, ang in enumerate(angs):
+        amt = 0.0 if amax - amin < 1e-3 else (amax - ang) / (amax - amin)
+        sc.frame_set(f + 1); bpy.context.view_layer.update()
+        sh = arm.matrix_world @ pb[wh_ + "Arm"].head
+        hd = arm.matrix_world @ pb["Head"].head
+        toward = hd - sh
+        if toward.length < 1e-6:
+            continue
+        toward.normalize()
+        x = shrug_m * amt
+        # keep the working-arm IK reachable after the shoulder moves
+        if ppw + "wr" in E:
+            Wt = E[ppw + "wr"].location
+            La, Lf = rl(wh_ + "Arm", wh_ + "ForeArm"), rl(wh_ + "ForeArm", wh_ + "Hand")
+            reach = 0.98 * (La + Lf)
+            if (Wt - (sh + toward * x)).length > reach:
+                lo, hi = 0.0, x
+                for _ in range(10):
+                    mid = 0.5 * (lo + hi)
+                    if (Wt - (sh + toward * mid)).length > reach: hi = mid
+                    else: lo = mid
+                x = lo
+        # don't drive the arm capsule through the head (~8 cm combined radius)
+        x = min(x, max(0.0, toward.length - 0.08))
+        delta = toward * x
+        if sb.parent:
+            parent_mw = arm.matrix_world @ sb.parent.matrix
+            delta_local = parent_mw.to_3x3().inverted() @ delta
+        else:
+            delta_local = arm.matrix_world.to_3x3().inverted() @ delta
+        sb.location = sb.location.copy() + delta_local
+        bpy.context.view_layer.update()
+        sb.keyframe_insert("location", frame=f + 1)
+    log(f"shrug {wh_} translate toward head max {shrug_m:.3f} m")
+round_back_deg = float(MO.get("round_back_deg", 0.0) or 0.0)
+if round_back_deg > 0:
+    # World-matrix kyphosis about each bone head (not a local-axis quaternion multiply,
+    # which turned an 8 deg request into ~50 deg and yanked the neck). Neck/Spine02 stay
+    # as keyed so the head continues the rounded thoracic line.
+    sc.frame_set(1); bpy.context.view_layer.update()
+    lat = (arm.matrix_world @ pb["LeftUpLeg"].head) - (arm.matrix_world @ pb["RightUpLeg"].head)
+    lat = mu.Vector((lat.x, lat.y, 0.0))
+    if lat.length < 1e-6: lat = mu.Vector((1.0, 0.0, 0.0))
+    lat.normalize()
+    def _thor_ang():
+        hips = arm.matrix_world @ pb["Hips"].head
+        s1 = arm.matrix_world @ pb["Spine01"].head
+        nk = arm.matrix_world @ (pb["neck"].head if "neck" in pb else pb["Head"].head)
+        return math.degrees((s1 - hips).angle(nk - s1)) if (s1 - hips).length > 1e-6 and (nk - s1).length > 1e-6 else 0.0
+    def _rot_about_head(sb, axis, deg):
+        mw = (arm.matrix_world @ sb.matrix).copy()
+        hd = mw.to_translation().copy()
+        q = mu.Quaternion(axis.normalized(), math.radians(deg))
+        mw_new = mu.Matrix.Translation(hd) @ q.to_matrix().to_4x4() @ mu.Matrix.Translation(-hd) @ mw
+        sb.matrix = arm.matrix_world.inverted() @ mw_new
+    base = _thor_ang()
+    _rot_about_head(pb["Spine01"], lat, 3.0); bpy.context.view_layer.update()
+    if _thor_ang() < base:
+        lat = -lat
+    sc.frame_set(1); bpy.context.view_layer.update()  # drop the 3 deg probe
+    for bname, share in (("Spine", 0.35), ("Spine01", 0.65)):
+        if bname not in pb: continue
+        sb = pb[bname]
+        for f in range(NF):
+            sc.frame_set(f + 1); bpy.context.view_layer.update()
+            _rot_about_head(sb, lat, round_back_deg * share)
+            bpy.context.view_layer.update()
+            sb.keyframe_insert("rotation_quaternion", frame=f + 1)
+    log(f"round_back {round_back_deg:.1f} deg world-lateral about bone heads")
 if LEGS == "planted" and MO.get("support_hand", "") == "front_thigh":
     # v5: the free hand rests on the front thigh just above the knee (classic split-stance row brace) instead of
     # floating ~30 cm in front of it after the stance/hip changes. Elbow from a 2-bone solve (rig arm lengths), out to the side.
@@ -317,6 +416,44 @@ if MO.get("elbow_path", "source") == "tuck_torso":
             else: break
         E[ppw + "el"].location = best; E[ppw + "el"].keyframe_insert("location", frame=f + 1)
     log(f"elbow_path tuck_torso on {wh_}")
+if MO.get("elbow_path", "source") == "flare":
+    # Opposite of tuck_torso: walk the 2-bone circle AWAY from Spine01 (elbow flare),
+    # still constrained to the IK circle and an anatomical max torso distance.
+    wh_ = "Left" if side == 11 else "Right"; ppw = wh_[0].lower()
+    La_w, Lf_w = rl(wh_ + "Arm", wh_ + "ForeArm"), rl(wh_ + "ForeArm", wh_ + "Hand")
+    max_torso = float(MO.get("elbow_flare_max_m", 0.48))
+    for f in range(NF):
+        sc.frame_set(f + 1); Sh = arm.matrix_world @ pb[wh_ + "Arm"].head; Wt = E[ppw + "wr"].location.copy()
+        dv = Wt - Sh; d = min(max(dv.length, 1e-4), 0.995 * (La_w + Lf_w)); u_ = dv.normalized()
+        x_ = (La_w * La_w - Lf_w * Lf_w + d * d) / (2 * d); h_ = math.sqrt(max(La_w * La_w - x_ * x_, 0.0))
+        mid = Sh + u_ * x_; Sp = arm.matrix_world @ pb["Spine01"].head
+        # Wing the elbow out along the hip-lateral (same-side), not "straight away from
+        # Spine01" — that opposite pole crosses the arm line and inverts signed flex.
+        if wh_ == "Right":
+            out_dir = (arm.matrix_world @ pb["RightUpLeg"].head) - (arm.matrix_world @ pb["LeftUpLeg"].head)
+        else:
+            out_dir = (arm.matrix_world @ pb["LeftUpLeg"].head) - (arm.matrix_world @ pb["RightUpLeg"].head)
+        out_dir = mu.Vector((out_dir.x, out_dir.y, 0.0))
+        if out_dir.length < 1e-6: out_dir = mu.Vector((1.0 if wh_ == "Left" else -1.0, 0.0, 0.0))
+        pole_flare = out_dir - out_dir.dot(u_) * u_
+        if pole_flare.length < 1e-5: pole_flare = mu.Vector((0.0, 0.0, 1.0))
+        pole_flare.normalize()
+        El_src = E[ppw + "el"].location.copy(); src_pole = El_src - mid; src_pole = src_pole - src_pole.dot(u_) * u_
+        if src_pole.length < 1e-5: src_pole = pole_flare
+        src_pole.normalize()
+        best = mid + src_pole * h_; best_d = (best - Sp).length
+        for a_ in np.linspace(0.0, 1.0, 16):
+            p_ = (src_pole * (1.0 - a_) + pole_flare * a_); p_ = p_ - p_.dot(u_) * u_
+            if p_.length < 1e-5: continue
+            p_.normalize()
+            if p_.dot(src_pole) < 0.0:
+                continue  # far side inverts signed elbow flex
+            El = mid + p_ * h_; dd = (El - Sp).length
+            el_ang = math.degrees((Sh - El).angle(Wt - El)) if (Sh - El).length > 1e-6 and (Wt - El).length > 1e-6 else 180.0
+            if dd <= max_torso and dd >= best_d and 15.0 <= el_ang <= 175.0:
+                best = El; best_d = dd
+        E[ppw + "el"].location = best; E[ppw + "el"].keyframe_insert("location", frame=f + 1)
+    log(f"elbow_path flare on {wh_} max {max_torso:.2f} m")
 if MO.get("scapula_retract", False) and (("LeftShoulder" if side == 11 else "RightShoulder") in pb):
     # Shared construction: rotate the working Shoulder so the arm-head moves toward Spine01 in XY,
     # proportional to working-arm flexion (retracts at the peak, rest at the start). Axis chosen by a
@@ -667,7 +804,10 @@ for _ in range(60):
     mid = (lo + hi) / 2; wx, wy = ext(mid)
     if wx > fill_w or wy > (feet_y - top_y): lo = mid
     else: hi = mid
-Dd = hi; CAM.location = ctr - fwd * Dd; CAM.rotation_euler = fwd.to_track_quat("-Z", "Y").to_euler()
+Dd = hi
+_h = float(CAMC.get("height_m", 0.0)); _s = float(CAMC.get("shift_m", 0.0))
+CAM.location = ctr - fwd * Dd + side_dir * _s + mu.Vector((0.0, 0.0, _h))
+CAM.rotation_euler = (ctr - CAM.location).to_track_quat("-Z", "Y").to_euler()
 ny = py / (Dd + pz) * kf; nx = px / (Dd + pz) * kf * asp
 camd.shift_x = float((nx.max() + nx.min()) / 2) / 2 / asp       # shift is in units of the larger (vertical) dimension
 want_low = 1 - 2 * feet_y; camd.shift_y = float((ny.min() - want_low) / 2)
@@ -704,6 +844,165 @@ def _visible_frac(pts, dist_eps=0.004):
         d_ = p_ - CAM.location; L_ = d_.length; hit, loc_, nrm_, ix_, ob_, mt_ = sc.ray_cast(dg_, CAM.location, d_.normalized(), distance=L_ - dist_eps)
         ok_ += (not hit) or ob_.name == "dumbbell"
     return ok_ / max(len(pts), 1)
+
+# ---- v3.4 camera search: maximise peak back-sheet connectivity under db-head + support-hand + callout constraints
+if bool(CAMC.get("search", False)) and (USE_MID if "USE_MID" in dir() else False):
+    wh_ = "Left" if side == 11 else "Right"; ppw = wh_[0].lower(); sp_ = "Right" if side == 11 else "Left"
+    peak_f, best_el = 1, 1e9
+    for f in range(NF):
+        sc.frame_set(f + 1)
+        S = arm.matrix_world @ pb[wh_ + "Arm"].head; El = E[ppw + "el"].location; Wr = E[ppw + "wr"].location
+        ang = math.degrees((S - El).angle(Wr - El)) if (S - El).length > 1e-6 and (Wr - El).length > 1e-6 else 180.0
+        if ang < best_el:
+            best_el, peak_f = ang, f + 1
+    sc.frame_set(peak_f); bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get(); eb = body.evaluated_get(dg); m_ = eb.to_mesh()
+    cpeak = np.empty(len(m_.vertices) * 3); m_.vertices.foreach_get("co", cpeak)
+    Mw = np.array(eb.matrix_world); cpeak = cpeak.reshape(-1, 3) @ Mw[:3, :3].T + Mw[:3, 3]; eb.to_mesh_clear()
+    name_i = {n: i for i, n in enumerate(MID["names"])}
+    back = np.isin(MID["vert_id"], [name_i[n] for n in ("lats", "rhomboids", "mid_trap") if n in name_i])
+    bidx = np.nonzero(back)[0]
+    if len(bidx) > 1400:
+        bidx = bidx[::max(1, len(bidx) // 1400)]
+    sheet_pts = cpeak[bidx]
+    def _cc_frac(flags, ndc):
+        gh, gw = 140, 80
+        grid = np.zeros((gh, gw), np.uint8)
+        for (x, y), v in zip(ndc, flags):
+            if not v: continue
+            ix = int(np.clip(x * gw, 0, gw - 1)); iy = int(np.clip((1.0 - y) * gh, 0, gh - 1))
+            grid[iy, ix] = 1
+        total = int(grid.sum())
+        if total == 0: return 0.0, 0
+        seen = np.zeros_like(grid); best = 0
+        for y in range(gh):
+            for x in range(gw):
+                if grid[y, x] == 0 or seen[y, x]: continue
+                stack = [(y, x)]; seen[y, x] = 1; n = 0
+                while stack:
+                    cy, cx = stack.pop(); n += 1
+                    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+                        ny, nx = cy + dy, cx + dx
+                        if 0 <= ny < gh and 0 <= nx < gw and grid[ny, nx] and not seen[ny, nx]:
+                            seen[ny, nx] = 1; stack.append((ny, nx))
+                if n > best: best = n
+        return best / total, total
+    def _place(yaw_deg, elev_deg, height_m, shift_m):
+        yaw, el = math.radians(yaw_deg), math.radians(elev_deg)
+        dh = (side_dir * math.cos(yaw) - fw * math.sin(yaw)).normalized()
+        dirv = (dh * math.cos(el) + mu.Vector((0, 0, 1)) * math.sin(el)).normalized()
+        look = ctr + side_dir * float(shift_m)
+        fwd_ = -dirv; right_ = fwd_.cross(mu.Vector((0, 0, 1))).normalized(); up_ = right_.cross(fwd_)
+        rel = P - np.array(look); px_ = rel @ np.array(right_); py_ = rel @ np.array(up_); pz_ = rel @ np.array(fwd_)
+        def ext(Dd):
+            nx = px_ / (Dd + pz_) * kf * asp; ny = py_ / (Dd + pz_) * kf
+            return (nx.max() - nx.min()) / 2, (ny.max() - ny.min()) / 2
+        lo, hi = 0.5, 30.0
+        for _ in range(50):
+            mid = (lo + hi) / 2; wx, wy = ext(mid)
+            if wx > fill_w or wy > (feet_y - top_y): lo = mid
+            else: hi = mid
+        Dd = hi
+        CAM.location = look - fwd_ * Dd + side_dir * float(shift_m) * 0.15 + mu.Vector((0.0, 0.0, float(height_m)))
+        aim = (look - CAM.location).normalized()
+        CAM.rotation_euler = aim.to_track_quat("-Z", "Y").to_euler()
+        ny = py_ / (Dd + pz_) * kf; nx = px_ / (Dd + pz_) * kf * asp
+        camd.shift_x = float((nx.max() + nx.min()) / 2) / 2 / asp
+        want_low = 1 - 2 * feet_y; camd.shift_y = float((ny.min() - want_low) / 2)
+        bpy.context.view_layer.update()
+        return Dd
+    yaws = list(CAMC.get("search_yaw_deg") or [32, 44, 56, 68, 80])
+    elevs = list(CAMC.get("search_elev_deg") or [14, 22, 30, 38])
+    heights = list(CAMC.get("search_height_m") or [0.0, 0.12])
+    shifts = list(CAMC.get("search_shift_m") or [0.0, 0.08])
+    # seed first so a failed search still keeps the yaml camera
+    seed = (float(CAMC.get("yaw_back_deg", 35)), float(CAMC.get("elev_deg", 16)), 0.0, 0.0)
+    cands = [seed] + [(y, e, h, s) for y in yaws for e in elevs for h in heights for s in shifts]
+    # unique
+    seen_c, ordered = set(), []
+    for c in cands:
+        key = tuple(round(float(x), 4) for x in c)
+        if key not in seen_c:
+            seen_c.add(key); ordered.append(c)
+    results = []
+    sc.frame_set(peak_f); bpy.context.view_layer.update()
+    for (yaw_d, el_d, ht, sh) in ordered:
+        _place(yaw_d, el_d, ht, sh)
+        ndc, flags = [], []
+        dg = bpy.context.evaluated_depsgraph_get()
+        for p_ in sheet_pts:
+            v = mu.Vector(p_.tolist()); q = world_to_camera_view(sc, CAM, v)
+            inf = (0.02 < q.x < 0.98) and (0.02 < q.y < 0.98) and q.z > 0
+            if not inf:
+                flags.append(False); ndc.append((q.x, q.y)); continue
+            d_ = v - CAM.location; L_ = d_.length
+            hit, loc_, nrm_, ix_, ob_, mt_ = sc.ray_cast(dg, CAM.location, d_.normalized(), distance=max(L_ - 0.004, 0.0))
+            ok = (not hit) or (ob_ is not None and ob_.name == "dumbbell")
+            flags.append(bool(ok)); ndc.append((q.x, q.y))
+        cc, nvis = _cc_frac(flags, ndc)
+        Mdb = db.matrix_world; vis_db = []
+        for hc_ in DBH:
+            e1_ = mu.Vector((0, 1, 0)); e2_ = mu.Vector(DB_AX).cross(e1_)
+            pts_ = [Mdb @ (hc_ + mu.Vector(DB_AX) * dx + 0.055 * math.cos(t_) * e1_ + 0.055 * math.sin(t_) * e2_)
+                    for dx in (-0.03, 0.0, 0.03) for t_ in np.linspace(0, 2 * math.pi, 6, endpoint=False)]
+            vis_db.append(round(_visible_frac(pts_), 3))
+        # start-frame db visibility: a back camera that sees a connected peak sheet
+        # often hides the hanging dumbbell in front of the hips
+        sc.frame_set(1); bpy.context.view_layer.update()
+        Mdb0 = db.matrix_world; vis_db0 = []
+        for hc_ in DBH:
+            e1_ = mu.Vector((0, 1, 0)); e2_ = mu.Vector(DB_AX).cross(e1_)
+            pts_ = [Mdb0 @ (hc_ + mu.Vector(DB_AX) * dx + 0.055 * math.cos(t_) * e1_ + 0.055 * math.sin(t_) * e2_)
+                    for dx in (-0.03, 0.0, 0.03) for t_ in np.linspace(0, 2 * math.pi, 6, endpoint=False)]
+            vis_db0.append(round(_visible_frac(pts_), 3))
+        sc.frame_set(peak_f); bpy.context.view_layer.update()
+        Wm = arm.matrix_world
+        raw_s = [Wm @ pb[sp_ + "Hand"].head, Wm @ pb[sp_ + "ForeArm"].head]
+        if sp_ + "Hand" in pb:
+            raw_s.append(Wm @ pb[sp_ + "Hand"].head + (Wm.to_3x3().normalized() @ pb[sp_ + "Hand"].matrix.to_3x3().normalized() @ mu.Vector((0, 0.12, 0))))
+        # bone heads sit inside the mesh; nudge toward the camera so a skin hit is not counted as occlusion
+        s_pts = []
+        for p0 in raw_s:
+            to_cam = CAM.location - p0
+            if to_cam.length > 1e-6:
+                s_pts.append(p0 + to_cam.normalized() * 0.045)
+            else:
+                s_pts.append(p0)
+        hand_vis = _visible_frac(s_pts)
+        # callout text box in NDC (1080x1920 layout: x 60-320, y 600-900)
+        call_hit = 0; call_n = 0
+        for (x, y), v in zip(ndc, flags):
+            if not v: continue
+            iy = 1.0 - y
+            if 0.055 < x < 0.30 and 0.31 < iy < 0.48:
+                call_hit += 1
+            call_n += 1
+        call_frac = call_hit / max(call_n, 1)
+        dbmin = min(vis_db) if vis_db else 0.0
+        dbmin0 = min(vis_db0) if vis_db0 else 0.0
+        score = cc * 2.0 + dbmin * 1.3 + dbmin0 * 1.3 + float(hand_vis) * 0.55 - call_frac * 1.6
+        if dbmin < 0.5: score -= 100.0
+        if dbmin0 < 0.5: score -= 100.0
+        if hand_vis < 0.15: score -= 2.0
+        results.append({"yaw": yaw_d, "elev": el_d, "height_m": ht, "shift_m": sh, "cc": round(cc, 4),
+                        "nvis": int(nvis), "db": vis_db, "db_start": vis_db0, "hand": round(float(hand_vis), 3),
+                        "callout_frac": round(call_frac, 3), "score": round(score, 4)})
+    results.sort(key=lambda r: -r["score"])
+    win = results[0]
+    _place(win["yaw"], win["elev"], win["height_m"], win["shift_m"])
+    pr = np.array([world_to_camera_view(sc, CAM, mu.Vector(p_.tolist()))[:2] for p_ in P[::5]])
+    framing.update({"x_min": round(float(pr[:, 0].min()), 3), "x_max": round(float(pr[:, 0].max()), 3),
+                    "y_top": round(float(1 - pr[:, 1].max()), 3), "y_feet": round(float(1 - pr[:, 1].min()), 3),
+                    "yaw_back_deg": win["yaw"], "elev_deg": win["elev"], "height_m": win["height_m"],
+                    "shift_m": win["shift_m"], "search_peak_f": peak_f, "search_cc": win["cc"],
+                    "search_db": win["db"], "search_hand": win["hand"], "search_score": win["score"]})
+    try:
+        json.dump({"winner": win, "peak_f": peak_f, "n": len(results), "top": results[:8], "all": results},
+                  open(a.out + "/camera_search.json", "w"), indent=1)
+    except Exception:
+        pass
+    log(f"camera search peak f{peak_f} winner yaw={win['yaw']} elev={win['elev']} h={win['height_m']} sh={win['shift_m']} cc={win['cc']} db={win['db']} hand={win['hand']} score={win['score']} ({len(results)} cands)")
+
 DBM = np.zeros((NF, 4, 4)); BREST = np.array([_nm(arm.matrix_world @ arm.data.bones[n].matrix_local) for n in BN])
 for f in range(1, NF + 1):
     sc.frame_set(f); Wm = arm.matrix_world; Pp = lambda b: Wm @ pb[b].head

@@ -32,7 +32,7 @@ motion:
   foot_level: true
 render:
   camera:
-    yaw_back_deg: 35               # working-side 3/4; more-behind hid a dumbbell head
+    yaw_back_deg: 48               # v3.4: more-behind than 35 (peak sheet) but not so far that the hanging db disappears
 grade:
   target_muscles: [lats, rhomboids, mid_trap, rear_delt]
 qc:
