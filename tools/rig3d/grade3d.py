@@ -108,6 +108,38 @@ def glow_quality_stats(o, green):
         "glow_sat_p50": round(float(np.percentile(hsv[..., 1][green], 50)), 1),
     }
 
+
+def wrap_glow_to_beauty(graded, base, src_l, hp_form, mus_w, reg_any, shorts):
+    """Shade 2D fibres with the underlying 3D lighting so the glow wraps the muscle
+    volume (darker at grazing/shadow edges) and specular highlights survive.
+    Interior troughs are lifted just above the green-detect floor so fibre gaps
+    cannot split the connected glow component (clay v3.1 peak cc 0.8996)."""
+    w = np.clip(mus_w, 0, 1) * (1.0 - np.clip(shorts, 0, 1))
+    if float(w.max()) <= 0:
+        return graded
+    mus = (reg_any > 0.15) & (shorts < 0.25)
+    if int(mus.sum()) > 200:
+        lo, hi = np.percentile(src_l[mus], [8, 92])
+        wrap = np.clip((src_l - lo) / max(float(hi - lo), 1.0), 0.0, 1.0)
+    else:
+        wrap = np.clip(src_l / 180.0, 0.0, 1.0)
+    wrap = 0.58 + 0.42 * wrap
+    glow = graded - base
+    graded = base + glow * wrap[..., None]
+    hp_pos = np.clip(hp_form, 0.0, None)
+    spec = np.clip(hp_pos / 26.0, 0.0, 1.0) * w
+    graded = np.clip(graded + (0.50 * hp_pos * spec)[..., None], 0, 255)
+    interior = cv2.erode(((reg_any > 0.16) & (shorts < 0.25)).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    g, r, b = graded[..., 1], graded[..., 0], graded[..., 2]
+    gdom = g - np.maximum(r, b)
+    need = interior & (gdom < 36.0)
+    lift = (36.0 - gdom) * need.astype(np.float32)
+    graded = graded.copy()
+    graded[..., 1] = np.clip(g + lift, 0, 255)
+    graded[..., 0] = np.clip(r + 0.14 * lift, 0, 255)
+    graded[..., 2] = np.clip(b + 0.38 * lift, 0, 255)
+    return graded
+
 def snap_glow_hsv(rgb, w, target_h=74.0, target_s=196.0, hue_mix=0.90, sat_mix=0.82):
     """Push glow pixels toward gymform neon green while keeping value (fibre / form)."""
     ww = np.clip(w, 0, 1).astype(np.float32)
@@ -222,6 +254,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
         F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
         graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", fi / max(n, 1))
         graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
+        graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0], reg_any, shorts)
         graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
                                target_h=52.0 if G.get("glow", "right") == "wrong" else 74.0,
                                target_s=196.0, sat_mix=0.82)
