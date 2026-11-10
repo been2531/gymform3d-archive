@@ -155,77 +155,38 @@ if LEGS == "planted":
     log(f"legs planted: hips raised {raise_z:+.3f} m for knee {math.degrees(kt):.0f}, fwd {fwd_h.round(2).tolist()}")
     log(f"legs planted: stance_scale {ss}, ankles {B[0, 27].round(3).tolist()} / {B[0, 28].round(3).tolist()}")
 BENCH_OBJ = None; BENCH_META = None; BENCH_SPEC = None
+AUTH_META = None; AUTH_SPEC = None; AUTH_U = None
 if LEGS == "bench_row":
-    # Classic one-arm DB row: support hand + same-side knee on a flat bench, working foot on
-    # the floor, flat back roughly parallel to the floor. Working arm is authored (hang -> row).
-    tv0 = np.mean((B[:, 11] + B[:, 12]) / 2 - (B[:, 23] + B[:, 24]) / 2, axis=0)
-    fwd_h = np.array([tv0[0], tv0[1], 0.0]); fwd_h /= (np.linalg.norm(fwd_h) + 1e-12)
-    lat_h = np.cross([0.0, 0.0, 1.0], fwd_h); lat_h /= (np.linalg.norm(lat_h) + 1e-12)
-    support_left = (int(side) == 12)
-    pad_z = float(MO.get("bench_pad_z_m", 0.49))
-    hip0 = np.median((B[:, 23] + B[:, 24]) / 2, axis=0)
-    hip_w = 0.5 * float(np.linalg.norm(np.median(B[:, 23] - B[:, 24], axis=0))) or 0.09
-    Lt = 0.5 * (rl("LeftUpLeg", "LeftLeg") + rl("RightUpLeg", "RightLeg"))
-    Ls = 0.5 * (rl("LeftLeg", "LeftFoot") + rl("RightLeg", "RightFoot"))
-    lat_sup = lat_h if support_left else -lat_h
-    lat_wrk = -lat_sup
-    kn_z = pad_z + 0.045
-    # Nearly horizontal thigh: hips stay close to pad height so the back reads parallel to the bench.
-    thigh = fwd_h * 0.92 + np.array([0.0, 0.0, 1.0]) * 0.22
-    thigh = thigh / (np.linalg.norm(thigh) + 1e-12) * Lt
-    hip_mid0 = hip0.copy()
-    sknee = hip_mid0 + lat_sup * hip_w - fwd_h * 0.10
-    sknee[2] = kn_z
-    ship = sknee + thigh
-    hip_new = ship - lat_sup * hip_w
-    hip_new[2] = ship[2]
-    lhip = hip_new - lat_h * hip_w
-    rhip = hip_new + lat_h * hip_w
-    ship = lhip if support_left else rhip
-    whip = rhip if support_left else lhip
-    sknee = ship - thigh; sknee[2] = kn_z
-    shin = (-fwd_h * 0.45 + np.array([0.0, 0.0, -1.0]) * 0.89)
-    shin = shin / (np.linalg.norm(shin) + 1e-12) * Ls
-    sank = sknee + shin
-    sank[2] = max(float(sank[2]), 0.10)
-    # Plant the working foot clearly on the floor, outside the pad and slightly back.
-    wank = hip_new + lat_wrk * (hip_w + 0.42) - fwd_h * 0.16
-    wank[2] = 0.07
-    wknee = 0.5 * (whip + wank); wknee[2] = 0.38
-    dhip = hip_new - hip0
-    upper = [j for j in range(33) if j not in (23, 24, 25, 26, 27, 28, 29, 30, 31, 32)]
-    B[:, upper] += dhip
-    B[:, 23] = lhip; B[:, 24] = rhip
-    if support_left:
-        B[:, 25] = sknee; B[:, 27] = sank
-        B[:, 31] = sank - fwd_h * 0.06; B[:, 31, 2] = sank[2]
-        B[:, 29] = sank + fwd_h * 0.03; B[:, 29, 2] = sank[2]
-        B[:, 26] = wknee; B[:, 28] = wank
-        B[:, 32] = wank + fwd_h * 0.18; B[:, 32, 2] = 0.0
-        B[:, 30] = wank - fwd_h * 0.05; B[:, 30, 2] = 0.0
-    else:
-        B[:, 26] = sknee; B[:, 28] = sank
-        B[:, 32] = sank - fwd_h * 0.06; B[:, 32, 2] = sank[2]
-        B[:, 30] = sank + fwd_h * 0.03; B[:, 30, 2] = sank[2]
-        B[:, 25] = wknee; B[:, 27] = wank
-        B[:, 31] = wank + fwd_h * 0.18; B[:, 31, 2] = 0.0
-        B[:, 29] = wank - fwd_h * 0.05; B[:, 29, 2] = 0.0
-    yaw_z = math.atan2(float(fwd_h[1]), float(fwd_h[0]))
-    cz, sz = math.cos(yaw_z), math.sin(yaw_z)
-    loc_kn = np.array([-0.12, 0.0, 0.49])
-    Rkn = np.array([cz * loc_kn[0] - sz * loc_kn[1], sz * loc_kn[0] + cz * loc_kn[1], loc_kn[2]])
-    origin = np.array([sknee[0], sknee[1], 0.45]) - np.array([Rkn[0], Rkn[1], 0.0])
-    loc_hd = np.array([0.32, 0.0, 0.49])
-    hand_w = origin + np.array([cz * loc_hd[0] - sz * loc_hd[1], sz * loc_hd[0] + cz * loc_hd[1], 0.04])
-    hand_w[2] = pad_z + 0.015
-    BENCH_SPEC = {
-        "origin_xy": (float(origin[0]), float(origin[1])),
-        "origin_z": 0.45, "yaw_z": yaw_z,
-        "support_knee": [float(x) for x in sknee],
-        "support_hand": [float(x) for x in hand_w],
-        "support_left": bool(support_left), "fwd": [float(x) for x in fwd_h],
-        "look": "gunmetal_black",
-    }
+    # Explicit world targets BEFORE any IK. Bench along +Y, head toward +Y, +X = working right.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import authored_motion as AM
+    import bench_row_pose as BRP
+    AUTH_SPEC = AM.load_spec(C)
+    _form = str(MO.get("form") or "right").lower()
+    _u, _fps, _dur = AM.phase_u(AUTH_SPEC, _form)
+    _wh = "Left" if side == 11 else "Right"
+    _Lt = 0.5 * (rl("LeftUpLeg", "LeftLeg") + rl("RightUpLeg", "RightLeg"))
+    _Ls = 0.5 * (rl("LeftLeg", "LeftFoot") + rl("RightLeg", "RightFoot"))
+    _La = rl(_wh + "Arm", _wh + "ForeArm"); _Lf = rl(_wh + "ForeArm", _wh + "Hand")
+    _tor = ((Wr @ bl["LeftArm"].head_local + Wr @ bl["RightArm"].head_local) / 2 - Wr @ bl["Hips"].head_local).length
+    _shw = 0.5 * (Wr @ bl["LeftArm"].head_local - Wr @ bl["RightArm"].head_local).length
+    _hpw = 0.5 * (Wr @ bl["LeftUpLeg"].head_local - Wr @ bl["RightUpLeg"].head_local).length
+    B, BENCH_SPEC = BRP.build_landmarks(_u, {
+        "thigh": _Lt, "shin": _Ls, "upper_arm": _La, "forearm": _Lf,
+        "torso": float(_tor), "shoulder_half": float(_shw), "hip_half": float(_hpw),
+        "pad_z": float(MO.get("bench_pad_z_m", 0.49)),
+        "hand_ahead_m": float(MO.get("support_hand_ahead_m", 0.55)),
+    }, side=side)
+    NF = int(B.shape[0]); AUTH_U = _u
+    AUTH_META = {"u": _u, "fps": _fps, "dur_s": _dur, "n": NF, "form": _form,
+                 "torso_start_deg": 90.0, "torso_peak_deg": 90.0, "world_targets": True}
+    np.save(a.out + "/authored_landmarks.npy", B)
+    np.save(a.out + "/authored_u.npy", AUTH_U)
+    json.dump({k: AUTH_META[k] for k in AUTH_META if k != "u"}, open(a.out + "/authored_meta.json", "w"), default=float)
+    MO["elbow_path"] = "source"
+    MO["shrug_m"] = 0.0
+    MO["grip_twist_forearm_share"] = 1.0
+    MO["scapula_retract"] = False
     try:
         import importlib.util
         _bp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "props", "bench_flat.py")
@@ -235,11 +196,11 @@ if LEGS == "bench_row":
         _look = str(_bdict.get("look") or MO.get("bench_look") or "gunmetal_black")
         BENCH_OBJ, BENCH_META = _BF.build_bench(look=_look, clear=False)
         _BF.place_bench(BENCH_OBJ, BENCH_SPEC["origin_xy"], BENCH_SPEC["yaw_z"], BENCH_SPEC["origin_z"])
-        log(f"bench_row look={_look} origin={BENCH_SPEC['origin_xy']} yaw={math.degrees(yaw_z):.1f} hip_z={hip_new[2]:.3f} kn={np.asarray(sknee).round(3).tolist()}")
+        log(f"bench_row WORLD +Y hip_z={BENCH_SPEC['hip_z']:.3f} kn={np.asarray(BENCH_SPEC['support_knee']).round(3).tolist()} hand={np.asarray(BENCH_SPEC['support_hand']).round(3).tolist()}")
     except Exception as _be:
         log(f"bench spawn failed: {_be}")
-AUTH_META = None; AUTH_SPEC = None; AUTH_U = None
-if (MO.get("authored") or {}).get("enabled"):
+    log(f"authored {_form} {NF} frames {_dur:.2f}s fps {_fps} (explicit world targets)")
+if (MO.get("authored") or {}).get("enabled") and AUTH_META is None:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import authored_motion as AM
     AUTH_SPEC = AM.load_spec(C)
@@ -358,15 +319,17 @@ if LEGS == "bench_row" and BENCH_SPEC is not None:
     sp_ = "Left" if support_left else "Right"
     wk_ = "Right" if support_left else "Left"
     kn_tgt = mu.Vector(BENCH_SPEC["support_knee"])
-    if BENCH_OBJ is not None and "support_knee" in bpy.data.objects:
-        kn_tgt = bpy.data.objects["support_knee"].matrix_world.translation.copy()
-    # COPY_LOCATION so the support knee empty stays glued to the pad anchor
     ekn = E[sp_[0].lower() + "kn"]
-    if BENCH_OBJ is not None and "support_knee" in bpy.data.objects:
-        cl = ekn.constraints.new("COPY_LOCATION"); cl.target = bpy.data.objects["support_knee"]
+    eak = E[sp_[0].lower() + "ank"]
+    eft = E[sp_[0].lower() + "ft"]
+    ank_tgt = mu.Vector(BENCH_SPEC.get("support_ankle") or BENCH_SPEC["support_knee"])
     for f in range(NF):
         ekn.location = kn_tgt
         ekn.keyframe_insert("location", frame=f + 1)
+        eak.location = ank_tgt
+        eak.keyframe_insert("location", frame=f + 1)
+        eft.location = ank_tgt + mu.Vector((0.0, -0.08, -0.01))
+        eft.keyframe_insert("location", frame=f + 1)
     # working leg 2-bone IK
     Lt, Ls = rl(wk_ + "UpLeg", wk_ + "Leg"), rl(wk_ + "Leg", wk_ + "Foot")
     aj = 28 if wk_ == "Right" else 27
@@ -385,7 +348,12 @@ if LEGS == "bench_row" and BENCH_SPEC is not None:
         pp.normalize()
         E[p_ + "kn"].location = H + u_ * x_ + pp * h_
         E[p_ + "kn"].keyframe_insert("location", frame=f + 1)
-    log(f"bench_row IK: {sp_} knee locked to pad, {wk_} foot on floor")
+        E[p_ + "ank"].location = A
+        E[p_ + "ank"].keyframe_insert("location", frame=f + 1)
+        toe = mu.Vector(B[0, 32 if wk_ == "Right" else 31].tolist())
+        E[p_ + "ft"].location = toe
+        E[p_ + "ft"].keyframe_insert("location", frame=f + 1)
+    log(f"bench_row IK: {sp_} knee locked to pad, {wk_} foot on floor z={A.z:.3f}")
 shrug_m = float(MO.get("shrug_m", 0.0) or 0.0)
 if shrug_m > 0 and (("LeftShoulder" if side == 11 else "RightShoulder") in pb):
     # World-space translate the working Shoulder toward the head (scapular elevation),
@@ -534,9 +502,6 @@ if MO.get("support_hand", "") == "bench_pad" and BENCH_SPEC is not None:
     sp_ = "Left" if int(side) == 12 else "Right"; pp_ = sp_[0].lower()
     La, Lf = rl(sp_ + "Arm", sp_ + "ForeArm"), rl(sp_ + "ForeArm", sp_ + "Hand")
     Wt0 = mu.Vector(BENCH_SPEC["support_hand"])
-    if BENCH_OBJ is not None and "support_hand" in bpy.data.objects:
-        Wt0 = bpy.data.objects["support_hand"].matrix_world.translation.copy()
-        cl = E[pp_ + "wr"].constraints.new("COPY_LOCATION"); cl.target = bpy.data.objects["support_hand"]
     latv = mu.Vector((lat_h if 'lat_h' in dir() else (1.0, 0.0, 0.0)))
     if 'lat_h' in dir():
         latv = mu.Vector(lat_h.tolist()) * (1 if sp_ == "Left" else -1)
@@ -745,6 +710,24 @@ if LEGS == "planted" and MO.get("foot_level", True):
         c = pb[s_ + "Foot"].constraints.new("LOCKED_TRACK"); c.target = up_e; c.track_axis = track_ax; c.lock_axis = "LOCK_Y"; used = track_ax
     log(f"foot_level LOCKED_TRACK {used} lock Y" if used else "foot_level: no clear sole-up axis, skip")
 log("rig constrained")
+if LEGS == "bench_row":
+    # DAMPED_TRACK of a standing hip onto a +Y torso can leave the figure belly-up.
+    # Compare posed height of rest-back vs rest-front verts and roll the hips if needed.
+    sc.frame_set(max(1, NF // 2)); bpy.context.view_layer.update()
+    _rest = np.empty(len(body.data.vertices) * 3); body.data.vertices.foreach_get("co", _rest)
+    _rest = _rest.reshape(-1, 3)
+    _dg = bpy.context.evaluated_depsgraph_get(); _eb = body.evaluated_get(_dg); _mm = _eb.to_mesh()
+    _posed = np.empty(len(_mm.vertices) * 3); _mm.vertices.foreach_get("co", _posed)
+    _Mw = np.array(_eb.matrix_world); _posed = _posed.reshape(-1, 3) @ _Mw[:3, :3].T + _Mw[:3, 3]
+    _eb.to_mesh_clear()
+    _back = _rest[:, 1] >= np.percentile(_rest[:, 1], 80)
+    _front = _rest[:, 1] <= np.percentile(_rest[:, 1], 20)
+    _bz, _fz = float(_posed[_back, 2].mean()), float(_posed[_front, 2].mean())
+    log(f"bench_row facing probe back_z={_bz:.3f} front_z={_fz:.3f}")
+    if _bz < _fz + 0.02:
+        pb["Hips"].rotation_quaternion = mu.Quaternion((0, 1, 0), math.pi) @ pb["Hips"].rotation_quaternion.copy()
+        bpy.context.view_layer.update()
+        log("bench_row: rolled hips 180 deg so the anatomical back faces up")
 
 # ---- rest geometry: muscle regions, shorts, hand vertices, edges ----------------------------------------------------
 me = body.data; nv = len(me.vertices)
@@ -1249,6 +1232,62 @@ pr = np.array([world_to_camera_view(sc, CAM, mu.Vector(p_.tolist()))[:2] for p_ 
 framing = {"x_min": round(float(pr[:, 0].min()), 3), "x_max": round(float(pr[:, 0].max()), 3), "y_top": round(float(1 - pr[:, 1].max()), 3),
            "y_feet": round(float(1 - pr[:, 1].min()), 3), "dist_m": round(Dd, 2), "lens": camd.lens}
 log(f"camera {framing}")
+if LEGS == "bench_row":
+    # Back 3/4 from the working side and slightly above, from the HEAD end
+    # so the glowing back fills the upper middle of the 9:16 frame.
+    peak_f = 25 if NF >= 25 else max(1, NF // 2)
+    if AUTH_U is not None:
+        peak_f = int(np.argmax(AUTH_U)) + 1
+    sc.frame_set(peak_f); bpy.context.view_layer.update()
+    hipc = (arm.matrix_world @ pb["Hips"].head + arm.matrix_world @ pb["Spine01"].head) / 2
+    shc = (arm.matrix_world @ pb["LeftArm"].head + arm.matrix_world @ pb["RightArm"].head) / 2
+    hdc = arm.matrix_world @ pb["Head"].head
+    extra = [hipc, shc, hdc,
+             arm.matrix_world @ pb["LeftHand"].head,
+             arm.matrix_world @ pb["RightHand"].head,
+             arm.matrix_world @ pb["LeftFoot"].head,
+             arm.matrix_world @ pb["RightFoot"].head,
+             arm.matrix_world @ pb["LeftLeg"].head,
+             arm.matrix_world @ pb["RightLeg"].head,
+             arm.matrix_world @ pb["LeftUpLeg"].head,
+             arm.matrix_world @ pb["RightUpLeg"].head,
+             db.matrix_world.translation]
+    for wy, wz in ((-0.62, 0.0), (-0.62, 0.49), (-0.10, 0.49),
+                   (0.45, 0.49), (0.62, 0.0), (0.62, 0.49)):
+        extra.append(mu.Vector((-0.15, wy, wz)))
+        extra.append(mu.Vector((0.15, wy, wz)))
+    pts = np.array([tuple(v) for v in extra], np.float64)
+    ctr = mu.Vector(((pts.min(0) + pts.max(0)) / 2).tolist())
+    # Blend cloud centre with the upper back. Aiming only at the back forces
+    # a zoom-out to keep the floor corners in frame and shrinks the figure.
+    look_v = ctr * 0.45 + (shc * 0.70 + hipc * 0.30) * 0.55
+    dirv = mu.Vector((1.05, 0.90, 0.95)).normalized()
+    def _place(Dd):
+        CAM.location = look_v + dirv * Dd
+        CAM.rotation_euler = (look_v - CAM.location).to_track_quat("-Z", "Y").to_euler()
+        camd.shift_x = 0.0
+        camd.shift_y = 0.02
+        bpy.context.view_layer.update()
+        return np.array([list(world_to_camera_view(sc, CAM, mu.Vector(p_.tolist()))) for p_ in pts])
+    lo, hi = 1.8, 4.0
+    for _ in range(22):
+        mid = 0.5 * (lo + hi)
+        nd = _place(mid)
+        xs, ys, zs = nd[:, 0], nd[:, 1], nd[:, 2]
+        ok = bool(np.all(zs > 0.08) and xs.min() > 0.07 and xs.max() < 0.93
+                  and ys.min() > 0.08 and ys.max() < 0.90)
+        if ok: hi = mid
+        else: lo = mid
+    nd = _place(hi)
+    qsh = world_to_camera_view(sc, CAM, shc)
+    qdb = world_to_camera_view(sc, CAM, db.matrix_world.translation)
+    framing.update({"yaw_back_deg": 41, "elev_deg": 36, "dist_m": round(float(hi), 2),
+                    "bench_row_cam": True, "from": "head_end_working_side",
+                    "x_min": round(float(nd[:, 0].min()), 3), "x_max": round(float(nd[:, 0].max()), 3),
+                    "y_top": round(float(1 - nd[:, 1].max()), 3), "y_feet": round(float(1 - nd[:, 1].min()), 3),
+                    "back_ndc": [round(qsh.x, 3), round(qsh.y, 3)],
+                    "db_ndc": [round(qdb.x, 3), round(qdb.y, 3)]})
+    log(f"camera bench_row 3/4 dist={hi:.2f} {framing}")
 
 # ---- per-frame checks (evaluated rig + deformed mesh) -----------------------------------------------------------------
 chk = []; BN = [b.name for b in arm.data.bones]; BPOSE = np.zeros((NF, len(BN), 4, 4))
@@ -1528,6 +1567,49 @@ np.savez_compressed(a.out + "/bones.npz", names=np.array(BN), rest=BREST, pose=B
                     handle_axis_local=np.array(DB_AX), working_hand=hand, palm_left=PALM["LeftHand"], palm_right=PALM["RightHand"], grip_mode=GRIP_MODE,
                     handle_n_local=np.array(HG["handle_local"]["n"]))
 log("checks done")
+if LEGS == "bench_row" and BENCH_SPEC is not None:
+    import bench_row_pose as _BRP
+    def _bp(n_):
+        return np.array(arm.matrix_world @ pb[n_].head)
+    qc_frames = {}
+    for _tag, _fi in (("bottom", 1), ("peak", int(np.argmax(AUTH_U)) + 1 if AUTH_U is not None else max(1, NF // 3))):
+        sc.frame_set(_fi); bpy.context.view_layer.update()
+        rec_pts = {
+            "lkn": _bp("LeftLeg"), "lwr": _bp("LeftHand"), "rank": _bp("RightFoot"),
+            "rsh": _bp("RightArm"), "rwr": _bp("RightHand"), "rhip": _bp("RightUpLeg"),
+            "hip": _bp("Hips"), "sh": 0.5 * (_bp("LeftArm") + _bp("RightArm")),
+            "head": _bp("Head") if "Head" in pb else _bp("head_end"),
+        }
+        uu = float(AUTH_U[_fi - 1]) if AUTH_U is not None else (1.0 if _tag == "peak" else 0.0)
+        db_ndc = db_vis = db_con = None
+        if "db" in dir() or True:
+            try:
+                dbp = db.matrix_world.translation
+                q = world_to_camera_view(sc, CAM, dbp)
+                db_ndc = (q.x, q.y)
+                # visibility of both heads
+                vis = []
+                samples = [mu.Vector((0.0, 0.0, 0.0))] + list(DBH)
+                for hc_ in samples:
+                    wp_ = db.matrix_world @ hc_
+                    toward_ = (CAM.location - wp_)
+                    if toward_.length > 1e-6:
+                        wp_ = wp_ + toward_.normalized() * 0.04
+                    vis.append(_visible_frac([wp_]))
+                db_vis = float(max(vis)) if vis else 0.0
+                log(f"bench_qc {_tag} db world={tuple(round(c,3) for c in dbp)} ndc=({q.x:.3f},{q.y:.3f}) vis={db_vis:.2f}")
+            except Exception as _qe:
+                log(f"bench_qc {_tag} db probe failed: {_qe}")
+        qc_frames[_tag] = _BRP.qc_from_bones(rec_pts, BENCH_SPEC, uu, db_ndc, db_vis, db_con)
+        log(f"bench_qc {_tag} f{_fi} pass={qc_frames[_tag]['pass']} {qc_frames[_tag]['gates']}")
+    def _jsonify(o):
+        if isinstance(o, (np.bool_,)): return bool(o)
+        if isinstance(o, (np.integer,)): return int(o)
+        if isinstance(o, (np.floating,)): return float(o)
+        if isinstance(o, np.ndarray): return o.tolist()
+        raise TypeError(type(o).__name__)
+    json.dump({"frames": qc_frames, "spec": {k: BENCH_SPEC[k] for k in BENCH_SPEC if k != "u"}},
+              open(a.out + "/bench_qc.json", "w"), indent=2, default=_jsonify)
 if a.checks_only: sys.exit(0)
 
 # ---- materials + lights (P0 quality upgrade) -----------------------------------------------------------------------
@@ -1730,6 +1812,10 @@ if look_inscene:
     _lk = float(RC.get("leg_key_energy", 0))
     if _lk > 1.0:
         add_area_aim("leg_key", leg_aim + key_from * 2.2 + upv * 0.7, _lk, 4.6, (1.00, 0.99, 0.97), leg_aim)
+    if LEGS == "bench_row":
+        _dbp = db.matrix_world.translation
+        add_area_aim("db_kicker", _dbp + mu.Vector((0.55, -0.30, 0.28)), 70, 0.55, (1.00, 0.96, 0.88), _dbp)
+        log("studio: working-side DB kicker")
 else:
     add_area_aim("leg_key", leg_aim + key_from * 2.4 + upv * 0.55, RC.get("leg_key_energy", 190), 1.8, (1.00, 0.98, 0.94), leg_aim)
     add_area_aim("leg_rim", leg_aim - key_from * 2.3 + upv * 0.70, RC.get("leg_rim_energy", 170), 1.5, (0.70, 0.84, 1.00), leg_aim)
