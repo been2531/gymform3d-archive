@@ -2,10 +2,10 @@
 """Day 4 grade for rig3d renders (Routinizer v2). Pure numpy/cv2 + the locked gymform modules, no network, no AI.
 Per frame: beauty RGBA (transparent film) + muscle-mask RGBA (R lats, G rhomboids, B mid trap, dumbbell holdout) ->
   1. upscale to 1080x1920
-  2. skin lock: body luminance percentile-mapped to the Day 4 lock (p50 64 / p75 75 / p90 88, gymform_spec.json),
-     Day 4 cool tint; shorts held in the Day 4 shorts band (24-40)
-  3. glow: gymform.muscle.day4_fibre (Day 4 GOLD #1 fibre shader) with its activation = the RENDERED muscle mask
-     (exact regions, no per-frame cut-out), green (correct form)
+  2. skin lock: look preset charcoal (soft Day 4) or clay (p50 ~150), high-pass keeps lighting form;
+     shorts held in the Day 4 shorts band (24-40)
+  3. glow: 3D emission from the beauty pass + day4_fibre at fibre_amount (fascicle direction) +
+     muscle-clamped bloom (callouts drawn after, so they never bloom)
   4. flat Day 4 backdrop (35,39,43) + soft floor contact shadow
   5. Day 4 Kaushan title (gymform.layout._title_layer), see-through alpha 0.40 over the figure (t638u rule)
 Writes g_####.png + look.json (per-frame look stats used by qc3d.py).
@@ -19,14 +19,49 @@ from gymform import muscle as gm, layout as gl   # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sharp import neutral_lapvar   # noqa: E402
 
-def skin_lock_lut(lum_skin):
-    """Monotone luminance map whose skin percentiles land on the Day 4 lock."""
-    lk = SPEC["mannequin"]["skin_lock_all_steps"]
+# P0 look presets (t728u). charcoal = Day 4 identity with extra highlight headroom + high-pass so lighting survives.
+# clay = lifted mannequin near luma p50 140-160 (Demic-like volume, gymform green glow kept).
+LOOKS = {
+    "charcoal": {"dst": [50.0, 60.0, 74.0, 90.0, 116.0, 168.0], "contrast": 0.52, "tint_rgb": [-3, 1, 3], "lo": 42.0, "hi": 255.0},
+    "clay":     {"dst": [88.0, 122.0, 150.0, 172.0, 198.0, 230.0], "contrast": 0.55, "tint_rgb": [-1, 0, 2], "lo": 70.0, "hi": 248.0},
+}
+
+def skin_lock_lut(lum_skin, look):
+    """Monotone luminance map whose skin percentiles land on the active look, plus room for rim highlights."""
     src = np.percentile(lum_skin, [1, 10, 50, 75, 90, 99.5])
-    dst = np.array([47.0, 54.0, lk["p50"], lk["p75"], lk["p90"], lk["max"] - 8.0])
+    dst = np.array(look["dst"], dtype=np.float64)
     src = np.maximum.accumulate(src + np.arange(6) * 1e-3)
-    xs = np.concatenate([[0.0], src, [255.0]]); ys = np.concatenate([[40.0], dst, [lk["max"]]])
+    xs = np.concatenate([[0.0], src, [255.0]]); ys = np.concatenate([[float(look["lo"])], dst, [255.0]])
     return lambda L: np.interp(L, xs, ys)
+
+def muscle_bloom(rgb, reg_any, body, amount):
+    """Fog-glow equivalent, clamped to a dilated muscle mask so UI drawn later never blooms."""
+    if amount <= 0:
+        return rgb
+    w = np.clip(reg_any, 0, 1) * (body > 0.45).astype(np.float32)
+    glow = rgb * w[..., None]
+    bloom = np.zeros_like(rgb)
+    for sig, wt in ((6.0, 0.42), (16.0, 0.33), (34.0, 0.22)):
+        bloom += wt * cv2.GaussianBlur(glow, (0, 0), sig)
+    dil = cv2.dilate((w > 0.12).astype(np.uint8), np.ones((21, 21), np.uint8)).astype(np.float32)
+    clamp = cv2.GaussianBlur(dil, (0, 0), 5.0)
+    return np.clip(rgb + bloom * float(amount) * clamp[..., None], 0, 255)
+
+def studio_floor_mask(fg, body, rgb):
+    """Opaque ground-plane pixels connected to the bottom edge. The receding studio floor spans
+    the full width (and would otherwise become the figure bbox). Blue dumbbell heads are excluded
+    so a 2D overlap with the floor cannot swallow the prop."""
+    R, Gc, B = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    blue = (B > R + 18.0) & (B > Gc + 12.0)
+    seedable = (fg > 0.5) & (body < 0.2) & (~blue)
+    if not np.any(seedable):
+        return np.zeros(fg.shape, dtype=bool)
+    _n, labels = cv2.connectedComponents(seedable.astype(np.uint8), connectivity=8)
+    keep = np.unique(labels[-16:][seedable[-16:]])
+    keep = keep[keep != 0]
+    if keep.size == 0:
+        return np.zeros(fg.shape, dtype=bool)
+    return np.isin(labels, keep)
 
 def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     G = cfg["grade"]; W, H = G["out_res"]
@@ -50,24 +85,52 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
         shorts = ((lum < 28.0) & (body > 0.5) & (reg_any < 0.05)).astype(np.float32)
         shorts = cv2.GaussianBlur(cv2.morphologyEx(shorts, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)), (0, 0), 1.0)
     skin = (body > 0.9) & (shorts < 0.2) & (reg_any < 0.05)
-    lut = skin_lock_lut(lum[skin]) if skin.sum() > 2000 else (lambda L: L)
-    tone = lut(lum)
+    look_name = str(G.get("look", "charcoal")).lower()
+    look = LOOKS.get(look_name, LOOKS["charcoal"]); look_name = look_name if look_name in LOOKS else "charcoal"
+    lut = skin_lock_lut(lum[skin], look) if skin.sum() > 2000 else (lambda L: L)
+    locked = lut(lum)
+    hp = lum - cv2.GaussianBlur(lum.astype(np.float32), (0, 0), 2.5)    # keep key/rim form the lock would otherwise flatten
+    tone = np.clip(locked + float(look["contrast"]) * hp, 0, float(look.get("hi", 255)))
     lo, hi = SPEC["mannequin"]["shorts_lum_range"]; tone = tone * (1 - shorts) + np.clip(lum * 0.3 + lo - 2.0, lo, hi) * shorts
-    tr, tg, tb = SPEC["mannequin"]["skin_lock_all_steps"].get("tint_rgb", [-3, 1, 3])
+    tr, tg, tb = look.get("tint_rgb", SPEC["mannequin"]["skin_lock_all_steps"].get("tint_rgb", [-3, 1, 3]))
     mono = np.stack([tone + tr, tone + tg, tone + tb], -1)
-    # Day 4 fibre shader: activation from the rendered mask (Day 4 native glow level ~100)
+    # keep 3D emission + sculpt form from the beauty pass on the target muscles
+    emit_keep = float(G.get("emission_keep", 0.78)); rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
+    base = mono * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
+    # AgX beauty emission lands as pale mint: restore gymform green/red while keeping the rendered form
+    cz = float(G.get("muscle_colorize", 0.88))
+    if cz > 0 and float(rw.max()) > 0:
+        src_l = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
+        form = np.clip(src_l / 145.0, 0.38, 1.28)
+        tint = np.array([214.0, 68.0, 48.0] if G.get("glow", "right") == "wrong" else [28.0, 228.0, 88.0], np.float32)
+        colored = np.clip(tint * form[..., None], 0, 255)
+        base = base * (1.0 - cz * rw) + colored * (cz * rw)
+    # Day 4 fibre as fascicle direction only (fibre_amount 1.0 = old sticker look)
+    fibre_amt = float(G.get("fibre_amount", 0.42))
     F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
-    graded, core_w = gm.day4_fibre(F, mono, body, shorts, G.get("glow", "right") == "wrong", fi / max(n, 1))
-    # composite: body = graded, dumbbell = beauty (untouched), backdrop flat Day 4
+    graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", fi / max(n, 1))
+    graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
+    graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.68)))
+    sm = shorts > 0.45
+    if np.any(sm):                                          # QC: 0 green pixels on the briefs
+        graded[sm] = mono[sm]
+    # composite: body = graded, dumbbell + studio floor = beauty (untouched), backdrop flat Day 4
     bw = np.clip(body / np.maximum(fg, 1e-4), 0, 1)[..., None]
     fg_rgb = graded * bw + rgb * (1 - bw)
     bg = np.empty((H, W, 3), np.float32); bg[:] = G.get("backdrop_rgb", SPEC["background"]["grade_to_rgb"])
-    ys, xs = np.nonzero(fg > 0.5)
-    if len(ys):                                                          # soft contact shadow under the feet
-        fy = ys.max(); sel = ys > fy - 40; cx = xs[sel].mean(); sw = max(60.0, float(np.ptp(xs[sel])) * 0.9 + 60)
+    ys_b, xs_b = np.nonzero(body > 0.5)
+    YY = np.arange(H, dtype=np.float32)[:, None]
+    floor_m = studio_floor_mask(fg, body, rgb)
+    fig = (fg > 0.5) & ~floor_m
+    ys, xs = np.nonzero(fig) if fig.any() else (ys_b, xs_b)
+    sh = None
+    if len(ys_b):                                                          # contact shadow under the BODY feet (also darkens the studio floor)
+        fy = ys_b.max(); sel = ys_b > fy - 40; cx = xs_b[sel].mean(); sw = max(60.0, float(np.ptp(xs_b[sel])) * 0.9 + 60)
         YY, XX = np.mgrid[:H, :W].astype(np.float32)
         sh = np.exp(-(((XX - cx) / sw) ** 2 + ((YY - fy - 6) / 18.0) ** 2) * 2.2); bg *= (1 - 0.38 * sh)[..., None]
     out = bg * (1 - fg[..., None]) + fg_rgb * fg[..., None]
+    if sh is not None:
+        out = out * (1.0 - 0.42 * sh * (body < 0.5))[..., None]
     out8 = np.clip(out, 0, 255).astype(np.uint8)
     base8 = out8                     # look stats are measured on the figure BEFORE the UI (laser/leader/pill have their own QC)
     ui = {}
@@ -89,8 +152,8 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     o = base8.astype(np.float32); L = 0.299 * o[..., 0] + 0.587 * o[..., 1] + 0.114 * o[..., 2]
     gdom = o[..., 1] - np.maximum(o[..., 0], o[..., 2]); rdom = o[..., 0] - np.maximum(o[..., 1], o[..., 2])
     bodyb = body > 0.5; green = bodyb & (gdom > 30)
-    regd = cv2.dilate((reg_any > 0.15).astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
-    skin_q = bodyb & (shorts < 0.2) & (core_w < 0.03) & (L > 46)
+    regd = cv2.dilate((reg_any > 0.15).astype(np.uint8), np.ones((25, 25), np.uint8)) > 0
+    skin_q = bodyb & (shorts < 0.2) & (core_w < 0.03) & (L > 46) & (gdom < 25)
     far = (cv2.dilate((fg > 0.02).astype(np.uint8), np.ones((61, 61), np.uint8)) == 0); far[ty0 - 10:ty1 + 10] = False
     er = cv2.erode(bodyb.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
     lap = cv2.Laplacian(cv2.cvtColor(base8, cv2.COLOR_RGB2GRAY), cv2.CV_32F)
@@ -111,6 +174,15 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
         cl = cv2.morphologyEx(gb_.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
         inner = cv2.erode(cl, np.ones((9, 9), np.uint8)) > 0
         st.update({"briefs_px": int(gb_.sum()), "briefs_poke_px": int((inner & ~gb_ & (body > 0.5)).sum()), "green_on_briefs_px": int((gb_ & green).sum())})
+    st["look"] = look_name
+    if len(ys_b):
+        fy = int(ys_b.max()); x0s, x1s = int(xs_b.min()), int(xs_b.max())
+        floor_pix = (fg > 0.45) & (body < 0.2) & (np.arange(H)[:, None] > fy - 8)
+        xx = np.arange(W)[None, :]; yy = np.arange(H)[:, None]
+        under = floor_pix & (xx >= x0s) & (xx <= x1s) & (yy >= fy + 2) & (yy <= fy + 52)
+        side = floor_pix & ~under
+        if under.sum() > 80 and side.sum() > 80:
+            st["floor_shadow_delta"] = round(float(np.median(L[side]) - np.median(L[under])), 2)
     # v5: figure pixels under the title text box / preview pill (the figure must never sit under the title)
     st["overlay_fig_px"] = {k: int((fg[ui[k][1]:ui[k][3] + 1, ui[k][0]:ui[k][2] + 1] > 0.5).sum()) for k in ("title", "pill") if k in ui}
     if "callout" in ui:

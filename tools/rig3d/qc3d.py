@@ -42,7 +42,7 @@ RULE_MAP = {
     "proportions_symmetric_and_rigid": "human", "grip_present": "grip_wrap", "grip_finger_wrap_deg": "grip_wrap", "grip_fingertip_gap_mm": "grip_wrap",
     "grip_thumb_opposing": "grip_wrap", "grip_no_hand_handle_intersection": "grip_wrap", "mesh_no_spikes_edge_ratio": "spine_spread",
     "prop_dumbbell_heads_readable": "camera_yaw", "extremities_in_frame_margin_px": "camera_margin",
-    "skin_p75": "human", "skin_p90": "human", "skin_max": "human", "backdrop_rgb_maxdev": "human", "green_glow_frac_of_body": "human",
+    "skin_p50": "human", "skin_p75": "human", "skin_p90": "human", "skin_max": "human", "backdrop_rgb_maxdev": "human", "floor_shadow_present": "human", "green_glow_frac_of_body": "human",
     "green_only_on_lats_rhomboids_midtrap": "human", "no_red_glow_px": "human", "sharpness_vs_day4": "human", "figure_fully_in_frame": "camera_margin",
     "figure_fill_w_h": "camera_tighter", "figure_size_not_below_target": "camera_bigger", "green_area_ratio_cap": "human",
     "overlay_in_safe_zone": "human", "overlay_text_no_overlap": "human", "overlay_clear_of_figure_px": "camera_top_margin", "callout_text_clear_of_figure": "human",
@@ -92,21 +92,36 @@ def rig_checks(rdir, cfg):
         out += anatomy_qc.run(rdir, Q["anatomy"], cfg)
     return out, F, med
 
+def look_limits(cfg):
+    """Skin bands follow grade.look (charcoal / clay). Missing preset keys fall back to qc.*."""
+    Q = cfg["qc"]; name = str((cfg.get("grade") or {}).get("look", "charcoal")).lower()
+    p = (Q.get("look_presets") or {}).get(name) or {}
+    return {"skin_p50": p.get("skin_p50", Q.get("skin_p50")), "skin_p75": p.get("skin_p75", Q["skin_p75"]),
+            "skin_p90": p.get("skin_p90", Q["skin_p90"]), "skin_max": p.get("skin_max", Q["skin_max"]), "look": name}
+
 def run(run_dir, cfg):
     Q = cfg["qc"]; out, F, med = rig_checks(os.path.join(run_dir, "render"), cfg)
-    # Day 4 look
+    # Day 4 look (skin bands depend on grade.look)
     L = json.load(open(os.path.join(run_dir, "grade/look.json")))["frames"]
-    def rng(key, lim, fix, name=None):
+    lim = look_limits(cfg)
+    def rng(key, lim_, fix, name=None):
         v = [f[key] for f in L if f.get(key) is not None]
         lo_, hi_ = (min(v), max(v)) if v else (None, None)
-        ok = bool(v) and lim[0] <= lo_ and hi_ <= lim[1]
-        out.append(ck(name or key, [round(lo_, 3), round(hi_, 3)] if v else None, lim, ok, fix, "look"))
-    rng("skin_p75", Q["skin_p75"], "skin_lock"); rng("skin_p90", Q["skin_p90"], "skin_lock")
-    mx = max(f["skin_max"] for f in L if f.get("skin_max") is not None)
-    out.append(ck("skin_max", round(mx, 1), Q["skin_max"], mx <= Q["skin_max"], "skin_lock", "look"))
+        ok = bool(v) and lim_ is not None and lim_[0] <= lo_ and hi_ <= lim_[1]
+        out.append(ck(name or key, [round(lo_, 3), round(hi_, 3)] if v else None, lim_, ok, fix, "look"))
+    if lim.get("skin_p50"):
+        rng("skin_p50", lim["skin_p50"], "skin_lock")
+    rng("skin_p75", lim["skin_p75"], "skin_lock"); rng("skin_p90", lim["skin_p90"], "skin_lock")
+    mx = max((f["skin_max"] for f in L if f.get("skin_max") is not None), default=None)
+    out.append(ck("skin_max", None if mx is None else round(mx, 1), lim["skin_max"], mx is not None and mx <= lim["skin_max"], "skin_lock", "look"))
     bd = [f["backdrop_rgb"] for f in L if f.get("backdrop_rgb")]; tgt = np.array(cfg["grade"]["backdrop_rgb"], float)
     bdev = float(np.abs(np.array(bd) - tgt).max()) if bd else 99
     out.append(ck("backdrop_rgb_maxdev", round(bdev, 1), Q["backdrop_tol"], bdev <= Q["backdrop_tol"], None, "look"))
+    if "floor_shadow_min" in Q:
+        ds = [f.get("floor_shadow_delta") for f in L if f.get("floor_shadow_delta") is not None]
+        mv = min(ds) if ds else None
+        out.append(ck("floor_shadow_present", None if mv is None else round(float(mv), 2),
+                      f">= {Q['floor_shadow_min']}", bool(ds) and mv >= Q["floor_shadow_min"], None, "look"))
     rng("glow_frac", Q["glow_frac"], None, "green_glow_frac_of_body")
     gi = min(f["glow_in_mask"] for f in L)
     out.append(ck("green_only_on_lats_rhomboids_midtrap", round(gi, 3), f">= {Q['glow_in_mask_min']}", gi >= Q["glow_in_mask_min"], None, "look"))

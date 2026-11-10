@@ -593,16 +593,22 @@ np.savez_compressed(a.out + "/bones.npz", names=np.array(BN), rest=BREST, pose=B
 log("checks done")
 if a.checks_only: sys.exit(0)
 
-# ---- materials + lights ------------------------------------------------------------------------------------------------
+# ---- materials + lights (P0 quality upgrade) -----------------------------------------------------------------------
 body_mats = [s.material for s in body.material_slots]
+ad = float(RC.get("albedo_detail", 0.50))
+sss_w = float(RC.get("sss_weight", 0.16))
+em_str = float(RC.get("glow_emission", 1.35))
+glow_wrong = C.get("grade", {}).get("glow") == "wrong"
+em_col = (1.0, 0.28, 0.10, 1) if glow_wrong else (0.16, 1.0, 0.42, 1)
+base_rgb = tuple(float(x) for x in RC.get("base_color", [0.22, 0.225, 0.232]))
+
 for m_ in body_mats:
     nt = m_.node_tree; bsdf = [n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"][0]
     for l in list(bsdf.inputs["Base Color"].links): nt.links.remove(l)
     at = nt.nodes.new("ShaderNodeAttribute"); at.attribute_name = "shorts"; mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"
-    mix.inputs[6].default_value = (0.20, 0.205, 0.215, 1); mix.inputs[7].default_value = (0.20, 0.205, 0.215, 1) if garm is not None else (0.012, 0.012, 0.014, 1)
-    nt.links.new(at.outputs["Fac"], mix.inputs[0]); bsdf.inputs["Roughness"].default_value = 0.62
+    mix.inputs[6].default_value = (*base_rgb, 1); mix.inputs[7].default_value = (*base_rgb, 1) if garm is not None else (0.012, 0.012, 0.014, 1)
+    nt.links.new(at.outputs["Fac"], mix.inputs[0])
     tex = [n for n in nt.nodes if n.type == "TEX_IMAGE" and n.image and "basecolor" in n.image.name.lower()]
-    ad = float(RC.get("albedo_detail", 0.0))
     if tex and ad > 0:   # keep the asset's painted fibre detail: grey x (albedo luminance, contrast-boosted)
         bw = nt.nodes.new("ShaderNodeRGBToBW"); nt.links.new(tex[0].outputs["Color"], bw.inputs[0])
         mr = nt.nodes.new("ShaderNodeMapRange"); mr.inputs["From Min"].default_value = 0.15; mr.inputs["From Max"].default_value = 0.8
@@ -611,16 +617,68 @@ for m_ in body_mats:
         nt.links.new(mix.outputs[2], mul.inputs[6]); nt.links.new(mr.outputs[0], mul.inputs[7]); nt.links.new(mul.outputs[2], bsdf.inputs["Base Color"])
     else:
         nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"])
-    for nm in [n for n in nt.nodes if n.type == "NORMAL_MAP"]:   # sculpt detail (fibres) from the asset's normal map
-        nm.inputs["Strength"].default_value = float(RC.get("normal_strength", 1.0))
+    if not bsdf.inputs["Roughness"].links:          # keep the packed roughness map when the GLB already wired it
+        bsdf.inputs["Roughness"].default_value = 0.50
+    if "Subsurface Weight" in bsdf.inputs:
+        bsdf.inputs["Subsurface Weight"].default_value = sss_w
+    if "Subsurface Radius" in bsdf.inputs:
+        bsdf.inputs["Subsurface Radius"].default_value = (0.55, 0.58, 0.62)
+    if "Subsurface Scale" in bsdf.inputs:
+        bsdf.inputs["Subsurface Scale"].default_value = float(RC.get("sss_scale", 0.05))
+    if "Specular IOR Level" in bsdf.inputs:
+        bsdf.inputs["Specular IOR Level"].default_value = 0.35
+    for nm in [n for n in nt.nodes if n.type == "NORMAL_MAP"]:
+        nm.inputs["Strength"].default_value = float(RC.get("normal_strength", 2.0))
+    # 3D glow: principled + emission driven by mregion (R lats, G rhomboids, B mid trap). Bloom is applied in
+    # grade3d (clamped to the muscle mask) so callout lines, drawn after the grade, never bloom.
+    mout = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
+    am = nt.nodes.new("ShaderNodeAttribute"); am.attribute_name = "mregion"
+    sep = nt.nodes.new("ShaderNodeSeparateColor"); nt.links.new(am.outputs["Color"], sep.inputs["Color"])
+    mx1 = nt.nodes.new("ShaderNodeMath"); mx1.operation = "MAXIMUM"
+    nt.links.new(sep.outputs["Red"], mx1.inputs[0]); nt.links.new(sep.outputs["Green"], mx1.inputs[1])
+    mx2 = nt.nodes.new("ShaderNodeMath"); mx2.operation = "MAXIMUM"
+    nt.links.new(mx1.outputs[0], mx2.inputs[0]); nt.links.new(sep.outputs["Blue"], mx2.inputs[1])
+    ash = nt.nodes.new("ShaderNodeAttribute"); ash.attribute_name = "shorts"
+    inv = nt.nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"; inv.inputs[0].default_value = 1.0
+    nt.links.new(ash.outputs["Fac"], inv.inputs[1])
+    fac = nt.nodes.new("ShaderNodeMath"); fac.operation = "MULTIPLY"
+    nt.links.new(mx2.outputs[0], fac.inputs[0]); nt.links.new(inv.outputs[0], fac.inputs[1])
+    em = nt.nodes.new("ShaderNodeEmission"); em.inputs["Color"].default_value = em_col
+    stm = nt.nodes.new("ShaderNodeMath"); stm.operation = "MULTIPLY"; stm.inputs[1].default_value = em_str
+    nt.links.new(fac.outputs[0], stm.inputs[0]); nt.links.new(stm.outputs[0], em.inputs["Strength"])
+    add = nt.nodes.new("ShaderNodeAddShader")
+    for l in list(mout.inputs["Surface"].links): nt.links.remove(l)
+    nt.links.new(bsdf.outputs[0], add.inputs[0]); nt.links.new(em.outputs[0], add.inputs[1]); nt.links.new(add.outputs[0], mout.inputs["Surface"])
+
 sc.render.engine = "CYCLES"; sc.cycles.device = "CPU"; sc.render.film_transparent = True
 wd = bpy.data.worlds.new("w"); sc.world = wd; wd.use_nodes = True; bg = wd.node_tree.nodes["Background"]
 hdri = C["asset"]["hdri"]; envn = wd.node_tree.nodes.new("ShaderNodeTexEnvironment"); envn.image = bpy.data.images.load(hdri["file"])
-wd.node_tree.links.new(envn.outputs["Color"], bg.inputs["Color"]); bg.inputs["Strength"].default_value = float(hdri.get("strength", 0.55))
+wd.node_tree.links.new(envn.outputs["Color"], bg.inputs["Color"])
+bg.inputs["Strength"].default_value = float(RC.get("hdri_strength", hdri.get("strength", 0.35)))
+if hasattr(wd, "cycles_visibility") and hasattr(wd.cycles_visibility, "camera"):
+    wd.cycles_visibility.camera = False                                          # HDRI lights the figure, never shows as a photographed studio
 key_from = (CAM.location - ctr); key_from.z = 0; key_from.normalize()
-for off, e in (((key_from * 3.0).to_tuple(), 2.4), ((-fw * 2.5 + mu.Vector((0, 0, 2.5))).to_tuple(), 2.2), ((fw * 3 + mu.Vector((0, 0, 1.5))).to_tuple(), 1.0)):
-    Lt = bpy.data.lights.new("l", "AREA"); Lt.energy = e * 150; Lt.size = 3; o = bpy.data.objects.new("l", Lt); col.objects.link(o)
-    o.location = ctr + mu.Vector(off) + mu.Vector((0, 0, 1.2)); o.rotation_euler = (ctr - o.location).to_track_quat("-Z", "Y").to_euler()
+upv = mu.Vector((0.0, 0.0, 1.0)); sidev = key_from.cross(upv)
+sidev = (sidev if sidev.length > 1e-4 else mu.Vector((1.0, 0.0, 0.0))).normalized()
+
+def add_area(name, loc, energy, size, color):
+    Lt = bpy.data.lights.new(name, "AREA"); Lt.energy = float(energy); Lt.size = float(size); Lt.color = color
+    o = bpy.data.objects.new(name, Lt); col.objects.link(o)
+    o.location = loc; o.rotation_euler = (ctr - o.location).to_track_quat("-Z", "Y").to_euler(); return o
+
+add_area("key", ctr + key_from * 2.8 + upv * 1.8, RC.get("key_energy", 380), 2.2, (1.00, 0.98, 0.94))
+add_area("fill", ctr - key_from * 0.5 + sidev * 2.4 + upv * 2.2, RC.get("fill_energy", 150), 3.4, (0.90, 0.94, 1.00))
+add_area("rim", ctr - key_from * 2.6 + upv * 1.9, RC.get("rim_energy", 270), 1.6, (0.65, 0.82, 1.00))
+floor = None
+if RC.get("floor", True):
+    bpy.ops.mesh.primitive_plane_add(size=float(RC.get("floor_size_m", 6.0)), location=(ctr.x, ctr.y, float(RC.get("floor_z", 0.0))))
+    floor = bpy.context.object; floor.name = "studio_floor"
+    fm = bpy.data.materials.new("studio_floor"); fm.use_nodes = True
+    fb = fm.node_tree.nodes["Principled BSDF"]
+    fb.inputs["Base Color"].default_value = (0.042, 0.045, 0.050, 1); fb.inputs["Roughness"].default_value = 0.88
+    floor.data.materials.clear(); floor.data.materials.append(fm)
+    try: col.objects.link(floor)
+    except RuntimeError: pass
 sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
 frames = list(range(1, NF + 1)) if a.frames == "all" else [int(v) for v in a.frames.split(",")]
 def render_set(prefix):
@@ -630,12 +688,14 @@ tim = {}
 if not a.mask_only:
     sc.cycles.samples = int(RC.get("spp", 12)); sc.cycles.use_denoising = bool(RC.get("denoise", True))
     try:
-        sc.cycles.denoiser = "OPENIMAGEDENOISE"; sc.cycles.denoising_prefilter = RC.get("denoise_prefilter", "ACCURATE")   # albedo+normal guided: keeps texture
+        sc.cycles.denoiser = "OPENIMAGEDENOISE"; sc.cycles.denoising_prefilter = RC.get("denoise_prefilter", "ACCURATE")
         sc.cycles.denoising_input_passes = "RGB_ALBEDO_NORMAL"
     except Exception as e: log(f"denoise option: {e}")
     sc.view_settings.view_transform = "AgX"
     t = time.time(); render_set("f"); tim["beauty_s"] = round(time.time() - t, 1); log(f"beauty {tim['beauty_s']} s")
 if not a.no_mask:
+    if floor is not None:
+        floor.hide_render = True                                                 # floor must not leak into the muscle mask
     for m_ in body_mats:
         nt = m_.node_tree; out = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
         at = nt.nodes.new("ShaderNodeAttribute"); at.attribute_name = "mregion"; em = nt.nodes.new("ShaderNodeEmission")
