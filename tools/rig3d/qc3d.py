@@ -237,7 +237,12 @@ def glow_dark_seam_frac(rgb):
     inner = cv2.erode(closed, np.ones((3, 3), np.uint8)).astype(bool)
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
     bh = cv2.morphologyEx(v.astype(np.float32), cv2.MORPH_BLACKHAT, k)
-    cracks = inner & (bh > 16)
+    # Groove shading under the tint is a dark valley of the same hue; count
+    # only desaturated clay holes or valleys much darker than the local sheet
+    # (894f762 UV/AO cracks). Saturated fibre/groove grain must not fail this.
+    med = cv2.medianBlur(v, 21)
+    very_dark = v.astype(np.int16) < med.astype(np.int16) - 40
+    cracks = inner & (bh > 16) & ((s < 55) | very_dark)
     cracks_u = cracks.astype(np.uint8)
     n_cc, lab, stats, _ = cv2.connectedComponentsWithStats(cracks_u, 8)
     keep = np.zeros_like(cracks)
@@ -245,6 +250,50 @@ def glow_dark_seam_frac(rgb):
         if stats[i, cv2.CC_STAT_AREA] >= 12:
             keep[lab == i] = True
     return float(keep.sum() / max(int(glow.sum()), 1))
+
+
+def _glow_mask(hsv):
+    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    glow = ((s > 50) & (v > 50) & (h < 25)) | ((s > 40) & (v > 50) & (h > 125) & (h < 175))
+    bg = (v < 18) & (s < 40)
+    clay = (~bg) & (~glow) & (s < 45) & (v > 40) & (v < 230)
+    return glow, clay | glow
+
+
+def glow_look_metrics(rgb):
+    """coverage (glow/torso), number of separated muscle regions, grain energy.
+
+    Grain is the std of a sculpt-scale median residual (|median3 - median21|)
+    inside an eroded glow core. Flat opaque emission scores low; clay groove
+    shading under the tint scores higher. Calibrated so 8e1b61c's flat sheet
+    fails and 894f762's visible grain passes when the min of f_0001/f_0025
+    is compared to glow_grain min 5.0.
+    """
+    if rgb is None or getattr(rgb, "size", 0) == 0:
+        return None
+    import cv2
+    hsv = cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2HSV)
+    glow, torso = _glow_mask(hsv)
+    n_glow = int(glow.sum())
+    coverage = float(n_glow / max(int(torso.sum()), 1))
+    n_regions = 0
+    grain = 0.0
+    if n_glow >= 200:
+        n_cc, _lab, stats, _ = cv2.connectedComponentsWithStats(glow.astype(np.uint8), 8)
+        min_area = max(2500, int(0.02 * n_glow))
+        n_regions = int(sum(1 for i in range(1, n_cc) if stats[i, cv2.CC_STAT_AREA] >= min_area))
+        v = hsv[:, :, 2]
+        inner = cv2.erode(glow.astype(np.uint8), np.ones((7, 7), np.uint8)).astype(bool)
+        if int(inner.sum()) < 200:
+            inner = glow
+        m3 = cv2.medianBlur(v, 3).astype(np.float32)
+        m21 = cv2.medianBlur(v, 21).astype(np.float32)
+        grain = float(np.std((m3 - m21)[inner]))
+    return {
+        "glow_coverage_frac": coverage,
+        "glow_n_regions": n_regions,
+        "glow_grain": grain,
+    }
 
 
 def spec_checks(run_dir, cfg):
@@ -279,8 +328,10 @@ def spec_checks(run_dir, cfg):
         overlay = _ensure_overlay_qc(run_dir, cfg)
     if overlay is None:
         overlay = {}
-    if "glow_dark_seam_frac" not in overlay:
-        fracs = []
+    need = [k for k in ("glow_dark_seam_frac", "glow_coverage_frac", "glow_grain", "glow_n_regions")
+            if k not in (overlay or {})]
+    if need:
+        seams, covs, grains, regs = [], [], [], []
         rdir = os.path.join(run_dir, "render")
         gdir = os.path.join(run_dir, "grade")
         for name in ("f_0001.png", "f_0025.png"):
@@ -294,11 +345,22 @@ def spec_checks(run_dir, cfg):
                 rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
                 val = glow_dark_seam_frac(rgb)
                 if val is not None:
-                    fracs.append(val)
+                    seams.append(val)
+                look = glow_look_metrics(rgb)
+                if look:
+                    covs.append(look["glow_coverage_frac"])
+                    grains.append(look["glow_grain"])
+                    regs.append(look["glow_n_regions"])
                 break
-        if fracs:
-            overlay = dict(overlay)
-            overlay["glow_dark_seam_frac"] = round(float(max(fracs)), 4)
+        overlay = dict(overlay or {})
+        if seams and "glow_dark_seam_frac" not in overlay:
+            overlay["glow_dark_seam_frac"] = round(float(max(seams)), 4)
+        if covs and "glow_coverage_frac" not in overlay:
+            overlay["glow_coverage_frac"] = round(float(max(covs)), 4)
+        if grains and "glow_grain" not in overlay:
+            overlay["glow_grain"] = round(float(min(grains)), 4)
+        if regs and "glow_n_regions" not in overlay:
+            overlay["glow_n_regions"] = int(min(regs))
     out = []
     for item in checks:
         if not isinstance(item, dict) or not item.get("name"):
@@ -314,6 +376,15 @@ def spec_checks(run_dir, cfg):
                 row["blocking"] = bool(item["blocking"])
             elif "blocking" in r:
                 row["blocking"] = bool(r["blocking"])
+            # glow_coverage also requires separated muscle regions (not one sheet).
+            if item.get("name") == "glow_coverage":
+                nreg = overlay.get("glow_n_regions")
+                min_reg = int(item.get("min_regions", 2))
+                if nreg is not None and int(nreg) < min_reg:
+                    row["pass"] = False
+                    lim = dict(row.get("limit") or {})
+                    lim["min_regions"] = min_reg
+                    row["limit"] = lim
             out.append(row)
     return out
 

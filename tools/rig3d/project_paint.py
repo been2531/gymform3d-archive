@@ -663,6 +663,18 @@ def write_rest_proj_uvs(me, cam=None, facing_ny=0.12, zlo=0.96, zhi=1.62,
     return {"proj": "rest_camera", "facing": facing, "excluded": int(ex.sum()), "nv": nv}
 
 
+
+def _share_proj_uv(vu, ids):
+    if len(ids) < 2:
+        return
+    good = ids[(vu[ids, 0] >= 0.0) & (vu[ids, 1] >= 0.0)]
+    if len(good) == 0:
+        return
+    src = good[0]
+    bad = ids[(vu[ids, 0] < 0.0) | (vu[ids, 1] < 0.0)]
+    vu[bad] = vu[src]
+
+
 def write_rest_proj_uvs_obj(body, cam=None, facing_ny=0.12, zlo=0.96, zhi=1.62,
                             exclude_vgs=None, exclude_mask=None):
     """Write rest-pose camera UVs using the object's world matrix and vertex groups."""
@@ -703,16 +715,118 @@ def write_rest_proj_uvs_obj(body, cam=None, facing_ny=0.12, zlo=0.96, zhi=1.62,
     # Ortho camera sits at +Y looking -Y. The anatomical back is the +Y half of the torso.
     torso = (~ex) & (zs >= zlo) & (zs <= zhi)
     ycut = float(np.median(ys[torso])) if torso.any() else 0.0
-    use = torso & (ys >= ycut - 0.06)  # include concave groove floors on the back
+    # Include concave groove floors (slightly below the back-facing median)
+    # so interior holes sample the existing paint. This does not grow the
+    # painted muscle outlines.
+    use = torso & (ys >= ycut - 0.06)
     facing = 0
     for i in np.nonzero(use)[0]:
         vu[i, 0] = 0.5 - (xs[i] - cx) / scale
         vu[i, 1] = 0.5 + (zs[i] - cy) / scale
         facing += 1
+    # UV-split twins share a location: copy a valid proj UV onto any
+    # coincident vert still at the CLIP sentinel (-1,-1).
+    try:
+        co = np.empty(nv * 3, np.float32)
+        me.vertices.foreach_get("co", co)
+        co = co.reshape(nv, 3)
+        key = np.round(co, 4)
+        order = np.lexsort(key.T)
+        ks = key[order]
+        same = np.all(ks[1:] == ks[:-1], axis=1)
+        start = 0
+        for i, ok in enumerate(same, 1):
+            if ok:
+                continue
+            ids = order[start:i]
+            _share_proj_uv(vu, ids)
+            start = i
+        _share_proj_uv(vu, order[start:])
+    except Exception:
+        pass
+    # Interior holes (groove floors, split loops) inherit a neighbour's proj UV
+    # so they sample the same paint without expanding the painted outline.
+    try:
+        ev = np.empty(len(me.edges) * 2, np.int64)
+        me.edges.foreach_get("vertices", ev)
+        ev = ev.reshape(-1, 2)
+        for _ in range(5):
+            valid = (vu[:, 0] >= 0.0) & (vu[:, 1] >= 0.0)
+            a, b = ev[:, 0], ev[:, 1]
+            take = valid[a] & ~valid[b]
+            vu[b[take]] = vu[a[take]]
+            take = valid[b] & ~valid[a]
+            vu[a[take]] = vu[b[take]]
+    except Exception:
+        pass
     for li, loop in enumerate(me.loops):
         layer.data[li].uv = vu[loop.vertex_index]
     return {"proj": "rest_camera_world", "facing": facing, "excluded": int(ex.sum()),
             "nv": nv, "ycut": ycut, "z_rng": [float(zs.min()), float(zs.max())]}
+
+
+def _ellipse_shifts(ksize):
+    r = max(int(ksize) // 2, 1)
+    out = []
+    lim = (r + 0.5) ** 2
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            if dx * dx + dy * dy <= lim:
+                out.append((dy, dx))
+    return out, r
+
+
+def _window_reduce(a, ksize, op="max"):
+    """Ellipse min/max filter (no OpenCV; bpyenv has no cv2)."""
+    shifts, r = _ellipse_shifts(ksize)
+    pad_val = -1e9 if op == "max" else 1e9
+    p = np.pad(a, r, mode="constant", constant_values=pad_val)
+    h, w = a.shape
+    stack = [p[r + dy:r + dy + h, r + dx:r + dx + w] for dy, dx in shifts]
+    packed = np.stack(stack, 0)
+    return packed.max(0) if op == "max" else packed.min(0)
+
+
+def close_proj_rgba(pixels, ksize=5):
+    """Morph-close the paint alpha to fill UV-seam-sized holes.
+
+    Colour is not flooded across muscles: original RGB is kept where the
+    mask was already present, and only the newly filled (small-kernel)
+    texels copy a normalized dilate of their neighbours.
+    """
+    rgba = np.asarray(pixels, np.float32)
+    if rgba.ndim != 3 or rgba.shape[2] < 4:
+        return rgba
+    alpha = rgba[:, :, 3]
+    closed = _window_reduce(_window_reduce(alpha, ksize, "max"), ksize, "min")
+    mask = (alpha > 0.15).astype(np.float32)
+    out = rgba.copy()
+    m_d = _window_reduce(mask, ksize, "max")
+    for c in range(3):
+        ch_d = _window_reduce(rgba[:, :, c] * mask, ksize, "max")
+        filled = np.where(m_d > 1e-6, ch_d / np.maximum(m_d, 1e-6), 0.0)
+        out[:, :, c] = np.where(mask > 0.15, rgba[:, :, c], filled)
+    out[:, :, 3] = np.maximum(alpha, closed)
+    return out
+
+
+def close_proj_image(image, ksize=5):
+    """In-place morph-close of a Blender image named glow_proj (or any paint)."""
+    try:
+        w, h = int(image.size[0]), int(image.size[1])
+        if w < 4 or h < 4:
+            return image
+        px = np.empty(w * h * 4, np.float32)
+        image.pixels.foreach_get(px)
+        out = close_proj_rgba(px.reshape(h, w, 4), ksize=ksize)
+        image.pixels.foreach_set(out.ravel())
+        try:
+            image.update()
+        except Exception:
+            pass
+    except Exception:
+        return image
+    return image
 
 
 def sample_uv_texture(me, image, shorts=None, exclude=None, uv_name="proj"):

@@ -298,6 +298,17 @@ qc:
       source: overlay
       metric: glow_dark_seam_frac
       max: 0.028                # black-hat valleys; 894f762 cracks scored ~0.05
+    - name: glow_coverage
+      label: 글로우가 등 전체를 덮거나 근육이 붙음
+      source: overlay
+      metric: glow_coverage_frac
+      max: 0.45                 # glow/torso; also requires glow_n_regions >= 2
+      min_regions: 2            # 8e1b61c merged sheet = 1 region; 894f762 = 3
+    - name: glow_grain
+      label: 글로우 안에 근섬유/골 음영이 없음
+      source: overlay
+      metric: glow_grain
+      min: 4.5                  # |med3-med21| std; 894f762 min~5.6 passes, 8e1b61c min~3.8 fails
     - name: sil_iou
       label: 실루엣이 기준 사진과 다름
       source: overlay

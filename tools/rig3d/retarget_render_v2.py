@@ -776,6 +776,13 @@ if LEGS == "bench_row":
         log("bench_row: rolled hips 180 deg so the anatomical back faces up")
 
 # ---- rest geometry: muscle regions, shorts, hand vertices, edges ----------------------------------------------------
+# Grab3D models a raised cuff into char1 at each wrist (not a separate object).
+# Flatten it on the rest mesh before we capture `co` / bake glow / add shapekeys.
+try:
+    import wrist_cuff as WCUFF
+    WCUFF.flatten_wrist_cuffs(body, log)
+except Exception as _we:
+    log(f"wrist cuff flatten skipped: {_we}")
 me = body.data; nv = len(me.vertices)
 co = np.empty(nv * 3); me.vertices.foreach_get("co", co); nr = np.empty(nv * 3); me.vertices.foreach_get("normal", nr)
 M4 = np.array(body.matrix_world); co = co.reshape(-1, 3) @ M4[:3, :3].T + M4[:3, 3]; nr = nr.reshape(-1, 3) @ M4[:3, :3].T
@@ -890,6 +897,7 @@ if USE_MID:
                 _img.colorspace_settings.name = "sRGB"
             except Exception:
                 pass
+            PPAINT.close_proj_image(_img, ksize=int(RC.get("glow_proj_close_px", 5)))
             _gw, _grgb, _gst = PPAINT.sample_uv_texture(me, _img, shorts, EXCLUDE, uv_name="proj")
             log(f"glow proj tex={_tex} (rest-camera UVs, no atlas bake)")
         else:
@@ -925,6 +933,7 @@ else:
             _img.colorspace_settings.name = "sRGB"
         except Exception:
             pass
+        PPAINT.close_proj_image(_img, ksize=int(RC.get("glow_proj_close_px", 5)))
         _gw, _grgb, _gst = PPAINT.sample_uv_texture(me, _img, shorts, EXCLUDE, uv_name="proj")
         _gw_mean, _gw_n = MIDS.write_glow_attrs(me, _gw, _grgb)
         log(f"glow proj tex={_tex} verts>0.5={_gw_n} { _gst }")
@@ -1977,9 +1986,21 @@ for m_ in body_mats:
         ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
         ao.inputs["Distance"].default_value = float(RC.get("ao_distance", 0.14))
         aom = nt.nodes.new("ShaderNodeMix")
+        aom.name = "CLAY_AO_MIX"
         aom.data_type = "RGBA"
         aom.blend_type = "MULTIPLY"
         aom.inputs[0].default_value = float(RC.get("ao_amount", 0.38))
+        if body.data.color_attributes.get("cuff_mask") is not None:
+            _ca = nt.nodes.new("ShaderNodeAttribute"); _ca.attribute_name = "cuff_mask"
+            _sp = nt.nodes.new("ShaderNodeSeparateColor")
+            nt.links.new(_ca.outputs["Color"], _sp.inputs["Color"])
+            _iv = nt.nodes.new("ShaderNodeMath"); _iv.operation = "SUBTRACT"
+            _iv.inputs[0].default_value = 1.0
+            nt.links.new(_sp.outputs["Red"], _iv.inputs[1])
+            _am = nt.nodes.new("ShaderNodeMath"); _am.operation = "MULTIPLY"
+            _am.inputs[0].default_value = float(RC.get("ao_amount", 0.38))
+            nt.links.new(_iv.outputs[0], _am.inputs[1])
+            nt.links.new(_am.outputs[0], aom.inputs[0])
         base_src = bsdf.inputs["Base Color"].links[0].from_socket
         nt.links.new(base_src, aom.inputs[6])
         nt.links.new(ao.outputs["Color"], aom.inputs[7])
@@ -1994,6 +2015,7 @@ for m_ in body_mats:
             ramp.color_ramp.elements[1].color = (1, 1, 1, 1)
             nt.links.new(geo.outputs["Pointiness"], ramp.inputs["Fac"])
             cvm = nt.nodes.new("ShaderNodeMix")
+            cvm.name = "CLAY_CAV_MIX"
             cvm.data_type = "RGBA"
             cvm.blend_type = "MULTIPLY"
             cvm.inputs[0].default_value = cav
@@ -2016,8 +2038,23 @@ for m_ in body_mats:
     nstr = float(RC.get("normal_strength", 1.0 if look_inscene else 2.0))
     if look_inscene and nstr > 1.35:
         nstr = 1.0
+    cuff_ok = body.data.color_attributes.get("cuff_mask") is not None
     for nm in [n for n in nt.nodes if n.type == "NORMAL_MAP"]:
         nm.inputs["Strength"].default_value = nstr
+        if cuff_ok:
+            # Strength 0 on the cuff drops the baked wristband ridge in rig_normal.
+            ca = nt.nodes.new("ShaderNodeAttribute"); ca.attribute_name = "cuff_mask"
+            sep = nt.nodes.new("ShaderNodeSeparateColor")
+            nt.links.new(ca.outputs["Color"], sep.inputs["Color"])
+            inv = nt.nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"
+            inv.inputs[0].default_value = 1.0
+            nt.links.new(sep.outputs["Red"], inv.inputs[1])
+            mul = nt.nodes.new("ShaderNodeMath"); mul.operation = "MULTIPLY"
+            mul.inputs[0].default_value = nstr
+            nt.links.new(inv.outputs[0], mul.inputs[1])
+            nt.links.new(mul.outputs[0], nm.inputs["Strength"])
+    if cuff_ok:
+        log("cuff_mask: normal-map strength faded on wrist cuff")
     # 3D glow: shared tools/rig3d/glow_shader.py
     mout = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
 
