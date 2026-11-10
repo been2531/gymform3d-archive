@@ -3,7 +3,8 @@
 _doc: "rig3d shared defaults (asset, garment, render, grade, base QC). 0 generations."
 
 asset:
-  glb: _scratch/assets_probe/human-muscles-rigged.glb
+  glb: _scratch/assets_probe/human-muscles-rigged.glb   # Grab3D Human Muscles, CC0 (rig + garment donor)
+  ecorche_glb: _scratch/ecorche/ecorche.glb             # Charleeh/ecorche, CC BY-SA 4.0 (separated muscles). Fetch: tools/rig3d/fetch_ecorche.py
   hdri:
     name: studio_small_09
     url: https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr
@@ -44,7 +45,7 @@ render:
   albedo_detail: 0.0
   sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 0.45
+  glow_emission: 0.50
   glow_follow_mesh: true          # paint mregion in a torso-local frame on the deformed mesh
   glow_union_rest: true           # union rest-pose paint (follows verts) with per-frame assign (fills newly visible)
   glow_peak_dilate: 2             # extra mesh-ring growth at peak (kept small; full-target fill is ~0.22 of body)
@@ -54,7 +55,7 @@ render:
   glow_method_d: false            # D remains a selectable preset; default COMBO grades the beauty+ID pass
   sliver_rest_frac: 1.0           # ignore rest edges shorter than this x median when scoring tear_min_ratio
   glow_fibre_scale: 42.0
-  blender_bloom: 0.30             # soft halo on glowing muscles
+  blender_bloom: 0.36             # soft halo on glowing muscle meshes
   crease_smooth: true             # cached weight-smooth of Spine/shoulder groups (the crease fix)
   crease_smooth_factor: 0.0       # Corrective Smooth off: v3.1 0.7/12 collapsed edges to ratio 0.0
   crease_smooth_iter: 6
@@ -69,7 +70,8 @@ render:
   floor: true
   floor_size_m: 6.0
   denoise: true
-  look_backend: inscene          # clay Principled + blurred glow_w emission; no 2D fibre
+  look_backend: inscene          # clay Principled + emission; no 2D fibre
+  body_source: ecorche           # glow separated muscle meshes (route a); grab3d = painted one-piece skin
   view_transform: Standard       # colours stay as measured (not AgX)
   ambient_strength: 0.38
   top_energy: 50
@@ -84,7 +86,7 @@ render:
   glow_close_rings: 5            # morphological close fills holes inside a muscle
   glow_tint: 0.22                # low: colour comes from emission so form/fibre stay visible
   glow_fibre_bump: 0.42          # wave bump on glow areas (striation)
-  glow_rim: 0.35                 # facing rim on glowing muscles
+  glow_rim: 0.42                 # facing rim on glowing muscle meshes
   glow_bloom: true
   base_color: [0.088, 0.089, 0.090]
   mask_spp: 4

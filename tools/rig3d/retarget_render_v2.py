@@ -1429,6 +1429,40 @@ flex_nodes = GSH.switch_materials(
 if look_inscene:
     log(f"glow backend=inscene flex_min={_flex_min} em_str={em_str}")
 
+_eco_path = str((C.get("asset") or {}).get("ecorche_glb") or "")
+_body_src = str(RC.get("body_source") or "grab3d").lower()
+if look_inscene and _body_src in ("ecorche", "eco", "mesh") and _eco_path:
+    try:
+        import ecorche_bind as ECO
+        _eco_tgts = list((C.get("grade") or {}).get("target_muscles") or ["lats", "rhomboids", "mid_trap", "rear_delt"])
+        _eco_hues = dict(MIDS.DEFAULT_HUES)
+        _yh2 = (C.get("grade") or {}).get("muscle_hues") or {}
+        if isinstance(_yh2, dict):
+            _eco_hues.update(_yh2)
+        _eco_hstr = (C.get("grade") or {}).get("muscle_hue_strength") or {}
+        _eco_flex = ECO.bind_and_shade(
+            body=body, arm=arm, path=_eco_path, targets=_eco_tgts,
+            hues=_eco_hues, hue_strength=_eco_hstr, base_rgb=base_rgb,
+            em_str=em_str, flex_min=_flex_min,
+            tint=float(RC.get("glow_tint", 0.22)),
+            fibre_bump=float(RC.get("glow_fibre_bump", 0.42)),
+            rim=float(RC.get("glow_rim", 0.35)),
+            ao_distance=float(RC.get("ao_distance", 0.14)),
+            ao_amount=float(RC.get("ao_amount", 0.38)),
+            hide_body=False, log=log,
+        )
+        if _eco_flex:
+            # Grab3D flex stays at 0 (underlayer). Only ecorche meshes glow.
+            GSH.set_flex(flex_nodes, 0.0)
+            flex_nodes[:] = list(_eco_flex)
+        log(f"body_source=ecorche targets={_eco_tgts} glow_flex={len(_eco_flex or [])}")
+    except Exception as _ee:
+        import traceback
+        log(f"ecorche bind failed (keeping Grab3D body): {_ee}")
+        log(traceback.format_exc())
+
+
+
 sc.render.engine = "CYCLES"; sc.cycles.device = "CPU"; sc.render.film_transparent = False
 wd = bpy.data.worlds.new("w"); sc.world = wd; wd.use_nodes = True; bg = wd.node_tree.nodes["Background"]
 hdri = C["asset"]["hdri"]

@@ -276,6 +276,104 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     return _flex
 
 
+
+def attach_mesh_glow(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix=0.22,
+                     fibre_bump=0.42, rim=0.35, fibre_rot=(0.0, 0.85, 0.0),
+                     fibre_scale=48.0):
+    """Whole-mesh glow: this object IS the muscle, so fac=1 (no glow_w mask).
+
+    Same luminous recipe as attach_clay_emission — tint the clay Principled
+    toward `em_col`, add emission + Fresnel rim + fibre wave bump — but the
+    silhouette is the mesh outline itself.
+    """
+    _purge(nt)
+    gw = nt.nodes.new("ShaderNodeAttribute"); gw.name = GF + "GLOWW"; gw.attribute_name = "glow_w"
+    gsep = nt.nodes.new("ShaderNodeSeparateColor"); gsep.name = GF + "GWSEP"
+    nt.links.new(gw.outputs["Color"], gsep.inputs["Color"])
+    # If the mesh has no glow_w, Fac is 0 — we always write the attribute.
+    _flex, stm = _flex_strength(nt, gsep.outputs["Red"], 1.0, flex_min)
+    tf = nt.nodes.new("ShaderNodeMath"); tf.name = GF + "TINTF"; tf.operation = "MULTIPLY"
+    nt.links.new(stm.outputs[0], tf.inputs[0]); tf.inputs[1].default_value = float(tint_mix)
+    clp = nt.nodes.new("ShaderNodeClamp"); clp.name = GF + "TCLP"
+    clp.inputs["Min"].default_value = 0.0
+    clp.inputs["Max"].default_value = 1.0
+    nt.links.new(tf.outputs[0], clp.inputs["Value"])
+    mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"; mix.name = GF + "TINT"
+    nt.links.new(clp.outputs[0], mix.inputs[0])
+    base_in = bsdf.inputs["Base Color"]
+    if base_in.links:
+        nt.links.new(base_in.links[0].from_socket, mix.inputs[6])
+        nt.links.remove(base_in.links[0])
+    else:
+        mix.inputs[6].default_value = tuple(base_in.default_value)
+    mix.inputs[7].default_value = (float(em_col[0]), float(em_col[1]), float(em_col[2]), 1.0)
+    nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"])
+    ao = nt.nodes.new("ShaderNodeAmbientOcclusion"); ao.name = GF + "AO"
+    ao.inputs["Distance"].default_value = 0.10
+    aom = nt.nodes.new("ShaderNodeMix"); aom.data_type = "RGBA"; aom.blend_type = "MULTIPLY"; aom.name = GF + "AOM"
+    aom.inputs[0].default_value = 0.34
+    aom.inputs[6].default_value = (float(em_col[0]), float(em_col[1]), float(em_col[2]), 1.0)
+    nt.links.new(ao.outputs["Color"], aom.inputs[7])
+    if "Emission Color" in bsdf.inputs:
+        nt.links.new(aom.outputs[2], bsdf.inputs["Emission Color"])
+    lw = nt.nodes.new("ShaderNodeLayerWeight"); lw.name = GF + "LW"
+    lw.inputs["Blend"].default_value = 0.50
+    # Hotter where the belly faces the camera, dimmer in creases — keeps form.
+    cmap = nt.nodes.new("ShaderNodeMapRange"); cmap.name = GF + "CORE"
+    cmap.inputs["From Min"].default_value = 0.0
+    cmap.inputs["From Max"].default_value = 1.0
+    cmap.inputs["To Min"].default_value = 0.42
+    cmap.inputs["To Max"].default_value = 1.0
+    nt.links.new(lw.outputs["Facing"], cmap.inputs["Value"])
+    stm_c = nt.nodes.new("ShaderNodeMath"); stm_c.name = GF + "COREM"; stm_c.operation = "MULTIPLY"
+    nt.links.new(stm.outputs[0], stm_c.inputs[0]); nt.links.new(cmap.outputs["Result"], stm_c.inputs[1])
+    ems = nt.nodes.new("ShaderNodeMath"); ems.name = GF + "EMS"; ems.operation = "MULTIPLY"
+    nt.links.new(stm_c.outputs[0], ems.inputs[0]); ems.inputs[1].default_value = float(em_str)
+    r1 = nt.nodes.new("ShaderNodeMath"); r1.name = GF + "R1"; r1.operation = "SUBTRACT"
+    r1.inputs[0].default_value = 1.0
+    nt.links.new(lw.outputs["Facing"], r1.inputs[1])
+    r2 = nt.nodes.new("ShaderNodeMath"); r2.name = GF + "R2"; r2.operation = "MULTIPLY"
+    nt.links.new(r1.outputs[0], r2.inputs[0]); nt.links.new(stm.outputs[0], r2.inputs[1])
+    r3 = nt.nodes.new("ShaderNodeMath"); r3.name = GF + "R3"; r3.operation = "MULTIPLY"
+    nt.links.new(r2.outputs[0], r3.inputs[0]); r3.inputs[1].default_value = float(rim)
+    ems2 = nt.nodes.new("ShaderNodeMath"); ems2.name = GF + "EMS2"; ems2.operation = "ADD"
+    nt.links.new(ems.outputs[0], ems2.inputs[0]); nt.links.new(r3.outputs[0], ems2.inputs[1])
+    if "Emission Strength" in bsdf.inputs:
+        nt.links.new(ems2.outputs[0], bsdf.inputs["Emission Strength"])
+    if float(fibre_bump) > 0:
+        tex = nt.nodes.new("ShaderNodeTexCoord"); tex.name = GF + "FCOORD"
+        mapn = nt.nodes.new("ShaderNodeMapping"); mapn.name = GF + "FMAP"
+        mapn.inputs["Rotation"].default_value = tuple(float(x) for x in fibre_rot)
+        nt.links.new(tex.outputs["Object"], mapn.inputs["Vector"])
+        wv = nt.nodes.new("ShaderNodeTexWave"); wv.name = GF + "FIBRE"
+        wv.wave_type = "BANDS"; wv.bands_direction = "X"; wv.wave_profile = "SIN"
+        wv.inputs["Scale"].default_value = float(fibre_scale)
+        wv.inputs["Distortion"].default_value = 1.8
+        wv.inputs["Detail"].default_value = 4.0
+        wv.inputs["Detail Scale"].default_value = 1.5
+        wv.inputs["Detail Roughness"].default_value = 0.32
+        nt.links.new(mapn.outputs["Vector"], wv.inputs["Vector"])
+        bstr = nt.nodes.new("ShaderNodeMath"); bstr.name = GF + "BSTR"; bstr.operation = "MULTIPLY"
+        nt.links.new(stm.outputs[0], bstr.inputs[0]); bstr.inputs[1].default_value = float(fibre_bump)
+        bump = nt.nodes.new("ShaderNodeBump"); bump.name = GF + "BUMP"
+        bump.inputs["Distance"].default_value = 0.012
+        nt.links.new(wv.outputs["Fac"], bump.inputs["Height"])
+        nt.links.new(bstr.outputs[0], bump.inputs["Strength"])
+        nrm_in = bsdf.inputs.get("Normal")
+        if nrm_in is not None and nrm_in.links:
+            nt.links.new(nrm_in.links[0].from_socket, bump.inputs["Normal"])
+            nt.links.remove(nrm_in.links[0])
+        if nrm_in is not None:
+            nt.links.new(bump.outputs["Normal"], nrm_in)
+    aov = nt.nodes.new("ShaderNodeOutputAOV"); aov.name = GF + "AOV"; aov.aov_name = "glow_mask"
+    rgb = nt.nodes.new("ShaderNodeCombineColor"); rgb.name = GF + "AOVRGB"
+    nt.links.new(gsep.outputs["Red"], rgb.inputs["Red"])
+    nt.links.new(gsep.outputs["Red"], rgb.inputs["Green"])
+    nt.links.new(gsep.outputs["Red"], rgb.inputs["Blue"])
+    nt.links.new(rgb.outputs["Color"], aov.inputs["Color"])
+    return _flex
+
+
 def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_scale=42.0, tint_mix=0.28,
                      fibre_bump=0.32, rim=0.35):
     """(Re)attach GF_* glow nodes on every body material. Returns flex Value nodes."""
