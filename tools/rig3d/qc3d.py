@@ -42,7 +42,7 @@ RULE_MAP = {
     "proportions_symmetric_and_rigid": "human", "grip_present": "grip_wrap", "grip_finger_wrap_deg": "grip_wrap", "grip_fingertip_gap_mm": "grip_wrap",
     "grip_thumb_opposing": "grip_wrap", "grip_no_hand_handle_intersection": "grip_wrap", "mesh_no_spikes_edge_ratio": "spine_spread",
     "prop_dumbbell_heads_readable": "camera_yaw", "extremities_in_frame_margin_px": "camera_margin",
-    "skin_p50": "human", "skin_p75": "human", "skin_p90": "human", "skin_max": "human", "backdrop_rgb_maxdev": "human", "floor_shadow_present": "human", "green_glow_frac_of_body": "human",
+    "skin_p50": "human", "skin_p75": "human", "skin_p90": "human", "skin_max": "human", "backdrop_rgb_maxdev": "human", "floor_shadow_present": "human", "floor_horizon_edge": "human", "floor_luma_vs_backdrop": "human", "glow_fibre_contrast": "human", "glow_hue_sat_band": "human", "green_glow_frac_of_body": "human",
     "green_only_on_lats_rhomboids_midtrap": "human", "no_red_glow_px": "human", "sharpness_vs_day4": "human", "figure_fully_in_frame": "camera_margin",
     "figure_fill_w_h": "camera_tighter", "figure_size_not_below_target": "camera_bigger", "green_area_ratio_cap": "human",
     "overlay_in_safe_zone": "human", "overlay_text_no_overlap": "human", "overlay_clear_of_figure_px": "camera_top_margin", "callout_text_clear_of_figure": "human",
@@ -122,6 +122,31 @@ def run(run_dir, cfg):
         mv = min(ds) if ds else None
         out.append(ck("floor_shadow_present", None if mv is None else round(float(mv), 2),
                       f">= {Q['floor_shadow_min']}", bool(ds) and mv >= Q["floor_shadow_min"], None, "look"))
+    if "floor_horizon_jump_max" in Q:
+        hv = [f.get("floor_horizon_jump") for f in L if f.get("floor_horizon_jump") is not None]
+        mx = max(hv) if hv else None
+        out.append(ck("floor_horizon_edge", None if mx is None else round(float(mx), 2),
+                      f"<= {Q['floor_horizon_jump_max']}", bool(hv) and mx <= Q["floor_horizon_jump_max"], None, "look"))
+    if "floor_luma_delta_max" in Q:
+        dv = [f.get("floor_bg_delta") for f in L if f.get("floor_bg_delta") is not None]
+        mx = max(dv) if dv else None
+        out.append(ck("floor_luma_vs_backdrop", None if mx is None else round(float(mx), 2),
+                      f"<= {Q['floor_luma_delta_max']}", bool(dv) and mx <= Q["floor_luma_delta_max"], None, "look"))
+    if "glow_fibre_hp_min" in Q:
+        fv = [f.get("glow_fibre_hp_std") for f in L if f.get("glow_fibre_hp_std") is not None]
+        mn = min(fv) if fv else None
+        out.append(ck("glow_fibre_contrast", None if mn is None else round(float(mn), 2),
+                      f">= {Q['glow_fibre_hp_min']}", bool(fv) and mn >= Q["glow_fibre_hp_min"], None, "look"))
+    if Q.get("glow_hue") or Q.get("glow_sat"):
+        hues = [f.get("glow_hue_p50") for f in L if f.get("glow_hue_p50") is not None]
+        sats = [f.get("glow_sat_p50") for f in L if f.get("glow_sat_p50") is not None]
+        hlim = Q.get("glow_hue"); slim = Q.get("glow_sat")
+        hok = bool(hues) and (not hlim or (min(hues) >= hlim[0] and max(hues) <= hlim[1]))
+        sok = bool(sats) and (not slim or (min(sats) >= slim[0] and max(sats) <= slim[1]))
+        out.append(ck("glow_hue_sat_band",
+                      {"hue_p50": [round(min(hues), 1), round(max(hues), 1)] if hues else None,
+                       "sat_p50": [round(min(sats), 1), round(max(sats), 1)] if sats else None},
+                      {"hue": hlim, "sat": slim}, bool(hok and sok), None, "look"))
     rng("glow_frac", Q["glow_frac"], None, "green_glow_frac_of_body")
     gi = min(f["glow_in_mask"] for f in L)
     out.append(ck("green_only_on_lats_rhomboids_midtrap", round(gi, 3), f">= {Q['glow_in_mask_min']}", gi >= Q["glow_in_mask_min"], None, "look"))

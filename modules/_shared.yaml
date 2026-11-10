@@ -55,9 +55,9 @@ grade:
   backdrop_rgb: [35, 39, 43]
   glow: right
   look: charcoal                 # charcoal (soft Day 4) or clay (p50 ~150)
-  fibre_amount: 0.42             # 1.0 = old sticker; lower = fascicle direction on top of 3D emission
-  bloom_amount: 0.68             # muscle-clamped bloom (callouts drawn after, never bloom)
-  emission_keep: 0.78            # how much of the beauty-pass emission/form to keep on the target muscles
+  fibre_amount: 0.80             # readable fascicle lines (1.0 = old sticker); mixed with 3D form high-pass
+  bloom_amount: 0.38             # edge-weighted bloom (interior fibres preserved; callouts drawn after)
+  emission_keep: 0.20            # low: AgX beauty emission is pale mint; form comes from high-pass + fibre
 
 qc:
   grip_max_m: 0.03
@@ -81,6 +81,11 @@ qc:
       skin_max: 255
   backdrop_tol: 4
   floor_shadow_min: 1.5
+  floor_horizon_jump_max: 28      # luma step at the floor's upper silhouette (hard horizon fails)
+  floor_luma_delta_max: 24        # receding floor median luma minus backdrop (light-grey floor fails)
+  glow_fibre_hp_min: 8.0          # high-pass std of green inside eroded glow core (flat mint blob fails)
+  glow_hue: [68, 77]              # OpenCV HSV hue; gymform neon ~74, pale mint ~80
+  glow_sat: [168, 230]            # OpenCV HSV sat; washed/mint sits below 168
   glow_frac: [0.02, 0.30]
   glow_in_mask_min: 0.9
   sharp_rel_min: 0.35
