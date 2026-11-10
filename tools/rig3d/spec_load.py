@@ -51,16 +51,16 @@ def eval_check(item, bench_frames, overlay):
         if source == "overlay":
             blob = overlay or {}
             raw = blob.get(metric) if metric else None
-            missing = overlay is None or metric not in (overlay or {})
+            missing = overlay is None or metric not in (overlay or {}) or raw is None
         else:
             blob = (bench_frames or {}).get(fr or "") or {}
             # also accept the nested gates{} flags
             if metric in blob:
                 raw = blob.get(metric)
-                missing = False
+                missing = raw is None
             elif metric in (blob.get("gates") or {}):
                 raw = blob["gates"][metric]
-                missing = False
+                missing = raw is None
             else:
                 raw = None
                 missing = True

@@ -1131,6 +1131,32 @@ if GW.get("enabled"):      # after the garment copy (the briefs never carry the 
         newL = (HG["new_world"] - op) @ Rp
         new_w = newL @ _Mh[:3, :3].T + _Mh[:3, 3]
     Minv = np.linalg.inv(M4); lc[HIDX] = new_w @ Minv[:3, :3].T + Minv[:3, 3]; sk.data.foreach_set("co", lc.ravel()); sk.value = 1.0
+# Support hand on the bench pad: no finger bones, so flatten via a geometric shape key
+# (fingers adducted, palm planar) rather than leaving the rest-pose splay.
+SUPPORT_BN = "LeftHand" if not str(hand).startswith("Left") else "RightHand"
+SIDX = None
+if LEGS == "bench_row":
+    try:
+        _sgi = body.vertex_groups[SUPPORT_BN].index
+        _sW = np.zeros(nv)
+        for v in me.vertices:
+            for g in v.groups:
+                if g.group == _sgi:
+                    _sW[v.index] = g.weight
+        SIDX = np.nonzero(_sW > 0.5)[0]
+        _Ms = np.array(arm.matrix_world @ arm.data.bones[SUPPORT_BN].matrix_local)
+        _Ms[:3, :3] /= np.linalg.norm(_Ms[:3, :3], axis=0)
+        FP = HGR.flatten_palm(co, SIDX, _Ms, SUPPORT_BN.startswith("Left"))
+        if not me.shape_keys:
+            body.shape_key_add(name="Basis", from_mix=False)
+        sks = body.shape_key_add(name="support_flat", from_mix=False)
+        lcs = np.empty(nv * 3); sks.data.foreach_get("co", lcs); lcs = lcs.reshape(-1, 3)
+        Minv = np.linalg.inv(M4)
+        lcs[SIDX] = FP["new_world"] @ Minv[:3, :3].T + Minv[:3, 3]
+        sks.data.foreach_set("co", lcs.ravel()); sks.value = 1.0
+        log(f"support palm flatten: {FP['info']}")
+    except Exception as _fe:
+        log(f"support palm flatten skipped: {_fe}")
 # ---- dumbbell ---------------------------------------------------------------------------------------------------------
 def db_plate(xx):
     # Round gunmetal plates (32-gon) so the weight reads as a metal disc, not a blue cube.
@@ -1706,6 +1732,28 @@ if LEGS == "bench_row" and BENCH_SPEC is not None:
             "hip": _bp("Hips"), "sh": 0.5 * (_bp("LeftArm") + _bp("RightArm")),
             "head": _bp("Head") if "Head" in pb else _bp("head_end"),
         }
+        try:
+            rec_pts["db"] = np.array(db.matrix_world.translation)
+        except Exception:
+            rec_pts["db"] = rec_pts["rwr"]
+        if SIDX is not None and len(SIDX):
+            try:
+                _dg_h = bpy.context.evaluated_depsgraph_get()
+                _eb_h = body.evaluated_get(_dg_h); _mh = _eb_h.to_mesh()
+                _ph = np.empty(len(_mh.vertices) * 3); _mh.vertices.foreach_get("co", _ph)
+                _ph = _ph.reshape(-1, 3)
+                _Mwh = np.array(_eb_h.matrix_world)
+                _pwh = _ph @ _Mwh[:3, :3].T + _Mwh[:3, 3]
+                _eb_h.to_mesh_clear()
+                _Mhs = np.array(arm.matrix_world @ pb[SUPPORT_BN].matrix)
+                _Mhs[:3, :3] /= np.linalg.norm(_Mhs[:3, :3], axis=0)
+                _pm = HGR.measure_palm(_pwh, SIDX, _Mhs, pad_normal=np.array([0.0, 0.0, 1.0]))
+                rec_pts["support_finger_spread_m"] = _pm["finger_spread_m"]
+                rec_pts["support_palm_from_pad_deg"] = _pm["palm_from_pad_deg"]
+                log(f"bench_qc {_tag} support_hand spread={_pm['finger_spread_m']:.3f}m "
+                    f"palm_from_pad={_pm['palm_from_pad_deg']:.1f}deg")
+            except Exception as _he:
+                log(f"bench_qc {_tag} support_hand measure failed: {_he}")
         _mp_bones = {0: "Head", 11: "LeftArm", 12: "RightArm", 13: "LeftForeArm",
                      14: "RightForeArm", 15: "LeftHand", 16: "RightHand",
                      23: "LeftUpLeg", 24: "RightUpLeg", 25: "LeftLeg", 26: "RightLeg",
