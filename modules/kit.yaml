@@ -58,13 +58,13 @@ kit:
     top_energy: 0                # three-point only
     floor_receive_shadows: false # BSDF on the cyc photographed a circular crease
   clay:
-    base_color: [0.44, 0.455, 0.485]   # cooler porcelain, higher value
+    base_color: [0.42, 0.428, 0.442]   # light-grey matte porcelain, never white
     ao_amount: 0.14
     ao_distance: 0.10
     cavity_amount: 0.03
     normal_strength: 0.72
     albedo_detail: 0.06
-    roughness: 0.72
+    roughness: 0.93
     body_rim: 0.10
   bench:
     padded: true

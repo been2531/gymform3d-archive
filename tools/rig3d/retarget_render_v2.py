@@ -2160,7 +2160,7 @@ for m_ in body_mats:
     if "Subsurface Scale" in bsdf.inputs:
         bsdf.inputs["Subsurface Scale"].default_value = float(RC.get("sss_scale", 0.05))
     if "Specular IOR Level" in bsdf.inputs:
-        bsdf.inputs["Specular IOR Level"].default_value = 0.10 if look_inscene else 0.35
+        bsdf.inputs["Specular IOR Level"].default_value = 0.06 if look_inscene else 0.35
     nstr = float(RC.get("normal_strength", 1.0 if look_inscene else 2.0))
     if look_inscene and nstr > 1.35:
         nstr = 1.0
