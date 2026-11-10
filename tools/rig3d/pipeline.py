@@ -30,7 +30,7 @@ KST = dt.timezone(dt.timedelta(hours=9))
 AIQ = "/home/box/routinizer/ai_queue/fitness_studio.jsonl"
 FITNESS_STUDIO_AGENT = "7c203a21-2233-41e0-92f1-189a01945890"
 STAGES = ["config", "fetch", "pose", "render", "grade", "reel", "qc", "sheet", "deliver"]
-CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py", "tools/rig3d/hand_grip.py", "tools/rig3d/wrist_cuff.py", "tools/rig3d/muscle_regions.py", "tools/rig3d/glow_shader.py", "tools/rig3d/ecorche_bind.py", "tools/rig3d/bench_row_pose.py", "tools/rig3d/spec_load.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
+CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py", "tools/rig3d/hand_grip.py", "tools/rig3d/wrist_cuff.py", "tools/rig3d/muscle_regions.py", "tools/rig3d/glow_shader.py", "tools/rig3d/ecorche_bind.py", "tools/rig3d/bench_row_pose.py", "tools/rig3d/spec_load.py", "tools/rig3d/kit/muscle_shells.py", "tools/rig3d/kit/garment.py", "tools/rig3d/kit/lights.py", "tools/rig3d/kit/dumbbell.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
         "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py", "tools/rig3d/posture_qc.py", "tools/rig3d/anatomy_qc.py", "tools/rig3d/hand_grip.py", "tools/rig3d/spec_load.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
 PEAK = {"rss_mb": 0}
 
@@ -144,7 +144,7 @@ class Run:
         ensure_authored_sidecars()
         intent = hsh(self.cfg.get("motion"), self.cfg.get("render"), self.cfg.get("asset"), rep, getattr(self.args, "short", 0),
                      self.cfg.get("spec"), fsha(f"exercises/{self.slug}.spec.yaml"),
-                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"), fsha("tools/rig3d/wrist_cuff.py"), fsha("tools/rig3d/muscle_regions.py"), fsha("tools/rig3d/glow_shader.py"), fsha("tools/rig3d/muscle_ids.py"), fsha("tools/rig3d/muscle_activation.py"), fsha("tools/rig3d/ecorche_bind.py"), fsha("tools/rig3d/bench_row_pose.py"), fsha("tools/rig3d/spec_load.py"))
+                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"), fsha("tools/rig3d/wrist_cuff.py"), fsha("tools/rig3d/muscle_regions.py"), fsha("tools/rig3d/glow_shader.py"), fsha("tools/rig3d/muscle_ids.py"), fsha("tools/rig3d/muscle_activation.py"), fsha("tools/rig3d/ecorche_bind.py"), fsha("tools/rig3d/bench_row_pose.py"), fsha("tools/rig3d/spec_load.py"), fsha("tools/rig3d/kit/muscle_shells.py"), fsha("tools/rig3d/kit/garment.py"), fsha("tools/rig3d/kit/lights.py"), fsha("tools/rig3d/kit/dumbbell.py"), fsha("modules/kit.yaml"))
         marker = os.path.join(d, "render_intent.txt")
         skip_existing = os.path.exists(marker) and open(marker).read().strip() == intent
         if not skip_existing:

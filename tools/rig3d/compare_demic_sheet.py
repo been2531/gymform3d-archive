@@ -159,7 +159,7 @@ def build(ours_path, demic_sheet, out_path):
 
     sheet = Image.new("RGB", (width, height), BG)
     d = ImageDraw.Draw(sheet)
-    d.text((pad, 18), "ours (c026ff5)  vs  demic   ·   bench one-arm row stills",
+    d.text((pad, 18), "ours (kit)  vs  demic   ·   bench one-arm row stills",
            font=fonts["title"], fill=FG)
     sub = ("Look comparison only — cameras differ (demic: elevated back / barbell; "
            "ours: fixed head-end 3/4 beauty). Demicstory is the quality bar, not a source to copy.")
@@ -183,7 +183,7 @@ def build(ours_path, demic_sheet, out_path):
                fonts)
     sheet.paste(p, (x0, y))
     p = _panel(ours, full_w, full_h,
-               "ours c026ff5  ·  full body  ·  f_0025",
+               "ours kit  ·  full body  ·  f_0025",
                "Warmer grey clay, duller cracked glow, shrink-wrapped briefs "
                "with no real waistband, simpler bench and dumbbell.",
                fonts)
@@ -200,7 +200,7 @@ def build(ours_path, demic_sheet, out_path):
                fonts)
     sheet.paste(p, (x0, y))
     p = _panel(ours_hips, hips_w, hips_h,
-               "ours c026ff5  ·  hips  3×",
+               "ours kit  ·  hips  3×",
                "Offset of the Grab3D pelvis: every glute groove reads as cloth. "
                "No waistband, high-cut hem, pale clay spot at the seat/cleft, clay peeking at the waist.",
                fonts)
@@ -217,7 +217,7 @@ def build(ours_path, demic_sheet, out_path):
                fonts)
     sheet.paste(p, (x0, y))
     p = _panel(ours_back, back_w, back_h,
-               "ours c026ff5  ·  back glow  3×",
+               "ours kit  ·  back glow  3×",
                "Lower-value salmon (glow V ~0.74 vs demic ~0.95) because colour is "
                "multiplied onto sculpted clay. UV/groove valleys read as dark cracks.",
                fonts)

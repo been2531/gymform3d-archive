@@ -1,6 +1,8 @@
 # Exercise config for tools/rig3d/pipeline.py (0 generations). Edit here; every stage re-runs only if its inputs change.
 slug: db_row
 module: pull_row          # motion primitive (modules/pull_row.yaml); this file still wins on conflict
+kit:
+  enabled: true            # reusable CC0 studio kit (modules/kit.yaml)
 name: Dumbbell Row            # on-screen title (Day 4 Kaushan title)
 source:
   provider: YMove
@@ -65,8 +67,9 @@ motion:
   stance_width_m: 0.30       # v5: ankle-to-ankle width (YMove 'legs apart' is ~0.5 m: the wide rear leg could not bend)
   stance_scale: 0.45         # fore-aft stagger kept from the clip (1.0 = YMove's long split stance = running-stride look)
   stance_mode: feet_forward  # persist 20261105_1017 com_balance auto-fix (COM was 8 cm behind the feet)
-garment:                     # black boxer briefs (드로즈): separate skinned mesh, matte black, never in the muscle mask
+garment:                     # authored lofted boxer shorts (kit); not a body-face offset
   enabled: true
+  method: loft
   z_waist: 1.03
   z_hem: 0.80                # upper-to-mid thigh openings (boxer-brief length)
   max_abs_x: 0.22
@@ -83,12 +86,12 @@ render:
   res: [1080, 1920]          # render at delivery size (720 + upscale measured 0.18x Day 4 sharpness)
   spp: 24
   denoise_prefilter: ACCURATE # OIDN guided by albedo + normal passes keeps the sculpt texture
-  normal_strength: 1.22           # striations as soft relief
-  albedo_detail: 0.22            # asset fibre luminance into the clay
+  normal_strength: 0.72           # porcelain: less harsh sculpt grooves
+  albedo_detail: 0.06            # keep a hint of fibre, not dirt
   sss_weight: 0.0
   sss_scale: 0.05
   glow_emission: 0.800
-  hdri_strength: 0.0
+  hdri_strength: 0.18            # low-strength Poly Haven studio HDRI
   key_energy: 36                # directional upper-side key
   key_size: 3.2
   fill_size: 4.8
@@ -105,8 +108,8 @@ render:
   ambient_strength: 0.14
   top_energy: 14
   ao_distance: 0.11
-  ao_amount: 0.44                # cavity-like groove shadows
-  cavity_amount: 0.12            # lighter cavity so seams do not crack the glow
+  ao_amount: 0.14                # porcelain: keep grooves, stop charcoal dirt
+  cavity_amount: 0.03            # porcelain: almost no pointiness dirt
   glow_blur_iters: 10
   glow_erode_rings: 0
   glow_fade_rings: 2
@@ -115,9 +118,9 @@ render:
   glow_smooth_iters: 40
   glow_solid_thresh: 0.28
   glow_close_rings: 5
-  glow_tint: 0.65               # multiply clay albedo toward projected colour
-  glow_opacity: 0.40            # scales additive emission (clay BSDF stays visible)
-  glow_shape: project
+  glow_tint: 0.0                # no multiply-on-clay; overlay shells carry the glow
+  glow_opacity: 0.0             # body shader stays clay
+  glow_shape: shells            # kit overlay meshes; projection paint kept in repo only
   glow_proj_close_px: 9          # morph-close paint alpha (seam holes, not colour flood)
   glow_proj_tex: tools/rig3d/masks/db_row_back_paint.png
   glow_fibre_bump: 0.14             # fibre relief on the still-lit clay
@@ -125,9 +128,9 @@ render:
   glow_rim: 0.32
   body_rim: 0.16                 # less white Fresnel wash on clay
   glow_bloom: true
-  blender_bloom: 0.28             # keep glow, stop bloom from clipping >250
+  blender_bloom: 0.36             # soft halo around opaque shells
   glow_flex_min: 0.88
-  base_color: [0.26, 0.27, 0.30]  # sampled demic row-ref clay (sRGB V~144 → lin ~0.27, cool tint)
+  base_color: [0.44, 0.455, 0.485]  # cooler porcelain (kit.clay)
   mask_spp: 4
   camera:
     mode: fixed               # demic: over the working-side shoulder, looking down the back from the head end
@@ -160,10 +163,10 @@ grade:
   backdrop_rgb: [38, 38, 38]
   target_muscles: [lats, rhomboids, mid_trap, rear_delt]
   muscle_hues:
-    lats: {h: 8, s: 205, v: 236}         # displayed ~RGB[243,143,111] after Cycles/denoise lift
-    rhomboids: {h: 141, s: 200, v: 240}  # purple
-    mid_trap: {h: 141, s: 200, v: 240}   # purple
-    rear_delt: {h: 162, s: 210, v: 235}  # magenta-pink
+    lats: {h: 8, s: 210, v: 244}         # vivid peach-orange, V ~0.96
+    rhomboids: {h: 141, s: 200, v: 244}  # purple
+    mid_trap: {h: 141, s: 200, v: 244}   # purple
+    rear_delt: {h: 162, s: 210, v: 242}  # magenta-pink
   muscle_hue_strength:
     lats: 1.00
     rhomboids: 1.00
