@@ -72,8 +72,16 @@ def build(co_w, idx, bone_M, is_left, r=0.016, clear=0.002, max_wrap_deg=250.0, 
         mid = np.array([np.median(rk[bi == b]) if (bi == b).any() else np.nan for b in range(len(bins))])
         ok = ~np.isnan(pal); pal = np.interp(bins, bins[ok], pal[ok]); mid = np.interp(bins, bins[ok], mid[ok])
         w_ = np.clip(bins / 0.012, 0, 1); sh = np.maximum(pal - rc, 0.0) * w_; Rm = np.maximum(mid - sh, rc + 0.003)
-        phi_b = np.concatenate([[0.0], np.cumsum(np.diff(bins) / Rm[:-1])]); phi_b = np.minimum(phi_b, np.radians(max_wrap_deg))
-        phi = np.interp(sk, bins, phi_b); rr = rk - np.interp(sk, bins, sh)
+        # Orbit a cylinder just larger than the handle. The rest-thickness
+        # radius (~40 mm) only bent ~90° and read as fingers on top of the bar.
+        Rm = np.minimum(Rm, rc + 0.006)
+        phi_b = np.concatenate([[0.0], np.cumsum(np.diff(bins) / Rm[:-1])])
+        min_wrap = np.radians(200.0)
+        if float(phi_b[-1]) > 1e-6 and float(phi_b[-1]) < min_wrap:
+            phi_b = phi_b * (min_wrap / float(phi_b[-1]))
+        phi_b = np.minimum(phi_b, np.radians(max_wrap_deg))
+        phi = np.interp(sk, bins, phi_b)
+        rr = np.minimum(rk - np.interp(sk, bins, sh), np.interp(sk, bins, Rm))
         yy_all[m] = y_k + rr * np.sin(phi); nn_all[m] = n_h - rr * np.cos(phi)
     yy_, nn_ = yy_all[F], nn_all[F]
     base = L[F] - np.outer(y[F], f) - np.outer(un[F], n)                       # keep the across-palm component
@@ -93,11 +101,22 @@ def build(co_w, idx, bone_M, is_left, r=0.016, clear=0.002, max_wrap_deg=250.0, 
         Q = rot(L[T], ang); d = np.linalg.norm(hc_l(Q) - hc_l(H0[None])[0], axis=1); return float(d.min() - r)
     # pick the flexion that touches the handle (gap in [clear, 6 mm]) with the best opposition to the fingertips
     hcen = y_h * f + n_h * n + a * float(np.mean(fu)); sF = np.where(labels <= 3, y - y_k, -1.0); best, bg, bo = 0.0, gap(0.0), -1.0
-    for ag in np.radians(np.arange(-90, 91, 1.0)):
+    cands = []
+    for ag in np.radians(np.arange(-130, 131, 1.0)):
         g_ = gap(ag)
-        if not (clear <= g_ <= 0.006): continue
+        if not (-0.002 <= g_ <= 0.016):
+            continue
         Ltry = newL.copy(); Ltry[T] = rot(L[T], ag); mt = metrics(Ltry, labels, sF, hcen, a, r)
-        if mt.get("thumb_opposition_deg", 0) > bo + 1e-6: best, bg, bo = ag, g_, mt["thumb_opposition_deg"]
+        opp = float(mt.get("thumb_opposition_deg", 0))
+        cands.append((ag, g_, opp))
+        if opp > bo + 1e-6:
+            best, bg, bo = ag, g_, opp
+    # Prefer a visibly opposed thumb (not a 40-deg pinch) when several touches exist.
+    opposed = [c for c in cands if abs(c[0]) >= np.radians(70)]
+    if opposed:
+        best, bg, bo = max(opposed, key=lambda c: c[2])
+    elif cands:
+        best, bg, bo = max(cands, key=lambda c: (abs(c[0]), c[2]))
     newL[T] = rot(L[T], best)
     # seams (finger web, knuckle strip): adjacent fingers bend by different radii, so blend the displacement over a few
     # mm across label changes (Gaussian, rest-space neighbours, thumb excluded: it has its own ramp)
@@ -119,8 +138,14 @@ def build(co_w, idx, bone_M, is_left, r=0.016, clear=0.002, max_wrap_deg=250.0, 
     newL = L + (newL - L) * ramp[:, None]
     newW = newL @ R.T + o
     handle_local = {"center": (y_h * f + n_h * n + a * float(np.mean(fu))).tolist(), "axis": a.tolist(), "n": n.tolist(), "r": r}
+    sF_m = np.where(labels <= 3, y - y_k, -1.0)
+    mt = metrics(newL, labels, sF_m, y_h * f + n_h * n + a * float(np.mean(fu)), a, r)
     info = {"y_k": round(float(y_k), 4), "n_h": round(float(n_h), 4), "R0_mm": [round(float(v) * 1000, 1) for v in (n_h - fmid)],
-            "thumb_flex_deg": round(float(np.degrees(best)), 1), "thumb_gap_mm": round(bg * 1000, 1), "n_thumb": int(T.sum()), "n_fingers": int(F.sum())}
+            "thumb_flex_deg": round(float(np.degrees(best)), 1), "thumb_gap_mm": round(bg * 1000, 1),
+            "n_thumb": int(T.sum()), "n_fingers": int(F.sum()),
+            "min_wrap_deg": 200.0,
+            "thumb_opposition_deg": mt.get("thumb_opposition_deg", round(float(bo), 1)),
+            "finger_wrap_deg": mt.get("finger_wrap_deg")}
     return {"labels": labels, "new_world": newW, "handle_local": handle_local, "info": info, "y_local": y, "s_finger": np.where(F_full(labels), y - y_k, -1.0)}
 
 def F_full(labels): return labels <= 3

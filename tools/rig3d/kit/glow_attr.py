@@ -31,6 +31,42 @@ def _adjacency(me):
     return adj
 
 
+def _anatomical_seeds(seed, pts, kind):
+    """Keep the muscle-ID core that matches the requested silhouette.
+
+    pts are rest-pose world metres (Z-up). kind is lats / mid_back / rear_delt.
+    """
+    seed = np.asarray(seed, dtype=bool)
+    if int(seed.sum()) < 12:
+        return seed
+    z = pts[:, 2]
+    z0 = float(np.percentile(z[seed], 5))
+    z1 = float(np.percentile(z[seed], 95))
+    zh = (z - z0) / max(z1 - z0, 1e-6)
+    cx = float(np.median(pts[:, 0]))
+    ax = np.abs(pts[:, 0] - cx)
+    if kind == "lats":
+        # V / fan from the armpit down the side to the lower back.
+        # Keep lateral verts at every height (the side panel); allow more
+        # medial extent only toward the lower back. Do not drop the armpit.
+        seed_ax = ax[seed]
+        lat_max = float(np.percentile(seed_ax, 92))
+        t = np.clip(zh, 0.0, 1.0)
+        min_ax = (0.10 + 0.30 * t) * lat_max
+        return seed & (ax >= min_ax) & (zh > 0.02) & (zh < 0.98)
+    if kind == "mid_back":
+        # Diamond between the scapulae — not up onto the upper traps.
+        seed_ax = ax[seed]
+        half = float(np.percentile(seed_ax, 42))
+        t = np.clip(zh, 0.0, 1.0)
+        diamond = np.where(t < 0.42, t / 0.42, (1.0 - t) / 0.58)
+        return seed & (ax <= half * np.maximum(diamond, 0.15) * 1.05) & (t > 0.14) & (t < 0.76)
+    if kind == "rear_delt":
+        # Posterior deltoid cap only.
+        return seed & (zh > 0.22) & (ax >= float(np.percentile(ax[seed], 18)))
+    return seed
+
+
 def geodesic_falloff(seeds, adj, pts, fade_m=0.022):
     """Multi-source Dijkstra on the mesh graph. 1 at seeds, 0 at fade_m."""
     nv = len(adj)
@@ -129,6 +165,7 @@ def write_weights(welded, src_body, tid, names, cfg, shorts=None, exclude=None, 
             seed &= ~shorts_w
         if excl_w is not None:
             seed &= ~excl_w
+        seed = _anatomical_seeds(seed, dst_w, str(g.get("name") or ""))
         w = geodesic_falloff(seed, adj, dst_w, fade_m=fade)
         if shorts_w is not None:
             w[shorts_w] = 0.0

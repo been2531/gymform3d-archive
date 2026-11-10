@@ -782,6 +782,8 @@ if LEGS == "bench_row":
 try:
     import wrist_cuff as WCUFF
     WCUFF.flatten_wrist_cuffs(body, log)
+    if hasattr(WCUFF, "flatten_ankle_cuffs"):
+        WCUFF.flatten_ankle_cuffs(body, log)
 except Exception as _we:
     log(f"wrist cuff flatten skipped: {_we}")
 me = body.data; nv = len(me.vertices)
@@ -2279,9 +2281,9 @@ try:
         wd.cycles_visibility.camera = True
     log("world: HDRI lights, camera rays charcoal")
 except Exception as e:
-    if hasattr(wd, "cycles_visibility") and hasattr(wd.cycles_visibility, "camera"):
-        wd.cycles_visibility.camera = False
     if str(e) != "kit-world-already-wired":
+        if hasattr(wd, "cycles_visibility") and hasattr(wd.cycles_visibility, "camera"):
+            wd.cycles_visibility.camera = False
         log(f"world charcoal fallback: {e}")
 key_from = (CAM.location - ctr); key_from.z = 0; key_from.normalize()
 upv = mu.Vector((0.0, 0.0, 1.0)); sidev = key_from.cross(upv)
@@ -2343,7 +2345,7 @@ if RC.get("floor", True):
     # "far-half" ramp, no hard slab edges, no transparent fade (that ghosted the legs and left a
     # black void at the top of the true-side view).
     R_max = float(RC.get("cyc_radius_m", 12.0))
-    R_flat = float(RC.get("cyc_flat_radius_m", 2.4))
+    R_flat = float(RC.get("cyc_flat_radius_m", R_max))
     H_wall = float(RC.get("cyc_height_m", 10.0))
     segs = int(RC.get("cyc_segments", 72))
     rings = int(RC.get("cyc_rings", 28))
@@ -2395,11 +2397,33 @@ if RC.get("floor", True):
     floor.data.materials.clear(); floor.data.materials.append(fm)
     log(f"cyclorama bowl r_flat={R_flat} r_max={R_max} h={H_wall} z={flz:.3f} (opaque, all views)")
     if "_kit" in dir() and _kit.get("enabled"):
+        # Keep the emission cyclorama and a flat floor (R_flat=R_max) so the
+        # cove horizon cannot photograph as a hoop around the figure.
+        # Replace the tessellated bowl with a single quad so no ring can show.
         try:
-            import kit.lights as KITL
-            KITL.shade_contact_floor(floor, C, log=log)
+            import bmesh as _bm
+            _b = _bm.new()
+            _s = 16.0
+            _vs = [_b.verts.new(p) for p in ((-_s, -_s, 0), (_s, -_s, 0), (_s, _s, 0), (-_s, _s, 0))]
+            _b.faces.new(_vs)
+            _me = bpy.data.meshes.new("studio_floor_flat")
+            _b.to_mesh(_me); _b.free()
+            plane = bpy.data.objects.new("studio_floor_flat", _me)
+            plane.location = floor.location.copy()
+            col.objects.link(plane)
+            if floor.data.materials:
+                plane.data.materials.append(floor.data.materials[0])
+            floor.hide_render = True
+            floor.hide_viewport = True
+            floor = plane
+            log("kit floor: replaced bowl with flat emission plane 32 m")
         except Exception as _fe:
-            log(f"kit floor shade: {_fe}")
+            log(f"kit floor plane replace: {_fe}")
+        for o in list(col.objects):
+            n = (o.name or "").lower()
+            if o.type in ("CURVE",) or (o is not floor and ("circle" in n or "hoop" in n)):
+                o.hide_render = True
+                log(f"kit floor: hid leftover {o.name}")
 sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(AUTH_META["fps"]) if AUTH_META else int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
 if a.frames == "all":
     frames = list(range(1, NF + 1))

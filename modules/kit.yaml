@@ -12,12 +12,13 @@ kit:
     waistband_h_m: 0.07          # wide elastic band
     waist_above_hip_m: 0.10
     hem_blend: 0.36              # 0 = at knee, 1 = at hip; ~mid-thigh
-    ease_m: 0.012                # default; per-region overrides below
-    ease_waist_m: 0.010
-    ease_hip_m: 0.015            # 15 mm from the body cross-section
-    pose_inflate_m: 0.010        # after armature, keep posed hips covered
-    ease_thigh_m: 0.014          # slight looseness at mid-thigh
-    clearance_m: 0.010           # post-cloth floor vs the rest body
+    ease_m: 0.006                # default; per-region overrides below
+    ease_waist_m: 0.005
+    ease_hip_m: 0.005            # rest tube; posed shrinkwrap sits at ~4 mm
+    pose_inflate_m: 0.0          # no seat displace (the 10 mm diaper)
+    ease_thigh_m: 0.008          # slight looseness at mid-thigh hem only
+    clearance_m: 0.003           # post-cloth floor vs the rest body
+    posed_fit_offset_m: 0.004    # single-shell shrinkwrap after armature
     cloth_collide_m: 0.005
     waistband_extra_m: 0.006     # band sits a bit proud of the shorts
     solidify_m: 0.003
@@ -31,7 +32,7 @@ kit:
     roughness: 0.95
   muscles:
     method: attr                 # geodesic float attributes on the welded mesh
-    fade_m: 0.022                # soft sheet edge, metres
+    fade_m: 0.015                # 1.5 cm crisp anatomical edge
     hue: {h: 12, s: 200, v: 244} # vivid peach-orange for every shell (not QC identity hues)
     groups:
       - {name: lats, ids: [lats]}
@@ -45,16 +46,16 @@ kit:
     emission: 1.15
     flex_min: 0.88
   lights:
-    hdri_strength: 0.18          # low; area lights shape the form
+    hdri_strength: 0.10          # low; area lights shape the form
     ambient_strength: 0.10
-    key_energy: 36
-    key_size: 3.4
-    fill_energy: 40
-    fill_size: 5.2
-    rim_energy: 16
+    key_energy: 10
+    key_size: 5.0
+    fill_energy: 6
+    fill_size: 5.6
+    rim_energy: 6
     rim_size: 2.8
     top_energy: 0                # three-point only
-    floor_receive_shadows: true
+    floor_receive_shadows: false # BSDF on the cyc photographed a circular crease
   clay:
     base_color: [0.44, 0.455, 0.485]   # cooler porcelain, higher value
     ao_amount: 0.14
@@ -82,7 +83,7 @@ render:
   glow_shape: attr
   exposure: 0.0
   hdri_strength: 0.18
-  blender_bloom: 0.70
+  blender_bloom: 0.32
   glow_bloom: true
   glow_opacity: 0.0            # attr sheets add emission; clay stays the BSDF
   glow_tint: 0.18

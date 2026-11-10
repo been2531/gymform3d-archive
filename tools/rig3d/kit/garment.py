@@ -446,7 +446,7 @@ def _seal_boundary(obj, log):
     return st
 
 
-def _solidify_close(obj, thick, smooth_n, log):
+def _solidify_close(obj, thick, smooth_n, log, apply_solidify=True):
     import bpy
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
@@ -458,6 +458,8 @@ def _solidify_close(obj, thick, smooth_n, log):
             bpy.ops.object.modifier_apply(modifier="kit_smooth")
         except Exception as e:
             log(f"garment smooth: {e}")
+    if not apply_solidify or float(thick) <= 1e-6:
+        return
     sol = obj.modifiers.new("kit_solidify", "SOLIDIFY")
     sol.thickness = float(thick)
     sol.offset = 1.0
@@ -473,6 +475,51 @@ def _solidify_close(obj, thick, smooth_n, log):
         bpy.ops.object.modifier_apply(modifier="kit_solidify")
     except Exception as e:
         log(f"garment solidify: {e}")
+
+
+def _add_posed_fit(garm, body, thick, z_hem, z_hip, log, offset_m=0.005):
+    """After armature, keep a SINGLE shell at least `offset_m` above the body.
+
+    Do not solidify here: a second shell on top of a surface snap z-fights
+    and photographs as white clay islands. The medial seat strip is left
+    unwrapped so the cloth keeps bridging the cleft.
+    """
+    import bpy
+    scale = float(np.mean(np.abs(np.array(garm.matrix_world.to_scale())))) or 1.0
+    vco = np.empty(len(garm.data.vertices) * 3, np.float64)
+    garm.data.vertices.foreach_get("co", vco)
+    vco = vco.reshape(-1, 3)
+    Mw = np.array(garm.matrix_world, dtype=np.float64)
+    world = vco @ Mw[:3, :3].T + Mw[:3, 3]
+    cx = float(np.median(world[:, 0]))
+    vg = garm.vertex_groups.new(name="posed_fit")
+    n_skip = 0
+    for i, p in enumerate(world):
+        medial = (abs(float(p[0]) - cx) < 0.032
+                  and float(p[2]) < float(z_hip) + 0.03
+                  and float(p[2]) > float(z_hem) + 0.03)
+        vg.add([int(i)], 0.0 if medial else 1.0, "REPLACE")
+        n_skip += int(medial)
+    # Simple subdiv after armature so faces cannot chord through the glute
+    # dome (that was the white clay poke-through on a 32-ring tube).
+    sub = garm.modifiers.new("kit_garm_subdiv", "SUBSURF")
+    try:
+        sub.subdivision_type = "SIMPLE"
+    except Exception:
+        pass
+    sub.levels = 2
+    sub.render_levels = 2
+    sw = garm.modifiers.new("kit_garm_fit", "SHRINKWRAP")
+    sw.target = body
+    sw.wrap_method = "NEAREST_SURFACEPOINT"
+    sw.wrap_mode = "ABOVE_SURFACE"
+    # Offset is in the modified object's local units (mesh was bound into
+    # donor local, object scale ~0.01). 5 mm world -> 0.5 local.
+    sw.offset = float(offset_m) / scale
+    sw.vertex_group = "posed_fit"
+    log(f"garment posed fit method={sw.wrap_method} mode={sw.wrap_mode} "
+        f"offset_local={sw.offset:.4f} offset_m={float(offset_m):.3f} "
+        f"skip_medial={n_skip} scale={scale:.4f} subdiv=simple/2")
 
 
 def _bind_to_body(obj, donor, arm, log):
@@ -505,8 +552,8 @@ def _bind_to_body(obj, donor, arm, log):
     # After skinning, push the cloth off the posed body so a rest-fit tube
     # cannot be swallowed by the hinged hip. Strength is world metres / scale.
     inflate = float(getattr(_bind_to_body, "_inflate_m", 0.0) or 0.0)
+    scale = float(np.mean(np.abs(np.array(donor.matrix_world.to_scale())))) or 1.0
     if inflate > 1e-5:
-        scale = float(np.mean(np.abs(np.array(donor.matrix_world.to_scale())))) or 1.0
         disp = obj.modifiers.new("kit_garm_inflate", "DISPLACE")
         disp.mid_level = 0.0
         disp.strength = inflate / scale
@@ -711,6 +758,42 @@ def _try_cloth(garm, collider, pin_name, frames, shrink, log, collide_dist=0.005
     return report
 
 
+
+def _posed_hip_fit(garm, body, z_lo, z_hi, log):
+    """Garment-to-body gap on the posed seat/hip. p90 should be <= 15 mm."""
+    import bpy
+    from .weld import nearest_map
+    dg = bpy.context.evaluated_depsgraph_get()
+
+    def _world(ob):
+        ev = ob.evaluated_get(dg)
+        m = ev.to_mesh()
+        co = np.empty(len(m.vertices) * 3, np.float64)
+        m.vertices.foreach_get("co", co)
+        Mw = np.array(ev.matrix_world, dtype=np.float64)
+        ev.to_mesh_clear()
+        return co.reshape(-1, 3) @ Mw[:3, :3].T + Mw[:3, 3]
+
+    gp, bp = _world(garm), _world(body)
+    sel = (gp[:, 2] >= float(z_lo)) & (gp[:, 2] <= float(z_hi))
+    if int(sel.sum()) < 8:
+        return {"n": int(sel.sum()), "pass": False, "reason": "too few hip verts"}
+    idx = nearest_map(bp, gp[sel])
+    d = np.linalg.norm(gp[sel] - bp[idx], axis=1)
+    p50 = float(np.percentile(d, 50))
+    p90 = float(np.percentile(d, 90))
+    out = {
+        "n": int(sel.sum()),
+        "p50_m": round(p50, 4),
+        "p90_m": round(p90, 4),
+        "max_m": round(float(d.max()), 4),
+        "pass": p90 <= 0.015,
+    }
+    log(f"garment posed hip gap n={out['n']} p50={p50*1000:.1f}mm p90={p90*1000:.1f}mm "
+        f"max={out['max_m']*1000:.1f}mm pass={out['pass']}")
+    return out
+
+
 def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
     """Return (object, meta). Closed authored tube, cloth if it really bakes."""
     import bmesh
@@ -864,7 +947,9 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
 
         _push_clearance(garm, pts, min_clear=min_clear, log=log)
         _close_mesh_holes(garm, keep_open=3, weld_dist=0.00025, log=log)
-        _solidify_close(garm, thick, smooth_n, log)
+        # Smooth only: solidify after the posed shrinkwrap so both shells
+        # cannot snap onto the same surface.
+        _solidify_close(garm, thick, smooth_n, log, apply_solidify=False)
         closed = _seal_boundary(garm, log)
 
         mat = _matte_black(rgb, rough)
@@ -920,8 +1005,10 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
             else:
                 w = float((zi - z_hem) / 0.05)
             inf_grp.add([int(i)], w, "REPLACE")
-        _bind_to_body._inflate_m = float(gcfg.get("pose_inflate_m", 0.010))
+        _bind_to_body._inflate_m = float(gcfg.get("pose_inflate_m", 0.0))
         _bind_to_body(garm, body, arm, log)
+        _add_posed_fit(garm, body, thick, z_hem, z_hip, log,
+                       offset_m=float(gcfg.get("posed_fit_offset_m", 0.004)))
     finally:
         arm.data.pose_position = prev_pp
         bpy.context.view_layer.update()
@@ -955,8 +1042,13 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
         meta["world_bbox"] = [_pts.min(0).round(3).tolist(), _pts.max(0).round(3).tolist()]
     except Exception as e:
         meta["world_bbox"] = str(e)
+    try:
+        meta["posed_fit"] = _posed_hip_fit(garm, body, z_hem + 0.03, z_wb_bot + 0.02, log)
+    except Exception as e:
+        meta["posed_fit"] = {"error": str(e)}
+        log(f"garment posed_fit failed: {e}")
     log(f"kit garment closed verts={meta['verts']} bound={closed['boundary_edges']} "
         f"hem_z={meta['z_hem']} cloth_applied={cloth_report.get('applied')} "
-        f"bbox={meta.get('world_bbox')}")
+        f"bbox={meta.get('world_bbox')} fit={meta.get('posed_fit')}")
     meta["waistband_obj"] = waist
     return garm, meta
