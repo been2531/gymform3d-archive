@@ -380,27 +380,6 @@ def write_glow_w(me, weights):
     return float(w.mean()), int((w > 0.5).sum())
 
 
-def write_region_id(me, regions):
-    """Distinct greyscale IDs per muscle for compositor Sobel separators."""
-    nv = 0
-    for v in regions.values():
-        nv = max(nv, len(v))
-    rid = np.zeros(nv, np.float32)
-    levels = {"lats": 0.15, "rhomboids": 0.50, "mid_trap": 0.50, "rear_delt": 1.00}
-    for name, level in levels.items():
-        m = regions.get(name)
-        if m is not None:
-            rid[np.asarray(m, dtype=bool)] = level
-    col = np.zeros((nv, 4), np.float32)
-    col[:, 0] = rid; col[:, 1] = rid; col[:, 2] = rid; col[:, 3] = 1.0
-    va = me.color_attributes.get("region_id")
-    if va is None:
-        va = me.color_attributes.new("region_id", "FLOAT_COLOR", "POINT")
-    va.data.foreach_set("color", col.ravel())
-    me.update()
-    return int((rid > 0).sum())
-
-
 # OpenCV HSV (H 0-179). Sampled from demicstory crops 2026-11-10 (output/_refs_color/crop_demic_*.jpg).
 # Shared fixed table: an exercise only names target_muscles (and may override a hue).
 DEFAULT_HUES = {
@@ -771,219 +750,10 @@ def write_glow_attrs(me, weights, rgb):
     return mean, n
 
 
-
-def _point_in_poly(xy, poly):
-    """Vectorized even-odd point-in-polygon. xy (N,2), poly (M,2)."""
-    poly = np.asarray(poly, np.float32)
-    x = np.asarray(xy[:, 0], np.float32)
-    y = np.asarray(xy[:, 1], np.float32)
-    inside = np.zeros(len(xy), dtype=bool)
-    n = len(poly)
-    j = n - 1
-    for i in range(n):
-        xi, yi = float(poly[i, 0]), float(poly[i, 1])
-        xj, yj = float(poly[j, 0]), float(poly[j, 1])
-        cond = (yi > y) != (yj > y)
-        den = yj - yi
-        if abs(den) < 1e-12:
-            den = 1e-12
-        xinters = (xj - xi) * (y - yi) / den + xi
-        inside ^= cond & (x < xinters)
-        j = i
-    return inside
-
-
-def _diamond_hw(y, y_top, y_bot, y_wide, w_max):
-    """Smooth kite half-width: 0 at top and bottom, w_max at y_wide (cosine ease)."""
-    y = np.asarray(y, np.float32)
-    hw = np.zeros_like(y)
-    up = (y >= y_wide) & (y <= y_top)
-    span = max(float(y_top - y_wide), 1e-4)
-    t = np.clip((y_top - y[up]) / span, 0.0, 1.0)
-    hw[up] = float(w_max) * 0.5 * (1.0 - np.cos(np.pi * t))
-    dn = (y >= y_bot) & (y < y_wide)
-    span = max(float(y_wide - y_bot), 1e-4)
-    t = np.clip((y[dn] - y_bot) / span, 0.0, 1.0)
-    hw[dn] = float(w_max) * 0.5 * (1.0 - np.cos(np.pi * t))
-    return hw
-
-
-def _interp_band(y, knots_y, lo, hi):
-    """Per-vertex (lo(y), hi(y)) from monotonic knots."""
-    return (np.interp(y, knots_y, lo), np.interp(y, knots_y, hi))
-
-
-def find_landmarks(pos, vert_id, names):
-    """Rest-pose landmarks (Y-up metres) from the fixed mannequin + muscle IDs."""
-    pos = np.asarray(pos, np.float32)
-    y, x, z = pos[:, 1], pos[:, 0], pos[:, 2]
-    ax = np.abs(x)
-    scale = float(y.max()) / 1.8 if float(y.max()) > 0.5 else 1.0
-    name_i = {n: i for i, n in enumerate(names)}
-    tid = np.asarray(vert_id)
-
-    def m(n):
-        return tid == name_i[n] if n in name_i else np.zeros(len(tid), dtype=bool)
-
-    ut, mt, rh, lt, rd, gl = m("upper_trap"), m("mid_trap"), m("rhomboids"), m("lats"), m("rear_delt"), m("glutes")
-    c7 = float(np.percentile(y[ut], 5)) if ut.any() else 1.505 * scale
-    iliac = float(np.percentile(y[gl], 92)) if gl.any() else 0.985 * scale
-    if lt.any():
-        iliac = max(iliac, float(np.percentile(y[lt], 2)))
-    t12 = iliac + 0.180 * scale
-    if rh.any():
-        t12 = min(t12, float(np.percentile(y[rh], 6)))
-    spine = float(np.percentile(y[rd], 20)) if rd.any() else 1.45 * scale
-    spine = min(spine, c7 - 0.035 * scale)
-    inf_ang = float(np.percentile(y[rh], 8)) if rh.any() else 1.20 * scale
-    # Humeral insertion sits at the very top of the lat sheet.
-    hi_lt = lt & (ax > 0.12 * scale)
-    axilla_y = (float(y[hi_lt].max()) - 0.006 * scale) if hi_lt.any() else (float(y[lt].max()) if lt.any() else 1.49 * scale)
-    hi = hi_lt & (y > axilla_y - 0.06 * scale)
-    axilla_ax = float(np.percentile(ax[hi], 55)) if hi.any() else 0.195 * scale
-    scap_med = max(float(np.percentile(ax[rh], 96)) if rh.any() else 0.135 * scale, 0.132 * scale)
-    rd_cx = float(np.median(ax[rd])) if rd.any() else 0.155 * scale
-    rd_cy = float(np.median(y[rd])) if rd.any() else 1.47 * scale
-    return {
-        "scale": scale, "C7_y": c7, "T12_y": t12, "iliac_y": iliac,
-        "spine_y": spine, "inf_angle_y": inf_ang,
-        "axilla_y": axilla_y, "axilla_ax": axilla_ax,
-        "scap_med_ax": scap_med, "rd_cx": rd_cx, "rd_cy": rd_cy,
-    }
-
-
-def anatomical_regions(pos, vert_id, names, forbid=None):
-    """Smooth landmark polygons projected onto the rest mesh (back X-Y plane + wrap z).
-
-    mid_trap: kite/diamond C7 -> scapular spine -> T12
-    rhomboids: plates under the kite, spine to medial scapular border
-    lats: one continuous wing per side, iliac crest -> axilla
-    rear_delt: oval cap around the posterior deltoid centroid
-    """
-    pos = np.asarray(pos, np.float32)
-    lm = find_landmarks(pos, vert_id, names)
-    s = float(lm["scale"])
-    y, x, z = pos[:, 1], pos[:, 0], pos[:, 2]
-    ax = np.abs(x)
-    forbid = np.zeros(len(pos), dtype=bool) if forbid is None else np.asarray(forbid, dtype=bool)
-    c7, t12, iliac = lm["C7_y"], lm["T12_y"], lm["iliac_y"]
-    spine, inf_ang = lm["spine_y"], lm["inf_angle_y"]
-    ax_y, ax_ax = lm["axilla_y"], lm["axilla_ax"]
-    scap_med = lm["scap_med_ax"]
-
-    # --- trapezius kite ---
-    trap_w = 0.098 * s
-    hw = _diamond_hw(y, c7 + 0.008 * s, t12 - 0.010 * s, spine, trap_w)
-    trap = (ax <= hw + 1e-6) & (y <= c7 + 0.012 * s) & (y >= t12 - 0.012 * s) & (z < 0.055 * s)
-    trap &= ~forbid
-
-    # --- rhomboids: under the kite, between kite edge and medial scapula ---
-    rho_y0, rho_y1 = inf_ang - 0.015 * s, spine + 0.015 * s
-    rho_lo, rho_hi = np.maximum(hw - 0.008 * s, 0.008 * s), np.full_like(y, scap_med + 0.006 * s)
-    # taper lateral edge down toward the inferior angle
-    rho_hi = np.interp(y, [inf_ang, 0.5 * (inf_ang + spine), spine],
-                       [scap_med * 0.88, scap_med + 0.010 * s, scap_med + 0.004 * s])
-    rho = (y >= rho_y0) & (y <= rho_y1) & (ax >= rho_lo) & (ax <= rho_hi) & (z < 0.070 * s)
-    rho &= ~forbid
-    # overlap the kite on purpose; bake paints a dark separator on the shared edge
-
-    # --- rear delt oval cap (L/R) ---
-    rd = np.zeros(len(pos), dtype=bool)
-    rx, ry = 0.048 * s, 0.054 * s
-    for sgn in (-1.0, 1.0):
-        cx, cy = sgn * float(lm["rd_cx"]), float(lm["rd_cy"])
-        rd |= ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1.0
-    rd &= (z < 0.070 * s) & (ax >= 0.100 * s) & (y >= spine - 0.040 * s)
-    rd &= ~forbid
-    rho &= ~rd
-
-    # --- lat wing: medial/lateral ax as a function of height (one continuous sheet) ---
-    # knots: iliac -> T12 -> inferior angle -> mid belly -> below delt -> axilla
-    ky = np.array([
-        iliac - 0.005 * s,
-        iliac + 0.070 * s,
-        t12,
-        inf_ang,
-        0.55 * inf_ang + 0.45 * spine,
-        spine - 0.015 * s,
-        max(ax_y - 0.020 * s, spine + 0.010 * s),
-        max(ax_y + 0.010 * s, spine + 0.045 * s),
-    ], np.float32)
-    for i in range(1, len(ky)):
-        if ky[i] <= ky[i - 1]:
-            ky[i] = ky[i - 1] + 0.012 * s
-    kmed = np.array([
-        0.040 * s,   # iliac medial (near TL fascia)
-        0.036 * s,
-        0.042 * s,   # T12 — still close to spine
-        0.070 * s,   # sweep under the scapula so the wing meets the rhomboids
-        0.082 * s,
-        0.092 * s,   # below rear delt — fill teres / infraspinatus belly
-        0.108 * s,
-        max(ax_ax - 0.028 * s, 0.140 * s),
-    ], np.float32)
-    klat = np.array([
-        0.190 * s,
-        0.205 * s,
-        0.218 * s,
-        0.228 * s,
-        0.232 * s,
-        0.232 * s,
-        0.222 * s,
-        max(ax_ax + 0.015 * s, 0.208 * s),
-    ], np.float32)
-    lo, hi = _interp_band(y, ky, kmed, klat)
-    lat = (y >= ky[0] - 0.004 * s) & (y <= ky[-1] + 0.006 * s) & (ax >= lo) & (ax <= hi)
-    # back sheet + side wrap (high ax, slightly anterior z) — not the chest
-    lat &= (z < 0.060 * s) | ((ax > 0.105 * s) & (z < 0.140 * s))
-    lat &= ~forbid & ~trap & ~rho & ~rd
-
-    return {"mid_trap": trap, "rhomboids": rho, "lats": lat, "rear_delt": rd}, lm
-
-
-def _vert_curvature(pos, adj):
-    """Per-vertex Laplace magnitude — high on sculpt grooves / sharp folds."""
-    pos = np.asarray(pos, np.float32)
-    counts, idx, owners = _pack_adj(adj)
-    nv = len(pos)
-    acc = np.zeros((nv, 3), np.float32)
-    if len(idx):
-        np.add.at(acc, owners, pos[idx])
-    mean = acc / np.maximum(counts.astype(np.float32), 1.0)[:, None]
-    return np.linalg.norm(mean - pos, axis=1)
-
-
-def _snap_to_grooves(mask, curv, adj, allow, grow_rings=2, pct=68.0):
-    counts, idx, owners = _pack_adj(adj)
-    grown = _dilate_mask(mask, counts, idx, owners, grow_rings) & allow
-    ring = grown & (~mask)
-    if not ring.any():
-        return mask
-    thr = float(np.percentile(curv[grown], pct))
-    return mask | (ring & (curv >= thr))
-
-
-def _keep_largest(mask, adj, keep=2, min_size=60):
-    labels, sizes = _components(mask, adj)
-    if not len(sizes):
-        return np.zeros_like(mask)
-    order = np.argsort(-sizes)
-    pick = []
-    for c in order:
-        if sizes[c] < int(min_size):
-            continue
-        pick.append(int(c))
-        if len(pick) >= int(keep):
-            break
-    if not pick:
-        return np.zeros_like(mask)
-    return np.isin(labels, np.array(pick, np.int32))
-
-
 def bake_target_glow(vert_id, names, targets, hues, strengths, adj, exclude=None, shorts=None,
                      erode_rings=0, power=1.0, fade_rings=3, pos=None,
                      smooth_iters=40, solid_thresh=0.28, close_rings=5, radial=False):
-    """Once-per-mesh bake from landmark polygons (not ID islands or a convex hull)."""
+    """Once-per-mesh bake: clean solid region per hue-group + that group's linear RGB."""
     nv = len(vert_id)
     name_i = {n: i for i, n in enumerate(names)}
     tid = np.asarray(vert_id)
@@ -998,110 +768,79 @@ def bake_target_glow(vert_id, names, targets, hues, strengths, adj, exclude=None
     stats = {}
     hues = hues or {}
     strengths = strengths or {}
-    forbid = sh | exclude
-    use_adj = weld_adj(adj, pos, eps=4e-4) if pos is not None else adj
-    regions, lm = ({}, {})
+    bounds, meta = ({}, {})
     if pos is not None:
-        regions, lm = anatomical_regions(pos, tid, names, forbid=forbid)
-        stats["_landmarks"] = {k: round(float(v), 4) for k, v in lm.items()}
-    curv = _vert_curvature(pos, use_adj) if pos is not None else None
-    counts, idx, owners = _pack_adj(use_adj)
-    solids = {}
-    cols = {}
-    # Each named target is its own shape (do not merge same-hue groups — trap kite
-    # and rhomboid plates must stay distinct so a separator can sit between them).
+        bounds, meta = anatomy_allow(pos, tid, names)
+        stats["_clip"] = meta
+    forbid_ids = [name_i[n] for n in ("upper_trap", "front_delt", "side_delt", "erectors",
+                                      "pecs", "abs", "obliques") if n in name_i]
+    # group targets that share a hue so mid-back (rhomboids+mid_trap) becomes one shape
+    groups = []
+    used = set()
     for name in targets:
-        if name not in name_i:
+        if name in used or name not in name_i:
             continue
         spec = hues.get(name) or DEFAULT_HUES.get(name)
         if not spec:
             continue
-        if name in regions and regions[name].any():
-            seed = regions[name] & ~forbid
-        else:
-            seed = (tid == name_i[name]) & ~forbid
-        if not seed.any():
-            stats[name] = 0
-            continue
-        if curv is not None:
-            seed = _snap_to_grooves(seed, curv, use_adj, ~forbid, grow_rings=2, pct=68.0)
-        field = seed.astype(np.float32)
-        field = _laplacian(field, counts, idx, owners, 8, retain=~forbid)
-        solid = (field >= 0.40) & ~forbid
-        keep_n = 1 if name in ("mid_trap",) else 2
-        solid = _keep_largest(solid, use_adj, keep=keep_n, min_size=80)
-        w = _feather_solid(solid, counts, idx, owners, fade_rings=fade_rings,
-                           power=1.0 if not radial else power, radial=False)
-        stren = float(strengths.get(name, 1.0))
-        w = w * stren
+        key = (int(spec["h"]), int(spec["s"]), int(spec["v"]))
+        members = []
+        for n2 in targets:
+            if n2 in used or n2 not in name_i:
+                continue
+            s2 = hues.get(n2) or DEFAULT_HUES.get(n2)
+            if s2 and (int(s2["h"]), int(s2["s"]), int(s2["v"])) == key:
+                members.append(n2)
+                used.add(n2)
+        groups.append((members, spec))
+    use_adj = weld_adj(adj, pos, eps=4e-4) if pos is not None else adj
+    for members, spec in groups:
+        seed = np.zeros(nv, dtype=bool)
+        allow = np.zeros(nv, dtype=bool)
+        for name in members:
+            idm = tid == name_i[name]
+            clip = bounds[name] if name in bounds else np.ones(nv, dtype=bool)
+            seed |= idm & clip
+            allow |= clip
+        allow &= ~sh & ~exclude
+        skip_forbid = set()
+        if any(n in ("rhomboids", "mid_trap") for n in members):
+            # midline of the diamond sits on erector verts — let the hull fill across the spine
+            skip_forbid.add("erectors")
+        for fid, fname in zip(forbid_ids, [n for n in ("upper_trap", "front_delt", "side_delt", "erectors",
+                                                       "pecs", "abs", "obliques") if n in name_i]):
+            if fname in skip_forbid:
+                continue
+            allow &= tid != fid
+        for name in targets:
+            if name not in members and name in name_i:
+                # Only reserve verts the other group will actually paint. A rhomboid
+                # atlas island that sits too far lateral (outside its clip) can be
+                # claimed by the lat hull so the wing and diamond do not leave a clay gap.
+                other_clip = bounds[name] if name in bounds else np.ones(nv, dtype=bool)
+                allow &= ~((tid == name_i[name]) & other_clip)
+        seed &= ~sh & ~exclude & allow
+        stren = float(np.mean([float(strengths.get(n, 1.0)) for n in members]))
+        wt, info = clean_muscle_weight(
+            seed, use_adj, allow,
+            fade_rings=fade_rings, smooth_iters=smooth_iters,
+            thresh=solid_thresh, close_rings=close_rings,
+            keep=2, min_size=80, power=power, radial=radial,
+            pos=pos, hull_fill=True,
+        )
+        wt = wt * stren
         col = hsv_to_lin_rgb(spec["h"], spec["s"], spec["v"])
-        better = w > gw
+        better = wt > gw
         rgb[better] = col
-        gw = np.maximum(gw, w)
-        solids[name] = solid
-        cols[name] = col
-        stats[name] = int(solid.sum())
-        stats[name + "_solid"] = int(solid.sum())
-        stats[name + "_cc"] = keep_n
-
-    # Close leftover clay channels between (and holes inside) landmark regions.
-    # Independent Laplacian shrink leaves gaps wider than one ring; flood those
-    # empty verts from the nearest solid so the compositor Sobel stroke is a
-    # single thin line instead of a pale clay strip with two outlines.
-    keys = [n for n in targets if n in solids]
-    union = np.zeros(nv, dtype=bool)
-    for name in keys:
-        union |= solids[name]
-    ncover = np.zeros(nv, np.int16)
-    for name in keys:
-        ncover[_dilate_mask(solids[name], counts, idx, owners, 10)] += 1
-    between = ncover >= 2
-    try:
-        closed = _fill_interior_holes(union, counts, idx, owners)
-    except Exception:
-        closed = union
-    allow = (between | closed) & ~forbid
-    labels = np.zeros(nv, np.int16)
-    for i, name in enumerate(keys, start=1):
-        labels[solids[name]] = i
-    dist = np.full(nv, 99, np.int16)
-    dist[labels > 0] = 0
-    frontier = labels > 0
-    for _ in range(8):
-        ring = _dilate_mask(frontier, counts, idx, owners, 1) & allow & (labels == 0)
-        if not ring.any():
-            break
-        take = ring[owners] & (labels[idx] > 0)
-        if take.any():
-            labels[owners[take]] = labels[idx[take]]
-            dist_n = dist[idx[take]] + 1
-            better = dist_n < dist[owners[take]]
-            dist[owners[take]] = np.minimum(dist[owners[take]], dist_n)
-            # keep nearest label when two regions write the same vert
-            if better.any():
-                labels[owners[take][better]] = labels[idx[take][better]]
-        frontier = ring & (labels > 0)
-    # One extra ring on the union so sculpt-groove lips are claimed (stops
-    # camera-facing grooves from flashing clay / attracting bloom).
-    grow = _dilate_mask(labels > 0, counts, idx, owners, 1) & ~forbid & (labels == 0)
-    if grow.any() and len(idx):
-        take = grow[owners] & (labels[idx] > 0)
-        if take.any():
-            labels[owners[take]] = labels[idx[take]]
-    filled = 0
-    for i, name in enumerate(keys, start=1):
-        extra = (labels == i) & ~solids[name]
-        if not extra.any():
-            continue
-        rgb[extra] = cols[name]
-        gw[extra] = 1.0
-        solids[name] = solids[name] | extra
-        filled += int(extra.sum())
-    stats["sliver"] = filled
+        gw = np.maximum(gw, wt)
+        for name in members:
+            stats[name] = int(((tid == name_i[name]) & (wt > 0.5)).sum())
+        stats["+".join(members) + "_solid"] = info.get("solid", 0)
+        stats["+".join(members) + "_cc"] = info.get("cc", 0)
     gw[sh] = 0.0
     gw[exclude] = 0.0
-    stats["_regions"] = solids
     return gw, rgb, stats
+
 
 
 def cache_path(cache_dir, key):
@@ -1123,7 +862,6 @@ def load_or_build(glb_path, cache_dir):
     built["cache"] = path
     built["hit"] = False
     return built
-
 
 
 def render_label_preview(pos, vert_id, out_path, size=1400):

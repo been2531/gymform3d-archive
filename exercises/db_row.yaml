@@ -93,6 +93,8 @@ render:
   glow_close_rings: 5
   glow_tint: 0.18
   glow_opacity: 0.98
+  glow_shape: project
+  glow_proj_tex: tools/rig3d/masks/db_row_glow_uv.png
   glow_fibre_bump: 0.22
   glow_fibre_line: 0.55         # thin brighter fibre ridges inside the glow
   glow_rim: 0.32
