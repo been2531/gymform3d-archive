@@ -216,10 +216,24 @@ def run(run_dir, cfg):
         mn = min(fv) if fv else None
         out.append(ck("glow_fibre_contrast", None if mn is None else round(float(mn), 2),
                       f">= {Q['glow_fibre_hp_min']}", bool(fv) and mn >= Q["glow_fibre_hp_min"], None, "look"))
-    if Q.get("glow_hue") or Q.get("glow_sat"):
+    if Q.get("glow_hue") or Q.get("glow_sat") or (cfg.get("grade") or {}).get("palette"):
         hues = [f.get("glow_hue_p50") for f in L if f.get("glow_hue_p50") is not None]
         sats = [f.get("glow_sat_p50") for f in L if f.get("glow_sat_p50") is not None]
         hlim = Q.get("glow_hue"); slim = Q.get("glow_sat")
+        try:
+            from grade3d import resolve_palette
+            pal = resolve_palette(cfg.get("grade") or {})
+            # Palette bands win when yaml still has the other preset's numbers (green vs peach).
+            if pal.get("qc_hue") and (not hlim or not (hlim[0] <= pal["right_h"] <= hlim[1])):
+                hlim = list(pal["qc_hue"])
+            if pal.get("qc_sat") and (not slim or not (slim[0] <= pal["right_s"] <= slim[1])):
+                slim = list(pal["qc_sat"])
+            if pal.get("qc_hue") and not hlim:
+                hlim = list(pal["qc_hue"])
+            if pal.get("qc_sat") and not slim:
+                slim = list(pal["qc_sat"])
+        except Exception:
+            pass
         hok = bool(hues) and (not hlim or (min(hues) >= hlim[0] and max(hues) <= hlim[1]))
         sok = bool(sats) and (not slim or (min(sats) >= slim[0] and max(sats) <= slim[1]))
         out.append(ck("glow_hue_sat_band",
@@ -279,8 +293,11 @@ def run(run_dir, cfg):
             else:
                 body = np.ones((H, W), dtype=bool)
             rgb = cv2.cvtColor(gr, cv2.COLOR_BGR2RGB).astype(np.float32)
-            gdom = rgb[..., 1] - np.maximum(rgb[..., 0], rgb[..., 2])
-            green = (gdom > 30) & body
+            from grade3d import detect_glow_mask, resolve_palette
+            _pal = resolve_palette(cfg.get("grade") or {})
+            _th = _pal["wrong_h"] if (cfg.get("grade") or {}).get("glow") == "wrong" else _pal["right_h"]
+            green = detect_glow_mask(rgb, body, target_h=_th, h_tol=_pal.get("h_tol", 14),
+                                     s_min=_pal.get("s_min", 35), v_min=_pal.get("v_min", 70))
             tgts = list((cfg.get("grade") or {}).get("target_muscles") or ["lats", "rhomboids", "mid_trap", "rear_delt"])
             tids = [NAME_TO_ID[n] for n in tgts if n in NAME_TO_ID]
             back_ids = [NAME_TO_ID[n] for n in ("lats", "rhomboids", "mid_trap") if n in NAME_TO_ID]
@@ -313,8 +330,13 @@ def run(run_dir, cfg):
         im = cv2.imread(gp) if gp and os.path.exists(gp) else None
         if im is None: return f
         o = im.astype(np.float32); R, Gc, B = o[..., 2], o[..., 1], o[..., 0]
-        gdom = Gc - np.maximum(R, B); Luma = 0.299 * R + 0.587 * Gc + 0.114 * B
-        green = gdom > 30
+        Luma = 0.299 * R + 0.587 * Gc + 0.114 * B
+        from grade3d import detect_glow_mask, resolve_palette
+        _pal = resolve_palette(cfg.get("grade") or {})
+        _th = _pal["wrong_h"] if (cfg.get("grade") or {}).get("glow") == "wrong" else _pal["right_h"]
+        green = detect_glow_mask(np.stack([R, Gc, B], -1), None, target_h=_th,
+                                 h_tol=_pal.get("h_tol", 14), s_min=_pal.get("s_min", 35),
+                                 v_min=_pal.get("v_min", 70))
         if f.get("glow_largest_cc_frac") is None:
             _n, lab = cv2.connectedComponents(green.astype(np.uint8), connectivity=8)
             sizes = np.bincount(lab.ravel()); sizes = sizes[1:] if len(sizes) > 1 else np.array([0])
