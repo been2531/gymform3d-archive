@@ -9,7 +9,7 @@ import numpy as np
 
 
 def _world_verts(ob):
-    """Rest-pose world verts (not the armature-evaluated mesh)."""
+    """Rest-pose world verts. World-Z slices are only valid on a standing figure."""
     co = np.empty(len(ob.data.vertices) * 3, np.float64)
     ob.data.vertices.foreach_get("co", co)
     Mw = np.array(ob.matrix_world, dtype=np.float64)
@@ -101,19 +101,28 @@ def _loft_rings(rings):
 
 
 def _parent_to_rest_bone(obj, arm, bone_name, rest_world):
-    """Keep obj's rest world transform, then follow that bone's pose."""
-    from mathutils import Matrix
-    bone = arm.data.bones.get(bone_name)
-    if bone is None:
-        return False
-    rest_bone_mw = arm.matrix_world @ bone.matrix_local
-    obj.parent = arm
-    obj.parent_type = "BONE"
-    obj.parent_bone = bone_name
-    obj.matrix_parent_inverse = rest_bone_mw.inverted() @ rest_world
-    obj.matrix_basis = Matrix.Identity(4)
-    return True
+    """Parent obj to bone so its world matrix at armature REST equals rest_world.
 
+    Uses armature pose_position='REST' and then assigns matrix_world so Blender
+    fills matrix_parent_inverse for the real bone parent space (head/tail).
+    bone.matrix_local is parent-relative and sent overlays off-camera.
+    """
+    import bpy
+    if bone_name not in arm.data.bones:
+        return False
+    prev = arm.data.pose_position
+    try:
+        arm.data.pose_position = "REST"
+        bpy.context.view_layer.update()
+        obj.parent = arm
+        obj.parent_type = "BONE"
+        obj.parent_bone = bone_name
+        obj.matrix_world = rest_world
+        bpy.context.view_layer.update()
+    finally:
+        arm.data.pose_position = prev
+        bpy.context.view_layer.update()
+    return True
 def _join_bmeshes(bms):
     import bmesh
     out = bmesh.new()
@@ -136,7 +145,7 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None):
     gcfg = ((cfg.get("kit") or {}).get("garment") or {})
     G = cfg.get("garment") or {}
     n = int(gcfg.get("rings", 28))
-    ease = float(gcfg.get("ease_m", 0.012))
+    ease = float(gcfg.get("ease_m", 0.018))
     wb_h = float(gcfg.get("waistband_h_m", 0.07))
     waist_above = float(gcfg.get("waist_above_hip_m", 0.10))
     hem_blend = float(gcfg.get("hem_blend", 0.48))
@@ -204,10 +213,9 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None):
         pass
     bpy.context.view_layer.objects.active = garm
     garm.select_set(True)
-    # fuse torso + thighs and erase any remaining cleft by remeshing a closed-ish cage
-    rm = garm.modifiers.new("kit_remesh", "REMESH")
-    rm.mode = "VOXEL"
-    rm.voxel_size = 0.014
+    # Do not voxel-remesh an open loft: that produced detached black crumbs.
+    # The loft is already groove-free; smooth + solidify is enough, and a
+    # small crotch gap is better than an invisible garment.
     sm = garm.modifiers.new("kit_smooth", "SMOOTH")
     sm.factor = 0.55
     sm.iterations = smooth_n
@@ -218,7 +226,7 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None):
         sol.use_quality_normals = True
     except Exception:
         pass
-    for nm in ("kit_remesh", "kit_smooth", "kit_solidify"):
+    for nm in ("kit_smooth", "kit_solidify"):
         try:
             bpy.ops.object.modifier_apply(modifier=nm)
         except Exception as e:
@@ -241,13 +249,28 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None):
         for i in np.nonzero(wb)[0]:
             vg.add([int(i)], 1.0, "REPLACE")
 
-    # Verts stay in world metres (object at identity). Parent to the REST
-    # hips matrix so the shorts follow the hinge instead of staying at the
-    # standing location of the current (already posed) frame.
+    # Rest-loft (standing, world-Z) then follow Hips and snap outside the
+    # posed body so the hinged glutes cannot swallow the cage.
     from mathutils import Matrix
     garm.matrix_world = Matrix.Identity(4)
-    if not _parent_to_rest_bone(garm, arm, "Hips", Matrix.Identity(4)):
-        log("kit garment: Hips bone missing, left unparented")
+    _parent_to_rest_bone(garm, arm, "Hips", Matrix.Identity(4))
+    bpy.context.view_layer.objects.active = garm
+    garm.select_set(True)
+    sw = garm.modifiers.new("kit_wrap", "SHRINKWRAP")
+    sw.target = body
+    sw.wrap_method = "NEAREST_SURFACEPOINT"
+    try:
+        sw.wrap_mode = "OUTSIDE_SURFACE"
+    except Exception:
+        try:
+            sw.wrap_mode = "OUTSIDE"
+        except Exception:
+            pass
+    sw.offset = 0.008
+    try:
+        bpy.ops.object.modifier_apply(modifier="kit_wrap")
+    except Exception as e:
+        log(f"garment shrinkwrap: {e}")
 
     mat = bpy.data.materials.new("briefs_black")
     mat.use_nodes = True
@@ -271,7 +294,18 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None):
         "z_hem": round(z_hem, 3),
         "ease_m": ease,
         "method": "loft",
-        "parent": "Hips",
+        "parent": "Hips+outside_wrap",
     }
-    log(f"kit garment loft verts={meta['verts']} hem_z={meta['z_hem']} wb=[{meta['z_wb_bot']},{meta['z_wb_top']}]")
+    try:
+        dg = bpy.context.evaluated_depsgraph_get()
+        eg = garm.evaluated_get(dg)
+        m = eg.to_mesh()
+        _co = np.empty(len(m.vertices) * 3); m.vertices.foreach_get("co", _co)
+        _Mw = np.array(eg.matrix_world)
+        _pts = _co.reshape(-1, 3) @ _Mw[:3, :3].T + _Mw[:3, 3]
+        eg.to_mesh_clear()
+        meta["world_bbox"] = [_pts.min(0).round(3).tolist(), _pts.max(0).round(3).tolist()]
+    except Exception as e:
+        meta["world_bbox"] = str(e)
+    log(f"kit garment loft verts={meta['verts']} hem_z={meta['z_hem']} wb=[{meta['z_wb_bot']},{meta['z_wb_top']}] bbox={meta.get('world_bbox')}")
     return garm, meta

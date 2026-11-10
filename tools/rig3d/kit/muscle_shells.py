@@ -80,19 +80,28 @@ def _shade_shell(obj, rgba, emission, flex_min, edge_min, w):
 
 
 def _parent_to_rest_bone(obj, arm, bone_name, rest_world):
-    """Keep obj's rest world transform, then follow that bone's pose."""
-    from mathutils import Matrix
-    bone = arm.data.bones.get(bone_name)
-    if bone is None:
-        return False
-    rest_bone_mw = arm.matrix_world @ bone.matrix_local
-    obj.parent = arm
-    obj.parent_type = "BONE"
-    obj.parent_bone = bone_name
-    obj.matrix_parent_inverse = rest_bone_mw.inverted() @ rest_world
-    obj.matrix_basis = Matrix.Identity(4)
-    return True
+    """Parent obj to bone so its world matrix at armature REST equals rest_world.
 
+    Uses armature pose_position='REST' and then assigns matrix_world so Blender
+    fills matrix_parent_inverse for the real bone parent space (head/tail).
+    bone.matrix_local is parent-relative and sent overlays off-camera.
+    """
+    import bpy
+    if bone_name not in arm.data.bones:
+        return False
+    prev = arm.data.pose_position
+    try:
+        arm.data.pose_position = "REST"
+        bpy.context.view_layer.update()
+        obj.parent = arm
+        obj.parent_type = "BONE"
+        obj.parent_bone = bone_name
+        obj.matrix_world = rest_world
+        bpy.context.view_layer.update()
+    finally:
+        arm.data.pose_position = prev
+        bpy.context.view_layer.update()
+    return True
 def _face_mask(me, vmask):
     vmask = np.asarray(vmask, dtype=bool)
     keep = []
@@ -127,8 +136,8 @@ def build_overlay_shells(body, arm, tid, names, hues, cfg, adj=None, log=print, 
         {"name": "mid_back", "ids": ["rhomboids", "mid_trap"]},
         {"name": "rear_delt", "ids": ["rear_delt"]},
     ])
-    voxel = float(mus.get("voxel_m", 0.011))
-    inflate = float(mus.get("inflate_m", 0.007))
+    voxel = float(mus.get("voxel_m", 0.007))
+    inflate = float(mus.get("inflate_m", 0.018))
     smooth_n = int(mus.get("smooth_iters", 18))
     rings = int(mus.get("dilate_rings", 2))
     edge_min = float(mus.get("edge_min", 0.38))
@@ -169,9 +178,22 @@ def build_overlay_shells(body, arm, tid, names, hues, cfg, adj=None, log=print, 
         shell.data = body.data.copy()
         shell.name = "shell_" + str(g.get("name") or "mus")
         col.objects.link(shell)
-        # drop unused modifiers; we'll rebind
         for m in list(shell.modifiers):
             shell.modifiers.remove(m)
+        # Stamp the posed (evaluated) vertex positions so the remesh sits on
+        # the current back, not the standing rest mesh.
+        try:
+            dg = bpy.context.evaluated_depsgraph_get()
+            eb = body.evaluated_get(dg)
+            em = eb.to_mesh()
+            if len(em.vertices) == len(shell.data.vertices):
+                _eco = np.empty(len(em.vertices) * 3, np.float64)
+                em.vertices.foreach_get("co", _eco)
+                shell.data.vertices.foreach_set("co", _eco)
+                shell.data.update()
+            eb.to_mesh_clear()
+        except Exception as e:
+            log(f"shell posed stamp failed: {e}")
         bm = bmesh.new()
         bm.from_mesh(shell.data)
         bm.faces.ensure_lookup_table()
@@ -204,15 +226,13 @@ def build_overlay_shells(body, arm, tid, names, hues, cfg, adj=None, log=print, 
             _apply_mods(shell, ["kit_remesh", "kit_smooth"])
             return len(shell.data.vertices)
 
-        src_me = shell.data.copy()
-        nsv = _remesh_wrap(voxel_local)
-        # small muscles (rear delt) collapse at 11 mm; retry from the unremeshed copy
-        if nsv < 80:
-            shell.data = src_me.copy()
-            nsv = _remesh_wrap(max(voxel_local * 0.45, 0.004 / _scale))
-        if nsv < 40:
-            shell.data = src_me.copy()
-            nsv = _remesh_wrap(max(voxel_local * 0.28, 0.003 / _scale))
+        # Do not voxel-remesh: that shattered the posed overlay into flakes.
+        # Emission is on this mesh (no projection UVs), so grooves can be
+        # softened with a smooth instead.
+        sm = shell.modifiers.new("kit_smooth", "SMOOTH")
+        sm.factor = 0.85
+        sm.iterations = max(smooth_n, 20)
+        _apply_mods(shell, ["kit_smooth"])
         me = shell.data
         nsv = len(me.vertices)
         sco = np.empty(nsv * 3); me.vertices.foreach_get("co", sco)
@@ -237,15 +257,9 @@ def build_overlay_shells(body, arm, tid, names, hues, cfg, adj=None, log=print, 
         w = np.clip(1.0 - (d / (np.percentile(d, 92) + 1e-9)), 0.0, 1.0).astype(np.float32)
         attr = me.attributes.new("shell_w", "FLOAT", "POINT")
         attr.data.foreach_set("value", w)
-        # Rigid follow of a torso/shoulder bone. Weight-transfer on a voxel
-        # remesh exploded into orange slivers; the Grab3D scale made it worse.
-        bname = {"lats": "Spine02", "mid_back": "Spine02", "rear_delt": "RightShoulder"}.get(
-            str(g.get("name") or ""), "Spine02")
-        if bname not in arm.data.bones:
-            bname = "Spine01" if "Spine01" in arm.data.bones else "Spine"
-        if bname not in arm.data.bones and "RightArm" in arm.data.bones and str(g.get("name")) == "rear_delt":
-            bname = "RightArm"
-        _parent_to_rest_bone(shell, arm, bname, body.matrix_world.copy())
+        # Static posed overlay. Rigid bone-parent of a rest remesh sat
+        # inside the sculpted back and only sparkled through. lock_hips
+        # plus a peak-frame build covers the comparison still.
         # shade
         hue = peach if isinstance(peach, dict) else {"h": 12, "s": 200, "v": 244}
         # bump V toward ~0.95 if the spec is a bit dim

@@ -1036,6 +1036,15 @@ garm, g_src = None, None
 SHELL_OBJS, SHELL_FLEX = [], []
 _kit = C.get("kit") or {}
 _kit_gmethod = str((( _kit.get("garment") or {}).get("method")) or GC.get("method") or "").lower()
+_kit_prev_f = sc.frame_current
+try:
+    if AUTH_U is not None:
+        _kit_peak = int(np.argmax(AUTH_U)) + 1
+        sc.frame_set(_kit_peak)
+        bpy.context.view_layer.update()
+        log(f"kit overlays built at peak frame {_kit_peak}")
+except Exception:
+    pass
 if GC.get("enabled") and _kit.get("enabled") and _kit_gmethod == "loft":
     try:
         import kit.garment as KITG
@@ -1206,6 +1215,11 @@ if _kit.get("enabled") and str(RC.get("glow_shape") or "").lower() == "shells":
         import traceback
         log(f"kit muscle shells failed: {_se}")
         log(traceback.format_exc())
+try:
+    sc.frame_set(_kit_prev_f)
+    bpy.context.view_layer.update()
+except Exception:
+    pass
 
 if GW.get("enabled"):      # after the garment copy (the briefs never carry the fist key)
     if not me.shape_keys: body.shape_key_add(name="Basis", from_mix=False)

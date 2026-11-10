@@ -10,7 +10,7 @@ kit:
     waistband_h_m: 0.07          # wide elastic band
     waist_above_hip_m: 0.10
     hem_blend: 0.48              # 0 = at knee, 1 = at hip; ~mid-thigh
-    ease_m: 0.012                # outward offset from the convex slice
+    ease_m: 0.018                # outward offset from the convex slice
     waistband_extra_m: 0.004     # band sits a bit proud of the shorts
     solidify_m: 0.003
     smooth_iters: 8
@@ -24,8 +24,8 @@ kit:
       - {name: lats, ids: [lats]}
       - {name: mid_back, ids: [rhomboids, mid_trap]}
       - {name: rear_delt, ids: [rear_delt]}
-    inflate_m: 0.007
-    voxel_m: 0.011
+    inflate_m: 0.018
+    voxel_m: 0.007
     smooth_iters: 18
     dilate_rings: 2
     edge_min: 0.38
