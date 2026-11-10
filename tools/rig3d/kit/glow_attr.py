@@ -196,6 +196,29 @@ def geodesic_falloff(seeds, adj, pts, fade_m=0.022):
     return w
 
 
+def _smooth_weights(w, adj, iters=12, lam=0.50):
+    """Laplacian smooth on the welded mesh so each sheet is a clean fill."""
+    w = np.asarray(w, np.float32).copy()
+    nv = len(w)
+    pairs = [(i, int(j)) for i, nbrs in enumerate(adj) for j in nbrs if i < j]
+    if not pairs:
+        return w
+    ev = np.asarray(pairs, np.int64)
+    a, b = ev[:, 0], ev[:, 1]
+    for _ in range(int(iters)):
+        acc = np.zeros(nv, np.float32)
+        cnt = np.zeros(nv, np.float32)
+        np.add.at(acc, a, w[b])
+        np.add.at(acc, b, w[a])
+        np.add.at(cnt, a, 1.0)
+        np.add.at(cnt, b, 1.0)
+        ok = cnt > 0
+        avg = w.copy()
+        avg[ok] = acc[ok] / cnt[ok]
+        w = (1.0 - float(lam)) * w + float(lam) * avg
+    return np.clip(w, 0.0, 1.0)
+
+
 def _write_float(me, name, vals):
     if name in me.attributes:
         try:
@@ -285,6 +308,7 @@ def write_weights(welded, src_body, tid, names, cfg, shorts=None, exclude=None, 
             seed = _dilate_seed(seed, adj, rings=3)
         seed = _close_seed(seed, adj, rings=3)
         w = geodesic_falloff(seed, adj, dst_w, fade_m=fade)
+        w = _smooth_weights(w, adj, iters=12, lam=0.50)
         if shorts_w is not None:
             w[shorts_w] = 0.0
         attr_name = g.get("attr") or f"glow_{g['name']}"

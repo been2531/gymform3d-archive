@@ -554,7 +554,24 @@ def attach_attr_sheets(nt, bsdf, mout, hues_rgb, em_str, flex_min=0.88,
     a123.name = GF + "A123"; a123.inputs[0].default_value = 1.0
     nt.links.new(a12.outputs[2], a123.inputs[6]); nt.links.new(c3, a123.inputs[7])
 
-    # slight clay tint so the sheet sits on the grooves, not instead of them
+    # a123 = sum(w_i * hue_i) is black-mixed at partial weights. Divide by
+    # w_sum so the COLOR is the full hue; fade happens via mix factor and
+    # emission strength. Otherwise edges tint the clay toward charcoal.
+    weps = nt.nodes.new("ShaderNodeMath"); weps.name = GF + "WEPS"; weps.operation = "MAXIMUM"
+    nt.links.new(wclp.outputs[0], weps.inputs[0]); weps.inputs[1].default_value = 1.0e-4
+    csep = nt.nodes.new("ShaderNodeSeparateColor"); csep.name = GF + "CSEP"
+    nt.links.new(a123.outputs[2], csep.inputs["Color"])
+    def _div(ch, tag):
+        d = nt.nodes.new("ShaderNodeMath"); d.name = GF + tag; d.operation = "DIVIDE"
+        nt.links.new(csep.outputs[ch], d.inputs[0])
+        nt.links.new(weps.outputs[0], d.inputs[1])
+        return d.outputs[0]
+    cnorm = nt.nodes.new("ShaderNodeCombineColor"); cnorm.name = GF + "CNORM"
+    nt.links.new(_div("Red", "DR"), cnorm.inputs["Red"])
+    nt.links.new(_div("Green", "DG"), cnorm.inputs["Green"])
+    nt.links.new(_div("Blue", "DB"), cnorm.inputs["Blue"])
+    hue = cnorm.outputs["Color"]
+
     tf = nt.nodes.new("ShaderNodeMath"); tf.name = GF + "TINTF"; tf.operation = "MULTIPLY"
     nt.links.new(wclp.outputs[0], tf.inputs[0]); tf.inputs[1].default_value = float(tint_mix)
     tclp = nt.nodes.new("ShaderNodeClamp"); tclp.name = GF + "TCLP"
@@ -569,7 +586,7 @@ def attach_attr_sheets(nt, bsdf, mout, hues_rgb, em_str, flex_min=0.88,
         nt.links.remove(base_in.links[0])
     else:
         mixb.inputs[6].default_value = tuple(base_in.default_value)
-    nt.links.new(a123.outputs[2], mixb.inputs[7])
+    nt.links.new(hue, mixb.inputs[7])
     nt.links.new(mixb.outputs[2], bsdf.inputs["Base Color"])
 
     flex, stm = _flex_strength(nt, wclp.outputs[0], em_str, flex_min)
@@ -586,9 +603,10 @@ def attach_attr_sheets(nt, bsdf, mout, hues_rgb, em_str, flex_min=0.88,
     nt.links.new(stm.outputs[0], ems.inputs[0]); nt.links.new(r3.outputs[0], ems.inputs[1])
 
     em = nt.nodes.new("ShaderNodeEmission"); em.name = GF + "EM"
-    nt.links.new(a123.outputs[2], em.inputs["Color"])
+    nt.links.new(hue, em.inputs["Color"])
     nt.links.new(ems.outputs[0], em.inputs["Strength"])
     _hook_add(nt, bsdf, mout, em)
+    _exclude_ao_cavity_in_glow(nt, wclp.outputs[0])
 
     aov = nt.nodes.new("ShaderNodeOutputAOV"); aov.name = GF + "AOV"; aov.aov_name = "glow_mask"
     rgb = nt.nodes.new("ShaderNodeCombineColor"); rgb.name = GF + "AOVRGB"

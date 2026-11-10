@@ -105,7 +105,7 @@ render:
     look: gunmetal_black
   body_source: grab3d            # smooth painted glow on the one-piece mannequin (ecorche kept, unused)
   view_transform: Standard
-  exposure: 0.0             # Standard; positive EV blew highlights
+  exposure: -0.20           # Standard; pull highlights off white without crushing midtones
   ambient_strength: 0.14
   top_energy: 14
   ao_distance: 0.11
@@ -131,7 +131,7 @@ render:
   glow_bloom: true
   blender_bloom: 0.32             # demic-like halo on the emission pass
   glow_flex_min: 0.88
-  base_color: [0.44, 0.455, 0.485]  # cooler porcelain (kit.clay)
+  base_color: [0.42, 0.428, 0.442]  # light-grey matte porcelain (kit.clay)
   mask_spp: 4
   camera:
     mode: fixed               # demic: over the working-side shoulder, looking down the back from the head end

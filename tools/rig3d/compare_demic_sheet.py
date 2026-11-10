@@ -184,9 +184,9 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours, full_w, full_h,
                "ours weld/attr/cloth  ·  full body  ·  f_0025",
-               "Same yaw/elev/look as c026ff5, pulled back to 2.62 m so the "
-               "left hip and head stay in frame. Waistband flap and floor hoop "
-               "are gone. Ankle strap and forearm clip remain.",
+               "Light-grey matte clay (not white) at the locked yaw/elev/look, "
+               "pulled back to 3.90 m so body, bench and DB have >=4% side "
+               "margins. Glow sheets fade into clay. Ankle strap remains.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -202,9 +202,9 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours_hips, hips_w, hips_h,
                "ours weld/cloth  ·  hips  3×",
-               "No waistband flap. Cloth follows the glute (posed gap p90 7.8 mm) "
-               "with slight hem ease — not a diaper. A side fold remains, and "
-               "the cloth is still more faceted than demic.",
+               "Shorts held (acceptable). Clay on the thigh now shows muscle-"
+               "groove shading instead of blowing to white. Still more faceted "
+               "cloth than demic.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -220,9 +220,9 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours_back, back_w, back_h,
                "ours attr glow  ·  back  3×",
-               "Method unchanged. Lat is a back-facing V, not a rib-side block, "
-               "with a remaining mid-height waist. Purple diamond and pink rear-delt "
-               "cap. Edges softer than demic; mild halo.",
+               "Laplacian-smoothed attribute sheets. Orange lat V, purple diamond "
+               "and pink rear-delt fade into clay, not into dark. Jagged black "
+               "edge-gaps are gone; still less painted than demic.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -231,13 +231,12 @@ def build(ours_path, demic_sheet, out_path):
     lines = [
         ("h", "Ranked notes  ·  welded body, attribute glow, closed cloth tube"),
         ("sub", "Gates are a backstop only. See docs/specs/ROOTCAUSE_LOOK.md and docs/specs/KIT.md."),
-        ("n", "1  Shorts — waistband flap gone (separate loft skipped; the tube's own 7 cm band is the waist). Closed cloth tube + subdiv 2 + ABOVE_SURFACE shrinkwrap at 3.5 mm; no 10 mm seat inflate. Posed hip gap p50 4.3 mm / p90 7.8 mm, boundary 0. Follows the glute with slight hem ease. A side fold remains; still more faceted than demic."),
-        ("n", "2  Glow — method held. Posterior + lateral cap removed the rib-side block; a back-only geodesic bridge reconnects upper and lower lat into more of a V. A mid-height waist remains. Purple mid-scapular diamond, pink rear-delt cap. fade 18 mm, bloom 0.32. Edges softer than demic."),
-        ("n", "3  Floor ring — gone. The padded-bench piping torus (major 0.58 m) was foreshortened into a hoop; it is no longer created."),
-        ("n", "4  Ankle — still fails. Shin-window flatten moves ~2000 standing-leg verts (mean ~21 mm) without tearing the foot, and cuff_mask fades the baked normal. The sculpted retinaculum still reads as a raised rectangular strap. A bone-centered origin tore a heel flap and was reverted."),
-        ("n", "5  Framing — same yaw 18 / elev 25 / look as c026ff5; dist 2.62 m and shift_x -0.04 so the left hip and head both stay in frame with the bench."),
-        ("n", "6  Forearm — partial. Key 5 / fill 2 / rim 4, key more overhead and off-camera, exposure 0.0. Clay-ish V p99 is still ~252 (target <=245). A highlight streak remains on the working forearm."),
-        ("n", "7  Grip — improved, not a clearly closed wrap from this camera. min_wrap 265 deg, logged finger wrap 218-242 deg, thumb flex -97 deg. Fingers follow the cylinder more than a pinch; the far-side fingertips stay hidden in this 3/4 view."),
+        ("n", "1  Body tone — no longer near-white. Clay albedo 0.42, roughness 0.93, exposure -0.20, specular 0.06 (lights left alone). Overall clay V p50=147 / p99=243 (targets 150-175 and <=235). Thigh grooves read (p50=132, p99=159). Working-arm highlights still sit high (p99=248). Not as even as demic porcelain."),
+        ("n", "2  Dark back streaks — construction fix. attach_attr_sheets mixed each hue against black, so partial weights tinted clay toward charcoal; emission used that same black-mixed color. Color is now the full hue; fade is strength / mix factor only. AO/cavity are excluded inside the glow. Streaks over the traps are gone; remaining grey between sheets is clay grain."),
+        ("n", "3  Framing — same yaw 18 / elev 25 / look. Dist 3.90 m, shift_x -0.10. Clay bounds >=4% each side (foot 5.1%, head 6.7%, all-clay L 5.6% / R 4.4%). The figure is smaller in the 9:16 frame than a tight beauty crop; that is the cost of fitting the kneeling foot, head, bench and DB."),
+        ("n", "4  Glow edges — Laplacian smooth of the geodesic weights (12 iters, lambda 0.5) on the welded mesh. Orange is a clean lat V; purple diamond and pink cap fade into clay. Not as fibre-painted as demic."),
+        ("n", "5  Ankle — set aside, still present. True cause: Grab3D char1 authors a raised extensor-retinaculum sleeve (distinct edge-loop cylinder) plus the same ridge baked into rig_normal. It is not a leftover garment or a separate object. Radius flatten toward the shin centroid (~2000 standing-leg verts, mean ~21 mm) plus cuff_mask on the normal does not collapse those crease loops. A bone-centered origin that would have hit the anterior strap tore a heel flap and was reverted."),
+        ("n", "6  Shorts — held as acceptable (no flap, fitted glute, slight hem ease)."),
     ]
     _text_block(d, (pad + 18, y + 16), lines, fonts, width=84)
 
