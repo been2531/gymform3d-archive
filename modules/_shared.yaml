@@ -45,7 +45,7 @@ render:
   albedo_detail: 0.0
   sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 1.45
+  glow_emission: 1.00
   glow_follow_mesh: true          # paint mregion in a torso-local frame on the deformed mesh
   glow_union_rest: true           # union rest-pose paint (follows verts) with per-frame assign (fills newly visible)
   glow_peak_dilate: 2             # extra mesh-ring growth at peak (kept small; full-target fill is ~0.22 of body)
@@ -54,8 +54,8 @@ render:
   glow_id_pass: true              # v3.3: render palette ID pass (id_*.png) from rest-pose muscle IDs
   glow_method_d: false            # D remains a selectable preset; default COMBO grades the beauty+ID pass
   sliver_rest_frac: 1.0           # ignore rest edges shorter than this x median when scoring tear_min_ratio
-  glow_fibre_scale: 58.0
-  blender_bloom: 0.70
+  glow_fibre_scale: 72.0
+  blender_bloom: 0.88
   crease_smooth: true             # cached weight-smooth of Spine/shoulder groups (the crease fix)
   crease_smooth_factor: 0.0       # Corrective Smooth off: v3.1 0.7/12 collapsed edges to ratio 0.0
   crease_smooth_iter: 6
@@ -79,17 +79,18 @@ render:
   ao_amount: 0.16
   glow_blur_iters: 10
   glow_erode_rings: 0            # no shrink; clean_muscle_weight rebuilds a solid silhouette
-  glow_fade_rings: 3
-  glow_radial: true             # airbrush: hot core to soft transparent edge
-  glow_center_power: 0.90
+  glow_fade_rings: 2
+  glow_radial: false            # solid interior, short 3-5 px feather (not a wide smear)
+  glow_center_power: 1.00
   glow_smooth_iters: 40          # Laplacian rounds torn atlas-island edges
   glow_solid_thresh: 0.28
   glow_close_rings: 5            # morphological close fills holes inside a muscle
-  glow_tint: 0.22
-  glow_fibre_bump: 0.28
-  glow_fibre_line: 0.40         # thin fibre grooves inside the glow
-  glow_rim: 0.22
-  body_rim: 0.22                 # cool Fresnel rim on the whole silhouette
+  glow_tint: 0.18
+  glow_opacity: 0.98
+  glow_fibre_bump: 0.22
+  glow_fibre_line: 0.55         # thin brighter fibre ridges inside the glow
+  glow_rim: 0.32
+  body_rim: 0.30                 # stronger cool Fresnel rim / soft halo
   glow_bloom: true
   base_color: [0.26, 0.27, 0.30]  # sampled demic row-ref clay (sRGB V~144 → lin ~0.27, cool tint)
   mask_spp: 4
@@ -126,11 +127,11 @@ grade:
   glow_method: NATIVE            # look is in-Blender; 2D grade is UI only. COMBO remains selectable.
   # Fixed demic-style hue table (OpenCV HSV). An exercise picks targets; override a row to restyle one muscle.
   muscle_hues:
-    lats: {h: 9, s: 200, v: 250}          # orange (demic row core ~H8 S144-185 V248)
-    rhomboids: {h: 141, s: 175, v: 245}   # purple
-    mid_trap: {h: 141, s: 220, v: 245}
+    lats: {h: 8, s: 205, v: 236}          # displayed ~RGB[243,143,111] after Cycles/denoise lift
+    rhomboids: {h: 141, s: 200, v: 240}   # purple
+    mid_trap: {h: 141, s: 200, v: 240}    # purple (same hue group as rhomboids)
     upper_trap: {h: 29, s: 140, v: 248}   # yellow/gold
-    rear_delt: {h: 162, s: 240, v: 235}   # magenta-pink (demic rear delt H162 S253 V229)
+    rear_delt: {h: 162, s: 210, v: 235}   # magenta-pink
     side_delt: {h: 10, s: 210, v: 235}
     front_delt: {h: 10, s: 200, v: 240}
     biceps: {h: 95, s: 180, v: 230}       # cyan
@@ -138,9 +139,9 @@ grade:
     pecs: {h: 66, s: 170, v: 225}         # green
     erectors: {h: 29, s: 150, v: 245}
   muscle_hue_strength:
-    lats: 0.95
-    rhomboids: 0.88
-    mid_trap: 0.88
+    lats: 1.00
+    rhomboids: 1.00
+    mid_trap: 1.00
     rear_delt: 1.00
   glow_activation_floor: 0.58    # E: 0.58 + 0.42 * contraction (start stays a sheet)
   glow_activation_scale: 0.42

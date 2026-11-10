@@ -524,6 +524,62 @@ def _components(mask, adj):
     return labels, np.asarray(sizes, np.int32)
 
 
+
+def _convex_hull_2d(pts):
+    """Monotone-chain convex hull of (N,2) points -> (M,2) CCW ring."""
+    pts = np.unique(np.asarray(pts, np.float32), axis=0)
+    if len(pts) < 3:
+        return pts
+    pts = pts[np.lexsort((pts[:, 1], pts[:, 0]))]
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower, upper = [], []
+    for raw in pts:
+        q = (float(raw[0]), float(raw[1]))
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], q) <= 0:
+            lower.pop()
+        lower.append(q)
+    for raw in pts[::-1]:
+        q = (float(raw[0]), float(raw[1]))
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], q) <= 0:
+            upper.pop()
+        upper.append(q)
+    return np.asarray(lower[:-1] + upper[:-1], np.float32)
+
+
+def _inside_convex(xy, hull, eps=1e-7):
+    if hull is None or len(hull) < 3:
+        return np.zeros(len(xy), dtype=bool)
+    inside = np.ones(len(xy), dtype=bool)
+    n = len(hull)
+    for i in range(n):
+        a = hull[i]
+        b = hull[(i + 1) % n]
+        cross = (b[0] - a[0]) * (xy[:, 1] - a[1]) - (b[1] - a[1]) * (xy[:, 0] - a[0])
+        inside &= cross >= -eps
+    return inside
+
+
+def _hull_fill_xy(mask, pos, allow):
+    """Fill the X-Y convex hull of `mask` (smooth rounded silhouette), clipped to allow."""
+    idx = np.flatnonzero(mask)
+    if len(idx) < 8:
+        return np.asarray(mask, dtype=bool)
+    pts = np.asarray(pos, np.float32)[idx][:, [0, 1]]
+    hull = _convex_hull_2d(pts)
+    if len(hull) < 3:
+        return np.asarray(mask, dtype=bool)
+    cand = np.flatnonzero(allow)
+    if cand.size == 0:
+        return np.asarray(mask, dtype=bool)
+    xy = np.asarray(pos, np.float32)[cand][:, [0, 1]]
+    out = np.asarray(mask, dtype=bool).copy()
+    out[cand[_inside_convex(xy, hull)]] = True
+    return out
+
+
 def _feather_solid(solid, counts, idx, owners, fade_rings=3, power=1.0, radial=False, labels=None, plateau=0.35):
     """Weight from graph-distance to the region exterior.
 
@@ -588,7 +644,7 @@ def anatomy_allow(pos, vert_id, names):
         spine_y = min(spine_y, float(np.percentile(y[ut], 5)) - 0.02 * scale)
     back = z < 0.02 * scale
     masks = {
-        "lats": back & (y >= 0.97 * scale) & (y <= max(spine_y, 1.43 * scale)) & (ax >= 0.038 * scale) & (ax <= 0.26 * scale),
+        "lats": (z < 0.10 * scale) & (y >= 0.97 * scale) & (y <= max(spine_y, 1.43 * scale)) & (ax >= 0.030 * scale) & (ax <= 0.28 * scale),
         "rhomboids": back & (y >= 1.16 * scale) & (y <= spine_y) & (ax <= 0.145 * scale),
         "mid_trap": back & (y >= 1.30 * scale) & (y <= spine_y) & (ax <= 0.090 * scale),
         "rear_delt": (z < 0.040 * scale) & (y >= spine_y - 0.050 * scale) & (y <= spine_y + 0.13 * scale)
@@ -598,7 +654,8 @@ def anatomy_allow(pos, vert_id, names):
 
 
 def clean_muscle_weight(seed, adj, allow, fade_rings=3, smooth_iters=40, thresh=0.32,
-                        close_rings=5, keep=2, min_size=80, power=1.0, radial=False):
+                        close_rings=5, keep=2, min_size=80, power=1.0, radial=False,
+                        pos=None, hull_fill=True):
     """Rebuild one (or L/R) smooth solid region from a jagged ID seed, then short-feather.
 
     Morphological close fills island holes; Laplacian smoothing rounds torn atlas edges;
@@ -636,6 +693,22 @@ def clean_muscle_weight(seed, adj, allow, fade_rings=3, smooth_iters=40, thresh=
         kept = len(pick)
     else:
         keep_m = np.zeros(nv, dtype=bool)
+    # Convex-hull fill per component (X-Y back plane) -> one smooth wing / diamond / oval
+    # instead of jagged atlas islands, still clipped to `allow`.
+    if hull_fill and pos is not None and keep_m.any():
+        xs = np.abs(np.asarray(pos, np.float32)[keep_m, 0])
+        # Medial mass (rhomboid/mid-trap) -> one hull = one diamond across the spine.
+        # Lateral muscles (lats, rear delt) stay per-component so L/R do not merge.
+        if float(np.percentile(xs, 75)) < 0.16:
+            keep_m = _hull_fill_xy(keep_m, pos, allow)
+        else:
+            labs_h, _ = _components(keep_m, adj)
+            filled = np.zeros_like(keep_m)
+            for c in np.unique(labs_h):
+                if int(c) < 0:
+                    continue
+                filled |= _hull_fill_xy(labs_h == int(c), pos, allow)
+            keep_m = filled
     # one extra ring inside allow so the silhouette reaches the visual belly edge
     keep_m = _dilate_mask(keep_m, counts, idx, owners, 1) & allow
     labels, _sz = _components(keep_m, adj)
@@ -730,11 +803,22 @@ def bake_target_glow(vert_id, names, targets, hues, strengths, adj, exclude=None
             seed |= idm & clip
             allow |= clip
         allow &= ~sh & ~exclude
-        for fid in forbid_ids:
+        skip_forbid = set()
+        if any(n in ("rhomboids", "mid_trap") for n in members):
+            # midline of the diamond sits on erector verts — let the hull fill across the spine
+            skip_forbid.add("erectors")
+        for fid, fname in zip(forbid_ids, [n for n in ("upper_trap", "front_delt", "side_delt", "erectors",
+                                                       "pecs", "abs", "obliques") if n in name_i]):
+            if fname in skip_forbid:
+                continue
             allow &= tid != fid
         for name in targets:
             if name not in members and name in name_i:
-                allow &= tid != name_i[name]
+                # Only reserve verts the other group will actually paint. A rhomboid
+                # atlas island that sits too far lateral (outside its clip) can be
+                # claimed by the lat hull so the wing and diamond do not leave a clay gap.
+                other_clip = bounds[name] if name in bounds else np.ones(nv, dtype=bool)
+                allow &= ~((tid == name_i[name]) & other_clip)
         seed &= ~sh & ~exclude & allow
         stren = float(np.mean([float(strengths.get(n, 1.0)) for n in members]))
         wt, info = clean_muscle_weight(
@@ -742,6 +826,7 @@ def bake_target_glow(vert_id, names, targets, hues, strengths, adj, exclude=None
             fade_rings=fade_rings, smooth_iters=smooth_iters,
             thresh=solid_thresh, close_rings=close_rings,
             keep=2, min_size=80, power=power, radial=radial,
+            pos=pos, hull_fill=True,
         )
         wt = wt * stren
         col = hsv_to_lin_rgb(spec["h"], spec["s"], spec["v"])

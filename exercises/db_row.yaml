@@ -69,7 +69,7 @@ render:
   albedo_detail: 0.0
   sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 1.45
+  glow_emission: 1.00
   hdri_strength: 0.0
   key_energy: 75
   fill_energy: 230
@@ -85,19 +85,20 @@ render:
   ao_amount: 0.16
   glow_blur_iters: 10
   glow_erode_rings: 0
-  glow_fade_rings: 3
-  glow_radial: true             # airbrush: hot core to soft transparent edge
-  glow_center_power: 0.90
+  glow_fade_rings: 2
+  glow_radial: false            # solid interior, short 3-5 px feather (not a wide smear)
+  glow_center_power: 1.00
   glow_smooth_iters: 40
   glow_solid_thresh: 0.28
   glow_close_rings: 5
-  glow_tint: 0.22
-  glow_fibre_bump: 0.28
-  glow_fibre_line: 0.40         # thin brighter/darker fibre grooves inside the glow
-  glow_rim: 0.22
-  body_rim: 0.22                 # cool Fresnel rim on the whole silhouette
+  glow_tint: 0.18
+  glow_opacity: 0.98
+  glow_fibre_bump: 0.22
+  glow_fibre_line: 0.55         # thin brighter fibre ridges inside the glow
+  glow_rim: 0.32
+  body_rim: 0.30                 # stronger cool Fresnel rim / soft halo
   glow_bloom: true
-  blender_bloom: 0.70
+  blender_bloom: 0.88
   glow_flex_min: 0.88
   base_color: [0.26, 0.27, 0.30]  # sampled demic row-ref clay (sRGB V~144 → lin ~0.27, cool tint)
   mask_spp: 4
@@ -120,14 +121,14 @@ grade:
   backdrop_rgb: [38, 38, 38]
   target_muscles: [lats, rhomboids, mid_trap, rear_delt]
   muscle_hues:
-    lats: {h: 9, s: 200, v: 250}         # orange (demic row core ~H8 S144-185 V248)
-    rhomboids: {h: 141, s: 175, v: 245}  # purple
-    mid_trap: {h: 141, s: 175, v: 245}   # purple
-    rear_delt: {h: 162, s: 185, v: 240}  # magenta-pink
+    lats: {h: 8, s: 205, v: 236}         # displayed ~RGB[243,143,111] after Cycles/denoise lift
+    rhomboids: {h: 141, s: 200, v: 240}  # purple
+    mid_trap: {h: 141, s: 200, v: 240}   # purple
+    rear_delt: {h: 162, s: 210, v: 235}  # magenta-pink
   muscle_hue_strength:
-    lats: 0.95
-    rhomboids: 0.88
-    mid_trap: 0.88
+    lats: 1.00
+    rhomboids: 1.00
+    mid_trap: 1.00
     rear_delt: 1.00
   glow: right                 # coloured targets (correct form); UI ✓/✗ stay green/red
   look: clay                   # default (inherits _shared); override with charcoal to compare

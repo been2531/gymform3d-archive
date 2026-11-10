@@ -186,14 +186,14 @@ def attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min=0.58, tint_mix=
 
 
 def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix=0.12,
-                         fibre_bump=0.22, rim=0.22, fibre_scale=58.0, body_rim=0.18,
-                         fibre_line=0.32):
-    """Airbrushed per-muscle glow on a light clay Principled.
+                         fibre_bump=0.22, rim=0.22, fibre_scale=72.0, body_rim=0.22,
+                         fibre_line=0.45, opacity=0.94):
+    """Near-opaque per-muscle glow mixed over light clay.
 
-    `glow_w` is a radial core-to-edge field (hot centre, soft transparent rim).
-    Emission colour comes from baked `glow_rgb` (hue table). Thin fibre-direction
-    waves modulate strength inside the glow only. A cool Fresnel rim lifts the
-    whole body silhouette (demic row-ref), independent of the glow mask.
+    `glow_w` is a short-feathered solid (interior ~1). A Mix Shader replaces the
+    clay with Emission of baked `glow_rgb` so the sheet reads as solid demic
+    colour (clay shows only through thin brighter fibre ridges). A cool Fresnel
+    rim is added on the whole silhouette; Fog-Glow picks up the emission.
     """
     _purge(nt)
     at = nt.nodes.new("ShaderNodeAttribute"); at.name = GF + "GLOWW"; at.attribute_name = "glow_w"
@@ -208,31 +208,35 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     nt.links.new(sep.outputs["Red"], fac.inputs[0])
     nt.links.new(inv.outputs["Value"], fac.inputs[1])
     _flex, stm = _flex_strength(nt, fac.outputs[0], 1.0, flex_min)
+
+    # Light tint on the remaining clay so a 6% mix does not flash grey at the rim
     tf = nt.nodes.new("ShaderNodeMath"); tf.name = GF + "TINTF"; tf.operation = "MULTIPLY"
-    nt.links.new(stm.outputs[0], tf.inputs[0]); tf.inputs[1].default_value = float(tint_mix)
+    nt.links.new(stm.outputs[0], tf.inputs[0]); tf.inputs[1].default_value = min(float(tint_mix), 0.45)
     clp = nt.nodes.new("ShaderNodeClamp"); clp.name = GF + "TCLP"
     clp.inputs["Min"].default_value = 0.0
     clp.inputs["Max"].default_value = 1.0
     nt.links.new(tf.outputs[0], clp.inputs["Value"])
-    mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"; mix.name = GF + "TINT"
-    nt.links.new(clp.outputs[0], mix.inputs[0])
+    mixc = nt.nodes.new("ShaderNodeMix"); mixc.data_type = "RGBA"; mixc.name = GF + "TINT"
+    nt.links.new(clp.outputs[0], mixc.inputs[0])
     base_in = bsdf.inputs["Base Color"]
     if base_in.links:
-        nt.links.new(base_in.links[0].from_socket, mix.inputs[6])
+        nt.links.new(base_in.links[0].from_socket, mixc.inputs[6])
         nt.links.remove(base_in.links[0])
     else:
-        mix.inputs[6].default_value = tuple(base_in.default_value)
-    nt.links.new(ac.outputs["Color"], mix.inputs[7])
-    nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"])
+        mixc.inputs[6].default_value = tuple(base_in.default_value)
+    nt.links.new(ac.outputs["Color"], mixc.inputs[7])
+    nt.links.new(mixc.outputs[2], bsdf.inputs["Base Color"])
+    if "Emission Strength" in bsdf.inputs:
+        bsdf.inputs["Emission Strength"].default_value = 0.0
 
-    # Fibre-direction waves, weighted by mregion (R lats, G rhomboids, B mid-trap/delt).
+    # Fibre-direction waves (R lats, G rhomboids, B mid-trap/delt). Low distortion = crisp lines.
     am = nt.nodes.new("ShaderNodeAttribute"); am.name = GF + "MREG"; am.attribute_name = "mregion"
     msep = nt.nodes.new("ShaderNodeSeparateColor"); msep.name = GF + "MSEP"
     nt.links.new(am.outputs["Color"], msep.inputs["Color"])
     tex = nt.nodes.new("ShaderNodeTexCoord"); tex.name = GF + "FCOORD"
-    w_lat = _wave(nt, "LAT", tex.outputs["Object"], float(fibre_scale), 1.35, "X", (0.0, 0.85, 0.0))
-    w_rho = _wave(nt, "RHO", tex.outputs["Object"], float(fibre_scale) * 1.12, 0.9, "Z", (0.0, 0.0, 0.0))
-    w_trp = _wave(nt, "TRP", tex.outputs["Object"], float(fibre_scale) * 0.95, 0.75, "X", (0.0, 0.0, 0.0))
+    w_lat = _wave(nt, "LAT", tex.outputs["Object"], float(fibre_scale), 0.45, "X", (0.0, 0.85, 0.0))
+    w_rho = _wave(nt, "RHO", tex.outputs["Object"], float(fibre_scale) * 1.10, 0.35, "Z", (0.0, 0.0, 0.0))
+    w_trp = _wave(nt, "TRP", tex.outputs["Object"], float(fibre_scale) * 0.95, 0.35, "X", (0.0, 0.0, 0.0))
     ml = nt.nodes.new("ShaderNodeMath"); ml.name = GF + "FL"; ml.operation = "MULTIPLY"
     nt.links.new(msep.outputs["Red"], ml.inputs[0]); nt.links.new(w_lat, ml.inputs[1])
     mr = nt.nodes.new("ShaderNodeMath"); mr.name = GF + "FR"; mr.operation = "MULTIPLY"
@@ -243,72 +247,82 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     nt.links.new(ml.outputs[0], a1.inputs[0]); nt.links.new(mr.outputs[0], a1.inputs[1])
     a2 = nt.nodes.new("ShaderNodeMath"); a2.name = GF + "FA2"; a2.operation = "ADD"
     nt.links.new(a1.outputs[0], a2.inputs[0]); nt.links.new(mt.outputs[0], a2.inputs[1])
-    # fibre_mod = (1 - fibre_line) + fibre_line * wave  (darker grooves, brighter ridges)
+    # Thin bright ridges: wave^5 keeps only the peaks.
+    ridge = nt.nodes.new("ShaderNodeMath"); ridge.name = GF + "RID"; ridge.operation = "POWER"
+    nt.links.new(a2.outputs[0], ridge.inputs[0]); ridge.inputs[1].default_value = 5.0
+    # emission strength = em_str * (1 + fibre_line * ridge)
     flm = nt.nodes.new("ShaderNodeMath"); flm.name = GF + "FLM"; flm.operation = "MULTIPLY"
-    nt.links.new(a2.outputs[0], flm.inputs[0]); flm.inputs[1].default_value = float(fibre_line)
+    nt.links.new(ridge.outputs[0], flm.inputs[0]); flm.inputs[1].default_value = float(fibre_line)
     fla = nt.nodes.new("ShaderNodeMath"); fla.name = GF + "FLA"; fla.operation = "ADD"
-    fla.inputs[0].default_value = 1.0 - float(fibre_line)
+    fla.inputs[0].default_value = 1.0
     nt.links.new(flm.outputs[0], fla.inputs[1])
-    fstm = nt.nodes.new("ShaderNodeMath"); fstm.name = GF + "FSTM"; fstm.operation = "MULTIPLY"
-    nt.links.new(stm.outputs[0], fstm.inputs[0]); nt.links.new(fla.outputs[0], fstm.inputs[1])
+    ems = nt.nodes.new("ShaderNodeMath"); ems.name = GF + "EMS"; ems.operation = "MULTIPLY"
+    ems.inputs[0].default_value = float(em_str)
+    nt.links.new(fla.outputs[0], ems.inputs[1])
 
-    ao = nt.nodes.new("ShaderNodeAmbientOcclusion"); ao.name = GF + "AO"
-    ao.inputs["Distance"].default_value = 0.10
-    aom = nt.nodes.new("ShaderNodeMix"); aom.data_type = "RGBA"; aom.blend_type = "MULTIPLY"; aom.name = GF + "AOM"
-    aom.inputs[0].default_value = 0.16
-    nt.links.new(ac.outputs["Color"], aom.inputs[6])
-    nt.links.new(ao.outputs["Color"], aom.inputs[7])
-    # Emission colour: cool rim when not glowing, hue table when glowing.
-    emx = nt.nodes.new("ShaderNodeMix"); emx.data_type = "RGBA"; emx.name = GF + "EMIX"
-    emx.inputs[6].default_value = (0.66, 0.80, 1.0, 1.0)
-    nt.links.new(aom.outputs[2], emx.inputs[7])
-    emxf = nt.nodes.new("ShaderNodeMath"); emxf.name = GF + "EMXF"; emxf.operation = "MULTIPLY"
-    nt.links.new(stm.outputs[0], emxf.inputs[0]); emxf.inputs[1].default_value = 2.6
-    emxc = nt.nodes.new("ShaderNodeClamp"); emxc.name = GF + "EMXC"
-    emxc.inputs["Min"].default_value = 0.0
-    emxc.inputs["Max"].default_value = 1.0
-    nt.links.new(emxf.outputs[0], emxc.inputs["Value"])
-    nt.links.new(emxc.outputs[0], emx.inputs[0])
-    if "Emission Color" in bsdf.inputs:
-        nt.links.new(emx.outputs[2], bsdf.inputs["Emission Color"])
+    # Brighten fibre ridges toward a slightly hotter colour
+    hot = nt.nodes.new("ShaderNodeMix"); hot.data_type = "RGBA"; hot.name = GF + "HOT"
+    nt.links.new(ac.outputs["Color"], hot.inputs[6])
+    hot.inputs[7].default_value = (1.0, 0.82, 0.70, 1.0)
+    ht = nt.nodes.new("ShaderNodeMath"); ht.name = GF + "HT"; ht.operation = "MULTIPLY"
+    nt.links.new(ridge.outputs[0], ht.inputs[0]); ht.inputs[1].default_value = 0.55
+    nt.links.new(ht.outputs[0], hot.inputs[0])
+
+    em = nt.nodes.new("ShaderNodeEmission"); em.name = GF + "EM"
+    nt.links.new(hot.outputs[2], em.inputs["Color"])
+    nt.links.new(ems.outputs[0], em.inputs["Strength"])
+
+    # Mix factor: glow_w * opacity (interior ~opacity, short feather at the edge)
+    opm = nt.nodes.new("ShaderNodeMath"); opm.name = GF + "OPM"; opm.operation = "MULTIPLY"
+    nt.links.new(stm.outputs[0], opm.inputs[0]); opm.inputs[1].default_value = float(opacity)
+    mx = nt.nodes.new("ShaderNodeMixShader"); mx.name = GF + "MIXS"
+    nt.links.new(opm.outputs[0], mx.inputs[0])
+    nt.links.new(bsdf.outputs[0], mx.inputs[1])
+    nt.links.new(em.outputs[0], mx.inputs[2])
 
     lw = nt.nodes.new("ShaderNodeLayerWeight"); lw.name = GF + "LW"
     lw.inputs["Blend"].default_value = 0.48
     fres = nt.nodes.new("ShaderNodeMath"); fres.name = GF + "FRES"; fres.operation = "SUBTRACT"
     fres.inputs[0].default_value = 1.0
     nt.links.new(lw.outputs["Facing"], fres.inputs[1])
-    # glow strength = fibre-modulated core * em_str
-    ems = nt.nodes.new("ShaderNodeMath"); ems.name = GF + "EMS"; ems.operation = "MULTIPLY"
-    nt.links.new(fstm.outputs[0], ems.inputs[0]); ems.inputs[1].default_value = float(em_str)
-    # extra facing lift on the glowing belly (hot core toward camera)
-    cmap = nt.nodes.new("ShaderNodeMapRange"); cmap.name = GF + "CORE"
-    cmap.inputs["From Min"].default_value = 0.15
-    cmap.inputs["From Max"].default_value = 1.0
-    cmap.inputs["To Min"].default_value = 0.55
-    cmap.inputs["To Max"].default_value = 1.0
-    nt.links.new(lw.outputs["Facing"], cmap.inputs["Value"])
-    emsc = nt.nodes.new("ShaderNodeMath"); emsc.name = GF + "EMSC"; emsc.operation = "MULTIPLY"
-    nt.links.new(ems.outputs[0], emsc.inputs[0]); nt.links.new(cmap.outputs["Result"], emsc.inputs[1])
-    # glow-only coloured rim
-    gr = nt.nodes.new("ShaderNodeMath"); gr.name = GF + "GR"; gr.operation = "MULTIPLY"
-    nt.links.new(fres.outputs[0], gr.inputs[0]); nt.links.new(stm.outputs[0], gr.inputs[1])
-    gr2 = nt.nodes.new("ShaderNodeMath"); gr2.name = GF + "GR2"; gr2.operation = "MULTIPLY"
-    nt.links.new(gr.outputs[0], gr2.inputs[0]); gr2.inputs[1].default_value = float(rim)
-    # body-wide cool silhouette rim (not masked by glow_w)
+    invg = nt.nodes.new("ShaderNodeMath"); invg.name = GF + "INVG"; invg.operation = "SUBTRACT"
+    invg.inputs[0].default_value = 1.0
+    nt.links.new(stm.outputs[0], invg.inputs[1])
+    # Cool Fresnel on clay only — never add energy onto an already-opaque glow core
+    # (that clips R and washes S toward white).
+    br0 = nt.nodes.new("ShaderNodeMath"); br0.name = GF + "BR0"; br0.operation = "MULTIPLY"
+    nt.links.new(fres.outputs[0], br0.inputs[0]); br0.inputs[1].default_value = float(body_rim)
     br = nt.nodes.new("ShaderNodeMath"); br.name = GF + "BR"; br.operation = "MULTIPLY"
-    nt.links.new(fres.outputs[0], br.inputs[0]); br.inputs[1].default_value = float(body_rim)
-    tot = nt.nodes.new("ShaderNodeMath"); tot.name = GF + "TOT"; tot.operation = "ADD"
-    nt.links.new(emsc.outputs[0], tot.inputs[0]); nt.links.new(gr2.outputs[0], tot.inputs[1])
-    tot2 = nt.nodes.new("ShaderNodeMath"); tot2.name = GF + "TOT2"; tot2.operation = "ADD"
-    nt.links.new(tot.outputs[0], tot2.inputs[0]); nt.links.new(br.outputs[0], tot2.inputs[1])
-    if "Emission Strength" in bsdf.inputs:
-        nt.links.new(tot2.outputs[0], bsdf.inputs["Emission Strength"])
+    nt.links.new(br0.outputs[0], br.inputs[0]); nt.links.new(invg.outputs[0], br.inputs[1])
+    # Coloured rim only in the short feather (stm*(1-stm) peaks at the outline).
+    edge = nt.nodes.new("ShaderNodeMath"); edge.name = GF + "EDGE"; edge.operation = "MULTIPLY"
+    nt.links.new(stm.outputs[0], edge.inputs[0]); nt.links.new(invg.outputs[0], edge.inputs[1])
+    gr = nt.nodes.new("ShaderNodeMath"); gr.name = GF + "GR"; gr.operation = "MULTIPLY"
+    nt.links.new(fres.outputs[0], gr.inputs[0]); nt.links.new(edge.outputs[0], gr.inputs[1])
+    gr2 = nt.nodes.new("ShaderNodeMath"); gr2.name = GF + "GR2"; gr2.operation = "MULTIPLY"
+    nt.links.new(gr.outputs[0], gr2.inputs[0]); gr2.inputs[1].default_value = float(rim) * 4.0
+    rsum = nt.nodes.new("ShaderNodeMath"); rsum.name = GF + "RSUM"; rsum.operation = "ADD"
+    nt.links.new(br.outputs[0], rsum.inputs[0]); nt.links.new(gr2.outputs[0], rsum.inputs[1])
+    rcol = nt.nodes.new("ShaderNodeMix"); rcol.data_type = "RGBA"; rcol.name = GF + "RCOL"
+    rcol.inputs[6].default_value = (0.66, 0.80, 1.0, 1.0)
+    nt.links.new(ac.outputs["Color"], rcol.inputs[7])
+    nt.links.new(stm.outputs[0], rcol.inputs[0])
+    rem = nt.nodes.new("ShaderNodeEmission"); rem.name = GF + "REM"
+    nt.links.new(rcol.outputs[2], rem.inputs["Color"])
+    nt.links.new(rsum.outputs[0], rem.inputs["Strength"])
+
+    add = nt.nodes.new("ShaderNodeAddShader"); add.name = GF + "ADD"
+    nt.links.new(mx.outputs[0], add.inputs[0])
+    nt.links.new(rem.outputs[0], add.inputs[1])
+    for l in list(mout.inputs["Surface"].links):
+        nt.links.remove(l)
+    nt.links.new(add.outputs[0], mout.inputs["Surface"])
 
     if float(fibre_bump) > 0:
         bstr = nt.nodes.new("ShaderNodeMath"); bstr.name = GF + "BSTR"; bstr.operation = "MULTIPLY"
         nt.links.new(stm.outputs[0], bstr.inputs[0]); bstr.inputs[1].default_value = float(fibre_bump)
         bump = nt.nodes.new("ShaderNodeBump"); bump.name = GF + "BUMP"
-        bump.inputs["Distance"].default_value = 0.008
+        bump.inputs["Distance"].default_value = 0.006
         nt.links.new(a2.outputs[0], bump.inputs["Height"])
         nt.links.new(bstr.outputs[0], bump.inputs["Strength"])
         nrm_in = bsdf.inputs.get("Normal")
@@ -424,7 +438,7 @@ def attach_mesh_glow(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix=0.2
 
 
 def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_scale=42.0, tint_mix=0.28,
-                     fibre_bump=0.32, rim=0.35, body_rim=0.18, fibre_line=0.32):
+                     fibre_bump=0.32, rim=0.35, body_rim=0.18, fibre_line=0.32, opacity=0.94):
     """(Re)attach GF_* glow nodes on every body material. Returns flex Value nodes."""
     flex_nodes = []
     for m_ in body_mats:
@@ -439,7 +453,7 @@ def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_sc
             flex_nodes.append(attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min,
                                                    tint_mix=tint_mix, fibre_bump=fibre_bump, rim=rim,
                                                    fibre_scale=fibre_scale, body_rim=body_rim,
-                                                   fibre_line=fibre_line))
+                                                   fibre_line=fibre_line, opacity=opacity))
         else:
             flex_nodes.append(attach_simple_emission(nt, bsdf, mout, em_col, em_str, flex_min))
     return flex_nodes
@@ -491,7 +505,13 @@ def setup_compositor(sc, bloom_strength=0.60):
     # Isolate the painted muscle in the beauty (more reliable than the Emission pass).
     mul = _cmp_mix(nt, "MULTIPLY", 1.0); mul.name = "GF_MUL"; mul.location = (280, -80)
     img = rl.outputs["Image"]
-    mask = rl.outputs.get("glow_mask") or rl.outputs["Image"]
+    mask = rl.outputs.get("glow_mask")
+    if mask is None:
+        # Do not fall back to the beauty — multiplying/inverting the image
+        # itself lifts G/B on the core and washes saturation.
+        blk = nt.nodes.new("CompositorNodeRGB"); blk.name = "GF_NOMASK"
+        blk.outputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
+        mask = blk.outputs[0]
     nt.links.new(img, mul.inputs[1]); nt.links.new(mask, mul.inputs[2])
     gl = nt.nodes.new("CompositorNodeGlare"); gl.location = (520, -80)
     try:
@@ -509,11 +529,11 @@ def setup_compositor(sc, bloom_strength=0.60):
         except Exception:
             pass
     try:
-        gl.threshold = 0.40
+        gl.threshold = 0.22
     except Exception:
-        gl.inputs["Threshold"].default_value = 0.40
+        gl.inputs["Threshold"].default_value = 0.22
     try:
-        gl.size = 8
+        gl.size = 9
     except Exception:
         if "Size" in gl.inputs:
             gl.inputs["Size"].default_value = 0.70
@@ -529,10 +549,18 @@ def setup_compositor(sc, bloom_strength=0.60):
             pass
     nt.links.new(mul.outputs[0], gl.inputs["Image"])
     glow_out = gl.outputs.get("Glare") or gl.outputs["Image"]
-    fade = _cmp_mix(nt, "MIX", float(bloom_strength)); fade.name = "GF_FADE"; fade.location = (740, -80)
+    # Halo = bloom that spilled *outside* the sharp muscle. Zero the interior so
+    # Fog-Glow cannot lift G/B on the already-correct opaque core.
+    inv = _cmp_mix(nt, "SUBTRACT", 1.0); inv.name = "GF_INVM"; inv.location = (740, -160)
+    inv.inputs[1].default_value = (1.0, 1.0, 1.0, 1.0)
+    nt.links.new(mask, inv.inputs[2])
+    ring = _cmp_mix(nt, "MULTIPLY", 1.0); ring.name = "GF_RING"; ring.location = (740, -80)
+    nt.links.new(glow_out, ring.inputs[1])
+    nt.links.new(inv.outputs[0], ring.inputs[2])
+    fade = _cmp_mix(nt, "MIX", float(bloom_strength)); fade.name = "GF_FADE"; fade.location = (960, -80)
     fade.inputs[1].default_value = (0.0, 0.0, 0.0, 1.0)
-    nt.links.new(glow_out, fade.inputs[2])
-    add = _cmp_mix(nt, "ADD", 1.0); add.name = "GF_ADD"; add.location = (960, 40)
+    nt.links.new(ring.outputs[0], fade.inputs[2])
+    add = _cmp_mix(nt, "ADD", 1.0); add.name = "GF_ADD"; add.location = (1180, 40)
     nt.links.new(img, add.inputs[1]); nt.links.new(fade.outputs[0], add.inputs[2])
     if use_group and hasattr(nt, "interface"):
         for item in list(getattr(nt.interface, "items_tree", []) or []):
@@ -541,10 +569,10 @@ def setup_compositor(sc, bloom_strength=0.60):
             except Exception:
                 pass
         nt.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-        gout = nt.nodes.new("NodeGroupOutput"); gout.location = (1200, 40)
+        gout = nt.nodes.new("NodeGroupOutput"); gout.location = (1420, 40)
         nt.links.new(add.outputs[0], gout.inputs[0])
     else:
-        comp = nt.nodes.new("CompositorNodeComposite"); comp.location = (1200, 40)
+        comp = nt.nodes.new("CompositorNodeComposite"); comp.location = (1420, 40)
         nt.links.new(add.outputs[0], comp.inputs["Image"])
     sc.render.use_compositing = True
     try:
