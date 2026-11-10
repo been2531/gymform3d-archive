@@ -30,7 +30,7 @@ KST = dt.timezone(dt.timedelta(hours=9))
 AIQ = "/home/box/routinizer/ai_queue/fitness_studio.jsonl"
 FITNESS_STUDIO_AGENT = "7c203a21-2233-41e0-92f1-189a01945890"
 STAGES = ["config", "fetch", "pose", "render", "grade", "reel", "qc", "sheet", "deliver"]
-CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py", "tools/rig3d/hand_grip.py", "tools/rig3d/muscle_regions.py", "tools/rig3d/glow_shader.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
+CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py", "tools/rig3d/hand_grip.py", "tools/rig3d/muscle_regions.py", "tools/rig3d/glow_shader.py", "tools/rig3d/ecorche_bind.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
         "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py", "tools/rig3d/posture_qc.py", "tools/rig3d/anatomy_qc.py", "tools/rig3d/hand_grip.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
 PEAK = {"rss_mb": 0}
 
@@ -142,7 +142,7 @@ class Run:
     def s_render(self, rep):
         gate(self.args, "render"); d = self.p("render"); os.makedirs(d, exist_ok=True)
         intent = hsh(self.cfg.get("motion"), self.cfg.get("render"), self.cfg.get("asset"), rep, getattr(self.args, "short", 0),
-                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"), fsha("tools/rig3d/muscle_regions.py"), fsha("tools/rig3d/glow_shader.py"), fsha("tools/rig3d/muscle_ids.py"), fsha("tools/rig3d/muscle_activation.py"))
+                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"), fsha("tools/rig3d/muscle_regions.py"), fsha("tools/rig3d/glow_shader.py"), fsha("tools/rig3d/muscle_ids.py"), fsha("tools/rig3d/muscle_activation.py"), fsha("tools/rig3d/ecorche_bind.py"))
         marker = os.path.join(d, "render_intent.txt")
         skip_existing = os.path.exists(marker) and open(marker).read().strip() == intent
         if not skip_existing:
@@ -151,6 +151,10 @@ class Run:
             open(marker, "w").write(intent)
         rc = dict(self.cfg); rc["_rep"] = rep; rc["asset"] = dict(rc["asset"]); rc["asset"]["glb"] = os.path.join(ROOT, rc["asset"]["glb"])
         rc["asset"]["hdri"] = dict(rc["asset"]["hdri"]); rc["asset"]["hdri"]["file"] = os.path.join(ROOT, rc["asset"]["hdri"]["file"])
+        if rc["asset"].get("ecorche_glb"):
+            _ep = rc["asset"]["ecorche_glb"]
+            if _ep and not os.path.isabs(_ep):
+                rc["asset"]["ecorche_glb"] = os.path.join(ROOT, _ep)
         rc["skip_existing_frames"] = skip_existing; rc["render"] = dict(rc.get("render") or {}); rc["render"]["skip_existing_frames"] = skip_existing
         jdump(rc, os.path.join(d, "cfg.json"))
         frames = "all" if not self.args.short else ",".join(str(i) for i in range(1, self.args.short + 1))
