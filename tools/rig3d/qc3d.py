@@ -38,6 +38,7 @@ RULE_MAP = {
     "neck_steady_maxdev_deg": "neck_follow_spine", "both_feet_planted": "plant_legs", "foot_drift_m": "plant_legs", "knee_angles_deg": "plant_legs",
     "knee_steady_maxdev_deg": "plant_legs", "knees_soft_and_balanced": "balance_knees", "dumbbell_handle_orientation": "grip_palm", "dumbbell_neutral_grip_deg": "grip_palm",
     "support_hand_on_thigh_m": "support_hand", "thigh_split_deg": "plant_legs", "posture_bones_present": "human",
+    "working_elbow_torso_m": "elbow_tuck", "scapula_retract_m": "scapula_retract", "support_hand_near_knee_frac": "support_hand_visible", "ankle_roll_deg": "foot_level", "callout_prop_clearance": "callout_route",
     "joint_ranges_no_hyperextension": "joint_range", "self_intersection_capsule_m": "limb_clearance", "center_of_mass_over_feet_m": "com_balance",
     "proportions_symmetric_and_rigid": "human", "grip_present": "grip_wrap", "grip_finger_wrap_deg": "grip_wrap", "grip_fingertip_gap_mm": "grip_wrap",
     "grip_thumb_opposing": "grip_wrap", "grip_no_hand_handle_intersection": "grip_wrap", "mesh_no_spikes_edge_ratio": "spine_spread",
@@ -188,6 +189,24 @@ def run(run_dir, cfg):
             shown = LF.get("callout_shown_deg"); meas = int(round(med)); dd = float(np.max(np.abs(np.array(d2) - shown))) if d2 else 99
             out.append(ck("callout_angle_matches_measured", {"shown": shown, "rig_median": round(med, 1), "max_2d_dev": round(dd, 1)},
                           f"shown == round(median); |2D - shown| <= {Q['callout_2d_tol_deg']}", shown == meas and dd <= Q["callout_2d_tol_deg"], None, "overlay"))
+            if "callout_prop_clear_min_px" in Q:
+                def _sd(p, p0, p1):
+                    p = np.asarray(p, float); p0 = np.asarray(p0, float); p1 = np.asarray(p1, float)
+                    ab = p1 - p0; t = float(np.clip(((p - p0) @ ab) / (float(ab @ ab) + 1e-12), 0, 1))
+                    return float(np.linalg.norm(p - (p0 + t * ab)))
+                KP = {r_["f"]: r_.get("kp2d") or {} for r_ in F}; clears = []
+                for f in L:
+                    u = (f.get("ui") or {}).get("callout") or {}
+                    if u.get("prop_clear_px") is not None: clears.append(float(u["prop_clear_px"])); continue
+                    src = f.get("src") or ""; fnum = int(src[2:6]) if src.startswith("f_") else None
+                    kp = KP.get(fnum) or {}; db, hip, sh = kp.get("db"), kp.get("hip"), kp.get("sh")
+                    if not (db and hip and sh): continue
+                    v = [float(hip[0]), float(hip[1])]; b = [float(sh[0]), float(sh[1])]; ln = float(np.hypot(b[0] - v[0], b[1] - v[1]))
+                    a = [v[0], v[1] - 0.62 * ln]; b_ext = [v[0] + 1.14 * (b[0] - v[0]), v[1] + 1.14 * (b[1] - v[1])]
+                    clears.append(min(_sd(db, a, v), _sd(db, v, b_ext)))
+                mn = min(clears) if clears else None
+                out.append(ck("callout_prop_clearance", None if mn is None else round(mn, 1),
+                              f">= {Q['callout_prop_clear_min_px']} px from db", bool(clears) and mn >= Q["callout_prop_clear_min_px"], "callout_route", "overlay"))
     # black boxer briefs (separate skinned garment mesh)
     BF = [f for f in F if "briefs_poke_frac" in f]
     if cfg.get("garment", {}).get("enabled"):

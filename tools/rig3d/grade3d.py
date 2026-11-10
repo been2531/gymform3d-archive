@@ -10,7 +10,7 @@ Per frame: beauty RGBA (transparent film) + muscle-mask RGBA (R lats, G rhomboid
   5. Day 4 Kaushan title (gymform.layout._title_layer), see-through alpha 0.40 over the figure (t638u rule)
 Writes g_####.png + look.json (per-frame look stats used by qc3d.py).
 usage: python3 tools/rig3d/grade3d.py RENDER_DIR OUT_DIR CFG.json"""
-import glob, json, math, os, sys
+import glob, json, math, os, sys, time
 import cv2, numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
@@ -296,7 +296,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     # v5: figure pixels under the title text box / preview pill (the figure must never sit under the title)
     st["overlay_fig_px"] = {k: int((fg[ui[k][1]:ui[k][3] + 1, ui[k][0]:ui[k][2] + 1] > 0.5).sum()) for k in ("title", "pill") if k in ui}
     if "callout" in ui:
-        c_ = ui["callout"]["text_box"]; st["callout_fig_overlap"] = round(float((fg[c_[1]:c_[3], c_[0]:c_[2]] > 0.5).mean()), 4)
+        c_ = ui["callout"]["text_box"]; st["callout_fig_overlap"] = round(float((fig[c_[1]:c_[3], c_[0]:c_[2]]).mean()), 4)
     return out8, st
 
 def draw_torso_callout(rgb8, shorts, kp, cfg):
@@ -305,19 +305,34 @@ def draw_torso_callout(rgb8, shorts, kp, cfg):
     The NUMBER is the rig-measured 3D torso angle (rep median), never the 2D projection."""
     from PIL import Image, ImageDraw
     from gymform.ctx import p62, v30, d5
-    L = cfg["layout"]["callout"]; v = tuple(kp["hip"]); b = tuple(kp["sh"]); ln = math.hypot(b[0] - v[0], b[1] - v[1])
-    a = (v[0], v[1] - 0.62 * ln)                                                 # vertical reference ray
-    _, b_ext = p62._extend_segment(v, b, 0.0, 1.14)
+    def _seg_dist(p, p0, p1):
+        p = np.asarray(p, float); p0 = np.asarray(p0, float); p1 = np.asarray(p1, float)
+        ab = p1 - p0; t = float(np.clip(((p - p0) @ ab) / (float(ab @ ab) + 1e-12), 0, 1))
+        return float(np.linalg.norm(p - (p0 + t * ab)))
+    L = cfg["layout"]["callout"]; v = [float(kp["hip"][0]), float(kp["hip"][1])]; b = [float(kp["sh"][0]), float(kp["sh"][1])]
+    ln = math.hypot(b[0] - v[0], b[1] - v[1])
+    a = [v[0], v[1] - 0.62 * ln]                                                 # vertical reference ray
+    _, b_ext = p62._extend_segment(tuple(v), tuple(b), 0.0, 1.14); b_ext = [float(b_ext[0]), float(b_ext[1])]
+    tgt = [0.48 * v[0] + 0.52 * b[0], 0.48 * v[1] + 0.52 * b[1]]
+    db = kp.get("db"); clear_min = float((cfg.get("grade") or {}).get("callout_clear_min_px", 180)); prop_clear = None
+    if db:
+        away = -1.0 if db[0] > v[0] else 1.0
+        for _ in range(16):
+            dmin = min(_seg_dist(db, a, v), _seg_dist(db, v, b_ext))
+            if dmin >= clear_min: break
+            step = 6.0 * away
+            a[0] += step; v[0] += step; b[0] += step; b_ext[0] += step; tgt[0] += step
+        prop_clear = min(_seg_dist(db, a, v), _seg_dist(db, v, b_ext))
+    a, v, b, b_ext, tgt = tuple(a), tuple(v), tuple(b), tuple(b_ext), (int(tgt[0]), int(tgt[1]))
     canvas = Image.fromarray(rgb8).convert("RGBA")
     gl.draw_crisp_laser_joint_axis(canvas, main_chains_1x=[[a, v, b_ext]], aux_ext_chains_1x=[], vertex_pts_1x=[v, b], is_wrong=False)
     laser = np.array(canvas.convert("RGB")).astype(np.float32); g = np.clip(shorts * 0.85, 0, 0.85)[..., None]
     base = Image.fromarray(np.clip(laser * (1 - g) + rgb8.astype(np.float32) * g, 0, 255).astype(np.uint8)).convert("RGBA")
     ov = Image.new("RGBA", base.size, (0, 0, 0, 0)); rd = ImageDraw.Draw(ov); col = (32, 245, 130)
-    tgt = (int(0.48 * v[0] + 0.52 * b[0]), int(0.48 * v[1] + 0.52 * b[1]))
     big, tx = 84, 86; ty = int(np.clip(tgt[1] - 24 - 76, int(SPEC["ui"].get("callout_ty_min", 600)), 1460))
     ey = ty + 76; ex = max(286, tgt[0] - 42)
     d5.bcd._draw_precision_leader(rd, tgt, (ex, ey), (278, ey), col)
-    deg = f"{int(kp['deg_shown'])}\u00b0"; fb, f1, f2 = v30.f_pretendard(big, "extrabold"), v30.f_pretendard(21, "extrabold"), v30.f_pretendard(16, "bold")
+    deg = f"{int(kp['deg_shown'])}°"; fb, f1, f2 = v30.f_pretendard(big, "extrabold"), v30.f_pretendard(21, "extrabold"), v30.f_pretendard(16, "bold")
     rd.text((tx + 2, ty + 3), deg, font=fb, fill=(0, 0, 0, 210)); rd.text((tx, ty), deg, font=fb, fill=(255, 255, 255, 255))
     rd.text((tx + 2, ty + big + 6), L["l1"], font=f1, fill=(*col, 255)); rd.text((tx + 2, ty + big + 33), L["l2"], font=f2, fill=(215, 222, 232, 235))
     boxes = [rd.textbbox((tx, ty), deg, font=fb), rd.textbbox((tx + 2, ty + big + 6), L["l1"], font=f1), rd.textbbox((tx + 2, ty + big + 33), L["l2"], font=f2)]
@@ -325,7 +340,9 @@ def draw_torso_callout(rgb8, shorts, kp, cfg):
     xs_ = [a[0], v[0], b_ext[0], tgt[0], ex, 278]; ys_ = [a[1], v[1], b_ext[1], tgt[1], ey]
     ang2d = math.degrees(math.atan2(abs(b[0] - v[0]), v[1] - b[1]))
     info = {"deg_shown": int(kp["deg_shown"]), "text_box": [int(q) for q in tb], "lines_box": [int(min(xs_)), int(min(ys_)), int(max(xs_)), int(max(ys_))],
-            "angle_2d_deg": round(ang2d, 1), "target": list(tgt)}
+            "angle_2d_deg": round(ang2d, 1), "target": list(tgt),
+            "prop_clear_px": None if prop_clear is None else round(prop_clear, 1),
+            "segments": [[list(map(float, a)), list(map(float, v))], [list(map(float, v)), list(map(float, b_ext))]]}
     return np.array(Image.alpha_composite(base, ov).convert("RGB")), info
 
 def make_icons(graded_rgb, bbox):
@@ -337,6 +354,7 @@ def make_icons(graded_rgb, bbox):
     return [(crop, (crop * 0.55).astype(np.uint8))]
 
 def main():
+    t0 = time.time()
     rdir, odir, cfgp = sys.argv[1:4]; cfg = json.load(open(cfgp)); os.makedirs(odir, exist_ok=True)
     cv2.setNumThreads(2)
     fr = sorted(glob.glob(os.path.join(rdir, "f_*.png"))); stats = []
@@ -356,8 +374,8 @@ def main():
             k_ = cfg["grade"]["out_res"][0] / (KPW or bty.shape[1]); kp = {kk: ([vv[0] * k_, vv[1] * k_] if isinstance(vv, list) else vv) for kk, vv in kp.items()}
         out, st = grade_frame(bty, msk, cfg, i, len(fr), kp, icons); st["src"] = os.path.basename(fp)
         cv2.imwrite(os.path.join(odir, "g_" + os.path.basename(fp)[2:]), cv2.cvtColor(out, cv2.COLOR_RGB2BGR)); stats.append(st)
-    json.dump({"frames": stats, "callout_shown_deg": shown, "torso_median_deg": round(float(np.median(tor)), 2)}, open(os.path.join(odir, "look.json"), "w"), indent=0)
-    print("graded", len(fr))
+    json.dump({"frames": stats, "callout_shown_deg": shown, "torso_median_deg": round(float(np.median(tor)), 2), "grade_s": round(time.time() - t0, 1)}, open(os.path.join(odir, "look.json"), "w"), indent=0)
+    print("graded", len(fr), "in", round(time.time() - t0, 1), "s")
 
 if __name__ == "__main__":
     main()

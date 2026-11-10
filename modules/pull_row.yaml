@@ -8,26 +8,50 @@ fault:
 motion_hint:
   torso_target_deg: 49
   legs: planted
-  knee_target_deg: 160
+  knee_target_deg: 152
   grip_mode: palm_neutral
   support_hand: front_thigh
   lock_hips: true
   pelvis_yaw: true
   stance_width_m: 0.30
   stance_scale: 0.45
+# Runtime keys (motion_hint is stripped by config_load). Shared by every pull_row exercise.
+motion:
+  elbow_path: tuck_torso           # working elbow rebuilt on the 2-bone circle, pole toward Spine01
+  scapula_retract: true            # working Shoulder rotates toward the spine at peak flex
+  scapula_retract_deg: 14
+  support_hand_thigh_t0: 0.64      # near-knee brace (arm reaches via support Shoulder)
+  support_hand_thigh_frac: 0.58    # distal-enough target that 14 deg of shoulder reach can land
+  support_hand_lateral_m: 0.0
+  support_hand_back_m: 0.0
+  support_hand_reach_scale: 0.99
+  support_hand_shoulder_reach: true
+  support_hand_shoulder_reach_max_deg: 14
+  knee_target_deg: 152             # athletic soft knee (was a locked-straight 160)
+  gaze_ext_deg: 6
+  foot_level: true
+render:
+  camera:
+    yaw_back_deg: 35               # working-side 3/4; more-behind hid a dumbbell head
 grade:
   target_muscles: [lats, rhomboids, mid_trap]
 qc:
+  anatomy:
+    capsule_allowed_pairs: [[LeftHand, LeftUpLeg], [LeftForeArm, LeftUpLeg], [RightHand, RightUpLeg], [RightForeArm, RightUpLeg]]
   torso_band_deg: [35, 60]
   torso_tol_deg: 5
   elbow_rom_min_deg: 40
+  callout_prop_clear_min_px: 220
   posture:
     knee_range_deg: [140, 178]
     knee_steady_max_deg: 6
-    knee_soft_range_deg: [150, 170]
     knee_lr_diff_max_deg: 20
     handle_palm_max_deg: 15
-    handle_body_forward_max_deg: 20
+    handle_body_forward_max_deg: 24
     support_hand_thigh_max_m: 0.12
     thigh_split_max_deg: 35
+    elbow_torso_max_m: 0.30
+    scapula_retract_min_m: 0.012
+    support_hand_knee_frac_min: 0.34
+    knee_soft_range_deg: [145, 158]
 risks: ["support hand hidden behind thigh from side camera", "callout near dumbbell at peak"]

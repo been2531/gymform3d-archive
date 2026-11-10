@@ -33,6 +33,7 @@ def measure(npz):
     rot = lambda n: P[:, ix[n], :3, :3]; rrot = lambda n: R0[ix[n], :3, :3]
     chest = "Spine"; low = "Spine02"; top = "head_end" if "head_end" in ix else "Head"
     out = {"frames": int(P.shape[0])}
+    if "legs" in D.files: out["legs"] = str(D["legs"])
     # head/neck: thoracic line vs neck line, expressed in the chest frame (X lateral, Y up the spine, Z = X x Y forward)
     Rc = rot(chest); thor = head("neck") - head(low); nl = head(top) - head("neck")
     thor0 = rhead("neck") - rhead(low); nl0 = rhead(top) - rhead("neck")
@@ -67,11 +68,21 @@ def measure(npz):
     out["thigh_split_deg"] = _ang(proj(-out["Left"]["thigh"]), proj(-out["Right"]["thigh"]))
     # support hand (v5): distance from the non-working wrist to the nearest thigh segment (bone line, not skin)
     if "working_hand" in D.files:
-        sp = "Right" if str(D["working_hand"]).startswith("Left") else "Left"; w = head(sp + "Hand"); best = None
+        sp = "Right" if str(D["working_hand"]).startswith("Left") else "Left"; w = head(sp + "Hand"); best = None; best_t = None; best_mean = None
         for s in ("Left", "Right"):
             a_, b_ = head(s + "UpLeg"), head(s + "Leg"); ab = b_ - a_; t = np.clip(((w - a_) * ab).sum(1) / (ab * ab).sum(1), 0, 1)
             dd = np.linalg.norm(w - (a_ + ab * t[:, None]), axis=1); best = dd if best is None else np.minimum(best, dd)
-        out["support_hand_to_thigh_m"] = best
+            if best_t is None or float(dd.mean()) < best_mean: best_t, best_mean = t, float(dd.mean())
+        out["support_hand_to_thigh_m"] = best; out["support_hand_knee_frac"] = best_t
+        wh = str(D["working_hand"]).replace("Hand", ""); el = head(wh + "ForeArm"); spn = head("Spine01"); shj = head(wh + "Arm"); wr = head(wh + "Hand")
+        elang = _ang(shj - el, wr - el); dxy = np.hypot(shj[:, 0] - spn[:, 0], shj[:, 1] - spn[:, 1]); peak = int(elang.argmin())
+        out["working_elbow_deg"] = elang; out["working_elbow_torso_m"] = np.linalg.norm(el - spn, axis=1)
+        out["scapula_xy_m"] = dxy; out["scapula_retract_m"] = float(dxy[0] - dxy[peak]); out["working_peak_i"] = peak
+    rolls = {}
+    for s in ("Left", "Right"):
+        if s + "Foot" not in ix: continue
+        R = rot(s + "Foot"); rolls[s] = np.degrees(np.arcsin(np.clip(R[:, 2, 0], -1, 1)))
+    if rolls: out["ankle_roll_deg"] = rolls
     # dumbbell handle vs the working hand (v5): needs dumbbell (F,4,4) + handle_axis_local + palm_<side> in the npz
     if "dumbbell" in D.files and "palm_left" in D.files:
         hb = str(D["working_hand"]); fb = hb.replace("Hand", "ForeArm"); pl = D["palm_left" if hb.startswith("Left") else "palm_right"]
@@ -130,9 +141,25 @@ def checks(npz, Q):
         v = M["handle_vs_body_forward_deg"]; out.append(_ck("dumbbell_neutral_grip_deg", r(v.max()), f"<= {Q['handle_body_forward_max_deg']} every frame",
                                                             v.max() <= Q["handle_body_forward_max_deg"], "grip_palm")); out[-1]["where"] = {"frame": int(v.argmax()) + 1}
     if "support_hand_thigh_max_m" in Q and "support_hand_to_thigh_m" in M:
-        v = M["support_hand_to_thigh_m"]; out.append(_ck("support_hand_on_thigh_m", r(v.max(), 3), f"<= {Q['support_hand_thigh_max_m']} every frame", v.max() <= Q["support_hand_thigh_max_m"], "support_hand"))
+        idx = [0] + ([int(M["working_peak_i"])] if "working_peak_i" in M else [])
+        v = float(max(M["support_hand_to_thigh_m"][i] for i in idx))
+        out.append(_ck("support_hand_on_thigh_m", r(v, 3), f"<= {Q['support_hand_thigh_max_m']} at start+peak", v <= Q["support_hand_thigh_max_m"], "support_hand"))
     if "thigh_split_max_deg" in Q:
         v = M["thigh_split_deg"]; out.append(_ck("thigh_split_deg", r(np.median(v)), f"<= {Q['thigh_split_max_deg']} (median)", np.median(v) <= Q["thigh_split_max_deg"], "plant_legs"))
+    if "elbow_torso_max_m" in Q and "working_elbow_torso_m" in M:
+        i = int(M.get("working_peak_i", int(np.argmin(M["working_elbow_deg"])))); v = float(M["working_elbow_torso_m"][i])
+        out.append(_ck("working_elbow_torso_m", r(v, 3), f"<= {Q['elbow_torso_max_m']} at peak", v <= Q["elbow_torso_max_m"], "elbow_tuck"))
+    if "scapula_retract_min_m" in Q and "scapula_retract_m" in M:
+        v = float(M["scapula_retract_m"]); out.append(_ck("scapula_retract_m", r(v, 3), f">= {Q['scapula_retract_min_m']} (start xy - peak xy)", v >= Q["scapula_retract_min_m"], "scapula_retract"))
+    if "support_hand_knee_frac_min" in Q and "support_hand_knee_frac" in M:
+        idx = [0] + ([int(M["working_peak_i"])] if "working_peak_i" in M else [])
+        v = float(min(M["support_hand_knee_frac"][i] for i in idx))
+        out.append(_ck("support_hand_near_knee_frac", r(v, 3), f">= {Q['support_hand_knee_frac_min']} at start+peak", v >= Q["support_hand_knee_frac_min"], "support_hand_visible"))
+    if "ankle_roll_max_deg" in Q and "ankle_roll_deg" in M:
+        planted = M.get("legs", "planted") == "planted"
+        if planted:
+            mx = max(float(np.abs(M["ankle_roll_deg"][s]).max()) for s in M["ankle_roll_deg"])
+            out.append(_ck("ankle_roll_deg", r(mx, 1), f"<= {Q['ankle_roll_max_deg']}", mx <= Q["ankle_roll_max_deg"], "foot_level"))
     series = {k: [round(float(x), 2) for x in M[k]] for k in ("neck_flex_deg", "neck_line_dev_deg", "head_roll_deg", "head_yaw_deg", "thigh_split_deg",
               "handle_vs_palm_deg", "handle_vs_forearm_perp_deg", "handle_vs_body_forward_deg") if k in M}
     for s in ("Left", "Right"): series[s + "_knee_deg"] = [round(float(x), 1) for x in M[s]["knee_deg"]]; series[s + "_toe_h_m"] = [round(float(x), 4) for x in M[s]["toe_h_m"]]

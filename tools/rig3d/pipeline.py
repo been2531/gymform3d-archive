@@ -141,10 +141,18 @@ class Run:
     # 4/5 ----------------------------------------------------------------------------------------------------------------
     def s_render(self, rep):
         gate(self.args, "render"); d = self.p("render"); os.makedirs(d, exist_ok=True)
-        for f in os.listdir(d):
-            if f.endswith(".png"): os.remove(os.path.join(d, f))   # stale frames of a previous config (own scratch output)
+        intent = hsh(self.cfg.get("motion"), self.cfg.get("render"), self.cfg.get("asset"), rep, getattr(self.args, "short", 0),
+                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"))
+        marker = os.path.join(d, "render_intent.txt")
+        skip_existing = os.path.exists(marker) and open(marker).read().strip() == intent
+        if not skip_existing:
+            for f in os.listdir(d):
+                if f.endswith(".png"): os.remove(os.path.join(d, f))   # stale frames of a previous config (own scratch output)
+            open(marker, "w").write(intent)
         rc = dict(self.cfg); rc["_rep"] = rep; rc["asset"] = dict(rc["asset"]); rc["asset"]["glb"] = os.path.join(ROOT, rc["asset"]["glb"])
-        rc["asset"]["hdri"] = dict(rc["asset"]["hdri"]); rc["asset"]["hdri"]["file"] = os.path.join(ROOT, rc["asset"]["hdri"]["file"]); jdump(rc, os.path.join(d, "cfg.json"))
+        rc["asset"]["hdri"] = dict(rc["asset"]["hdri"]); rc["asset"]["hdri"]["file"] = os.path.join(ROOT, rc["asset"]["hdri"]["file"])
+        rc["skip_existing_frames"] = skip_existing; rc["render"] = dict(rc.get("render") or {}); rc["render"]["skip_existing_frames"] = skip_existing
+        jdump(rc, os.path.join(d, "cfg.json"))
         frames = "all" if not self.args.short else ",".join(str(i) for i in range(1, self.args.short + 1))
         t = time.time()
         peak = run_child([BPY, os.path.join(HERE, "retarget_render_v2.py"), "--npz", self.p("pose", "pose.npz"), "--cfg", os.path.join(d, "cfg.json"), "--out", d, "--frames", frames], logf=os.path.join(d, "log.txt"))
@@ -158,8 +166,9 @@ class Run:
             for f in os.listdir(d):
                 if f.endswith(".png"): os.remove(os.path.join(d, f))
         jdump(self.cfg, self.p("cfg.json"))
+        t = time.time()
         peak = run_child(["python3", os.path.join(HERE, "grade3d.py"), self.p("render"), d, self.p("cfg.json")], logf=self.p("grade_log.txt"))
-        return {"peak_rss_mb": peak, "frames": len([f for f in os.listdir(d) if f.startswith("g_")])}
+        return {"peak_rss_mb": peak, "frames": len([f for f in os.listdir(d) if f.startswith("g_")]), "wall_s": round(time.time() - t, 1)}
 
     # 7 ------------------------------------------------------------------------------------------------------------------
     def tts(self, d):
@@ -221,7 +230,7 @@ class Run:
     # 8 ------------------------------------------------------------------------------------------------------------------
     def s_qc(self):
         import importlib; sys.path.insert(0, HERE); import qc3d; importlib.reload(qc3d)
-        return qc3d.run(self.work, self.cfg)
+        t = time.time(); res = qc3d.run(self.work, self.cfg); res["wall_s"] = round(time.time() - t, 1); return res
 
 RULES = {   # qc fix name -> (config path, function old_value -> new value). v6: a rule may be applied again in a later
             # iteration (it steps the value further); a rule whose value no longer changes is exhausted.
@@ -245,6 +254,11 @@ RULES = {   # qc fix name -> (config path, function old_value -> new value). v6:
     "glow_cap": ("render.camera.yaw_back_deg", lambda v: max(0.0, float(v or 35) - 10)),
     "camera_bigger": ("render.camera.feet_y", lambda v: min(0.95, float(v or 0.9) + 0.015)),
     "torso_target": ("motion.torso_target_deg", lambda v: 47.0),
+    "elbow_tuck": ("motion.elbow_path", lambda v: "tuck_torso"),
+    "scapula_retract": ("motion.scapula_retract", lambda v: True),
+    "support_hand_visible": ("motion.support_hand_thigh_frac", lambda v: min(0.92, float(v or 0.75) + 0.12)),
+    "foot_level": ("motion.foot_level", lambda v: True),
+    "callout_route": ("grade.callout_clear_min_px", lambda v: float(v or 180) + 40),
 }
 
 def getp(c, path):
