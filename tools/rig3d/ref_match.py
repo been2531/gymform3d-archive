@@ -269,7 +269,7 @@ def _clamp_rom_and_contacts(P, spec, L):
     Lt = float(L["thigh"]); Ls = float(L["shin"])
     torso_len = float(L["torso"])
 
-    P = _flatten_torso(P, torso_len, max_deg=8.0)
+    P = _flatten_torso(P, torso_len, max_deg=3.0)
     # keep the pelvis level
     mz = 0.5 * (P[23, 2] + P[24, 2])
     P[23, 2] = mz; P[24, 2] = mz
@@ -365,7 +365,7 @@ def _clamp_rom_and_contacts(P, spec, L):
     return P
 
 
-def fit_frame(P0, ref_xy_down, vis, cam, res_wh, spec, L, steps=40):
+def fit_frame(P0, ref_xy_down, vis, cam, res_wh, spec, L, steps=40, phase="bottom"):
     """Move 3D landmarks so their reprojection matches ref 2D (y-down stored)."""
     P = np.asarray(P0, np.float64).copy()
     ref = np.asarray(ref_xy_down, np.float64).copy()
@@ -401,6 +401,14 @@ def fit_frame(P0, ref_xy_down, vis, cam, res_wh, spec, L, steps=40):
             step = 0.35 * (1.0 - 0.012 * it)
             P[j] = P[j] + cam["right"] * dlt[0] * world_per_ndc_x * step * min(w, 1.6) \
                         + cam["up"] * dlt[1] * world_per_ndc_y * step * min(w, 1.6)
+        if phase == "peak":
+            # Demic squeeze: drive the working elbow back and the wrist to the hip
+            # line. The side-view photo is a shallower row; the peak prior wins.
+            La = float(L["upper_arm"]); Lf = float(L["forearm"])
+            tgt = P[24] + np.array([0.13, -0.03, -0.06])
+            P[16] = 0.25 * P[16] + 0.75 * tgt
+            el_hint = P[12] + np.array([0.06, -0.28, 0.00])
+            P[14], P[16] = _ik(P[12], P[16], La, Lf, el_hint)
         P = _clamp_rom_and_contacts(P, spec, L)
         mean = err / max(wsum, 1e-6)
         last_err = mean
@@ -419,8 +427,8 @@ def fit_cycle(B, u, ref_dir, cam, res_wh, spec, L):
     vb = np.load(os.path.join(ref_dir, "vis_bottom.npy"))
     vp = np.load(os.path.join(ref_dir, "vis_peak.npy"))
     i0 = int(np.argmin(u)); i1 = int(np.argmax(u))
-    Pb, info_b = fit_frame(B[i0], bottom, vb, cam, res_wh, spec, L)
-    Pp, info_p = fit_frame(B[i1], peak, vp, cam, res_wh, spec, L)
+    Pb, info_b = fit_frame(B[i0], bottom, vb, cam, res_wh, spec, L, phase='bottom')
+    Pp, info_p = fit_frame(B[i1], peak, vp, cam, res_wh, spec, L, phase='peak')
     out = np.empty_like(B)
     for i, uu in enumerate(u):
         out[i] = Pb * (1.0 - uu) + Pp * uu
@@ -440,10 +448,12 @@ def silhouette_iou(a, b):
 
 
 def overlay_qc(beauty_bgr, ref_dir, proj_xy_down, tag="peak",
-               iou_min=0.35, joint_mae_max=0.08, out_path=None):
+               iou_min=0.35, joint_mae_max=0.08, out_path=None, ours_sil=None):
     """Build the overlay image and score IoU + joint MAE.
 
     proj_xy_down: (33,2) our joints in 0-1, origin top-left (image space).
+    ours_sil: optional side-camera silhouette (used when the beauty is a
+    different view, e.g. a 3/4 render).
     """
     import cv2
     ref_xy = np.load(os.path.join(ref_dir, f"lm2d_{tag}.npy"))
@@ -453,7 +463,24 @@ def overlay_qc(beauty_bgr, ref_dir, proj_xy_down, tag="peak",
     if ref_sil is None or ref_sil.shape[:2] != (h, w):
         ref_sil = cv2.resize(ref_sil if ref_sil is not None else np.zeros((h, w), np.uint8),
                              (w, h), interpolation=cv2.INTER_NEAREST)
-    ours_sil = beauty_silhouette(beauty_bgr)
+    if ours_sil is None:
+        ours_sil = beauty_silhouette(beauty_bgr)
+        canvas = (beauty_bgr.astype(np.float32) * 0.45).astype(np.uint8)
+    else:
+        if ours_sil.ndim == 3:
+            ours_sil = cv2.cvtColor(ours_sil, cv2.COLOR_BGR2GRAY)
+        if ours_sil.shape[:2] != (h, w):
+            ours_sil = cv2.resize(ours_sil, (w, h), interpolation=cv2.INTER_NEAREST)
+        # Side-space QC on a dark canvas (beauty may be a different camera).
+        canvas = np.full((h, w, 3), (18, 18, 20), np.uint8)
+        panel = cv2.imread(os.path.join(ref_dir, f"panel_{tag}.png"))
+        if panel is not None:
+            ph, pw = panel.shape[:2]
+            s = min(w / pw, h / ph)
+            nw, nh = int(round(pw * s)), int(round(ph * s))
+            x0, y0 = (w - nw) // 2, (h - nh) // 2
+            rs = cv2.resize(panel, (nw, nh), interpolation=cv2.INTER_AREA)
+            canvas[y0:y0 + nh, x0:x0 + nw] = (rs.astype(np.float32) * 0.35).astype(np.uint8)
     iou = silhouette_iou(ours_sil, ref_sil)
 
     proj = np.asarray(proj_xy_down, np.float64)
@@ -463,8 +490,7 @@ def overlay_qc(beauty_bgr, ref_dir, proj_xy_down, tag="peak",
     diag = math.hypot(1.0, 1.0)
     mae_diag = mae / diag
 
-    # overlay canvas: beauty darkened + silhouettes + joints
-    canvas = (beauty_bgr.astype(np.float32) * 0.45).astype(np.uint8)
+    # overlay canvas: beauty darkened (or dark + ref panel) + silhouettes + joints
     tint = canvas.astype(np.float32)
     ref_m = ref_sil > 127
     our_m = ours_sil > 127
@@ -520,6 +546,7 @@ if __name__ == "__main__":
     ap.add_argument("--proj")
     ap.add_argument("--tag", default="peak")
     ap.add_argument("--out")
+    ap.add_argument("--ours-sil")
     ap.add_argument("--iou-min", type=float, default=0.35)
     ap.add_argument("--mae-max", type=float, default=0.08)
     a = ap.parse_args()
@@ -530,5 +557,12 @@ if __name__ == "__main__":
         import cv2
         bgr = cv2.imread(a.beauty)
         proj = np.load(a.proj)
-        q = overlay_qc(bgr, scratch_dir(a.root), proj, a.tag, a.iou_min, a.mae_max, a.out)
+        osil = None
+        if a.ours_sil:
+            osil = cv2.imread(a.ours_sil, cv2.IMREAD_GRAYSCALE)
+            if osil is None and a.ours_sil.endswith(".npy"):
+                osil = np.load(a.ours_sil)
+                if osil.max() <= 1.0:
+                    osil = (osil * 255).astype(np.uint8)
+        q = overlay_qc(bgr, scratch_dir(a.root), proj, a.tag, a.iou_min, a.mae_max, a.out, ours_sil=osil)
         print(json.dumps(q, indent=2))
