@@ -297,7 +297,7 @@ qc:
       label: 글로우 안에 검은 균열/솔기가 있음
       source: overlay
       metric: glow_dark_seam_frac
-      max: 0.12
+      max: 0.028                # black-hat valleys; 894f762 cracks scored ~0.05
     - name: sil_iou
       label: 실루엣이 기준 사진과 다름
       source: overlay

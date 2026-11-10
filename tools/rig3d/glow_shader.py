@@ -204,8 +204,17 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     inv = nt.nodes.new("ShaderNodeMath"); inv.name = GF + "INV"; inv.operation = "SUBTRACT"
     inv.inputs[0].default_value = 1.0
     nt.links.new(ash.outputs["Fac"], inv.inputs[1])
+    # Harden the projected vertex weight so the interior is a solid emission
+    # sheet: AO / cavity on the clay BSDF cannot show through as dark cracks.
+    hard = nt.nodes.new("ShaderNodeMapRange"); hard.name = GF + "GWHARD"
+    hard.clamp = True
+    hard.inputs["From Min"].default_value = 0.08
+    hard.inputs["From Max"].default_value = 0.40
+    hard.inputs["To Min"].default_value = 0.0
+    hard.inputs["To Max"].default_value = 1.0
+    nt.links.new(sep.outputs["Red"], hard.inputs["Value"])
     fac = nt.nodes.new("ShaderNodeMath"); fac.name = GF + "FAC"; fac.operation = "MULTIPLY"
-    nt.links.new(sep.outputs["Red"], fac.inputs[0])
+    nt.links.new(hard.outputs["Result"], fac.inputs[0])
     nt.links.new(inv.outputs["Value"], fac.inputs[1])
     _flex, stm = _flex_strength(nt, fac.outputs[0], 1.0, flex_min)
 
@@ -337,7 +346,10 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     nt.links.new(fac.outputs[0], rgb.inputs["Green"])
     nt.links.new(fac.outputs[0], rgb.inputs["Blue"])
     nt.links.new(rgb.outputs["Color"], aov.inputs["Color"])
-    _bind_proj_texture(nt, ac, sep)
+    # Do not resample glow_proj through the mesh UV layer. Grab3D split verts
+    # and proj-UV seams punch CLIP-transparent holes that read as dark cracks.
+    # glow_w / glow_rgb are already baked from the same rest-camera projection
+    # and dilated across coincident verts in write_glow_w.
     return _flex
 
 
