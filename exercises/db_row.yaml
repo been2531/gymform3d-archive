@@ -32,7 +32,7 @@ motion:
   spine_influence: 0.5      # spreads the hinge over Spine/Spine01/Spine02 (1.0 stretched 0.58% of edges >2x at the lats)
   spine_aim: far             # v4: spine bones aim 3 torso lengths out along hip->shoulder (legacy shmid: chest swung 7-65 deg)
   neck_mode: spine_follow    # v4: neck aimed along the torso line + gaze_ext_deg, Head keeps its rest relation (legacy: ears_track)
-  gaze_ext_deg: 6            # head tipped back from the spine line (neutral neck, eyes slightly down-forward)
+  gaze_ext_deg: 0            # head continues the spine (horizontal, looking at the floor)
   legs: bench_row            # support knee + same-side hand on the pad; working foot on the floor
   knee_target_deg: 152      # athletic soft knee (inherits pull_row construction; was 160 = almost locked)
   balance_knees: true        # v5: each ankle slides fore-aft until its own knee reaches knee_target_deg (no locked rear leg)
@@ -50,6 +50,7 @@ motion:
   wrist_neutral: true        # v5: working hand not aimed at the index landmark (MediaPipe curled the wrist up to 77 deg)
   support_hand: bench_pad    # support hand locked to the pad (same side as the support knee)
   support_knee: bench_pad     # same-side knee locked to the pad
+  support_hand_ahead_m: 0.55  # left hand 55 cm ahead of the left knee on the pad
   lock_hips: true            # v5: pelvis static over the rep (upper body follows rigidly), knees steady
   pelvis_yaw: true           # v5: pelvis faces the lean direction before the hinge (no sideways pelvis roll)
   stance_width_m: 0.30       # v5: ankle-to-ankle width (YMove 'legs apart' is ~0.5 m: the wide rear leg could not bend)
@@ -159,6 +160,17 @@ caption:
 qc:
   torso_band_deg: [78, 98]
   torso_tol_deg: 5
+  bench_row:
+    torso_from_horizontal_max_deg: 10
+    head_spine_max_deg: 22
+    support_hand_on_pad: true
+    knee_on_pad: true
+    foot_on_floor: true
+    working_hand_drop_min_m: 0.22   # bottom of the rep: hand below the shoulder
+    working_hand_hip_max_m: 0.22    # peak: hand near the hip
+    db_in_frame: true
+    db_visible_frac_min: 0.35
+    db_contrast_v_min: 12
   grip_max_m: 0.03            # dumbbell handle centre vs grip point on the hand bone
   grip_mesh_max_m: 0.06       # nearest hand-mesh vertex to the handle centre
   tear_ratio_max: 3.0         # max deformed/rest edge length
