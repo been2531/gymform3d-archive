@@ -115,11 +115,12 @@ render:
   glow_smooth_iters: 40
   glow_solid_thresh: 0.28
   glow_close_rings: 5
-  glow_tint: 0.18
-  glow_opacity: 1.0             # solid emission; clay AO/cavity must not show through
+  glow_tint: 0.65               # multiply clay albedo toward projected colour
+  glow_opacity: 0.40            # scales additive emission (clay BSDF stays visible)
   glow_shape: project
+  glow_proj_close_px: 9          # morph-close paint alpha (seam holes, not colour flood)
   glow_proj_tex: tools/rig3d/masks/db_row_back_paint.png
-  glow_fibre_bump: 0.0              # bump was shading grooves into the emission mix
+  glow_fibre_bump: 0.14             # fibre relief on the still-lit clay
   glow_fibre_line: 0.10         # keep ridges; avoid dark crack lines in the glow
   glow_rim: 0.32
   body_rim: 0.16                 # less white Fresnel wash on clay

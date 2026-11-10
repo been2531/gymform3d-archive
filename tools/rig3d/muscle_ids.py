@@ -394,7 +394,7 @@ def write_glow_w(me, weights):
         ev = np.empty(len(me.edges) * 2, np.int64)
         me.edges.foreach_get("vertices", ev)
         ev = ev.reshape(-1, 2)
-        for _ in range(16):
+        for _ in range(2):
             w2 = w.copy()
             np.maximum.at(w2, ev[:, 0], w[ev[:, 1]])
             np.maximum.at(w2, ev[:, 1], w[ev[:, 0]])
@@ -773,28 +773,10 @@ def write_glow_attrs(me, weights, rgb):
     rgb = np.asarray(rgb, np.float32).copy()
     if rgb.ndim == 1:
         rgb = np.repeat(rgb.reshape(1, 3), len(weights), 0)
-    # After write_glow_w, seam/edge verts have high dilated weight but still
-    # hold the paint texture's black sample. Flood bright interior colour
-    # (trusted = high ORIGINAL weight and high luminance) onto those verts.
+    # Do not flood or palette-snap colour. UV-split twins share a location:
+    # copy the brighter sample so a seam vert does not stay black, but do
+    # not walk colour across the mesh.
     try:
-        ev = np.empty(len(me.edges) * 2, np.int64)
-        me.edges.foreach_get("vertices", ev)
-        ev = ev.reshape(-1, 2)
-        w_orig = np.asarray(weights, np.float32)
-        w_attr = me.color_attributes.get("glow_w")
-        w_dil = np.empty(len(me.vertices) * 4, np.float32)
-        w_attr.data.foreach_get("color", w_dil)
-        w_dil = w_dil.reshape(-1, 4)[:, 0]
-        lum = rgb @ np.array([0.2126, 0.7152, 0.0722], np.float32)
-        have = (w_orig > 0.65) & (lum > 0.22)
-        for _ in range(8):
-            a, b = ev[:, 0], ev[:, 1]
-            take = have[a] & ~have[b] & (w_dil[b] > 0.15)
-            rgb[b[take]] = rgb[a[take]]
-            have[b[take]] = True
-            take = have[b] & ~have[a] & (w_dil[a] > 0.15)
-            rgb[a[take]] = rgb[b[take]]
-            have[a[take]] = True
         lum = rgb @ np.array([0.2126, 0.7152, 0.0722], np.float32)
         co = np.empty(len(me.vertices) * 3, np.float32)
         me.vertices.foreach_get("co", co)
@@ -814,22 +796,6 @@ def write_glow_attrs(me, weights, rgb):
         ids = order[start:]
         if len(ids) > 1:
             rgb[ids] = rgb[ids[int(np.argmax(lum[ids]))]]
-    except Exception:
-        pass
-    try:
-        w_snap = np.empty(len(me.vertices) * 4, np.float32)
-        me.color_attributes["glow_w"].data.foreach_get("color", w_snap)
-        w_snap = w_snap.reshape(-1, 4)[:, 0]
-        palette = np.array([
-            hsv_to_lin_rgb(10, 200, 242),
-            hsv_to_lin_rgb(141, 220, 245),
-            hsv_to_lin_rgb(162, 240, 235),
-        ], dtype=np.float32)
-        lum = rgb @ np.array([0.2126, 0.7152, 0.0722], np.float32)
-        pick = (w_snap > 0.2) & (lum > 0.10)
-        if pick.any():
-            d = ((rgb[pick, None, :] - palette[None, :, :]) ** 2).sum(-1)
-            rgb[pick] = palette[d.argmin(1)]
     except Exception:
         pass
     col = np.zeros((len(weights), 4), np.float32)

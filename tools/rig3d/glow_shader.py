@@ -188,12 +188,14 @@ def attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min=0.58, tint_mix=
 def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix=0.12,
                          fibre_bump=0.22, rim=0.22, fibre_scale=72.0, body_rim=0.22,
                          fibre_line=0.45, opacity=0.94):
-    """Near-opaque per-muscle glow mixed over light clay.
+    """Per-muscle glow that keeps clay groove shading.
 
-    `glow_w` is a short-feathered solid (interior ~1). A Mix Shader replaces the
-    clay with Emission of baked `glow_rgb` so the sheet reads as solid demic
-    colour (clay shows only through thin brighter fibre ridges). A cool Fresnel
-    rim is added on the whole silhouette; Fog-Glow picks up the emission.
+    Colour = clay diffuse lighting without AO/cavity, times a peach (or
+    purple) tint, plus a modest emission. A Mix Shader that replaced the
+    clay with opaque emission flattened the muscle grain; we add emission
+    on top of the still-lit Principled BSDF instead. UV-seam holes are
+    filled in projection space (morph-close of the paint) and sampled via
+    `glow_proj`; colour is never flooded across the mesh.
     """
     _purge(nt)
     at = nt.nodes.new("ShaderNodeAttribute"); at.name = GF + "GLOWW"; at.attribute_name = "glow_w"
@@ -204,28 +206,20 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     inv = nt.nodes.new("ShaderNodeMath"); inv.name = GF + "INV"; inv.operation = "SUBTRACT"
     inv.inputs[0].default_value = 1.0
     nt.links.new(ash.outputs["Fac"], inv.inputs[1])
-    # Harden the projected vertex weight so the interior is a solid emission
-    # sheet: AO / cavity on the clay BSDF cannot show through as dark cracks.
-    hard = nt.nodes.new("ShaderNodeMapRange"); hard.name = GF + "GWHARD"
-    hard.clamp = True
-    hard.inputs["From Min"].default_value = 0.08
-    hard.inputs["From Max"].default_value = 0.40
-    hard.inputs["To Min"].default_value = 0.0
-    hard.inputs["To Max"].default_value = 1.0
-    nt.links.new(sep.outputs["Red"], hard.inputs["Value"])
     fac = nt.nodes.new("ShaderNodeMath"); fac.name = GF + "FAC"; fac.operation = "MULTIPLY"
-    nt.links.new(hard.outputs["Result"], fac.inputs[0])
+    nt.links.new(sep.outputs["Red"], fac.inputs[0])
     nt.links.new(inv.outputs["Value"], fac.inputs[1])
     _flex, stm = _flex_strength(nt, fac.outputs[0], 1.0, flex_min)
 
-    # Light tint on the remaining clay so a 6% mix does not flash grey at the rim
+    # Tint = clay albedo times the projected muscle colour (not a replace).
     tf = nt.nodes.new("ShaderNodeMath"); tf.name = GF + "TINTF"; tf.operation = "MULTIPLY"
-    nt.links.new(stm.outputs[0], tf.inputs[0]); tf.inputs[1].default_value = min(float(tint_mix), 0.45)
+    nt.links.new(stm.outputs[0], tf.inputs[0]); tf.inputs[1].default_value = float(tint_mix)
     clp = nt.nodes.new("ShaderNodeClamp"); clp.name = GF + "TCLP"
     clp.inputs["Min"].default_value = 0.0
     clp.inputs["Max"].default_value = 1.0
     nt.links.new(tf.outputs[0], clp.inputs["Value"])
     mixc = nt.nodes.new("ShaderNodeMix"); mixc.data_type = "RGBA"; mixc.name = GF + "TINT"
+    mixc.blend_type = "MULTIPLY"
     nt.links.new(clp.outputs[0], mixc.inputs[0])
     base_in = bsdf.inputs["Base Color"]
     if base_in.links:
@@ -279,15 +273,18 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
 
     em = nt.nodes.new("ShaderNodeEmission"); em.name = GF + "EM"
     nt.links.new(hot.outputs[2], em.inputs["Color"])
-    nt.links.new(ems.outputs[0], em.inputs["Strength"])
-
-    # Mix factor: glow_w * opacity (interior ~opacity, short feather at the edge)
+    # Additive emission gated by glow_w. `opacity` now scales emission (it
+    # used to be the Mix Shader factor that replaced the clay).
+    emg = nt.nodes.new("ShaderNodeMath"); emg.name = GF + "EMG"; emg.operation = "MULTIPLY"
+    nt.links.new(ems.outputs[0], emg.inputs[0])
+    nt.links.new(stm.outputs[0], emg.inputs[1])
     opm = nt.nodes.new("ShaderNodeMath"); opm.name = GF + "OPM"; opm.operation = "MULTIPLY"
-    nt.links.new(stm.outputs[0], opm.inputs[0]); opm.inputs[1].default_value = float(opacity)
-    mx = nt.nodes.new("ShaderNodeMixShader"); mx.name = GF + "MIXS"
-    nt.links.new(opm.outputs[0], mx.inputs[0])
-    nt.links.new(bsdf.outputs[0], mx.inputs[1])
-    nt.links.new(em.outputs[0], mx.inputs[2])
+    nt.links.new(emg.outputs[0], opm.inputs[0]); opm.inputs[1].default_value = float(opacity)
+    nt.links.new(opm.outputs[0], em.inputs["Strength"])
+
+    mx = nt.nodes.new("ShaderNodeAddShader"); mx.name = GF + "MIXADD"
+    nt.links.new(bsdf.outputs[0], mx.inputs[0])
+    nt.links.new(em.outputs[0], mx.inputs[1])
 
     lw = nt.nodes.new("ShaderNodeLayerWeight"); lw.name = GF + "LW"
     lw.inputs["Blend"].default_value = 0.48
@@ -346,11 +343,35 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     nt.links.new(fac.outputs[0], rgb.inputs["Green"])
     nt.links.new(fac.outputs[0], rgb.inputs["Blue"])
     nt.links.new(rgb.outputs["Color"], aov.inputs["Color"])
-    # Do not resample glow_proj through the mesh UV layer. Grab3D split verts
-    # and proj-UV seams punch CLIP-transparent holes that read as dark cracks.
-    # glow_w / glow_rgb are already baked from the same rest-camera projection
-    # and dilated across coincident verts in write_glow_w.
+    # Sample the (morph-closed) paint in projection space so UV-seam holes
+    # in the mask fill without flooding colour across muscles.
+    _bind_proj_texture(nt, ac, sep)
+    _exclude_ao_cavity_in_glow(nt, fac.outputs[0])
     return _flex
+
+
+def _exclude_ao_cavity_in_glow(nt, glow_fac_socket):
+    """Skip AO and cavity in the glow region so seam/groove cracks go away.
+
+    Normal-based shading stays on the Principled BSDF; only the extra
+    darkening that punched black lines through the emission is removed.
+    """
+    inv = nt.nodes.new("ShaderNodeMath"); inv.name = GF + "AOINV"; inv.operation = "SUBTRACT"
+    inv.inputs[0].default_value = 1.0
+    nt.links.new(glow_fac_socket, inv.inputs[1])
+    for name, tag in (("CLAY_AO_MIX", "AO"), ("CLAY_CAV_MIX", "CAV")):
+        n = nt.nodes.get(name)
+        if n is None:
+            continue
+        mul = nt.nodes.new("ShaderNodeMath"); mul.name = GF + tag + "FAC"; mul.operation = "MULTIPLY"
+        sock = n.inputs[0]
+        if sock.links:
+            nt.links.new(sock.links[0].from_socket, mul.inputs[0])
+            nt.links.remove(sock.links[0])
+        else:
+            mul.inputs[0].default_value = float(sock.default_value)
+        nt.links.new(inv.outputs[0], mul.inputs[1])
+        nt.links.new(mul.outputs[0], sock)
 
 
 def _bind_proj_texture(nt, ac, sep):
