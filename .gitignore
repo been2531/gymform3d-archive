@@ -24,3 +24,6 @@ _tmp_3d/
 # rig3d pipeline (Routinizer v2): work dirs + caches, never committed (results/ is)
 output/_rig3d/
 _cache_rig3d/
+
+# third-party base-model search downloads (never commit binaries)
+output/_basemodels/

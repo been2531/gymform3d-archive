@@ -22,6 +22,8 @@ ap.add_argument("--frames", default="all"); ap.add_argument("--checks-only", act
 ap.add_argument("--mask-only", action="store_true"); ap.add_argument("--res", default=None)
 ap.add_argument("--skip-existing", action="store_true", help="skip frames whose f_/m_ png already exists (crash recovery)")
 ap.add_argument("--camera-sheet", default=None, help="render an 8-camera contact sheet of the peak pose and exit")
+ap.add_argument("--cam-preview", action="store_true",
+                help="fit 4 yaw/elev candidates, render cheap peak stills, write metrics, exit")
 a = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:])
 C = json.load(open(a.cfg)); MO, RC = C["motion"], C["render"]
 def apply_form_offsets(mo):
@@ -783,7 +785,9 @@ try:
     import wrist_cuff as WCUFF
     WCUFF.flatten_wrist_cuffs(body, log)
     if hasattr(WCUFF, "flatten_ankle_cuffs"):
-        WCUFF.flatten_ankle_cuffs(body, log)
+        # Mask only on the source: dissolving here changes vert count and
+        # breaks the crease-weight cache / later shapekeys.
+        WCUFF.flatten_ankle_cuffs(body, log, dissolve=False)
 except Exception as _we:
     log(f"wrist cuff flatten skipped: {_we}")
 me = body.data; nv = len(me.vertices)
@@ -1341,7 +1345,7 @@ if WELDED is not None:
         import wrist_cuff as WCUFF
         if hasattr(WCUFF, "flatten_ankle_cuffs"):
             log("ankle cuff: re-flatten on welded render mesh")
-            WCUFF.flatten_ankle_cuffs(WELDED, log)
+            WCUFF.flatten_ankle_cuffs(WELDED, log, dissolve=True)
     except Exception as _ae:
         log(f"welded ankle flatten skipped: {_ae}")
 # ---- dumbbell ---------------------------------------------------------------------------------------------------------
@@ -1530,6 +1534,260 @@ pr = np.array([world_to_camera_view(sc, CAM, mu.Vector(p_.tolist()))[:2] for p_ 
 framing = {"x_min": round(float(pr[:, 0].min()), 3), "x_max": round(float(pr[:, 0].max()), 3), "y_top": round(float(1 - pr[:, 1].max()), 3),
            "y_feet": round(float(1 - pr[:, 1].min()), 3), "dist_m": round(Dd, 2), "lens": camd.lens}
 log(f"camera {framing}")
+
+def _eval_world_verts(obj, step=1):
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = obj.evaluated_get(dg)
+    mm = ev.to_mesh()
+    n = len(mm.vertices)
+    co = np.empty(n * 3, np.float64)
+    mm.vertices.foreach_get("co", co)
+    Mw = np.array(ev.matrix_world, dtype=np.float64)
+    ev.to_mesh_clear()
+    pts = co.reshape(-1, 3) @ Mw[:3, :3].T + Mw[:3, 3]
+    return pts[::max(1, int(step))]
+
+
+def _framing_point_sets():
+    """World-space must-include points and figure+bench fill points at the current frame."""
+    src = WELDED if WELDED is not None else body
+    body_pts = _eval_world_verts(src, step=6)
+    fill_bits = [body_pts]
+    for o in list(bpy.data.objects):
+        if o.type != "MESH" or o == src or o == db:
+            continue
+        nm = (o.name or "").lower()
+        if any(k in nm for k in ("bench", "pad", "seat", "frame")):
+            try:
+                fill_bits.append(_eval_world_verts(o, step=3))
+            except Exception:
+                pass
+    try:
+        db_pts = _eval_world_verts(db, step=1)
+    except Exception:
+        db_pts = np.array(db.matrix_world.translation).reshape(1, 3)
+    fill_bits.append(db_pts)
+
+    def _bone(name):
+        if name not in pb:
+            return None
+        return np.array(arm.matrix_world @ pb[name].head, dtype=np.float64)
+
+    extras = []
+    head = _bone("Head")
+    if head is not None:
+        extras.append(head)
+        for d in ((0, 0, 0.09), (0, 0.08, 0.02), (0, -0.05, 0.02),
+                  (0.06, 0, 0.02), (-0.06, 0, 0.02)):
+            extras.append(head + np.array(d, dtype=np.float64))
+    kn = _bone("LeftFoot")
+    if kn is not None:
+        extras.append(kn)
+    for tn in ("LeftToeBase", "LeftToe", "LeftFootToeBase"):
+        t = _bone(tn)
+        if t is not None:
+            extras.append(t)
+            extras.append(t + np.array((0.0, -0.04, 0.0)))
+            break
+    if kn is not None:
+        for d in ((0, -0.05, 0.0), (0.04, 0, 0.02), (-0.04, 0, 0.02), (0, 0, 0.04)):
+            extras.append(kn + np.array(d, dtype=np.float64))
+    must = np.vstack([np.stack(extras, 0), db_pts]) if extras else db_pts
+    fill = np.vstack(fill_bits)
+    return must, fill
+
+
+def _project_pts(pts):
+    ndc = np.array([world_to_camera_view(sc, CAM, mu.Vector(p.tolist()))
+                    for p in pts], dtype=np.float64)
+    return ndc
+
+
+def fit_yaw_elev_cam(yaw_deg, elev_deg, look, margin=0.03, lens=50.0):
+    """Smallest dist + centering shift that keeps figure+bench inside `margin`."""
+    look_v = [float(x) for x in look]
+    must, fill = _framing_point_sets()
+    asp = float(sc.render.resolution_y) / max(float(sc.render.resolution_x), 1.0)
+
+    def _place(dist, sx, sy):
+        apply_fixed_cam({
+            "yaw_back_deg": float(yaw_deg),
+            "elev_deg": float(elev_deg),
+            "dist_m": float(dist),
+            "look": look_v,
+            "lens_mm": float(lens),
+            "shift_x": float(sx),
+            "shift_y": float(sy),
+            "up": "world",
+        })
+
+    def _center_shift(dist):
+        _place(dist, 0.0, 0.0)
+        ndc = _project_pts(fill)
+        front = ndc[:, 2] > 1e-4
+        if int(front.sum()) < 8:
+            front = np.ones(len(ndc), dtype=bool)
+        xs, ys = ndc[front, 0], ndc[front, 1]
+        cx = 0.5 * (float(xs.min()) + float(xs.max()))
+        cy = 0.5 * (float(ys.min()) + float(ys.max()))
+        # VERTICAL sensor_fit: shift is in units of sensor height.
+        sx = (cx - 0.5) / max(asp, 1e-6)
+        sy = (cy - 0.5)
+        return sx, sy
+
+    def _metrics(dist, sx, sy):
+        _place(dist, sx, sy)
+        ndc_f = _project_pts(fill)
+        ndc_m = _project_pts(must)
+        ff = ndc_f[:, 2] > 1e-4
+        mm = ndc_m[:, 2] > 1e-4
+        if int(ff.sum()) < 8:
+            ff = np.ones(len(ndc_f), dtype=bool)
+        if int(mm.sum()) < 1:
+            mm = np.ones(len(ndc_m), dtype=bool)
+        xf, yf = ndc_f[ff, 0], ndc_f[ff, 1]
+        xm, ym = ndc_m[mm, 0], ndc_m[mm, 1]
+        info = {
+            "x_min": float(xf.min()), "x_max": float(xf.max()),
+            "y_min": float(yf.min()), "y_max": float(yf.max()),
+            "must_x_min": float(xm.min()), "must_x_max": float(xm.max()),
+            "must_y_min": float(ym.min()), "must_y_max": float(ym.max()),
+        }
+        info["fill_w"] = info["x_max"] - info["x_min"]
+        info["fill_h"] = info["y_max"] - info["y_min"]
+        info["margin_l"] = info["must_x_min"]
+        info["margin_r"] = 1.0 - info["must_x_max"]
+        info["margin_b"] = info["must_y_min"]
+        info["margin_t"] = 1.0 - info["must_y_max"]
+        # Also require the whole figure+bench to stay on frame.
+        info["ok"] = (
+            info["must_x_min"] >= margin - 1e-4 and
+            info["must_x_max"] <= 1.0 - margin + 1e-4 and
+            info["must_y_min"] >= margin - 1e-4 and
+            info["must_y_max"] <= 1.0 - margin + 1e-4 and
+            info["x_min"] >= 0.01 and info["x_max"] <= 0.99 and
+            info["y_min"] >= 0.01 and info["y_max"] <= 0.99
+        )
+        return info
+
+    lo, hi = 1.15, 5.20
+    best = None
+    for _ in range(22):
+        mid = 0.5 * (lo + hi)
+        sx, sy = _center_shift(mid)
+        met = _metrics(mid, sx, sy)
+        met.update({"dist_m": mid, "shift_x": sx, "shift_y": sy,
+                    "yaw_back_deg": float(yaw_deg), "elev_deg": float(elev_deg)})
+        if met["ok"]:
+            best = met
+            hi = mid
+        else:
+            lo = mid
+    if best is None:
+        sx, sy = _center_shift(hi)
+        best = _metrics(hi, sx, sy)
+        best.update({"dist_m": hi, "shift_x": sx, "shift_y": sy,
+                     "yaw_back_deg": float(yaw_deg), "elev_deg": float(elev_deg)})
+    # Snap onto the winning camera.
+    apply_fixed_cam({
+        "yaw_back_deg": float(yaw_deg), "elev_deg": float(elev_deg),
+        "dist_m": float(best["dist_m"]), "look": look_v, "lens_mm": float(lens),
+        "shift_x": float(best["shift_x"]), "shift_y": float(best["shift_y"]),
+        "up": "world",
+    })
+    best["look"] = [round(float(x), 3) for x in look_v]
+    best["dist_m"] = round(float(best["dist_m"]), 3)
+    best["shift_x"] = round(float(best["shift_x"]), 4)
+    best["shift_y"] = round(float(best["shift_y"]), 4)
+    for k in ("fill_w", "fill_h", "margin_l", "margin_r", "margin_b", "margin_t",
+              "x_min", "x_max", "y_min", "y_max"):
+        best[k] = round(float(best[k]), 4)
+    return best
+
+
+def dump_bone_proj(path):
+    """Projected peak-frame bone positions for sheet crops (NDC + pixels)."""
+    names = [
+        "Hips", "Spine", "Spine01", "Spine02", "Neck", "Head",
+        "LeftShoulder", "RightShoulder", "LeftArm", "RightArm",
+        "LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg",
+        "LeftFoot", "RightFoot", "LeftToeBase", "RightToeBase",
+        "LeftHand", "RightHand", "LeftForeArm", "RightForeArm",
+    ]
+    out = {"res": [int(sc.render.resolution_x), int(sc.render.resolution_y)],
+           "ndc": {}, "px": {}}
+    W, H = out["res"]
+    for n in names:
+        if n not in pb:
+            continue
+        w = arm.matrix_world @ pb[n].head
+        ndc = world_to_camera_view(sc, CAM, w)
+        out["ndc"][n] = [round(float(ndc.x), 4), round(float(ndc.y), 4),
+                         round(float(ndc.z), 4)]
+        out["px"][n] = [int(round(float(ndc.x) * W)),
+                        int(round((1.0 - float(ndc.y)) * H))]
+    try:
+        w = db.matrix_world.translation
+        ndc = world_to_camera_view(sc, CAM, w)
+        out["ndc"]["Dumbbell"] = [round(float(ndc.x), 4), round(float(ndc.y), 4),
+                                  round(float(ndc.z), 4)]
+        out["px"]["Dumbbell"] = [int(round(float(ndc.x) * W)),
+                                 int(round((1.0 - float(ndc.y)) * H))]
+    except Exception:
+        pass
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    json.dump(out, open(path, "w"), indent=2)
+    log(f"bone proj -> {path} n={len(out['px'])}")
+    return out
+
+
+def render_fitted_cam_previews(out_dir):
+    """Cheap peak stills of 4 foreshortening candidates, each fitted for fill."""
+    cands = [
+        {"yaw": 32, "elev": 32, "tag": "moderate 3/4"},
+        {"yaw": 40, "elev": 36, "tag": "stronger 3/4"},
+        {"yaw": 48, "elev": 38, "tag": "production 3/4"},
+        {"yaw": 42, "elev": 44, "tag": "higher elev"},
+    ]
+    look = list(CAMC.get("look") or [0.18, 0.20, 0.70])
+    peak_f = 25
+    try:
+        if AUTH_U is not None:
+            peak_f = int(np.argmax(AUTH_U)) + 1
+    except Exception:
+        pass
+    sc.frame_set(peak_f)
+    bpy.context.view_layer.update()
+    try:
+        update_regions(peak_f)
+    except Exception:
+        pass
+    os.makedirs(out_dir, exist_ok=True)
+    _orx, _ory = sc.render.resolution_x, sc.render.resolution_y
+    _ospp = int(getattr(sc.cycles, "samples", 8) or 8)
+    _oden = bool(getattr(sc.cycles, "use_denoising", False))
+    sc.render.resolution_x, sc.render.resolution_y = 540, 960
+    sc.cycles.samples = 8
+    sc.cycles.use_denoising = False
+    results = []
+    for c in cands:
+        met = fit_yaw_elev_cam(c["yaw"], c["elev"], look, margin=0.03)
+        met["tag"] = c["tag"]
+        path = os.path.join(out_dir, f"yaw{c['yaw']}_el{c['elev']}.png")
+        sc.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        met["path"] = path
+        results.append(met)
+        log(f"cam-preview yaw={c['yaw']} elev={c['elev']} dist={met['dist_m']} "
+            f"shift=({met['shift_x']},{met['shift_y']}) "
+            f"fill_w={met['fill_w']} fill_h={met['fill_h']} ok={met['ok']} "
+            f"must_m=({met['margin_l']},{met['margin_r']},{met['margin_b']},{met['margin_t']})")
+    sc.render.resolution_x, sc.render.resolution_y = _orx, _ory
+    sc.cycles.samples = _ospp
+    sc.cycles.use_denoising = _oden
+    json.dump(results, open(os.path.join(out_dir, "metrics.json"), "w"), indent=2)
+    return results
+
 def apply_fixed_cam(cfg_cam):
     look_v = mu.Vector([float(x) for x in (cfg_cam.get("look") or [0.18, 0.18, 0.78])])
     dist = float(cfg_cam.get("dist_m", 2.65))
@@ -2635,7 +2893,24 @@ if not a.mask_only:
                   open(a.out + "/render_time.json", "w"))
         print("CAMERA_SHEET_DONE", a.camera_sheet)
         sys.exit(0)
+    if getattr(a, "cam_preview", False):
+        t = time.time()
+        prev_dir = os.path.join(a.out, "_cam_preview")
+        results = render_fitted_cam_previews(prev_dir)
+        tim["cam_preview_s"] = round(time.time() - t, 1)
+        log(f"cam-preview {tim['cam_preview_s']} s -> {prev_dir}")
+        json.dump({**tim, "frames": 0, "res": [540, 960], "cam_preview": results},
+                  open(a.out + "/render_time.json", "w"))
+        print("CAM_PREVIEW_DONE", prev_dir)
+        sys.exit(0)
     t = time.time(); render_set("f"); tim["beauty_s"] = round(time.time() - t, 1); log(f"beauty {tim['beauty_s']} s")
+    try:
+        _pf = int(np.argmax(AUTH_U)) + 1 if AUTH_U is not None else (25 if 25 in frames else (frames[-1] if frames else 1))
+        sc.frame_set(_pf)
+        bpy.context.view_layer.update()
+        dump_bone_proj(os.path.join(a.out, "bone_proj.json"))
+    except Exception as _be:
+        log(f"bone proj dump skipped: {_be}")
     _proof = RC.get("camera_proof")
     if _proof:
         try:
