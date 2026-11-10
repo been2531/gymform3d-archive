@@ -380,6 +380,152 @@ def write_glow_w(me, weights):
     return float(w.mean()), int((w > 0.5).sum())
 
 
+# OpenCV HSV (H 0-179). Sampled from demicstory crops 2026-11-10 (output/_refs_color/crop_demic_*.jpg).
+# Shared fixed table: an exercise only names target_muscles (and may override a hue).
+DEFAULT_HUES = {
+    "lats":       {"h": 10,  "s": 200, "v": 242},
+    "rhomboids":  {"h": 141, "s": 220, "v": 245},
+    "mid_trap":   {"h": 141, "s": 220, "v": 245},
+    "upper_trap": {"h": 29,  "s": 140, "v": 248},
+    "rear_delt":  {"h": 162, "s": 240, "v": 235},
+    "side_delt":  {"h": 10,  "s": 210, "v": 235},
+    "front_delt": {"h": 10,  "s": 200, "v": 240},
+    "biceps":     {"h": 95,  "s": 180, "v": 230},
+    "triceps":    {"h": 22,  "s": 170, "v": 245},
+    "forearm":    {"h": 29,  "s": 140, "v": 240},
+    "pecs":       {"h": 66,  "s": 170, "v": 225},
+    "abs":        {"h": 66,  "s": 160, "v": 220},
+    "obliques":   {"h": 66,  "s": 150, "v": 210},
+    "glutes":     {"h": 10,  "s": 190, "v": 230},
+    "quads":      {"h": 95,  "s": 170, "v": 220},
+    "hams":       {"h": 141, "s": 180, "v": 220},
+    "calves":     {"h": 162, "s": 200, "v": 220},
+    "erectors":   {"h": 29,  "s": 150, "v": 245},
+}
+
+
+def hsv_to_lin_rgb(h, s, v):
+    """OpenCV HSV -> linear RGB triple for a Standard view-transform emission/tint."""
+    import colorsys
+    r, g, b = colorsys.hsv_to_rgb(float(h) / 180.0, float(s) / 255.0, float(v) / 255.0)
+
+    def _lin(c):
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    return (_lin(r), _lin(g), _lin(b))
+
+
+def _fill_interior_holes(inside, counts, idx, owners, rounds=4, frac=0.66):
+    """Fill small unclassified speckles surrounded by the ID. Does not grow the silhouette."""
+    ins = np.asarray(inside, dtype=bool).copy()
+    nv = int(ins.shape[0])
+    need = np.maximum(np.ceil(counts.astype(np.float32) * float(frac)).astype(np.int32), 1)
+    for _ in range(int(rounds)):
+        votes = np.zeros(nv, np.int32)
+        if len(idx):
+            np.add.at(votes, owners, ins[idx].astype(np.int32))
+        cand = (~ins) & (counts > 0) & (votes >= need)
+        if not cand.any():
+            break
+        ins[cand] = True
+    return ins
+
+
+def center_weight(mask, adj, erode_rings=0, power=1.2, fade_rings=4, blur_iters=2):
+    """Soft-edged sheet: graph-distance from the true ID exterior, then a short rim fade.
+
+    Interior holes in the ID (unclassified speckles) are not treated as exterior, so
+    they cannot punch Swiss-cheese gaps. Weight never grows into a neighbour ID.
+    A fixed fade (not per-component max-depth) keeps large bellies filled.
+    """
+    inside0 = np.asarray(mask, dtype=bool)
+    nv = int(inside0.shape[0])
+    w = np.zeros(nv, np.float32)
+    if not inside0.any():
+        return w
+    counts = np.array([len(a) for a in adj], np.int32)
+    parts = [a for a in adj if len(a)]
+    idx = np.concatenate(parts) if parts else np.zeros(0, np.int32)
+    owners = np.repeat(np.arange(nv, dtype=np.int32), counts)
+    filled = _fill_interior_holes(inside0, counts, idx, owners)
+    d = np.zeros(nv, np.int32)
+    reached = ~filled
+    for hop in range(1, 120):
+        flag = np.zeros(nv, np.int8)
+        if len(idx):
+            np.maximum.at(flag, owners, reached[idx].astype(np.int8))
+        nxt = (flag > 0) & (~reached) & filled
+        if not nxt.any():
+            break
+        d[nxt] = hop
+        reached |= nxt
+    fade = max(float(fade_rings), 1e-4)
+    raw = (d.astype(np.float32) - float(erode_rings)) / fade
+    w[filled] = np.clip(raw[filled], 0.0, 1.0)
+    if float(power) != 1.0:
+        pos = w > 0
+        w[pos] = np.power(w[pos], float(power))
+    for _ in range(int(blur_iters)):
+        sums = np.zeros(nv, np.float32)
+        if len(idx):
+            np.add.at(sums, owners, w[idx])
+        nbr = sums / np.maximum(counts.astype(np.float32), 1.0)
+        w = 0.45 * w + 0.55 * nbr
+        w[~filled] = 0.0
+    return np.clip(w, 0.0, 1.0)
+
+
+def write_glow_attrs(me, weights, rgb):
+    """Write `glow_w` and per-vertex linear `glow_rgb` (baked once on the rest mesh)."""
+    mean, n = write_glow_w(me, weights)
+    col = np.zeros((len(weights), 4), np.float32)
+    col[:, :3] = np.asarray(rgb, np.float32)
+    col[:, 3] = 1.0
+    va = me.color_attributes.get("glow_rgb")
+    if va is None:
+        va = me.color_attributes.new("glow_rgb", "FLOAT_COLOR", "POINT")
+    va.data.foreach_set("color", col.ravel())
+    me.update()
+    return mean, n
+
+
+def bake_target_glow(vert_id, names, targets, hues, strengths, adj, exclude=None, shorts=None,
+                     erode_rings=0, power=1.2, fade_rings=4):
+    """Once-per-mesh bake: per-target-ID centre weight + that ID's linear RGB."""
+    nv = len(vert_id)
+    name_i = {n: i for i, n in enumerate(names)}
+    tid = np.asarray(vert_id)
+    gw = np.zeros(nv, np.float32)
+    rgb = np.zeros((nv, 3), np.float32)
+    exclude = np.zeros(nv, dtype=bool) if exclude is None else np.asarray(exclude, dtype=bool)
+    if shorts is None:
+        sh = np.zeros(nv, dtype=bool)
+    else:
+        sh = np.asarray(shorts)
+        sh = sh if sh.dtype == bool else (sh > 0.5)
+    stats = {}
+    hues = hues or {}
+    strengths = strengths or {}
+    for name in targets:
+        if name not in name_i:
+            continue
+        mask = (tid == name_i[name]) & (~sh) & (~exclude)
+        wt = center_weight(mask, adj, erode_rings=erode_rings, power=power, fade_rings=fade_rings)
+        spec = hues.get(name) or DEFAULT_HUES.get(name)
+        if not spec:
+            continue
+        stren = float(strengths.get(name, spec.get("strength", 1.0) if isinstance(spec, dict) else 1.0))
+        col = hsv_to_lin_rgb(spec["h"], spec["s"], spec["v"])
+        wt = wt * stren
+        better = wt > gw
+        rgb[better] = col
+        gw = np.maximum(gw, wt)
+        stats[name] = int((wt > 0.5).sum())
+    gw[sh] = 0.0
+    gw[exclude] = 0.0
+    return gw, rgb, stats
+
+
 def cache_path(cache_dir, key):
     return os.path.join(cache_dir, f"muscle_ids_{key}.npz")
 

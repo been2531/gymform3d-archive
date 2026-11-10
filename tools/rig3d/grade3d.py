@@ -563,6 +563,10 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
     det_h = pal["wrong_h"] if is_wrong else pal["right_h"]
     green = detect_glow_mask(o, bodyb, target_h=det_h, h_tol=pal.get("h_tol", 14),
                              s_min=pal.get("s_min", 35), v_min=pal.get("v_min", 70))
+    if method == "NATIVE":
+        # per-muscle hues (orange/purple/magenta/...): any saturated body pixel, not one hue band
+        hsv_ = cv2.cvtColor(np.clip(o[..., ::-1], 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV)
+        green = (hsv_[..., 1] >= 40) & (hsv_[..., 2] >= 110) & bodyb & (shorts < 0.45)
     regd = cv2.dilate((reg_any > 0.15).astype(np.uint8), np.ones((25, 25), np.uint8)) > 0
     skin_q = bodyb & (shorts < 0.2) & (core_w < 0.03) & (L > 46) & (~green)
     far = (cv2.dilate((fg > 0.02).astype(np.uint8), np.ones((61, 61), np.uint8)) == 0); far[ty0 - 10:ty1 + 10] = False

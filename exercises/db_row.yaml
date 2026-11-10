@@ -68,7 +68,7 @@ render:
   albedo_detail: 0.0
   sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 1.0
+  glow_emission: 0.48
   hdri_strength: 0.0
   key_energy: 75
   fill_energy: 230
@@ -82,6 +82,12 @@ render:
   ao_distance: 0.14
   ao_amount: 0.38
   glow_blur_iters: 10
+  glow_erode_rings: 0
+  glow_fade_rings: 6
+  glow_center_power: 1.2
+  glow_tint: 0.50
+  glow_bloom: true
+  blender_bloom: 0.22
   glow_flex_min: 0.88
   base_color: [0.13, 0.131, 0.133]
   mask_spp: 4
@@ -99,10 +105,21 @@ grade:
   loops: 2                    # rep played N times
   detail_amount: 1.0          # unsharp detail pass on the body surface (sigma 1.6)
   detail_sigma: 1.6
-  palette: demic_peach        # default; selectable: green (legacy mint). Muscle glow is peach; green is UI-only.
-  backdrop_rgb: [40, 40, 41]  # charcoal V~40 (measured demic backdrop V~37-44)
+  palette: demic_peach        # legacy COMBO name; NATIVE uses muscle_hues below. Green is UI-only.
+  glow_method: NATIVE
+  backdrop_rgb: [38, 38, 38]
   target_muscles: [lats, rhomboids, mid_trap, rear_delt]
-  glow: right                 # peach on targets (correct form); compensators stay red when glow: wrong
+  muscle_hues:
+    lats: {h: 10, s: 200, v: 242}        # orange
+    rhomboids: {h: 141, s: 220, v: 245}  # purple
+    mid_trap: {h: 141, s: 220, v: 245}   # purple
+    rear_delt: {h: 162, s: 240, v: 235}  # magenta-pink
+  muscle_hue_strength:
+    lats: 1.0
+    rhomboids: 0.95
+    mid_trap: 0.95
+    rear_delt: 0.90
+  glow: right                 # coloured targets (correct form); UI ✓/✗ stay green/red
   look: clay                   # default (inherits _shared); override with charcoal to compare
   fibre_amount: 0.80
   bloom_amount: 0.38

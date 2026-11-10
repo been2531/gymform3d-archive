@@ -185,51 +185,64 @@ def attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min=0.58, tint_mix=
 
 
 
-def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88):
-    """Mix clay Principled with Emission via blurred `glow_w` (no procedural fibres).
+def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix=0.72):
+    """Tint the clay Principled toward baked `glow_rgb` and add modest emission.
 
-    Mix (not Add) so a weight of 1 displays as the measured peach rather than
-    clay-plus-peach. `glow_w` is a FLOAT_COLOR attribute (R = weight). Shorts
-    cancel the weight. A color-ramp eases the border so the glow feathers.
+    Weight comes from `glow_w` (centre-weighted per muscle ID, shorts cancelled).
+    The BSDF is kept so sculpt normals / lighting / AO still shade the muscle —
+    a Mix-to-pure-Emission read as flat painted skin.
     """
     _purge(nt)
     at = nt.nodes.new("ShaderNodeAttribute"); at.name = GF + "GLOWW"; at.attribute_name = "glow_w"
     sep = nt.nodes.new("ShaderNodeSeparateColor"); sep.name = GF + "GWSEP"
     nt.links.new(at.outputs["Color"], sep.inputs["Color"])
+    ac = nt.nodes.new("ShaderNodeAttribute"); ac.name = GF + "GLOWRGB"; ac.attribute_name = "glow_rgb"
     ash = nt.nodes.new("ShaderNodeAttribute"); ash.name = GF + "SHORTS"; ash.attribute_name = "shorts"
     inv = nt.nodes.new("ShaderNodeMath"); inv.name = GF + "INV"; inv.operation = "SUBTRACT"
     inv.inputs[0].default_value = 1.0
     nt.links.new(ash.outputs["Fac"], inv.inputs[1])
     fac = nt.nodes.new("ShaderNodeMath"); fac.name = GF + "FAC"; fac.operation = "MULTIPLY"
-    nt.links.new(sep.outputs["Red"], fac.inputs[0]); nt.links.new(inv.outputs["Value"], fac.inputs[1])
-    ramp = nt.nodes.new("ShaderNodeValToRGB"); ramp.name = GF + "FALL"
-    ramp.color_ramp.interpolation = "EASE"
-    ramp.color_ramp.elements[0].position = 0.02
-    ramp.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
-    ramp.color_ramp.elements[1].position = 0.88
-    ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
-    nt.links.new(fac.outputs["Value"], ramp.inputs["Fac"])
-    sep2 = nt.nodes.new("ShaderNodeSeparateColor"); sep2.name = GF + "FALLC"
-    nt.links.new(ramp.outputs["Color"], sep2.inputs["Color"])
-    _flex, stm = _flex_strength(nt, sep2.outputs["Red"], em_str, flex_min)
-    clp = nt.nodes.new("ShaderNodeClamp"); clp.name = GF + "CLP"
+    nt.links.new(sep.outputs["Red"], fac.inputs[0])
+    nt.links.new(inv.outputs["Value"], fac.inputs[1])
+    _flex, stm = _flex_strength(nt, fac.outputs[0], 1.0, flex_min)
+    tf = nt.nodes.new("ShaderNodeMath"); tf.name = GF + "TINTF"; tf.operation = "MULTIPLY"
+    nt.links.new(stm.outputs[0], tf.inputs[0]); tf.inputs[1].default_value = float(tint_mix)
+    clp = nt.nodes.new("ShaderNodeClamp"); clp.name = GF + "TCLP"
     clp.inputs["Min"].default_value = 0.0
     clp.inputs["Max"].default_value = 1.0
-    nt.links.new(stm.outputs["Value"], clp.inputs["Value"])
-    em = nt.nodes.new("ShaderNodeEmission"); em.name = GF + "EM"
-    em.inputs["Color"].default_value = tuple(em_col)
-    em.inputs["Strength"].default_value = 1.0
-    mixs = nt.nodes.new("ShaderNodeMixShader"); mixs.name = GF + "MIXS"
-    for lnk in list(mout.inputs["Surface"].links):
-        nt.links.remove(lnk)
-    nt.links.new(bsdf.outputs[0], mixs.inputs[1])
-    nt.links.new(em.outputs[0], mixs.inputs[2])
-    nt.links.new(clp.outputs[0], mixs.inputs[0])
-    nt.links.new(mixs.outputs[0], mout.inputs["Surface"])
+    nt.links.new(tf.outputs[0], clp.inputs["Value"])
+    mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"; mix.name = GF + "TINT"
+    nt.links.new(clp.outputs[0], mix.inputs[0])
+    base_in = bsdf.inputs["Base Color"]
+    if base_in.links:
+        nt.links.new(base_in.links[0].from_socket, mix.inputs[6])
+        nt.links.remove(base_in.links[0])
+    else:
+        mix.inputs[6].default_value = tuple(base_in.default_value)
+    nt.links.new(ac.outputs["Color"], mix.inputs[7])
+    nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"])
+    ao = nt.nodes.new("ShaderNodeAmbientOcclusion"); ao.name = GF + "AO"
+    ao.inputs["Distance"].default_value = 0.12
+    aom = nt.nodes.new("ShaderNodeMix"); aom.data_type = "RGBA"; aom.blend_type = "MULTIPLY"; aom.name = GF + "AOM"
+    aom.inputs[0].default_value = 0.28
+    nt.links.new(ac.outputs["Color"], aom.inputs[6])
+    nt.links.new(ao.outputs["Color"], aom.inputs[7])
+    if "Emission Color" in bsdf.inputs:
+        nt.links.new(aom.outputs[2], bsdf.inputs["Emission Color"])
+    ems = nt.nodes.new("ShaderNodeMath"); ems.name = GF + "EMS"; ems.operation = "MULTIPLY"
+    nt.links.new(stm.outputs[0], ems.inputs[0]); ems.inputs[1].default_value = float(em_str)
+    if "Emission Strength" in bsdf.inputs:
+        nt.links.new(ems.outputs[0], bsdf.inputs["Emission Strength"])
+    aov = nt.nodes.new("ShaderNodeOutputAOV"); aov.name = GF + "AOV"; aov.aov_name = "glow_mask"
+    rgb = nt.nodes.new("ShaderNodeCombineColor"); rgb.name = GF + "AOVRGB"
+    nt.links.new(fac.outputs[0], rgb.inputs["Red"])
+    nt.links.new(fac.outputs[0], rgb.inputs["Green"])
+    nt.links.new(fac.outputs[0], rgb.inputs["Blue"])
+    nt.links.new(rgb.outputs["Color"], aov.inputs["Color"])
     return _flex
 
 
-def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_scale=42.0):
+def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_scale=42.0, tint_mix=0.72):
     """(Re)attach GF_* glow nodes on every body material. Returns flex Value nodes."""
     flex_nodes = []
     for m_ in body_mats:
@@ -241,7 +254,7 @@ def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_sc
         elif backend == "tint":
             flex_nodes.append(attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min))
         elif backend in ("inscene", "native", "clay"):
-            flex_nodes.append(attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min))
+            flex_nodes.append(attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min, tint_mix=tint_mix))
         else:
             flex_nodes.append(attach_simple_emission(nt, bsdf, mout, em_col, em_str, flex_min))
     return flex_nodes
@@ -264,51 +277,90 @@ def _ensure_aov(sc, name="glow_mask"):
     vl.use_pass_emit = True
 
 
+def _cmp_mix(nt, blend, fac=1.0):
+    try:
+        n = nt.nodes.new("CompositorNodeMixRGB")
+    except Exception:
+        n = nt.nodes.new("ShaderNodeMixRGB")
+    n.blend_type = blend
+    n.inputs[0].default_value = float(fac)
+    return n
+
+
 def setup_compositor(sc, bloom_strength=0.60):
-    """Fog-glow the isolated emission and add it back. No bloom on skin / floor / prop."""
+    """Subtle Fog Glow on the glowing muscle only (beauty * glow_mask). Blender 4.2 + 5.x."""
     _ensure_aov(sc, "glow_mask")
-    ng = sc.compositing_node_group
-    if ng is None:
-        ng = __import__("bpy").data.node_groups.new("rig3d_cmp", "CompositorNodeTree")
-        sc.compositing_node_group = ng
-    nt = ng
+    sc.use_nodes = True
+    use_group = hasattr(sc, "compositing_node_group")
+    if use_group:
+        ng = sc.compositing_node_group
+        if ng is None:
+            ng = __import__("bpy").data.node_groups.new("rig3d_cmp", "CompositorNodeTree")
+            sc.compositing_node_group = ng
+        nt = ng
+    else:
+        nt = sc.node_tree
     for n in list(nt.nodes):
         nt.nodes.remove(n)
     rl = nt.nodes.new("CompositorNodeRLayers"); rl.location = (0, 0)
-    # Emission * glow_mask (extra clamp: only painted muscle verts bloom)
-    mul = nt.nodes.new("ShaderNodeMixRGB"); mul.name = "GF_MUL"; mul.blend_type = "MULTIPLY"; mul.inputs[0].default_value = 1.0
-    mul.location = (280, -80)
-    emit = rl.outputs.get("Emission") or rl.outputs["Image"]
+    # Isolate the painted muscle in the beauty (more reliable than the Emission pass).
+    mul = _cmp_mix(nt, "MULTIPLY", 1.0); mul.name = "GF_MUL"; mul.location = (280, -80)
+    img = rl.outputs["Image"]
     mask = rl.outputs.get("glow_mask") or rl.outputs["Image"]
-    nt.links.new(emit, mul.inputs[1]); nt.links.new(mask, mul.inputs[2])
+    nt.links.new(img, mul.inputs[1]); nt.links.new(mask, mul.inputs[2])
     gl = nt.nodes.new("CompositorNodeGlare"); gl.location = (520, -80)
     try:
-        gl.inputs["Type"].default_value = "Fog Glow"
+        gl.glare_type = "FOG_GLOW"
     except Exception:
-        pass
+        try:
+            gl.inputs["Type"].default_value = "Fog Glow"
+        except Exception:
+            pass
     try:
-        gl.inputs["Quality"].default_value = "High"
+        gl.quality = "HIGH"
     except Exception:
-        pass
-    gl.inputs["Threshold"].default_value = 0.12
-    gl.inputs["Strength"].default_value = float(bloom_strength)
-    if "Size" in gl.inputs:
-        gl.inputs["Size"].default_value = 0.70
-    if "Smoothness" in gl.inputs:
-        gl.inputs["Smoothness"].default_value = 0.18
+        try:
+            gl.inputs["Quality"].default_value = "High"
+        except Exception:
+            pass
+    try:
+        gl.threshold = 0.18
+    except Exception:
+        gl.inputs["Threshold"].default_value = 0.18
+    try:
+        gl.size = 7
+    except Exception:
+        if "Size" in gl.inputs:
+            gl.inputs["Size"].default_value = 0.70
+    try:
+        gl.mix = -1.0
+    except Exception:
+        if "Strength" in gl.inputs:
+            gl.inputs["Strength"].default_value = float(bloom_strength)
+    if "Smoothness" in getattr(gl, "inputs", {}):
+        try:
+            gl.inputs["Smoothness"].default_value = 0.18
+        except Exception:
+            pass
     nt.links.new(mul.outputs[0], gl.inputs["Image"])
     glow_out = gl.outputs.get("Glare") or gl.outputs["Image"]
-    add = nt.nodes.new("ShaderNodeMixRGB"); add.name = "GF_ADD"; add.blend_type = "ADD"; add.inputs[0].default_value = 1.0
-    add.location = (780, 40)
-    nt.links.new(rl.outputs["Image"], add.inputs[1]); nt.links.new(glow_out, add.inputs[2])
-    # Blender 5 compositor is a node group: the tree's Group Output Image socket is the write-out.
-    if hasattr(nt, "interface"):
+    fade = _cmp_mix(nt, "MIX", float(bloom_strength)); fade.name = "GF_FADE"; fade.location = (740, -80)
+    fade.inputs[1].default_value = (0.0, 0.0, 0.0, 1.0)
+    nt.links.new(glow_out, fade.inputs[2])
+    add = _cmp_mix(nt, "ADD", 1.0); add.name = "GF_ADD"; add.location = (960, 40)
+    nt.links.new(img, add.inputs[1]); nt.links.new(fade.outputs[0], add.inputs[2])
+    if use_group and hasattr(nt, "interface"):
         for item in list(getattr(nt.interface, "items_tree", []) or []):
-            try: nt.interface.remove(item)
-            except Exception: pass
+            try:
+                nt.interface.remove(item)
+            except Exception:
+                pass
         nt.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-    gout = nt.nodes.new("NodeGroupOutput"); gout.location = (1020, 40)
-    nt.links.new(add.outputs[0], gout.inputs[0])
+        gout = nt.nodes.new("NodeGroupOutput"); gout.location = (1200, 40)
+        nt.links.new(add.outputs[0], gout.inputs[0])
+    else:
+        comp = nt.nodes.new("CompositorNodeComposite"); comp.location = (1200, 40)
+        nt.links.new(add.outputs[0], comp.inputs["Image"])
     sc.render.use_compositing = True
     try:
         sc.render.use_sequencer = False

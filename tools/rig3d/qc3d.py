@@ -218,7 +218,7 @@ def run(run_dir, cfg):
         mn = min(fv) if fv else None
         out.append(ck("glow_fibre_contrast", None if mn is None else round(float(mn), 2),
                       f">= {Q['glow_fibre_hp_min']}", bool(fv) and mn >= Q["glow_fibre_hp_min"], None, "look"))
-    if Q.get("glow_hue") or Q.get("glow_sat") or (cfg.get("grade") or {}).get("palette"):
+    if (not _native) and (Q.get("glow_hue") or Q.get("glow_sat") or (cfg.get("grade") or {}).get("palette")):
         hues = [f.get("glow_hue_p50") for f in L if f.get("glow_hue_p50") is not None]
         sats = [f.get("glow_sat_p50") for f in L if f.get("glow_sat_p50") is not None]
         hlim = Q.get("glow_hue"); slim = Q.get("glow_sat")
@@ -298,8 +298,14 @@ def run(run_dir, cfg):
             from grade3d import detect_glow_mask, resolve_palette
             _pal = resolve_palette(cfg.get("grade") or {})
             _th = _pal["wrong_h"] if (cfg.get("grade") or {}).get("glow") == "wrong" else _pal["right_h"]
-            green = detect_glow_mask(rgb, body, target_h=_th, h_tol=_pal.get("h_tol", 14),
-                                     s_min=_pal.get("s_min", 35), v_min=_pal.get("v_min", 70))
+            _gm = str((cfg.get("grade") or {}).get("glow_method") or "").upper()
+            if _gm in ("NATIVE", "INSCENE", "BLENDER_CLAY", "SCENE", "LOOK"):
+                import cv2 as _cv
+                _hsv = _cv.cvtColor(np.clip(rgb, 0, 255).astype("uint8"), _cv.COLOR_RGB2HSV)
+                green = (_hsv[..., 1] >= 40) & (_hsv[..., 2] >= 110) & body
+            else:
+                green = detect_glow_mask(rgb, body, target_h=_th, h_tol=_pal.get("h_tol", 14),
+                                         s_min=_pal.get("s_min", 35), v_min=_pal.get("v_min", 70))
             tgts = list((cfg.get("grade") or {}).get("target_muscles") or ["lats", "rhomboids", "mid_trap", "rear_delt"])
             tids = [NAME_TO_ID[n] for n in tgts if n in NAME_TO_ID]
             back_ids = [NAME_TO_ID[n] for n in ("lats", "rhomboids", "mid_trap") if n in NAME_TO_ID]
@@ -336,9 +342,15 @@ def run(run_dir, cfg):
         from grade3d import detect_glow_mask, resolve_palette
         _pal = resolve_palette(cfg.get("grade") or {})
         _th = _pal["wrong_h"] if (cfg.get("grade") or {}).get("glow") == "wrong" else _pal["right_h"]
-        green = detect_glow_mask(np.stack([R, Gc, B], -1), None, target_h=_th,
-                                 h_tol=_pal.get("h_tol", 14), s_min=_pal.get("s_min", 35),
-                                 v_min=_pal.get("v_min", 70))
+        _gm = str((cfg.get("grade") or {}).get("glow_method") or "").upper()
+        if _gm in ("NATIVE", "INSCENE", "BLENDER_CLAY", "SCENE", "LOOK"):
+            import cv2 as _cv
+            _hsv = _cv.cvtColor(np.clip(np.stack([R, Gc, B], -1), 0, 255).astype("uint8"), _cv.COLOR_RGB2HSV)
+            green = (_hsv[..., 1] >= 40) & (_hsv[..., 2] >= 110)
+        else:
+            green = detect_glow_mask(np.stack([R, Gc, B], -1), None, target_h=_th,
+                                     h_tol=_pal.get("h_tol", 14), s_min=_pal.get("s_min", 35),
+                                     v_min=_pal.get("v_min", 70))
         if f.get("glow_largest_cc_frac") is None:
             _n, lab = cv2.connectedComponents(green.astype(np.uint8), connectivity=8)
             sizes = np.bincount(lab.ravel()); sizes = sizes[1:] if len(sizes) > 1 else np.array([0])
