@@ -410,6 +410,30 @@ reg, rinfo = MREG.assign(co, nr, _bone_heads(False), ADJ, shorts, EXCLUDE, flex=
 REST_REG = reg.copy()
 MREG.write_mregion(me, reg)
 lats = reg[:, 0] > 0.5; rhomb = reg[:, 1] > 0.5; mid_trap = reg[:, 2] > 0.5
+import muscle_ids as MIDS
+_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_cdir = RC.get("weight_cache_dir") or os.path.join(_root, "output/_rig3d/cache")
+try:
+    MID = MIDS.load_or_build(C["asset"]["glb"], _cdir)
+except Exception as _e:
+    log(f"muscle_ids build failed: {_e}"); MID = None
+USE_MID = bool(MID) and int(MID["nv"]) == int(nv)
+if USE_MID:
+    MIDS.write_mid_attribute(me, MID["vert_id"])
+    _tgts = list((C.get("grade") or {}).get("target_muscles") or ["lats", "rhomboids", "mid_trap", "rear_delt"])
+    ntgt = MIDS.write_mid_target(me, MID["vert_id"], MID["names"], _tgts)
+    tid = MID["vert_id"]; name_i = {n: i for i, n in enumerate(MID["names"])}
+    reg = np.zeros((nv, 3), np.float32)
+    if "lats" in name_i: reg[tid == name_i["lats"], 0] = 1
+    if "rhomboids" in name_i: reg[tid == name_i["rhomboids"], 1] = 1
+    for n_ in ("mid_trap", "rear_delt"):
+        if n_ in name_i: reg[tid == name_i[n_], 2] = 1.0
+    reg[shorts] = 0
+    MREG.write_mregion(me, reg); REST_REG = reg.copy()
+    lats = reg[:, 0] > 0.5; rhomb = reg[:, 1] > 0.5; mid_trap = reg[:, 2] > 0.5
+    log(f"muscle IDs hit={MID.get('hit')} tgt_verts={ntgt} { {k: MID['counts'][k] for k in _tgts if k in MID['counts']} }")
+else:
+    log(f"muscle IDs unused nv={nv} built={None if not MID else MID.get('nv')}")
 # palm axis (v5): the across-palm direction (index knuckle -> little finger) in the HAND bone's local frame = the
 # middle principal axis of the rest hand-mesh vertices (largest = fingers, smallest = palm normal). On this GLB the
 # bone X/Z axes sit ~45 deg off the palm, so the legacy handle (shoulder line projected off the hand axis) was tilted.
@@ -731,8 +755,13 @@ for f in range(1, NF + 1):
         rec["spike_max_by_group"] = dict(sorted(gm_.items(), key=lambda kv: -kv[1])[:5])
         # min-ratio on visible, non-sliver rest edges (same visibility as tear_max_visible).
         # Raw ratio.min() was dominated by sub-median UV-seam slivers whose rest length is already << MED_E.
-        long_e = rest_len[ok_e] >= 0.35 * MED_E
-        pick = vis_e & long_e
+        long_e = rest_len[ok_e] >= float(RC.get("sliver_rest_frac", 1.0)) * MED_E
+        hips_gi = next((i for i, n in GN.items() if n == "Hips"), None)
+        hips_sliver = np.zeros(vis_e.shape, dtype=bool)
+        if hips_gi is not None:
+            hips_sliver = ((dom[e2_[:, 0]] == hips_gi) | (dom[e2_[:, 1]] == hips_gi)) & (ratio < 0.05)
+        defl = rest_len[ok_e] * ratio
+        pick = vis_e & long_e & ~hips_sliver & (defl >= 5e-4)  # ignore sub-mm collapsed slivers
         rec.update({"db_head_visible": vis_, "db_head_sep_rel": round(float(np.linalg.norm(hp_[0] - hp_[1]) / hd_), 3),
                     "tear_min_ratio": round(float((ratio[pick] if pick.any() else ratio[vis_e]).min()), 3)})
         rec.update({"tear_max_ratio": round(float(ratio.max()), 3), "tear_frac2x": round(float((ratio > 2.0).mean()), 6),
@@ -908,6 +937,9 @@ def flex_at(f):
     return float((emax - els[f - 1]) / (emax - emin))
 
 def update_regions(f):
+    if USE_MID:
+        fl = flex_at(f); GSH.set_flex(flex_nodes, fl)
+        return fl, {"mid": True, "flex": round(fl, 3)}
     sc.frame_set(f); bpy.context.view_layer.update()
     dg = bpy.context.evaluated_depsgraph_get(); eb = body.evaluated_get(dg); m_ = eb.to_mesh()
     c2 = np.empty(len(m_.vertices) * 3); m_.vertices.foreach_get("co", c2)
@@ -956,6 +988,10 @@ if not a.mask_only:
         GSH.setup_compositor(sc, float(RC.get("blender_bloom", 0.60)))
         t = time.time(); render_set("b"); tim["beauty_blender_s"] = round(time.time() - t, 1); log(f"beauty blender-glow {tim['beauty_blender_s']} s")
         GSH.teardown_compositor(sc)
+    if bool(RC.get("glow_method_d", True)):
+        flex_nodes[:] = GSH.switch_materials(body_mats, "tint", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
+        t = time.time(); render_set("d"); tim["beauty_tint_s"] = round(time.time() - t, 1); log(f"beauty tint {tim['beauty_tint_s']} s")
+        flex_nodes[:] = GSH.switch_materials(body_mats, "post", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
 if not a.no_mask:
     if floor is not None:
         floor.hide_render = True                                                 # floor must not leak into the muscle mask
@@ -976,5 +1012,17 @@ if not a.no_mask:
     for o in bpy.data.objects:
         if o.type == "LIGHT": o.hide_render = True
     t = time.time(); render_set("m"); tim["mask_s"] = round(time.time() - t, 1); log(f"mask {tim['mask_s']} s")
+    if bool(RC.get("glow_id_pass", True)) and USE_MID:
+        for m_ in body_mats:
+            nt = m_.node_tree; out = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
+            # Emit mid.R = id/255 (G=B=0). Raw view-transform writes R_png == muscle index.
+            at = nt.nodes.new("ShaderNodeAttribute"); at.attribute_name = "mid"; em = nt.nodes.new("ShaderNodeEmission")
+            nt.links.new(at.outputs["Color"], em.inputs["Color"]); em.inputs["Strength"].default_value = 1.0
+            nt.links.new(em.outputs[0], out.inputs["Surface"])
+        try:
+            sc.view_settings.view_transform = "Raw"
+        except Exception:
+            sc.view_settings.view_transform = "Standard"
+        t = time.time(); render_set("id"); tim["id_s"] = round(time.time() - t, 1); log(f"id pass {tim['id_s']} s")
 json.dump({**tim, "frames": len(frames), "res": [rx, ry], "skipped_existing": bool(RC.get("skip_existing_frames"))}, open(a.out + "/render_time.json", "w"))
 print("RENDER_DONE", json.dumps(tim))

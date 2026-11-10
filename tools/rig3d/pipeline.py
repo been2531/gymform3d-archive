@@ -142,7 +142,7 @@ class Run:
     def s_render(self, rep):
         gate(self.args, "render"); d = self.p("render"); os.makedirs(d, exist_ok=True)
         intent = hsh(self.cfg.get("motion"), self.cfg.get("render"), self.cfg.get("asset"), rep, getattr(self.args, "short", 0),
-                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"), fsha("tools/rig3d/muscle_regions.py"), fsha("tools/rig3d/glow_shader.py"))
+                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"), fsha("tools/rig3d/muscle_regions.py"), fsha("tools/rig3d/glow_shader.py"), fsha("tools/rig3d/muscle_ids.py"), fsha("tools/rig3d/muscle_activation.py"))
         marker = os.path.join(d, "render_intent.txt")
         skip_existing = os.path.exists(marker) and open(marker).read().strip() == intent
         if not skip_existing:

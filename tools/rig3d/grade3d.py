@@ -198,7 +198,43 @@ def add_grounding_reflection(out, body, floor_m, fy):
     sl[:] = sl * (1.0 - w[..., None]) + refl * w[..., None]
     return out
 
-def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
+def _id_decode(id_img, size):
+    from muscle_ids import decode_id_image
+    im = id_img[..., :3] if id_img.shape[-1] >= 3 else id_img
+    im = cv2.resize(im, size, interpolation=cv2.INTER_NEAREST)
+    return decode_id_image(im)
+
+def _muscle_seams(id_im, body):
+    seams = np.zeros(id_im.shape, dtype=bool)
+    for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        sh = np.roll(np.roll(id_im, dy, 0), dx, 1)
+        seams |= (id_im != sh) & (id_im > 0) & (sh > 0)
+    return seams & (body > 0.5)
+
+def _apply_seams(rgb, seams, strength=0.28):
+    """Darken muscle-muscle borders but keep them just green enough that CC does not split."""
+    if not np.any(seams):
+        return rgb
+    out = rgb.copy()
+    out[seams] = out[seams] * (1.0 - strength)
+    g, r, b = out[..., 1], out[..., 0], out[..., 2]
+    gdom = g - np.maximum(r, b)
+    need = seams & (gdom < 34.0)
+    lift = (34.0 - gdom) * need.astype(np.float32)
+    out[..., 1] = np.clip(g + lift, 0, 255)
+    out[..., 0] = np.clip(r + 0.16 * lift, 0, 255)
+    out[..., 2] = np.clip(b + 0.40 * lift, 0, 255)
+    return out
+
+def _id_weight_map(id_im, weights, nnames=19):
+    w = np.zeros(nnames, np.float32)
+    from muscle_ids import NAME_TO_ID, MUSCLE_NAMES
+    for n, v in (weights or {}).items():
+        if n in NAME_TO_ID:
+            w[NAME_TO_ID[n]] = float(v)
+    return w[np.clip(id_im, 0, nnames - 1)]
+
+def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_img=None, flex=None):
     G = cfg["grade"]; W, H = G["out_res"]
     b = cv2.resize(beauty, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
     m = cv2.resize(mask, (W, H), interpolation=cv2.INTER_LINEAR).astype(np.float32)
@@ -208,6 +244,24 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     garment = np.clip((regs.min(-1) - 0.35) / 0.3, 0, 1) * body       # briefs mesh: emission white in the mask pass
     regs = regs * (1 - garment[..., None]) * (regs.max(-1, keepdims=True) - regs.min(-1, keepdims=True) > 0.25)
     reg_any = np.clip(regs.max(-1), 0, 1) * body
+    id_im = None; seams = None; tids = []
+    if id_img is not None:
+        try:
+            from muscle_ids import NAME_TO_ID
+            id_im = _id_decode(id_img, (W, H))
+            targets = list(G.get("target_muscles") or ["lats", "rhomboids", "mid_trap", "rear_delt"])
+            tids = [NAME_TO_ID[n] for n in targets if n in NAME_TO_ID]
+            tgt = np.isin(id_im, tids).astype(np.float32) * body * (1.0 - garment)
+            regs = np.zeros_like(regs)
+            for i, n in enumerate(("lats", "rhomboids", "mid_trap")):
+                if n in NAME_TO_ID:
+                    regs[..., i] = (id_im == NAME_TO_ID[n]).astype(np.float32) * body
+            if "rear_delt" in NAME_TO_ID:
+                regs[..., 2] = np.maximum(regs[..., 2], (id_im == NAME_TO_ID["rear_delt"]).astype(np.float32) * body)
+            reg_any = np.clip(tgt, 0, 1)
+            seams = _muscle_seams(id_im, body)
+        except Exception as _e:
+            print("id decode:", _e); id_im = None
     lum = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
     da = float(G.get("detail_amount", 0.0))
     if da > 0:   # detail pass: unsharp mask of the render's own surface (fibre / sculpt relief), body only
@@ -238,27 +292,104 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     if emit_keep > 0:
         base = base * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
     glow_src = str(G.get("glow_source", "post")).lower()
-    if glow_src == "blender":
-        # Beauty already has per-muscle fibre emission + compositor bloom. Keep it.
+    method = str(G.get("glow_method") or ("D" if glow_src == "blender" else "A")).upper()
+    flex_v = float(flex) if flex is not None else float(fi / max(n, 1))
+    flex_v = float(np.clip(flex_v, 0.0, 1.0))
+    flex_min = float(G.get("glow_flex_min", 0.58))
+    flex_w = flex_min + (1.0 - flex_min) * flex_v
+    hue = 52.0 if G.get("glow", "right") == "wrong" else 74.0
+    if method == "H" and id_im is not None:
+        from muscle_activation import COMPENSATORS
+        from muscle_ids import NAME_TO_ID
+        ct = [NAME_TO_ID[n] for n in COMPENSATORS if n in NAME_TO_ID]
+        reg_any = np.isin(id_im, ct).astype(np.float32) * body * (1.0 - np.clip(shorts, 0, 1))
+        rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
+        hue = 8.0  # OpenCV red — project "wrong" hue 52 still reads green-yellow
+    if method in ("E", "X") and id_im is not None and G.get("muscle_activation"):
+        fac = 0.20 + 0.80 * _id_weight_map(id_im, G.get("muscle_activation"))
+        reg_any = np.clip(reg_any * fac, 0, 1)
+        rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
+    if method == "F" and id_im is not None:
+        from muscle_activation import flow_weights, FLOW_CHAIN
+        from muscle_ids import NAME_TO_ID
+        pflow = G.get("flow_progress")
+        pflow = float(pflow) if pflow is not None else (0.12 + 0.88 * flex_v)
+        fw = flow_weights(pflow)
+        cids = [NAME_TO_ID[n] for n in FLOW_CHAIN if n in NAME_TO_ID]
+        reg_any = np.isin(id_im, cids).astype(np.float32) * body * (1.0 - np.clip(shorts, 0, 1))
+        reg_any = np.clip(reg_any * _id_weight_map(id_im, fw), 0, 1)
+        rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
+    if method == "D" or glow_src == "blender":
         fibre_amt = 0.0
         bloom_amt = 0.0
-        emit_keep = float(G.get("emission_keep_blender", 0.90))
+        emit_keep = float(G.get("emission_keep_blender", 0.88))
         base = base * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
         graded = base
         core_w = cv2.GaussianBlur(reg_any, (0, 0), 1.2)
         graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
-                               target_h=52.0 if G.get("glow", "right") == "wrong" else 74.0,
-                               target_s=196.0, sat_mix=0.55)
-    else:
-        fibre_amt = float(G.get("fibre_amount", 0.80))
+                               target_h=hue, target_s=196.0, sat_mix=0.50)
+        graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, 0.16 * flex_w)
+    elif method == "B":
+        # Translucent X-ray: dim the rest of the body, emissive fibres on targets.
+        dim = body * (1.0 - np.clip(reg_any, 0, 1))
+        base = base * (1.0 - 0.55 * dim)[..., None]
+        fibre_amt = 0.58 * (0.82 + 0.18 * flex_w)
         F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
-        graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", fi / max(n, 1))
+        graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", flex_v)
+        graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
+        graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0], reg_any, shorts)
+        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)), target_h=hue, target_s=196.0, sat_mix=0.78)
+        graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, 0.28 * flex_w)
+    elif method == "C":
+        tgt = ((reg_any > 0.35) & (shorts < 0.25)).astype(np.uint8)
+        er = cv2.erode(tgt, np.ones((3, 3), np.uint8))
+        di = cv2.dilate(tgt, np.ones((5, 5), np.uint8))
+        outline = ((di > 0) & (tgt == 0)).astype(np.float32)
+        outline = cv2.GaussianBlur(outline, (0, 0), 0.9)
+        dist = cv2.distanceTransform(tgt, cv2.DIST_L2, 5)
+        grad = np.zeros_like(dist, np.float32)
+        if float(dist.max()) > 0:
+            grad = np.power(dist / float(dist.max()), 0.62)
+        neon = np.array([32.0, 245.0, 130.0], np.float32)
+        g = grad * (1.0 - shorts) * body
+        graded = base * (1.0 - 0.48 * g)[..., None] + (base * 0.40 + neon * 0.60) * (0.48 * g * flex_w)[..., None]
+        fibre_amt = 0.28
+        F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
+        graded_full, core_w = gm.day4_fibre(F, graded, body, shorts, G.get("glow", "right") == "wrong", flex_v)
+        graded = graded * (1.0 - fibre_amt) + graded_full * fibre_amt
+        graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0] * 0.65, reg_any, shorts)
+        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts) * 0.65), target_h=hue, target_s=200.0, sat_mix=0.70)
+        graded = graded * (1.0 - 0.88 * outline)[..., None] + neon * (0.88 * outline * (0.75 + 0.25 * flex_w))[..., None]
+        graded = muscle_bloom(graded, outline + reg_any * (1.0 - shorts), body, 0.22 * flex_w)
+    else:
+        fibre_amt = float(G.get("fibre_amount", 0.80)) * (0.86 + 0.14 * flex_w)
+        F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
+        graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", flex_v)
         graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
         graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0], reg_any, shorts)
         graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
-                               target_h=52.0 if G.get("glow", "right") == "wrong" else 74.0,
-                               target_s=196.0, sat_mix=0.82)
-        graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.38)))
+                               target_h=hue, target_s=196.0, sat_mix=0.82)
+        graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.38)) * flex_w)
+    if method in ("G", "X"):
+        phase = float(G.get("pulse_phase", flex_v * 6.283185307179586))
+        yy = np.arange(graded.shape[0], dtype=np.float32)[:, None]
+        xx = np.arange(graded.shape[1], dtype=np.float32)[None, :]
+        shimmer = 0.82 + 0.18 * np.sin(phase + 0.042 * xx + 0.088 * yy)
+        glow = graded - base
+        graded = base + glow * shimmer[..., None]
+    if method in ("I", "X"):
+        tgt = ((reg_any > 0.30) & (shorts < 0.25))
+        er = cv2.erode(tgt.astype(np.uint8), np.ones((5, 5), np.uint8))
+        di = cv2.dilate(tgt.astype(np.uint8), np.ones((5, 5), np.uint8))
+        rim = cv2.GaussianBlur(((di > 0) & (er == 0)).astype(np.float32), (0, 0), 1.15)
+        gx = cv2.Sobel(src_l, cv2.CV_32F, 1, 0, ksize=3); gy = cv2.Sobel(src_l, cv2.CV_32F, 0, 1, ksize=3)
+        fres = np.clip(np.hypot(gx, gy) / 42.0, 0, 1) * tgt.astype(np.float32)
+        interior = (er > 0).astype(np.float32)
+        keep = np.clip(0.52 * interior + 1.05 * rim + 0.40 * fres, 0, 1.15)
+        glow = graded - base
+        graded = base + glow * keep[..., None]
+    if seams is not None:
+        graded = _apply_seams(graded, seams, 0.28)
     sm = shorts > 0.45
     if np.any(sm):                                          # QC: 0 green pixels on the briefs
         graded[sm] = mono[sm]
@@ -360,6 +491,17 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     st["overlay_fig_px"] = {k: int((fg[ui[k][1]:ui[k][3] + 1, ui[k][0]:ui[k][2] + 1] > 0.5).sum()) for k in ("title", "pill") if k in ui}
     if "callout" in ui:
         c_ = ui["callout"]["text_box"]; st["callout_fig_overlap"] = round(float((fig[c_[1]:c_[3], c_[0]:c_[2]]).mean()), 4)
+    st["glow_method"] = method
+    if id_im is not None and tids:
+        on_tgt = np.isin(id_im, tids)
+        st["nontarget_glow_frac"] = round(float((green & (~on_tgt) & (id_im > 0)).sum() / max(int(green.sum()), 1)), 4)
+        st["target_glow_frac"] = round(float((green & on_tgt).sum() / max(int(green.sum()), 1)), 4)
+        if seams is not None and seams.any():
+            interior = cv2.erode(((reg_any > 0.35) & (shorts < 0.25)).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+            if interior.any():
+                st["seam_luma"] = round(float(L[seams].mean()), 1)
+                st["interior_luma"] = round(float(L[interior].mean()), 1)
+                st["seam_delta"] = round(float(L[interior].mean() - L[seams].mean()), 2)
     return out8, st
 
 def draw_torso_callout(rgb8, shorts, kp, cfg):
@@ -419,29 +561,57 @@ def make_icons(graded_rgb, bbox):
 def main():
     t0 = time.time()
     rdir, odir, cfgp = sys.argv[1:4]; prefix = sys.argv[4] if len(sys.argv) > 4 else "f"
+    method_arg = sys.argv[5] if len(sys.argv) > 5 else None
     cfg = json.load(open(cfgp)); os.makedirs(odir, exist_ok=True)
+    cfg = dict(cfg); cfg["grade"] = dict(cfg.get("grade") or {})
+    if method_arg:
+        cfg["grade"]["glow_method"] = method_arg
+    method_u = str(cfg["grade"].get("glow_method") or "A").upper()
     if prefix == "b":
-        cfg = dict(cfg); cfg["grade"] = dict(cfg.get("grade") or {}); cfg["grade"]["glow_source"] = "blender"
+        cfg["grade"]["glow_source"] = "blender"
+    if method_u == "D" or prefix == "d":
+        dfr = sorted(glob.glob(os.path.join(rdir, "d_*.png")))
+        if dfr:
+            prefix = "d"
+        cfg["grade"]["glow_method"] = "D"
+        cfg["grade"]["glow_source"] = "blender"
     cv2.setNumThreads(2)
     fr = sorted(glob.glob(os.path.join(rdir, f"{prefix}_*.png"))); stats = []
     CH = json.load(open(os.path.join(rdir, "checks.json"))); R = CH["frames"]; KPW = (CH.get("kp_res") or [None])[0]; KP = {r_["f"]: r_.get("kp2d") for r_ in R}
+    els = {int(r_["f"]): float(r_["elbow_deg"]) for r_ in R}
+    emin, emax = (min(els.values()), max(els.values())) if els else (0.0, 1.0)
+    flex_map = {f: ((emax - e) / (emax - emin) if emax - emin > 1e-3 else 0.0) for f, e in els.items()}
+    act_map = {}
+    bp = os.path.join(rdir, "bones.npz")
+    if os.path.exists(bp):
+        try:
+            from muscle_activation import activations_for_clip
+            act_map, _ = activations_for_clip(bp)
+        except Exception as _e:
+            print("activation:", _e)
     tor = np.array([r_["torso_deg"] for r_ in R]); shown = int(round(float(np.median(tor))))
     pf = R[int(np.argmin([r_["elbow_deg"] for r_ in R]))]["f"]          # peak frame number (1-based)
     nums = [int(os.path.basename(q)[2:6]) for q in fr]; peak = int(np.argmin([abs(n_ - pf) for n_ in nums]))
     icons = None
     if cfg.get("layout", {}).get("preview_pill"):
-        fp = fr[peak]; b0 = cv2.imread(fp, cv2.IMREAD_UNCHANGED); g0, st0 = grade_frame(b0, cv2.imread(fp.replace("/f_", "/m_"), cv2.IMREAD_UNCHANGED), cfg, peak, len(fr), ui_on=False)
+        fp = fr[peak]; b0 = cv2.imread(fp, cv2.IMREAD_UNCHANGED)
+        mp0 = fp.replace(f"/{prefix}_", "/m_")
+        g0, st0 = grade_frame(b0, cv2.imread(mp0, cv2.IMREAD_UNCHANGED), cfg, peak, len(fr), ui_on=False)
         icons = make_icons(g0, st0["bbox"])
     for i, fp in enumerate(fr):
         mp = fp.replace(f"/{prefix}_", "/m_"); fnum = int(os.path.basename(fp)[2:6])
+        idp = fp.replace(f"/{prefix}_", "/id_")
         kp = dict(KP.get(fnum) or {}); kp = (dict(kp, deg_shown=shown) if kp else None)
         bty = cv2.imread(fp, cv2.IMREAD_UNCHANGED); msk = cv2.imread(mp, cv2.IMREAD_UNCHANGED)
+        id_img = cv2.imread(idp, cv2.IMREAD_UNCHANGED) if os.path.exists(idp) else None
         if kp:   # kp2d is in render pixels; the grade works at out_res
             k_ = cfg["grade"]["out_res"][0] / (KPW or bty.shape[1]); kp = {kk: ([vv[0] * k_, vv[1] * k_] if isinstance(vv, list) else vv) for kk, vv in kp.items()}
-        out, st = grade_frame(bty, msk, cfg, i, len(fr), kp, icons); st["src"] = os.path.basename(fp)
+        if act_map.get(fnum):
+            cfg["grade"]["muscle_activation"] = act_map[fnum]
+        out, st = grade_frame(bty, msk, cfg, i, len(fr), kp, icons, True, id_img, flex_map.get(fnum)); st["src"] = os.path.basename(fp)
         cv2.imwrite(os.path.join(odir, "g_" + os.path.basename(fp)[2:]), cv2.cvtColor(out, cv2.COLOR_RGB2BGR)); stats.append(st)
-    json.dump({"frames": stats, "callout_shown_deg": shown, "torso_median_deg": round(float(np.median(tor)), 2), "grade_s": round(time.time() - t0, 1)}, open(os.path.join(odir, "look.json"), "w"), indent=0)
-    print("graded", len(fr), "in", round(time.time() - t0, 1), "s")
+    json.dump({"frames": stats, "callout_shown_deg": shown, "torso_median_deg": round(float(np.median(tor)), 2), "grade_s": round(time.time() - t0, 1), "glow_method": method_u}, open(os.path.join(odir, "look.json"), "w"), indent=0)
+    print("graded", len(fr), "method", method_u, "in", round(time.time() - t0, 1), "s")
 
 if __name__ == "__main__":
     main()
