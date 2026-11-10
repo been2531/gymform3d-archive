@@ -68,9 +68,9 @@ motion:
 garment:                     # black boxer briefs (드로즈): separate skinned mesh, matte black, never in the muscle mask
   enabled: true
   z_waist: 1.03
-  z_hem: 0.80                # short snug leg (trunks), not baggy shorts
+  z_hem: 0.76                # a bit more thigh so the kneeling glute stays covered
   max_abs_x: 0.22
-  offset_m: 0.0055             # tighter boxer (0.012 read bulky and opened a hip hole)
+  offset_m: 0.008              # cover glute without the old bulky 0.012 bag
   hem_smooth_iters: 12
   clearance_min_m: 0.0005      # geometric touch = garment vertex within 0.5 mm of the deformed body surface
 render:
@@ -82,7 +82,7 @@ render:
   albedo_detail: 0.22            # asset fibre luminance into the clay
   sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 1.00
+  glow_emission: 0.800
   hdri_strength: 0.0
   key_energy: 36                # directional upper-side key
   key_size: 3.2
@@ -119,19 +119,20 @@ render:
   glow_rim: 0.32
   body_rim: 0.16                 # less white Fresnel wash on clay
   glow_bloom: true
-  blender_bloom: 0.88
+  blender_bloom: 0.28             # keep glow, stop bloom from clipping >250
   glow_flex_min: 0.88
   base_color: [0.26, 0.27, 0.30]  # sampled demic row-ref clay (sRGB V~144 → lin ~0.27, cool tint)
   mask_spp: 4
   camera:
-    mode: fixed               # working-side back 3/4, slightly above — glow reads as broad shapes
-    yaw_back_deg: 40          # 0 = pure +X side; +yaw rotates toward the feet / behind the back
-    elev_deg: 25
-    dist_m: 2.55
-    look: [0.16, 0.12, 0.58]
+    mode: fixed               # demic: over the working-side shoulder, looking down the back from the head end
+    yaw_back_deg: -16         # slightly toward the head so we sit just forward of the working shoulder
+    elev_deg: 46
+    dist_m: 1.95
+    look: [0.20, 0.24, 0.78]  # mid-back
+    up: head                  # roll so the head is up and the hips recede down the frame
     lens_mm: 50
-    shift_x: 0.0
-    shift_y: -0.06
+    shift_x: 0.12             # pan toward the working arm so the DB stays in frame
+    shift_y: -0.08            # lift glow into the upper-middle of the 9:16
     search: false
   camera_fit:                 # side view used only to fit/score against the Commons photo
     mode: fixed

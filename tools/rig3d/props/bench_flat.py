@@ -140,17 +140,15 @@ def build_bench(look="warm_grey", clear=True):
     up_cz = up_h / 2.0                       # 0.17, top = 0.34 (into the xbar)
     upright_h = box("upright_H", 0.09, 0.05, up_h, (0.48, 0.0, up_cz), frame_m)
     upright_f = box("upright_F", 0.09, 0.05, up_h, (-0.48, 0.0, up_cz), frame_m)
-    # Lower stretcher ties the two T-frames into one solid.
-    stretch = box("stretcher", 0.90, 0.04, 0.04, (0.0, 0.0, 0.10), frame_m)
-    # T-feet on the floor (visible length + width) + rubber end caps.
-    foot_h = box("foot_H", 0.11, 0.40, 0.036, (0.48, 0.0, 0.018), frame_m)
-    foot_f = box("foot_F", 0.11, 0.40, 0.036, (-0.48, 0.0, 0.018), frame_m)
-    cap_parts = []
-    for sx, sy in ((0.48, 0.17), (0.48, -0.17), (-0.48, 0.17), (-0.48, -0.17)):
-        cap_parts.append(box(f"cap_{sx:.2f}_{sy:.2f}", 0.08, 0.08, 0.024, (sx, sy, 0.012), feet_m))
+    # T-feet sit on the floor and swallow the uprights — no separate caps or
+    # low stretcher (those read as detached floor bars from a low 3/4).
+    foot_h = box("foot_H", 0.12, 0.38, 0.04, (0.48, 0.0, 0.020), frame_m)
+    foot_f = box("foot_F", 0.12, 0.38, 0.04, (-0.48, 0.0, 0.020), frame_m)
+    # Mid-height brace, clearly between the uprights (not on the floor).
+    brace = box("brace", 0.88, 0.04, 0.04, (0.0, 0.0, 0.20), frame_m)
 
     parts = [pad, spine, xbar_h, xbar_f, plate_h, plate_f,
-             upright_h, upright_f, stretch, foot_h, foot_f] + cap_parts
+             upright_h, upright_f, brace, foot_h, foot_f]
     bpy.ops.object.select_all(action="DESELECT")
     for o in parts:
         o.select_set(True)

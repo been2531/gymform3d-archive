@@ -1029,9 +1029,9 @@ if GC.get("enabled"):
     bmesh.ops.delete(bm, geom=drop, context="FACES_ONLY")
     bmesh.ops.delete(bm, geom=[v_ for v_ in bm.verts if not v_.link_faces], context="VERTS")
     # weld the asset's UV-seam duplicates (else the offset opens hairline cracks)
-    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=0.008)
-    # close accidental crotch/hip pinholes (waist/hem loops have far more than 14 sides)
-    bmesh.ops.holes_fill(bm, edges=[e_ for e_ in bm.edges if e_.is_boundary], sides=14)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=0.006)
+    bmesh.ops.holes_fill(bm, edges=[e_ for e_ in bm.edges if e_.is_boundary], sides=28)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.verts.ensure_lookup_table(); bm.normal_update()
     # offset outward (the Meshy-made body has some inward-facing normals: orient each normal away from its limb axis,
     # pelvis = vertical axis through x=0 above the crotch, thighs = x=+-0.09 below it)
@@ -1041,6 +1041,19 @@ if GC.get("enabled"):
     outw = np.stack([vw[:, 0] - cx_, vw[:, 1], np.zeros(len(vw))], 1)
     g_sign = np.where((nw_g * outw).sum(1) < 0, -1.0, 1.0); dn = lnr_g * g_sign[:, None]; n_flip = int((g_sign < 0).sum())
     for i_, v_ in enumerate(bm.verts): v_.co = tuple(gco[i_] + off_local * dn[i_])
+    bm.faces.ensure_lookup_table(); bm.normal_update()
+    # flip any face whose world normal points toward the pelvis (back-face = white body shows through)
+    pelvis_w = np.array([0.0, 0.0, 0.92])
+    flip_f = []
+    for f_ in bm.faces:
+        c_ = np.mean([np.array(v_.co) for v_ in f_.verts], 0)
+        cw = c_ @ M4[:3, :3].T + M4[:3, 3]
+        nw = np.array(f_.normal) @ M4[:3, :3].T
+        if np.dot(nw, cw - pelvis_w) < 0:
+            flip_f.append(f_)
+    if flip_f:
+        bmesh.ops.reverse_faces(bm, faces=flip_f)
+    bm.normal_update()
     # hem/waist lip: fold every open edge back in to ~1.5 mm off the skin so no skin shows under the band edge
     bnd_e = [e_ for e_ in bm.edges if e_.is_boundary]; bvi = {v_ for e_ in bnd_e for v_ in e_.verts}
     dn_of = {v_: dn[v_.index] for v_ in bvi}
@@ -1073,15 +1086,11 @@ if GC.get("enabled"):
     bpy.context.view_layer.objects.active = garm
     try:
         sol = garm.modifiers.new("briefs_solidify", "SOLIDIFY")
-        sol.thickness = 0.0032
-        sol.offset = 0.0
+        sol.thickness = 0.0045
+        sol.offset = 1.0   # grow outward so compressed glute folds don't open onto the clay
         if hasattr(sol, "use_quality_normals"):
             sol.use_quality_normals = True
-        cs = garm.modifiers.new("briefs_corrective", "CORRECTIVE_SMOOTH")
-        cs.factor = 0.7
-        cs.iterations = 10
-        if hasattr(cs, "smooth_type"):
-            cs.smooth_type = "LENGTH_WEIGHTED"
+        # no Corrective Smooth: after Solidify the vert count doubles and it warns / no-ops
     except Exception as _se:
         log(f"briefs solidify/smooth skipped: {_se}")
     log(f"briefs garment: {gnv} verts, {len(gm_.polygons)} faces, offset {GC.get('offset_m', 0.008)} m")
@@ -1131,7 +1140,7 @@ c1, c2 = db_collar(-0.098), db_collar(0.098)
 def mat(n, rgb, metal=0.0, rough=0.6):
     m_ = bpy.data.materials.new(n); m_.use_nodes = True; bs = m_.node_tree.nodes["Principled BSDF"]
     bs.inputs["Base Color"].default_value = (*rgb, 1); bs.inputs["Metallic"].default_value = metal; bs.inputs["Roughness"].default_value = rough; return m_
-gun, steel = mat("gunmetal", (0.12, 0.125, 0.13), 1.0, 0.38), mat("steel", (0.55, 0.56, 0.58), 1.0, 0.28)
+gun, steel = mat("gunmetal", (0.12, 0.125, 0.13), 1.0, 0.52), mat("steel", (0.50, 0.51, 0.53), 1.0, 0.45)
 for o in (h1, h2): o.data.materials.append(gun)
 for o in (c1, c2, hd): o.data.materials.append(steel)
 bpy.ops.object.select_all(action="DESELECT")
@@ -1296,7 +1305,23 @@ if str(CAMC.get("mode") or "").lower() == "fixed":
                       -math.sin(yaw) * math.cos(el),
                       math.sin(el))).normalized()
     CAM.location = look_v + dirv * dist
-    CAM.rotation_euler = (look_v - CAM.location).to_track_quat("-Z", "Y").to_euler()
+    aim = look_v - CAM.location
+    up_mode = str(CAMC.get("up") or "world").lower()
+    if up_mode in ("head", "head_up", "spine"):
+        # Roll so image-up points toward world +Y (the head). Default look-at
+        # keeps world +Z as up, which lays a face-down rower sideways in 9:16.
+        fwd = aim.normalized()
+        prefer = mu.Vector((0.0, 1.0, 0.0))
+        cy = prefer - fwd * prefer.dot(fwd)
+        if cy.length < 1e-4:
+            cy = mu.Vector((0.0, 0.0, 1.0))
+        cy.normalize()
+        cx = fwd.cross(cy).normalized()
+        cy = (-fwd).cross(cx).normalized()
+        R = mu.Matrix((cx, cy, -fwd)).transposed()
+        CAM.matrix_world = mu.Matrix.Translation(CAM.location) @ R.to_4x4()
+    else:
+        CAM.rotation_euler = aim.to_track_quat("-Z", "Y").to_euler()
     camd.lens = float(CAMC.get("lens_mm", 50))
     camd.shift_x = float(CAMC.get("shift_x", 0.0))
     camd.shift_y = float(CAMC.get("shift_y", 0.02))
@@ -1797,7 +1822,7 @@ for m_ in body_mats:
     if look_inscene:
         for l in list(bsdf.inputs["Roughness"].links):
             nt.links.remove(l)
-        bsdf.inputs["Roughness"].default_value = 0.68
+        bsdf.inputs["Roughness"].default_value = 0.78
         # Soft AO into the clay albedo so grooves and separations read as shadows.
         ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
         ao.inputs["Distance"].default_value = float(RC.get("ao_distance", 0.14))
@@ -1837,7 +1862,7 @@ for m_ in body_mats:
     if "Subsurface Scale" in bsdf.inputs:
         bsdf.inputs["Subsurface Scale"].default_value = float(RC.get("sss_scale", 0.05))
     if "Specular IOR Level" in bsdf.inputs:
-        bsdf.inputs["Specular IOR Level"].default_value = 0.18 if look_inscene else 0.35
+        bsdf.inputs["Specular IOR Level"].default_value = 0.10 if look_inscene else 0.35
     nstr = float(RC.get("normal_strength", 1.0 if look_inscene else 2.0))
     if look_inscene and nstr > 1.35:
         nstr = 1.0
@@ -1966,7 +1991,7 @@ if look_inscene:
         add_area_aim("leg_key", leg_aim + key_from * 2.2 + upv * 0.7, _lk, 4.6, (1.00, 0.99, 0.97), leg_aim)
     if LEGS == "bench_row":
         _dbp = db.matrix_world.translation
-        add_area_aim("db_kicker", _dbp + mu.Vector((0.55, -0.30, 0.28)), float(RC.get("db_kicker_energy", 20)), 0.40, (1.00, 0.96, 0.88), _dbp)
+        add_area_aim("db_kicker", _dbp + mu.Vector((0.55, -0.30, 0.28)), float(RC.get("db_kicker_energy", 10)), 0.40, (1.00, 0.96, 0.88), _dbp)
         log("studio: working-side DB kicker")
 else:
     add_area_aim("leg_key", leg_aim + key_from * 2.4 + upv * 0.55, RC.get("leg_key_energy", 190), 1.8, (1.00, 0.98, 0.94), leg_aim)
@@ -2108,6 +2133,28 @@ if not a.mask_only:
                 except Exception:
                     pass
     t = time.time(); render_set("f"); tim["beauty_s"] = round(time.time() - t, 1); log(f"beauty {tim['beauty_s']} s")
+    if look_inscene and LEGS == "bench_row" and garm is not None:
+        try:
+            _pf = int(np.argmax(AUTH_U)) + 1 if AUTH_U is not None else frames[0]
+            sc.frame_set(_pf); bpy.context.view_layer.update()
+            _hip = arm.matrix_world @ pb["Hips"].head
+            # posed back faces +Z; inspect the camera-side glute (working +X, slightly up)
+            _lookg = mu.Vector((_hip.x + 0.06, _hip.y - 0.03, _hip.z + 0.07))
+            _old_loc, _old_rot = CAM.location.copy(), CAM.rotation_euler.copy()
+            _old_sx, _old_sy = camd.shift_x, camd.shift_y
+            CAM.location = _lookg + mu.Vector((0.28, -0.16, 0.20))
+            CAM.rotation_euler = (_lookg - CAM.location).to_track_quat("-Z", "Y").to_euler()
+            camd.shift_x = 0.0; camd.shift_y = 0.0
+            _orx, _ory = sc.render.resolution_x, sc.render.resolution_y
+            sc.render.resolution_x = 640; sc.render.resolution_y = 640
+            sc.render.filepath = a.out + "/glute_closeup.png"
+            bpy.ops.render.render(write_still=True)
+            sc.render.resolution_x, sc.render.resolution_y = _orx, _ory
+            CAM.location, CAM.rotation_euler = _old_loc, _old_rot
+            camd.shift_x, camd.shift_y = _old_sx, _old_sy
+            log(f"glute close-up -> {a.out}/glute_closeup.png")
+        except Exception as _ge:
+            log(f"glute close-up failed: {_ge}")
     if look_inscene:
         GSH.teardown_compositor(sc)
     want_ab = (not look_inscene) and bool(RC.get("glow_ab") or str(RC.get("glow_backend", "post")).lower() in ("blender", "both"))
