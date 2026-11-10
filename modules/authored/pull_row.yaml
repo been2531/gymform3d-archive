@@ -1,6 +1,6 @@
 # Reusable hinged one-arm row. Loaded when motion.authored.preset: pull_row.
 # Keyposes are anatomical (angles + local offsets), not filmed landmarks.
-_doc: "Authored pull_row: eased hang -> peak -> hang cycle, vertical forearm, elbow drives to hip."
+_doc: "Authored pull_row: bench-supported, flat back, eased hang -> peak -> hang, vertical forearm, elbow drives to hip."
 fps: 30
 breathing_amp_m: 0.006
 db_pendulum_lag_s: 0.05
@@ -11,7 +11,7 @@ phases:
   - {name: eccentric,  dur_s: 1.40, ease: ease_in_out, u0: 1, u1: 0}
   - {name: rest,       dur_s: 0.50, ease: hold,     u0: 0, u1: 0}
 right:
-  torso_deg: 49
+  torso_deg: 88
   thoracic_rot_deg: 6
   elbow_flex_start_deg: 10
   elbow_flex_peak_deg: 95

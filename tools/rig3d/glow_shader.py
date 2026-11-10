@@ -351,10 +351,15 @@ def _bind_proj_texture(nt, ac, sep):
     if img is None:
         return
     uv = nt.nodes.new("ShaderNodeUVMap"); uv.name = GF + "PROJUV"
+    uv.uv_map = "proj"
     tim = nt.nodes.new("ShaderNodeTexImage"); tim.name = GF + "PROJTEX"
     tim.image = img
     try:
         tim.interpolation = "Cubic"
+    except Exception:
+        pass
+    try:
+        tim.extension = "CLIP"
     except Exception:
         pass
     nt.links.new(uv.outputs["UV"], tim.inputs["Vector"])
