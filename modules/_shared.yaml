@@ -24,7 +24,17 @@ render:
   res: [1080, 1920]
   spp: 16
   denoise_prefilter: ACCURATE
-  normal_strength: 1.5
+  normal_strength: 2.0
+  albedo_detail: 0.50
+  sss_weight: 0.16
+  sss_scale: 0.05
+  glow_emission: 1.35
+  hdri_strength: 0.35
+  key_energy: 380
+  fill_energy: 150
+  rim_energy: 270
+  floor: true
+  floor_size_m: 6.0
   denoise: true
   mask_spp: 4
   camera:
@@ -44,16 +54,33 @@ grade:
   detail_sigma: 1.6
   backdrop_rgb: [35, 39, 43]
   glow: right
+  look: charcoal                 # charcoal (soft Day 4) or clay (p50 ~150)
+  fibre_amount: 0.42             # 1.0 = old sticker; lower = fascicle direction on top of 3D emission
+  bloom_amount: 0.68             # muscle-clamped bloom (callouts drawn after, never bloom)
+  emission_keep: 0.78            # how much of the beauty-pass emission/form to keep on the target muscles
 
 qc:
   grip_max_m: 0.03
   grip_mesh_max_m: 0.06
   tear_ratio_max: 3.0
   tear_frac2x_max: 0.003
-  skin_p75: [69, 81]
-  skin_p90: [81, 95]
-  skin_max: 160
+  skin_p50: [62, 95]
+  skin_p75: [68, 110]
+  skin_p90: [82, 145]
+  skin_max: 215
+  look_presets:
+    charcoal:
+      skin_p50: [62, 95]
+      skin_p75: [68, 110]
+      skin_p90: [82, 145]
+      skin_max: 215
+    clay:
+      skin_p50: [135, 170]
+      skin_p75: [145, 195]
+      skin_p90: [160, 225]
+      skin_max: 255
   backdrop_tol: 4
+  floor_shadow_min: 1.5
   glow_frac: [0.02, 0.30]
   glow_in_mask_min: 0.9
   sharp_rel_min: 0.35
