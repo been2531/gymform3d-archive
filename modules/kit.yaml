@@ -1,24 +1,31 @@
 # Reusable base-asset kit. Merged when kit.enabled is true (exercise opts in).
 # All meshes are authored in tools/rig3d/kit/ (CC0). The Poly Haven HDRI is
 # fetched into _scratch/hdri/ and is not committed.
-_doc: "CC0 studio kit: overlay muscle shells, lofted boxer shorts, porcelain clay, padded bench, knurled DB, studio lights."
+_doc: "CC0 studio kit: welded body, attribute glow sheets, closed cloth boxers, porcelain clay, padded bench, knurled DB, studio lights."
 kit:
   enabled: false
   licence: CC0-1.0
+  weld:
+    dist_m: 0.0001               # 0.1 mm world; collapses UV-seam duplicates
   garment:
-    method: loft                 # convex-hull loft; never a body-face offset
+    method: cloth                # closed authored tube + rest-pose cloth; never copied faces
     waistband_h_m: 0.07          # wide elastic band
     waist_above_hip_m: 0.10
     hem_blend: 0.48              # 0 = at knee, 1 = at hip; ~mid-thigh
-    ease_m: 0.018                # outward offset from the convex slice
-    waistband_extra_m: 0.004     # band sits a bit proud of the shorts
+    ease_m: 0.016                # outward offset from the convex slice
+    waistband_extra_m: 0.006     # band sits a bit proud of the shorts
     solidify_m: 0.003
-    smooth_iters: 8
-    rings: 28
+    waistband_solidify_m: 0.008  # thicker separate elastic ring
+    smooth_iters: 6
+    rings: 32
+    leg_rings: 20
+    cloth_frames: 28
+    cloth_shrink: 0.045
     matte_rgb: [0.012, 0.012, 0.014]
     roughness: 0.95
   muscles:
-    method: shells               # separate remeshed overlay meshes
+    method: attr                 # geodesic float attributes on the welded mesh
+    fade_m: 0.022                # soft sheet edge, metres
     hue: {h: 12, s: 200, v: 244} # vivid peach-orange for every shell (not QC identity hues)
     groups:
       - {name: lats, ids: [lats]}
@@ -64,11 +71,11 @@ kit:
 # Copied into runtime render/garment so existing readers pick them up.
 # Exercise YAML still wins on conflict.
 garment:
-  method: loft
+  method: cloth
 render:
-  glow_shape: shells
+  glow_shape: attr
   hdri_strength: 0.18
   blender_bloom: 0.36
   glow_bloom: true
-  glow_opacity: 0.0            # no multiply-on-clay; shells carry the glow
-  glow_tint: 0.0
+  glow_opacity: 0.0            # attr sheets add emission; clay stays the BSDF
+  glow_tint: 0.18

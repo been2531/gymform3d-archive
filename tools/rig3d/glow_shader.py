@@ -499,6 +499,106 @@ def attach_mesh_glow(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix=0.2
     return _flex
 
 
+
+def attach_attr_sheets(nt, bsdf, mout, hues_rgb, em_str, flex_min=0.88,
+                       tint_mix=0.18, rim=0.28):
+    """Porcelain clay stays; add peach / purple / pink sheets from float attrs.
+
+    No UVs, no projection, no copied shells. Soft edge = attribute gradient.
+    hues_rgb keys: lats, mid_back, rear_delt -> linear RGB triples.
+    """
+    _purge(nt)
+
+    def _afac(name, suffix):
+        a = nt.nodes.new("ShaderNodeAttribute")
+        a.name = GF + suffix
+        a.attribute_name = name
+        try:
+            a.attribute_type = "GEOMETRY"
+        except Exception:
+            pass
+        return a.outputs["Fac"]
+
+    wl = _afac("glow_lats", "WL")
+    wm = _afac("glow_mid_back", "WM")
+    wr = _afac("glow_rear_delt", "WR")
+
+    s1 = nt.nodes.new("ShaderNodeMath"); s1.name = GF + "WS1"; s1.operation = "ADD"
+    nt.links.new(wl, s1.inputs[0]); nt.links.new(wm, s1.inputs[1])
+    s2 = nt.nodes.new("ShaderNodeMath"); s2.name = GF + "WS2"; s2.operation = "ADD"
+    nt.links.new(s1.outputs[0], s2.inputs[0]); nt.links.new(wr, s2.inputs[1])
+    wclp = nt.nodes.new("ShaderNodeClamp"); wclp.name = GF + "WCLP"
+    wclp.inputs["Min"].default_value = 0.0
+    wclp.inputs["Max"].default_value = 1.0
+    nt.links.new(s2.outputs[0], wclp.inputs["Value"])
+
+    def _tint(rgb, fac, suffix):
+        mix = nt.nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.name = GF + suffix
+        mix.inputs[6].default_value = (0.0, 0.0, 0.0, 1.0)
+        mix.inputs[7].default_value = (float(rgb[0]), float(rgb[1]), float(rgb[2]), 1.0)
+        nt.links.new(fac, mix.inputs[0])
+        return mix.outputs[2]
+
+    h_l = hues_rgb.get("lats") or (0.95, 0.32, 0.06)
+    h_m = hues_rgb.get("mid_back") or (0.55, 0.12, 0.72)
+    h_r = hues_rgb.get("rear_delt") or (0.90, 0.18, 0.55)
+    c1 = _tint(h_l, wl, "C1")
+    c2 = _tint(h_m, wm, "C2")
+    c3 = _tint(h_r, wr, "C3")
+    a12 = nt.nodes.new("ShaderNodeMix"); a12.data_type = "RGBA"; a12.blend_type = "ADD"
+    a12.name = GF + "A12"; a12.inputs[0].default_value = 1.0
+    nt.links.new(c1, a12.inputs[6]); nt.links.new(c2, a12.inputs[7])
+    a123 = nt.nodes.new("ShaderNodeMix"); a123.data_type = "RGBA"; a123.blend_type = "ADD"
+    a123.name = GF + "A123"; a123.inputs[0].default_value = 1.0
+    nt.links.new(a12.outputs[2], a123.inputs[6]); nt.links.new(c3, a123.inputs[7])
+
+    # slight clay tint so the sheet sits on the grooves, not instead of them
+    tf = nt.nodes.new("ShaderNodeMath"); tf.name = GF + "TINTF"; tf.operation = "MULTIPLY"
+    nt.links.new(wclp.outputs[0], tf.inputs[0]); tf.inputs[1].default_value = float(tint_mix)
+    tclp = nt.nodes.new("ShaderNodeClamp"); tclp.name = GF + "TCLP"
+    tclp.inputs["Min"].default_value = 0.0
+    tclp.inputs["Max"].default_value = 1.0
+    nt.links.new(tf.outputs[0], tclp.inputs["Value"])
+    mixb = nt.nodes.new("ShaderNodeMix"); mixb.data_type = "RGBA"; mixb.name = GF + "TINT"
+    nt.links.new(tclp.outputs[0], mixb.inputs[0])
+    base_in = bsdf.inputs["Base Color"]
+    if base_in.links:
+        nt.links.new(base_in.links[0].from_socket, mixb.inputs[6])
+        nt.links.remove(base_in.links[0])
+    else:
+        mixb.inputs[6].default_value = tuple(base_in.default_value)
+    nt.links.new(a123.outputs[2], mixb.inputs[7])
+    nt.links.new(mixb.outputs[2], bsdf.inputs["Base Color"])
+
+    flex, stm = _flex_strength(nt, wclp.outputs[0], em_str, flex_min)
+    lw = nt.nodes.new("ShaderNodeLayerWeight"); lw.name = GF + "LW"
+    lw.inputs["Blend"].default_value = 0.50
+    r1 = nt.nodes.new("ShaderNodeMath"); r1.name = GF + "R1"; r1.operation = "SUBTRACT"
+    r1.inputs[0].default_value = 1.0
+    nt.links.new(lw.outputs["Facing"], r1.inputs[1])
+    r2 = nt.nodes.new("ShaderNodeMath"); r2.name = GF + "R2"; r2.operation = "MULTIPLY"
+    nt.links.new(r1.outputs[0], r2.inputs[0]); nt.links.new(wclp.outputs[0], r2.inputs[1])
+    r3 = nt.nodes.new("ShaderNodeMath"); r3.name = GF + "R3"; r3.operation = "MULTIPLY"
+    nt.links.new(r2.outputs[0], r3.inputs[0]); r3.inputs[1].default_value = float(rim)
+    ems = nt.nodes.new("ShaderNodeMath"); ems.name = GF + "EMS"; ems.operation = "ADD"
+    nt.links.new(stm.outputs[0], ems.inputs[0]); nt.links.new(r3.outputs[0], ems.inputs[1])
+
+    em = nt.nodes.new("ShaderNodeEmission"); em.name = GF + "EM"
+    nt.links.new(a123.outputs[2], em.inputs["Color"])
+    nt.links.new(ems.outputs[0], em.inputs["Strength"])
+    _hook_add(nt, bsdf, mout, em)
+
+    aov = nt.nodes.new("ShaderNodeOutputAOV"); aov.name = GF + "AOV"; aov.aov_name = "glow_mask"
+    rgb = nt.nodes.new("ShaderNodeCombineColor"); rgb.name = GF + "AOVRGB"
+    nt.links.new(wclp.outputs[0], rgb.inputs["Red"])
+    nt.links.new(wclp.outputs[0], rgb.inputs["Green"])
+    nt.links.new(wclp.outputs[0], rgb.inputs["Blue"])
+    nt.links.new(rgb.outputs["Color"], aov.inputs["Color"])
+    return flex
+
+
 def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_scale=42.0, tint_mix=0.28,
                      fibre_bump=0.32, rim=0.35, body_rim=0.18, fibre_line=0.32, opacity=0.94):
     """(Re)attach GF_* glow nodes on every body material. Returns flex Value nodes."""

@@ -880,11 +880,11 @@ if USE_MID:
             _rest = co
             log(f"glow rest-pos fallback: {_re}")
         _shape = str(RC.get("glow_shape") or "hull").lower()
-        if _shape == "shells":
-            log("glow_shape=shells: skipping projection paint (kit overlay shells)")
+        if _shape in ("shells", "attr", "weld", "weld_attr"):
+            log(f"glow_shape={_shape}: skipping projection paint")
             _gw = np.zeros(nv, np.float32)
             _grgb = np.zeros((nv, 3), np.float32)
-            _gst = {"shape": "shells"}
+            _gst = {"shape": _shape}
             try:
                 MIDS.write_glow_attrs(me, _gw, _grgb)
             except Exception:
@@ -929,8 +929,8 @@ if USE_MID:
         log(f"glow bake failed: {_e}")
 else:
     log(f"muscle IDs unused nv={nv} built={None if not MID else MID.get('nv')}")
-    if str(RC.get("glow_shape") or "hull").lower() == "shells":
-        log("glow_shape=shells (no MID): projection paint not used")
+    if str(RC.get("glow_shape") or "hull").lower() in ("shells", "attr", "weld", "weld_attr"):
+        log(f"glow_shape={RC.get('glow_shape')} (no MID): projection paint not used")
     elif str(RC.get("glow_shape") or "hull").lower() == "project":
         import project_paint as PPAINT
         _tex = RC.get("glow_proj_tex") or os.path.join(
@@ -1034,21 +1034,43 @@ log(f"regions {region_counts}")
 GC = C.get("garment", {"enabled": False})
 garm, g_src = None, None
 SHELL_OBJS, SHELL_FLEX = [], []
+WELDED, WELD_STATS, WAISTBAND = None, None, None
+GLOW_ATTR_INFO, GARM_META = None, None
 _kit = C.get("kit") or {}
 _kit_gmethod = str((( _kit.get("garment") or {}).get("method")) or GC.get("method") or "").lower()
 _kit_prev_f = sc.frame_current
 try:
-    if AUTH_U is not None:
+    if AUTH_U is not None and str(RC.get("glow_shape") or "").lower() == "shells":
         _kit_peak = int(np.argmax(AUTH_U)) + 1
         sc.frame_set(_kit_peak)
         bpy.context.view_layer.update()
         log(f"kit overlays built at peak frame {_kit_peak}")
 except Exception:
     pass
-if GC.get("enabled") and _kit.get("enabled") and _kit_gmethod == "loft":
+if _kit.get("enabled"):
+    try:
+        import kit.weld as KITW
+        WELDED, WELD_STATS = KITW.make_render_copy(body, arm, C, log=log, col=col)
+        import kit.glow_attr as KITGA
+        _tid = tid if "tid" in dir() else None
+        _names = list((MID or {}).get("names") or [])
+        GLOW_ATTR_INFO = KITGA.write_weights(
+            WELDED, body, _tid, _names, C,
+            shorts=shorts if "shorts" in dir() else None,
+            exclude=EXCLUDE if "EXCLUDE" in dir() else None,
+            log=log)
+    except Exception as _we:
+        import traceback
+        log(f"kit weld/glow_attr failed: {_we}")
+        log(traceback.format_exc())
+        WELDED = None
+if GC.get("enabled") and _kit.get("enabled") and _kit_gmethod in ("loft", "cloth", "closed", "tube"):
     try:
         import kit.garment as KITG
-        garm, _gmeta = KITG.build_boxer_shorts(body, arm, C, log=log, col=col)
+        _collider = WELDED if WELDED is not None else body
+        garm, _gmeta = KITG.build_boxer_shorts(body, arm, C, log=log, col=col, collider=_collider)
+        WAISTBAND = _gmeta.pop("waistband_obj", None)
+        GARM_META = {k: v for k, v in _gmeta.items() if k != "waistband_obj"}
         g_src = None
         gm_ = garm.data
         gev = np.empty(len(gm_.edges) * 2, np.int64)
@@ -1305,6 +1327,12 @@ if LEGS == "bench_row":
         log(f"support palm flatten: {FP['info']}")
     except Exception as _fe:
         log(f"support palm flatten skipped: {_fe}")
+if WELDED is not None:
+    try:
+        import kit.weld as KITW
+        KITW.apply_source_shapekey_mix(body, WELDED, log=log)
+    except Exception as _se:
+        log(f"kit weld shapekey transfer: {_se}")
 # ---- dumbbell ---------------------------------------------------------------------------------------------------------
 def db_plate(xx):
     # Round gunmetal plates (32-gon) so the weight reads as a metal disc, not a blue cube.
@@ -2151,6 +2179,19 @@ _backend = "inscene" if look_inscene else "post"
 if str(RC.get("glow_shape") or "").lower() == "shells":
     flex_nodes = list(SHELL_FLEX) if "SHELL_FLEX" in dir() else []
     log(f"kit: porcelain clay on body, {len(flex_nodes)} overlay shell flex nodes")
+elif str(RC.get("glow_shape") or "").lower() in ("attr", "weld", "weld_attr"):
+    import kit.glow_attr as KITGA
+    _hrgb = KITGA.hues_rgb_from_cfg(C)
+    flex_nodes = []
+    for m_ in body_mats:
+        _nt = m_.node_tree
+        _bsdf = [n for n in _nt.nodes if n.type == "BSDF_PRINCIPLED"][0]
+        _mout = [n for n in _nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
+        flex_nodes.append(GSH.attach_attr_sheets(
+            _nt, _bsdf, _mout, _hrgb, em_str, _flex_min,
+            tint_mix=float(RC.get("glow_tint", 0.18)),
+            rim=float(RC.get("glow_rim", 0.28))))
+    log(f"kit: attr sheets flex={len(flex_nodes)} hues={ {k: [round(x,3) for x in v] for k,v in _hrgb.items()} }")
 else:
     flex_nodes = GSH.switch_materials(
         body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 72.0)),
@@ -2633,6 +2674,8 @@ if not a.no_mask:
         gw = bpy.data.materials.new("briefs_mask"); gw.use_nodes = True; ge = gw.node_tree.nodes.new("ShaderNodeEmission"); ge.inputs["Color"].default_value = (1, 1, 1, 1)
         gw.node_tree.links.new(ge.outputs[0], [n for n in gw.node_tree.nodes if n.type == "OUTPUT_MATERIAL"][0].inputs["Surface"])
         garm.data.materials.clear(); garm.data.materials.append(gw)
+        if WAISTBAND is not None:
+            WAISTBAND.data.materials.clear(); WAISTBAND.data.materials.append(gw)
     sc.cycles.samples = int(RC.get("mask_spp", 4)); sc.cycles.use_denoising = False; sc.cycles.max_bounces = 0
     sc.view_settings.view_transform = "Standard"; bg.inputs["Strength"].default_value = 0.0
     for o in bpy.data.objects:
@@ -2651,4 +2694,17 @@ if not a.no_mask:
             sc.view_settings.view_transform = "Standard"
         t = time.time(); render_set("id"); tim["id_s"] = round(time.time() - t, 1); log(f"id pass {tim['id_s']} s")
 json.dump({**tim, "frames": len(frames), "res": [rx, ry], "skipped_existing": bool(RC.get("skip_existing_frames"))}, open(a.out + "/render_time.json", "w"))
+try:
+    import kit.gates as KITGT
+    KITGT.write_topo(a.out + "/kit_topo.json", {
+        "weld": WELD_STATS,
+        "glow_attr": GLOW_ATTR_INFO,
+        "garment": GARM_META,
+        "garment_bound": None if garm is None else KITGT.mesh_report(garm),
+        "waistband_bound": None if WAISTBAND is None else KITGT.mesh_report(WAISTBAND),
+        "welded_bound": None if WELDED is None else KITGT.mesh_report(WELDED),
+    })
+    log(f"kit_topo written {a.out}/kit_topo.json")
+except Exception as _te:
+    log(f"kit_topo write failed: {_te}")
 print("RENDER_DONE", json.dumps(tim))
