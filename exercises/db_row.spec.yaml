@@ -4,7 +4,7 @@
 id: db_row
 name: Bench one-arm dumbbell row
 status: filled
-version: 2
+version: 3
 
 pose:
   name: textbook bench-supported one-arm dumbbell row
@@ -111,6 +111,9 @@ look:
     style: black_boxer_briefs
     holes: false
     white_body_show_through: false
+    fit: skin_tight_offset_3_to_6mm
+    waistband: slim_visible
+    leg_opening: upper_to_mid_thigh
   equipment:
     bench: commercial flat bench, black pad, gunmetal frame, no floating parts
     dumbbell: visible, gripped, not clipped out of frame
@@ -217,10 +220,11 @@ qc:
       metric: working_forearm_from_vertical_deg
       max: 20
     - name: peak_db_below_torso
-      label: 피크에서 덤벨이 몸통 아래로 안 내려감
+      label: 피크에서 덤벨 원점이 몸통 아래 10–28cm 구간에 없음
       frames: [peak]
-      metric: db_below_torso_plane
-      equals: true
+      metric: db_torso_plane_m
+      min: -0.28
+      max: -0.10
     - name: peak_db_visible
       label: 피크에서 덤벨이 안 보임
       frames: [peak]
@@ -253,6 +257,47 @@ qc:
       metric: standing_knee_flexion_deg
       min: 10
       max: 30
+    - name: support_palm_pad_contact
+      label: 지지 손바닥이 패드에서 떠 있음
+      frames: [bottom, peak]
+      metric: support_palm_pad_dz_m
+      max: 0.02
+    - name: support_palm_in_pad
+      label: 지지 손이 패드 면적 밖에 있음
+      frames: [bottom, peak]
+      metric: support_palm_in_pad_xy
+      equals: true
+    - name: knee_pad_contact
+      label: 지지 무릎이 패드에 닿지 않음
+      frames: [bottom, peak]
+      metric: knee_dz
+      min: -0.005
+      max: 0.02
+    - name: bench_thigh_vertical
+      label: 벤치 쪽 허벅지가 수직이 아님
+      frames: [bottom, peak]
+      metric: bench_thigh_from_vertical_deg
+      max: 20
+    - name: briefs_gap_max
+      label: 드로즈가 몸에서 떠 있음
+      frames: [bottom, peak]
+      metric: briefs_gap_max_m
+      max: 0.01
+    - name: briefs_no_zfight
+      label: 드로즈가 몸에 파고들거나 깜빡임
+      frames: [bottom, peak]
+      metric: briefs_poke_frac
+      max: 0.05                 # share of verts closer than 0.5 mm; visual poke-through is separate
+    - name: briefs_no_holes
+      label: 드로즈에 구멍이나 찢어짐이 있음
+      frames: [bottom, peak]
+      metric: briefs_tear_frac2x
+      max: 0.015
+    - name: glow_dark_seams
+      label: 글로우 안에 검은 균열/솔기가 있음
+      source: overlay
+      metric: glow_dark_seam_frac
+      max: 0.12
     - name: sil_iou
       label: 실루엣이 기준 사진과 다름
       source: overlay

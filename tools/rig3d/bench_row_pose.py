@@ -69,9 +69,9 @@ def build_landmarks(u, L, side=12):
     # therefore +shoulder_half so the right shoulder hangs off the pad.
     x_sup = 0.0
     mid_x = x_sup + half_w
-    y_knee = -0.10
-    kn_z = pad_z + 0.04
-    hand_z = pad_z + 0.02
+    y_knee = -0.18
+    kn_z = pad_z + 0.02
+    hand_z = pad_z + 0.012
 
     # Maximize thigh rise so the support shoulder sits as high as the skeleton
     # allows (straight vertical support arm needs ~La+Lf above the pad). Keep a
@@ -88,9 +88,13 @@ def build_landmarks(u, L, side=12):
         horiz = math.hypot(dx, hip_y - y_knee)
     rise = math.sqrt(max(Lt * Lt - horiz * horiz, 1e-4))
     hip_z = kn_z + rise
-    # Cap hip height so the standing leg can still plant flat on the floor.
+    # Cap hip height so the standing leg can plant AND show a visible soft
+    # knee (~24°). A higher hip forces the floor leg almost straight.
+    flex_soft = math.radians(156.0)  # 24° flexion
+    d_ha_soft = math.sqrt(max(Lt * Lt + Ls * Ls - 2.0 * Lt * Ls * math.cos(flex_soft), 1e-6))
     max_hip_for_foot = 0.055 + 0.985 * (Lt + Ls)
-    hip_z = min(hip_z, max_hip_for_foot)
+    max_hip_for_soft = 0.055 + d_ha_soft
+    hip_z = min(hip_z, max_hip_for_foot, max_hip_for_soft)
 
     lhip = np.array([lhip_x, hip_y, hip_z])
     rhip = np.array([rhip_x, hip_y, hip_z])
@@ -112,13 +116,15 @@ def build_landmarks(u, L, side=12):
     lheel = np.array([x_sup, y_knee - Ls + 0.04, pad_z + 0.02])
     ltoe = np.array([x_sup, y_knee - Ls - 0.08, pad_z + 0.02])
 
-    # Support hand flat on the pad, directly under the support shoulder.
-    lwr = np.array([x_sup, float(lsh[1]), hand_z])
+    # Support hand flat on the pad, roughly under the support shoulder.
+    # A couple cm toward mid-pad keeps the fingers (which extend +Y) on the top.
+    lwr = np.array([x_sup, float(lsh[1]) - 0.03, hand_z])
     lel, lwr = _ik(lsh, lwr, La, Lf, lsh + np.array([0.0, -0.04, -0.15]))
 
-    # Opposite foot planted flat beside the bench, slightly wide, ~16° flexion
-    # (gate: 10–30°). Hip height limits how wide we can step without locking.
-    flex_deg = 12.0
+    # Opposite foot planted flat beside the bench, slightly wide, visibly soft
+    # (gate: 10–30° of flexion). Measure the standing (right / floor) knee,
+    # not the bench knee.
+    flex_deg = 24.0
     interior = math.radians(180.0 - flex_deg)
     d_ha = math.sqrt(max(Lt * Lt + Ls * Ls - 2.0 * Lt * Ls * math.cos(interior), 1e-6))
     dz = max(hip_z - 0.055, 0.05)
@@ -141,9 +147,11 @@ def build_landmarks(u, L, side=12):
     # line and a little above the back; forearm hangs vertical; DB sits beside
     # the lower ribs, below the back surface, out on the working side.
     torso_to_hip = _n(rhip - rsh)
-    up_arm = _n(torso_to_hip + 0.18 * right + 0.18 * up)
+    # Raise the elbow (~12 cm above the back) so the vertical forearm parks
+    # the DB 10–22 cm below the torso plane (more ROM vs the hang).
+    up_arm = _n(torso_to_hip + 0.16 * right + 0.30 * up)
     el_hint = rsh + up_arm * La
-    wr_peak = el_hint + np.array([0.045, 0.0, -Lf])
+    wr_peak = el_hint + np.array([0.04, 0.0, -Lf])
     el_peak, wr_peak = _ik(rsh, wr_peak, La, Lf, el_hint)
     _ = hand_ahead  # kept so older configs still load
 
@@ -218,6 +226,7 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
     lank = rec_pts.get("lank")
     rtoe = rec_pts.get("rtoe")
     rkn = rec_pts.get("rkn")
+    lhip = rec_pts.get("lhip")
     tv = sh - hip
     torso_from_vert = math.degrees(math.atan2(math.hypot(tv[0], tv[1]), tv[2]))
     torso_from_horiz = abs(90.0 - torso_from_vert)
@@ -273,6 +282,8 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
     elbow_past_torso = None
     if rel is not None:
         elbow_past_torso = bool(float(rel[1]) <= float(rsh[1]) + 0.01)
+    # Standing (floor) leg = right knee. The bench knee is left (~90° when
+    # the thigh is vertical and the shin is on the pad) and is not this metric.
     standing_knee_deg = None
     standing_knee_flexion_deg = None
     if rkn is not None:
@@ -326,6 +337,22 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
             (float(rel[0]) - mid_x) * work_sign < -0.03
             or (float(rwr[0]) - mid_x) * work_sign < -0.03)
 
+    bench_thigh_from_vertical_deg = None
+    if lhip is not None:
+        th = np.asarray(lkn, float) - np.asarray(lhip, float)
+        thn = float(np.linalg.norm(th))
+        if thn > 1e-6:
+            down = np.array([0.0, 0.0, -1.0])
+            bench_thigh_from_vertical_deg = math.degrees(
+                math.acos(float(np.clip(np.dot(th / thn, down), -1, 1))))
+
+    support_palm_pad_dz_m = rec_pts.get("support_palm_pad_dz_m")
+    support_palm_in_pad_xy = rec_pts.get("support_palm_in_pad_xy")
+    if support_palm_pad_dz_m is None:
+        # Bone fallback until the mesh palm is sampled.
+        support_palm_pad_dz_m = abs(float(lwr[2] - pad_z))
+        support_palm_in_pad_xy = bool(pad_contains(lwr, spec, margin=0.0))
+
     support_finger_spread_m = rec_pts.get("support_finger_spread_m")
     support_palm_from_pad_deg = rec_pts.get("support_palm_from_pad_deg")
     if rec_pts.get("support_hand_flat") is not None:
@@ -349,6 +376,12 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
         "support_hand_dz": round(float(lwr[2] - pad_z), 4),
         "knee_on_pad": bool(knee_on_pad),
         "knee_dz": round(float(lkn[2] - pad_z), 4),
+        "bench_thigh_from_vertical_deg": None if bench_thigh_from_vertical_deg is None
+            else round(float(bench_thigh_from_vertical_deg), 2),
+        "support_palm_pad_dz_m": None if support_palm_pad_dz_m is None
+            else round(float(support_palm_pad_dz_m), 4),
+        "support_palm_in_pad_xy": None if support_palm_in_pad_xy is None
+            else bool(support_palm_in_pad_xy),
         "foot_on_floor": bool(foot_on_floor),
         "foot_z": round(float(rank[2]), 4),
         "working_hand_below_shoulder": bool(below),

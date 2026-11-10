@@ -547,7 +547,7 @@ if MO.get("support_hand", "") == "bench_pad" and BENCH_SPEC is not None:
         pole.normalize()
         E[pp_ + "el"].location = Sh + u_ * x_ + pole * h_
         E[pp_ + "wr"].location = Wt
-        E[pp_ + "ix"].location = Wt + fwdv.normalized() * 0.07
+        E[pp_ + "ix"].location = Wt + fwdv.normalized() * 0.035
         for n_ in ("el", "wr", "ix"):
             E[pp_ + n_].keyframe_insert("location", frame=f + 1)
     # Flat palm on the pad: keep finger aim (DAMPED_TRACK Y -> ix along the bench)
@@ -1043,7 +1043,7 @@ if GC.get("enabled"):
     bm.verts.ensure_lookup_table(); bm.normal_update()
     # offset outward (the Meshy-made body has some inward-facing normals: orient each normal away from its limb axis,
     # pelvis = vertical axis through x=0 above the crotch, thighs = x=+-0.09 below it)
-    off_local = float(GC.get("offset_m", 0.008)) / float(np.array(body.matrix_world.to_scale()).mean())
+    off_local = float(GC.get("offset_m", 0.001)) / float(np.array(body.matrix_world.to_scale()).mean())
     gco = np.array([v_.co for v_ in bm.verts]); lnr_g = np.array([v_.normal for v_ in bm.verts])
     vw = gco @ M4[:3, :3].T + M4[:3, 3]; nw_g = lnr_g @ M4[:3, :3].T; cx_ = np.where((vw[:, 2] < 0.92) & (np.abs(vw[:, 0]) > 0.03), np.sign(vw[:, 0]) * 0.09, 0.0)
     outw = np.stack([vw[:, 0] - cx_, vw[:, 1], np.zeros(len(vw))], 1)
@@ -1092,16 +1092,60 @@ if GC.get("enabled"):
     gco_w = gco @ M4[:3, :3].T + M4[:3, 3]; g_rest = np.linalg.norm(gco_w[gev[:, 0]] - gco_w[gev[:, 1]], axis=1); g_ok = g_rest > 1e-4
     region_counts.update({"briefs_verts": int(gnv), "briefs_faces": len(gm_.polygons)})
     bpy.context.view_layer.objects.active = garm
+    # The glTF armature carries a ~0.025 object scale. Shrinkwrap/Displace offsets
+    # are in the garment's local units, so convert world metres before assigning.
+    _gscale = float(np.array(garm.matrix_world.to_scale()).mean())
+    _gscale = _gscale if _gscale > 1e-6 else 1.0
+    # Keep the wrap after the armature so the offset sits on the posed surface
+    # (imported Armature modifiers are often pinned last).
+    for _am in garm.modifiers:
+        if _am.type == "ARMATURE" and getattr(_am, "use_pin_to_last", False):
+            _am.use_pin_to_last = False
+    # Slim visible waistband: a 2–3 cm top strip sits ~2 mm further out than the body.
     try:
-        sol = garm.modifiers.new("briefs_solidify", "SOLIDIFY")
-        sol.thickness = 0.0045
-        sol.offset = 1.0   # grow outward so compressed glute folds don't open onto the clay
-        if hasattr(sol, "use_quality_normals"):
-            sol.use_quality_normals = True
-        # no Corrective Smooth: after Solidify the vert count doubles and it warns / no-ops
-    except Exception as _se:
-        log(f"briefs solidify/smooth skipped: {_se}")
-    log(f"briefs garment: {gnv} verts, {len(gm_.polygons)} faces, offset {GC.get('offset_m', 0.008)} m")
+        vg_w = garm.vertex_groups.new(name="waistband")
+        z_cut = float(GC.get("z_waist", 1.03)) - 0.028
+        n_wb = 0
+        for i_, z_ in enumerate(vw[:, 2]):
+            if z_ >= z_cut:
+                vg_w.add([i_], 1.0, "REPLACE"); n_wb += 1
+        log(f"waistband verts {n_wb}/{gnv} z>={z_cut:.3f}")
+    except Exception as _ve:
+        log(f"waistband group skipped: {_ve}")
+    try:
+        wrap = garm.modifiers.new("briefs_wrap", "SHRINKWRAP")
+        wrap.target = body
+        wrap.wrap_method = "NEAREST_SURFACEPOINT"
+        if hasattr(wrap, "wrap_mode"):
+            wrap.wrap_mode = "ABOVE_SURFACE"
+        wrap.offset = float(GC.get("wrap_offset_m", 0.005)) / _gscale
+        wrap.use_negative_direction = False
+        wrap.use_positive_direction = True
+    except Exception as _we:
+        log(f"briefs shrinkwrap skipped: {_we}")
+    try:
+        disp = garm.modifiers.new("briefs_waistband", "DISPLACE")
+        disp.mid_level = 0.0
+        disp.strength = 0.002 / _gscale
+        if "waistband" in garm.vertex_groups:
+            disp.vertex_group = "waistband"
+        if hasattr(disp, "direction"):
+            disp.direction = "NORMAL"
+    except Exception as _de:
+        log(f"briefs waistband skipped: {_de}")
+    sol_t = float(GC.get("solidify_m", 0.0) or 0.0)
+    if sol_t > 1e-5:
+        try:
+            sol = garm.modifiers.new("briefs_solidify", "SOLIDIFY")
+            sol.thickness = sol_t / _gscale
+            sol.offset = 1.0
+            if hasattr(sol, "use_quality_normals"):
+                sol.use_quality_normals = True
+        except Exception as _se:
+            log(f"briefs solidify skipped: {_se}")
+    _mod_order = [m.name + ":" + m.type for m in garm.modifiers]
+    log(f"briefs garment: {gnv} verts, {len(gm_.polygons)} faces, offset {GC.get('offset_m', 0.001)} m "
+        f"wrap {GC.get('wrap_offset_m', 0.004)} m local_scale={_gscale:.4f} mods={_mod_order}")
 
 if GW.get("enabled"):      # after the garment copy (the briefs never carry the fist key)
     if not me.shape_keys: body.shape_key_add(name="Basis", from_mix=False)
@@ -1146,7 +1190,8 @@ if LEGS == "bench_row":
         SIDX = np.nonzero(_sW > 0.5)[0]
         _Ms = np.array(arm.matrix_world @ arm.data.bones[SUPPORT_BN].matrix_local)
         _Ms[:3, :3] /= np.linalg.norm(_Ms[:3, :3], axis=0)
-        FP = HGR.flatten_palm(co, SIDX, _Ms, SUPPORT_BN.startswith("Left"))
+        FP = HGR.flatten_palm(co, SIDX, _Ms, SUPPORT_BN.startswith("Left"),
+                              adduct=0.78, thumb_adduct=0.50, flatten=0.55)
         if not me.shape_keys:
             body.shape_key_add(name="Basis", from_mix=False)
         sks = body.shape_key_add(name="support_flat", from_mix=False)
@@ -1702,7 +1747,9 @@ for f in range(1, NF + 1):
         gap = np.array([tree.find_nearest(mu.Vector(q_))[3] for q_ in gc_.tolist()])
         gr = np.linalg.norm(gc_[gev[g_ok, 0]] - gc_[gev[g_ok, 1]], axis=1) / g_rest[g_ok]
         cmin = float(GC.get("clearance_min_m", 0.002))
-        rec.update({"briefs_gap_min_m": round(float(gap.min()), 4), "briefs_poke_frac": round(float((gap < cmin).mean()), 6),
+        rec.update({"briefs_gap_min_m": round(float(gap.min()), 4),
+                    "briefs_gap_max_m": round(float(gap.max()), 4),
+                    "briefs_poke_frac": round(float((gap < cmin).mean()), 6),
                     "briefs_tear_frac2x": round(float((gr > 2.0).mean()), 6), "briefs_tear_max_ratio": round(float(gr.max()), 3),
                     "briefs_cover_frac": round(float((gap >= cmin).mean()), 6), "briefs_verts": int(len(gc_))})
     chk.append(rec)
@@ -1728,6 +1775,7 @@ if LEGS == "bench_row" and BENCH_SPEC is not None:
             "rel": _bp("RightForeArm"),
             "lsh": _bp("LeftArm"), "lel": _bp("LeftForeArm"), "lank": _bp("LeftFoot"),
             "rkn": _bp("RightLeg"),
+            "lhip": _bp("LeftUpLeg"),
             "rtoe": _bp("RightToeBase") if "RightToeBase" in pb else _bp("RightFoot"),
             "hip": _bp("Hips"), "sh": 0.5 * (_bp("LeftArm") + _bp("RightArm")),
             "head": _bp("Head") if "Head" in pb else _bp("head_end"),
@@ -1750,8 +1798,17 @@ if LEGS == "bench_row" and BENCH_SPEC is not None:
                 _pm = HGR.measure_palm(_pwh, SIDX, _Mhs, pad_normal=np.array([0.0, 0.0, 1.0]))
                 rec_pts["support_finger_spread_m"] = _pm["finger_spread_m"]
                 rec_pts["support_palm_from_pad_deg"] = _pm["palm_from_pad_deg"]
+                _hp = _pwh[SIDX]
+                _pz = float(BENCH_SPEC["pad_z"])
+                _ox, _oy = BENCH_SPEC["origin_xy"]
+                _hx, _hy = BENCH_SPEC["pad_half_xy"]
+                rec_pts["support_palm_pad_dz_m"] = float(np.median(np.abs(_hp[:, 2] - _pz)))
+                _inside = ((np.abs(_hp[:, 0] - _ox) <= (_hx + 0.01))
+                           & (np.abs(_hp[:, 1] - _oy) <= (_hy + 0.01)))
+                rec_pts["support_palm_in_pad_xy"] = bool(float(_inside.mean()) >= 0.90)
                 log(f"bench_qc {_tag} support_hand spread={_pm['finger_spread_m']:.3f}m "
-                    f"palm_from_pad={_pm['palm_from_pad_deg']:.1f}deg")
+                    f"palm_from_pad={_pm['palm_from_pad_deg']:.1f}deg "
+                    f"pad_dz={rec_pts['support_palm_pad_dz_m']:.3f} in_xy={rec_pts['support_palm_in_pad_xy']}")
             except Exception as _he:
                 log(f"bench_qc {_tag} support_hand measure failed: {_he}")
         _mp_bones = {0: "Head", 11: "LeftArm", 12: "RightArm", 13: "LeftForeArm",
@@ -1824,6 +1881,11 @@ if LEGS == "bench_row" and BENCH_SPEC is not None:
             except Exception as _qe:
                 log(f"bench_qc {_tag} db probe failed: {_qe}")
         qc_frames[_tag] = _BRP.qc_from_bones(rec_pts, BENCH_SPEC, uu, db_ndc, db_vis, db_con)
+        if 0 <= _fi - 1 < len(chk):
+            for _bk in ("briefs_gap_min_m", "briefs_gap_max_m", "briefs_poke_frac",
+                        "briefs_tear_frac2x", "briefs_cover_frac"):
+                if _bk in chk[_fi - 1]:
+                    qc_frames[_tag][_bk] = chk[_fi - 1][_bk]
         log(f"bench_qc {_tag} f{_fi} pass={qc_frames[_tag]['pass']} {qc_frames[_tag]['gates']}")
     def _jsonify(o):
         if isinstance(o, (np.bool_,)): return bool(o)
