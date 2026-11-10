@@ -700,12 +700,13 @@ if USE_MID:
             tid, MID["names"], _gw_tgts, _hues, _hstr, ADJ,
             exclude=EXCLUDE, shorts=shorts,
             erode_rings=int(RC.get("glow_erode_rings", 0)),
-            power=float(RC.get("glow_center_power", 1.0)),
+            power=float(RC.get("glow_center_power", 1.55)),
             fade_rings=int(RC.get("glow_fade_rings", 3)),
             pos=_rest,
             smooth_iters=int(RC.get("glow_smooth_iters", 28)),
             solid_thresh=float(RC.get("glow_solid_thresh", 0.32)),
             close_rings=int(RC.get("glow_close_rings", 3)),
+            radial=bool(RC.get("glow_radial", True)),
         )
         _gw_mean, _gw_n = MIDS.write_glow_attrs(me, _gw, _grgb)
         log(f"glow bake verts>0.5={_gw_n} mean={_gw_mean:.4f} per_id={_gst}")
@@ -1421,10 +1422,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import glow_shad
 _flex_min = float(RC.get("glow_flex_min", 0.88 if look_inscene else 0.58))
 _backend = "inscene" if look_inscene else "post"
 flex_nodes = GSH.switch_materials(
-    body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)),
-    tint_mix=float(RC.get("glow_tint", 0.28)),
-    fibre_bump=float(RC.get("glow_fibre_bump", 0.32)),
-    rim=float(RC.get("glow_rim", 0.35)),
+    body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 58.0)),
+    tint_mix=float(RC.get("glow_tint", 0.12)),
+    fibre_bump=float(RC.get("glow_fibre_bump", 0.22)),
+    rim=float(RC.get("glow_rim", 0.22)),
+    body_rim=float(RC.get("body_rim", 0.18)),
+    fibre_line=float(RC.get("glow_fibre_line", 0.32)),
 )
 if look_inscene:
     log(f"glow backend=inscene flex_min={_flex_min} em_str={em_str}")

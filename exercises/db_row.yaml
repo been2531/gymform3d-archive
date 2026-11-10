@@ -69,7 +69,7 @@ render:
   albedo_detail: 0.0
   sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 0.50
+  glow_emission: 1.45
   hdri_strength: 0.0
   key_energy: 75
   fill_energy: 230
@@ -77,26 +77,29 @@ render:
   floor: true
   denoise: true
   look_backend: inscene
-  body_source: ecorche           # separated muscle meshes glow; not painted atlas stickers
+  body_source: grab3d            # smooth painted glow on the one-piece mannequin (ecorche kept, unused)
   view_transform: Standard
   ambient_strength: 0.38
   top_energy: 50
   ao_distance: 0.14
-  ao_amount: 0.38
+  ao_amount: 0.16
   glow_blur_iters: 10
   glow_erode_rings: 0
   glow_fade_rings: 3
-  glow_center_power: 1.0
+  glow_radial: true             # airbrush: hot core to soft transparent edge
+  glow_center_power: 0.90
   glow_smooth_iters: 40
   glow_solid_thresh: 0.28
   glow_close_rings: 5
   glow_tint: 0.22
-  glow_fibre_bump: 0.42
-  glow_rim: 0.42
+  glow_fibre_bump: 0.28
+  glow_fibre_line: 0.40         # thin brighter/darker fibre grooves inside the glow
+  glow_rim: 0.22
+  body_rim: 0.22                 # cool Fresnel rim on the whole silhouette
   glow_bloom: true
-  blender_bloom: 0.36
+  blender_bloom: 0.70
   glow_flex_min: 0.88
-  base_color: [0.088, 0.089, 0.090]
+  base_color: [0.26, 0.27, 0.30]  # sampled demic row-ref clay (sRGB V~144 → lin ~0.27, cool tint)
   mask_spp: 4
   camera:
     mode: side_tight          # camera on the working-arm side, turned toward the back (Day 4 back-3/4 feel)
@@ -117,15 +120,15 @@ grade:
   backdrop_rgb: [38, 38, 38]
   target_muscles: [lats, rhomboids, mid_trap, rear_delt]
   muscle_hues:
-    lats: {h: 10, s: 200, v: 242}        # orange
-    rhomboids: {h: 141, s: 220, v: 245}  # purple
-    mid_trap: {h: 141, s: 220, v: 245}   # purple
-    rear_delt: {h: 162, s: 240, v: 235}  # magenta-pink
+    lats: {h: 9, s: 200, v: 250}         # orange (demic row core ~H8 S144-185 V248)
+    rhomboids: {h: 141, s: 175, v: 245}  # purple
+    mid_trap: {h: 141, s: 175, v: 245}   # purple
+    rear_delt: {h: 162, s: 185, v: 240}  # magenta-pink
   muscle_hue_strength:
-    lats: 0.82
-    rhomboids: 1.15
-    mid_trap: 1.15
-    rear_delt: 1.05
+    lats: 0.95
+    rhomboids: 0.88
+    mid_trap: 0.88
+    rear_delt: 1.00
   glow: right                 # coloured targets (correct form); UI ✓/✗ stay green/red
   look: clay                   # default (inherits _shared); override with charcoal to compare
   fibre_amount: 0.80

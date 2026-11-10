@@ -524,8 +524,13 @@ def _components(mask, adj):
     return labels, np.asarray(sizes, np.int32)
 
 
-def _feather_solid(solid, counts, idx, owners, fade_rings=3, power=1.0):
-    """Interior stays 1; only the outer fade_rings hops drop off (short crisp rim)."""
+def _feather_solid(solid, counts, idx, owners, fade_rings=3, power=1.0, radial=False, labels=None, plateau=0.35):
+    """Weight from graph-distance to the region exterior.
+
+    Default (radial=False): interior stays 1; only the outer fade_rings hops drop off.
+    radial=True: full distance-to-boundary / max, cosine-smoothed and raised to
+    `power`, so each muscle is an airbrushed sheet (hot core, soft transparent edge).
+    """
     filled = np.asarray(solid, dtype=bool)
     nv = int(filled.shape[0])
     w = np.zeros(nv, np.float32)
@@ -542,9 +547,24 @@ def _feather_solid(solid, counts, idx, owners, fade_rings=3, power=1.0):
             break
         d[nxt] = hop
         reached |= nxt
-    fade = max(float(fade_rings), 1e-4)
-    raw = d.astype(np.float32) / fade
-    w[filled] = np.clip(raw[filled], 0.0, 1.0)
+    if radial:
+        # Per-component dmax so a thin crescent arm (upper lat) is not crushed
+        # by a thick belly's radius. Inner `plateau` of each component stays hot.
+        if labels is None:
+            groups = [filled]
+        else:
+            groups = [labels == int(c) for c in np.unique(labels) if int(c) >= 0]
+        for m in groups:
+            if not np.any(m):
+                continue
+            dmax = max(float(d[m].max()), 1.0)
+            ref = max(dmax * (1.0 - float(plateau)), 1.0)
+            t = np.clip(d[m].astype(np.float32) / ref, 0.0, 1.0)
+            w[m] = np.sin(0.5 * np.pi * t)
+    else:
+        fade = max(float(fade_rings), 1e-4)
+        raw = d.astype(np.float32) / fade
+        w[filled] = np.clip(raw[filled], 0.0, 1.0)
     if float(power) != 1.0:
         pos = w > 0
         w[pos] = np.power(w[pos], float(power))
@@ -578,7 +598,7 @@ def anatomy_allow(pos, vert_id, names):
 
 
 def clean_muscle_weight(seed, adj, allow, fade_rings=3, smooth_iters=40, thresh=0.32,
-                        close_rings=5, keep=2, min_size=80, power=1.0):
+                        close_rings=5, keep=2, min_size=80, power=1.0, radial=False):
     """Rebuild one (or L/R) smooth solid region from a jagged ID seed, then short-feather.
 
     Morphological close fills island holes; Laplacian smoothing rounds torn atlas edges;
@@ -618,7 +638,11 @@ def clean_muscle_weight(seed, adj, allow, fade_rings=3, smooth_iters=40, thresh=
         keep_m = np.zeros(nv, dtype=bool)
     # one extra ring inside allow so the silhouette reaches the visual belly edge
     keep_m = _dilate_mask(keep_m, counts, idx, owners, 1) & allow
-    w = _feather_solid(keep_m, counts, idx, owners, fade_rings=fade_rings, power=power)
+    labels, _sz = _components(keep_m, adj)
+    w = _feather_solid(keep_m, counts, idx, owners, fade_rings=fade_rings, power=power,
+                       radial=radial, labels=labels)
+    if radial:
+        w = _laplacian(w, counts, idx, owners, 8, retain=allow)
     return w, {"solid": int(keep_m.sum()), "cc": kept}
 
 
@@ -655,7 +679,7 @@ def write_glow_attrs(me, weights, rgb):
 
 def bake_target_glow(vert_id, names, targets, hues, strengths, adj, exclude=None, shorts=None,
                      erode_rings=0, power=1.0, fade_rings=3, pos=None,
-                     smooth_iters=40, solid_thresh=0.28, close_rings=5):
+                     smooth_iters=40, solid_thresh=0.28, close_rings=5, radial=False):
     """Once-per-mesh bake: clean solid region per hue-group + that group's linear RGB."""
     nv = len(vert_id)
     name_i = {n: i for i, n in enumerate(names)}
@@ -717,7 +741,7 @@ def bake_target_glow(vert_id, names, targets, hues, strengths, adj, exclude=None
             seed, use_adj, allow,
             fade_rings=fade_rings, smooth_iters=smooth_iters,
             thresh=solid_thresh, close_rings=close_rings,
-            keep=2, min_size=80, power=power,
+            keep=2, min_size=80, power=power, radial=radial,
         )
         wt = wt * stren
         col = hsv_to_lin_rgb(spec["h"], spec["s"], spec["v"])
