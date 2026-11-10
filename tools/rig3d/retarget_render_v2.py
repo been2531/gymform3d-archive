@@ -709,6 +709,24 @@ if USE_MID:
             radial=bool(RC.get("glow_radial", False)),
         )
         _gw_mean, _gw_n = MIDS.write_glow_attrs(me, _gw, _grgb)
+        _regs = _gst.pop("_regions", None) or {}
+        _sep = _gst.pop("_sep", None)
+        if _regs:
+            reg = np.zeros((nv, 3), np.float32)
+            if _regs.get("lats") is not None:
+                reg[_regs["lats"], 0] = 1.0
+            # rhomboids + rear delt share more horizontal fibres (origin -> insertion)
+            if _regs.get("rhomboids") is not None:
+                reg[_regs["rhomboids"], 1] = 1.0
+            if _regs.get("rear_delt") is not None:
+                reg[_regs["rear_delt"], 1] = 1.0
+            if _regs.get("mid_trap") is not None:
+                reg[_regs["mid_trap"], 2] = 1.0
+            if _sep is not None:
+                reg[np.asarray(_sep, dtype=bool)] = 0
+            reg[shorts] = 0
+            MREG.write_mregion(me, reg)
+            MIDS.write_region_id(me, _regs)
         log(f"glow bake verts>0.5={_gw_n} mean={_gw_mean:.4f} per_id={_gst}")
     except Exception as _e:
         log(f"glow bake failed: {_e}")
