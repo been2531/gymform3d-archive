@@ -68,7 +68,7 @@ render:
   albedo_detail: 0.0
   sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 0.48
+  glow_emission: 0.45
   hdri_strength: 0.0
   key_energy: 75
   fill_energy: 230
@@ -83,13 +83,18 @@ render:
   ao_amount: 0.38
   glow_blur_iters: 10
   glow_erode_rings: 0
-  glow_fade_rings: 6
-  glow_center_power: 1.2
-  glow_tint: 0.50
+  glow_fade_rings: 3
+  glow_center_power: 1.0
+  glow_smooth_iters: 40
+  glow_solid_thresh: 0.28
+  glow_close_rings: 5
+  glow_tint: 0.22
+  glow_fibre_bump: 0.42
+  glow_rim: 0.35
   glow_bloom: true
-  blender_bloom: 0.22
+  blender_bloom: 0.26
   glow_flex_min: 0.88
-  base_color: [0.13, 0.131, 0.133]
+  base_color: [0.088, 0.089, 0.090]
   mask_spp: 4
   camera:
     mode: side_tight          # camera on the working-arm side, turned toward the back (Day 4 back-3/4 feel)
@@ -115,10 +120,10 @@ grade:
     mid_trap: {h: 141, s: 220, v: 245}   # purple
     rear_delt: {h: 162, s: 240, v: 235}  # magenta-pink
   muscle_hue_strength:
-    lats: 1.0
-    rhomboids: 0.95
-    mid_trap: 0.95
-    rear_delt: 0.90
+    lats: 0.82
+    rhomboids: 1.15
+    mid_trap: 1.15
+    rear_delt: 1.05
   glow: right                 # coloured targets (correct form); UI ✓/✗ stay green/red
   look: clay                   # default (inherits _shared); override with charcoal to compare
   fibre_amount: 0.80

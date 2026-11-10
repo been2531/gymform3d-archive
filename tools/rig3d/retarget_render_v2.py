@@ -689,15 +689,26 @@ if USE_MID:
         _hues.update(_yh)
     _hstr = (C.get("grade") or {}).get("muscle_hue_strength") or {}
     try:
+        try:
+            _rest = MIDS._read_glb(C["asset"]["glb"])["pos"]
+            if len(_rest) != nv:
+                raise ValueError(f"rest nv {len(_rest)} != {nv}")
+        except Exception as _re:
+            _rest = co
+            log(f"glow rest-pos fallback: {_re}")
         _gw, _grgb, _gst = MIDS.bake_target_glow(
             tid, MID["names"], _gw_tgts, _hues, _hstr, ADJ,
             exclude=EXCLUDE, shorts=shorts,
             erode_rings=int(RC.get("glow_erode_rings", 0)),
-            power=float(RC.get("glow_center_power", 1.2)),
-            fade_rings=int(RC.get("glow_fade_rings", 4)),
+            power=float(RC.get("glow_center_power", 1.0)),
+            fade_rings=int(RC.get("glow_fade_rings", 3)),
+            pos=_rest,
+            smooth_iters=int(RC.get("glow_smooth_iters", 28)),
+            solid_thresh=float(RC.get("glow_solid_thresh", 0.32)),
+            close_rings=int(RC.get("glow_close_rings", 3)),
         )
         _gw_mean, _gw_n = MIDS.write_glow_attrs(me, _gw, _grgb)
-        log(f"glow bake verts>0.5={_gw_n} mean={_gw_mean:.4f} per_id={_gst} erode={int(RC.get('glow_erode_rings', 3))}")
+        log(f"glow bake verts>0.5={_gw_n} mean={_gw_mean:.4f} per_id={_gst}")
     except Exception as _e:
         log(f"glow bake failed: {_e}")
 else:
@@ -1330,7 +1341,7 @@ look_inscene = (
 )
 ad = 0.0 if look_inscene else float(RC.get("albedo_detail", 0.50))
 sss_w = min(float(RC.get("sss_weight", 0.0 if look_inscene else 0.16)), 0.04 if look_inscene else 1.0)
-em_str = float(RC.get("glow_emission", 0.55 if look_inscene else 1.35))
+em_str = float(RC.get("glow_emission", 0.95 if look_inscene else 1.35))
 glow_wrong = C.get("grade", {}).get("glow") == "wrong"
 _pal = str((C.get("grade") or {}).get("palette") or "demic_peach").strip().lower()
 
@@ -1409,7 +1420,12 @@ for m_ in body_mats:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import glow_shader as GSH
 _flex_min = float(RC.get("glow_flex_min", 0.88 if look_inscene else 0.58))
 _backend = "inscene" if look_inscene else "post"
-flex_nodes = GSH.switch_materials(body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)), tint_mix=float(RC.get("glow_tint", 0.72)))
+flex_nodes = GSH.switch_materials(
+    body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)),
+    tint_mix=float(RC.get("glow_tint", 0.28)),
+    fibre_bump=float(RC.get("glow_fibre_bump", 0.32)),
+    rim=float(RC.get("glow_rim", 0.35)),
+)
 if look_inscene:
     log(f"glow backend=inscene flex_min={_flex_min} em_str={em_str}")
 

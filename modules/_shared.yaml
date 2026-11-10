@@ -44,7 +44,7 @@ render:
   albedo_detail: 0.0
   sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 0.48
+  glow_emission: 0.45
   glow_follow_mesh: true          # paint mregion in a torso-local frame on the deformed mesh
   glow_union_rest: true           # union rest-pose paint (follows verts) with per-frame assign (fills newly visible)
   glow_peak_dilate: 2             # extra mesh-ring growth at peak (kept small; full-target fill is ~0.22 of body)
@@ -54,7 +54,7 @@ render:
   glow_method_d: false            # D remains a selectable preset; default COMBO grades the beauty+ID pass
   sliver_rest_frac: 1.0           # ignore rest edges shorter than this x median when scoring tear_min_ratio
   glow_fibre_scale: 42.0
-  blender_bloom: 0.22             # subtle Fog-Glow on in-scene emission only
+  blender_bloom: 0.30             # soft halo on glowing muscles
   crease_smooth: true             # cached weight-smooth of Spine/shoulder groups (the crease fix)
   crease_smooth_factor: 0.0       # Corrective Smooth off: v3.1 0.7/12 collapsed edges to ratio 0.0
   crease_smooth_iter: 6
@@ -76,12 +76,17 @@ render:
   ao_distance: 0.14
   ao_amount: 0.38
   glow_blur_iters: 10
-  glow_erode_rings: 0            # 0 = keep the ID silhouette; fade_rings feathers the rim (no neighbour bleed)
-  glow_fade_rings: 6             # hops from the true exterior to full strength (large bellies stay filled)
-  glow_center_power: 1.2         # slight extra hot-core on the fade ramp
-  glow_tint: 0.50                # mix of glow RGB into clay albedo (shading stays)
+  glow_erode_rings: 0            # no shrink; clean_muscle_weight rebuilds a solid silhouette
+  glow_fade_rings: 3             # short ~2-3 px rim; interior of each muscle stays at 1
+  glow_center_power: 1.0
+  glow_smooth_iters: 40          # Laplacian rounds torn atlas-island edges
+  glow_solid_thresh: 0.28
+  glow_close_rings: 5            # morphological close fills holes inside a muscle
+  glow_tint: 0.22                # low: colour comes from emission so form/fibre stay visible
+  glow_fibre_bump: 0.42          # wave bump on glow areas (striation)
+  glow_rim: 0.35                 # facing rim on glowing muscles
   glow_bloom: true
-  base_color: [0.13, 0.131, 0.133]
+  base_color: [0.088, 0.089, 0.090]
   mask_spp: 4
   camera:
     mode: side_tight
@@ -128,10 +133,10 @@ grade:
     pecs: {h: 66, s: 170, v: 225}         # green
     erectors: {h: 29, s: 150, v: 245}
   muscle_hue_strength:
-    lats: 1.0
-    rhomboids: 0.95
-    mid_trap: 0.95
-    rear_delt: 0.90
+    lats: 0.82
+    rhomboids: 1.15
+    mid_trap: 1.15
+    rear_delt: 1.05
   glow_activation_floor: 0.58    # E: 0.58 + 0.42 * contraction (start stays a sheet)
   glow_activation_scale: 0.42
   # selectable presets (do not delete): A fibre-on-ID, B x-ray, C neon-outline, D surface-tint
