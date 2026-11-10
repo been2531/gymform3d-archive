@@ -114,4 +114,12 @@ def load_exercise(slug, root=None):
         "module": os.path.join(root, "modules", f"{module_name}.yaml") if module_name else None,
         "shared": os.path.join(root, "modules", "_shared.yaml"),
     }
+    spec_p = os.path.join(root, "exercises", f"{slug}.spec.yaml")
+    if os.path.isfile(spec_p):
+        cfg["_paths"]["spec"] = spec_p
+        try:
+            from spec_load import load_exercise_spec
+            cfg["spec"] = load_exercise_spec(slug, root)
+        except Exception:
+            cfg["spec"] = None
     return cfg
