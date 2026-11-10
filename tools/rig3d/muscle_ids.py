@@ -339,6 +339,47 @@ def write_mid_target(me, vert_id, names, targets):
     return int(fac.sum())
 
 
+
+def blur_mask(mask, adj, iters=7, core_hold=0.94, dilate=2):
+    """Dilate a few rings then adjacency-blur. Interior stays near 1; borders feather."""
+    w = np.asarray(mask, np.float32).copy()
+    core = (w > 0.5).astype(np.float32)
+    nv = int(w.shape[0])
+    counts = np.array([len(a) for a in adj], np.int32)
+    if nv == 0:
+        return w
+    parts = [a for a in adj if len(a)]
+    idx = np.concatenate(parts) if parts else np.zeros(0, np.int32)
+    owners = np.repeat(np.arange(nv, dtype=np.int32), counts)
+    for _ in range(int(dilate)):
+        mx = w.copy()
+        if len(idx):
+            np.maximum.at(mx, owners, w[idx])
+        w = np.maximum(w, mx)
+    # `core` stays the pre-dilate interior so only the original sheet is held at core_hold
+    for _ in range(int(iters)):
+        sums = np.zeros(nv, np.float32)
+        if len(idx):
+            np.add.at(sums, owners, w[idx])
+        nbr = sums / np.maximum(counts.astype(np.float32), 1.0)
+        w = 0.40 * w + 0.60 * nbr
+        w = np.maximum(w, core * float(core_hold))
+    return np.clip(w, 0.0, 1.0)
+
+
+def write_glow_w(me, weights):
+    """FLOAT_COLOR point attribute `glow_w` (R=G=B = weight) for the in-scene mix."""
+    w = np.asarray(weights, np.float32)
+    col = np.zeros((len(w), 4), np.float32)
+    col[:, 0] = w; col[:, 1] = w; col[:, 2] = w; col[:, 3] = 1.0
+    va = me.color_attributes.get("glow_w")
+    if va is None:
+        va = me.color_attributes.new("glow_w", "FLOAT_COLOR", "POINT")
+    va.data.foreach_set("color", col.ravel())
+    me.update()
+    return float(w.mean()), int((w > 0.5).sum())
+
+
 def cache_path(cache_dir, key):
     return os.path.join(cache_dir, f"muscle_ids_{key}.npz")
 

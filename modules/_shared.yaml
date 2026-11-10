@@ -38,17 +38,17 @@ motion:
 render:
   dumbbell_axis_fix: true
   res: [1080, 1920]
-  spp: 16
+  spp: 24
   denoise_prefilter: ACCURATE
-  normal_strength: 2.0
-  albedo_detail: 0.50
-  sss_weight: 0.16
+  normal_strength: 1.0
+  albedo_detail: 0.0
+  sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 1.35
+  glow_emission: 1.0
   glow_follow_mesh: true          # paint mregion in a torso-local frame on the deformed mesh
   glow_union_rest: true           # union rest-pose paint (follows verts) with per-frame assign (fills newly visible)
   glow_peak_dilate: 2             # extra mesh-ring growth at peak (kept small; full-target fill is ~0.22 of body)
-  glow_flex_min: 0.58             # emission at start = this x peak (peak is always strongest)
+  glow_flex_min: 0.88             # emission at start = this x peak (peak is always strongest)
   glow_ab: false                  # if true, also render the Blender-native fibre+compositor path as b_*.png
   glow_id_pass: true              # v3.3: render palette ID pass (id_*.png) from rest-pose muscle IDs
   glow_method_d: false            # D remains a selectable preset; default COMBO grades the beauty+ID pass
@@ -60,15 +60,23 @@ render:
   crease_smooth_iter: 6
   crease_weight_smooth: 0.5
   crease_weight_smooth_iter: 6
-  hdri_strength: 0.35
-  key_energy: 380
-  fill_energy: 150
-  rim_energy: 270
-  leg_key_energy: 190             # lower key aimed at the legs (charcoal silhouette separation)
-  leg_rim_energy: 170
+  hdri_strength: 0.0
+  key_energy: 75
+  fill_energy: 230
+  rim_energy: 40
+  leg_key_energy: 0               # even studio — no extra leg blast
+  leg_rim_energy: 0
   floor: true
   floor_size_m: 6.0
   denoise: true
+  look_backend: inscene          # clay Principled + blurred glow_w emission; no 2D fibre
+  view_transform: Standard       # colours stay as measured (not AgX)
+  ambient_strength: 0.38
+  top_energy: 50
+  ao_distance: 0.14
+  ao_amount: 0.38
+  glow_blur_iters: 10
+  base_color: [0.13, 0.131, 0.133]
   mask_spp: 4
   camera:
     mode: side_tight
@@ -93,14 +101,14 @@ grade:
   detail_amount: 1.0
   detail_sigma: 1.6
   palette: demic_peach           # default; selectable: green (legacy mint). Green is UI-only in the peach look.
-  backdrop_rgb: [40, 40, 41]      # charcoal V~40 (measured demic backdrop V~37-44)
+  backdrop_rgb: [38, 38, 38]      # charcoal V~38 (measured demic backdrop V~37-44)
   glow: right
   look: clay                     # default; charcoal remains selectable via look: charcoal
   callout_clear_min_px: 220      # laser/leader clearance from prop (db) keypoints, grade3d solver
   fibre_amount: 0.80             # readable fascicle lines (1.0 = old sticker); mixed with 3D form high-pass
   bloom_amount: 0.38             # edge-weighted bloom (interior fibres preserved; callouts drawn after)
   emission_keep: 0.20            # low: AgX beauty emission is pale mint; form comes from high-pass + fibre
-  glow_method: COMBO             # production default: A fibres + thin seams + I Fresnel + E floor + F flow + G pulse
+  glow_method: NATIVE            # look is in-Blender (clay + peach emission); 2D grade is UI only. COMBO remains selectable.
   glow_activation_floor: 0.58    # E: 0.58 + 0.42 * contraction (start stays a sheet)
   glow_activation_scale: 0.42
   # selectable presets (do not delete): A fibre-on-ID, B x-ray, C neon-outline, D surface-tint
