@@ -4,7 +4,7 @@
 id: db_row
 name: Bench one-arm dumbbell row
 status: filled
-version: 1
+version: 2
 
 pose:
   name: textbook bench-supported one-arm dumbbell row
@@ -27,16 +27,24 @@ pose:
       working_hand_drop_min_m: 0.22     # wrist clearly below the working shoulder
       support_elbow_deg: [160, 180]     # support arm locked long
       support_arm_from_vertical_max_deg: 15
-      standing_knee_deg: [140, 170]     # soft, not locked
+      standing_knee_deg: [150, 170]     # 10–30° of flexion, not locked
+      standing_knee_flexion_deg: [10, 30]
     peak:
       working_elbow_deg: [70, 130]      # elbow driven back, not a biceps curl
-      working_hand_hip_max_m: 0.22      # DB sits beside the hip
+      working_hand_hip_max_m: 0.34      # DB beside the lower ribs / hip (vertical forearm)
+      working_forearm_from_vertical_max_deg: 20
+      working_elbow_above_torso_m: [0.0, 0.15]
+      working_upper_arm_torso_max_deg: 30
+      working_arm_crosses_back: false   # upper arm stays beside the torso, not over the back
+      db_below_torso_plane: true        # DB under the back surface, not hidden behind the hip
       elbow_past_torso: true            # elbow at or behind the torso line
       support_elbow_deg: [160, 180]
       support_arm_from_vertical_max_deg: 15
-      standing_knee_deg: [140, 170]
+      standing_knee_deg: [150, 170]
+      standing_knee_flexion_deg: [10, 30]
   contacts:
     support_hand_on_pad: true           # same-side hand flat on the pad
+    support_hand_flat: true             # fingers together, palm flat — not splayed
     support_hand_under_shoulder: true   # hand directly under that shoulder
     support_arm_straight_vertical: true
     support_knee_on_pad: true           # same-side knee on the pad
@@ -54,6 +62,9 @@ pose:
     - support arm bent, or the hand reaching ahead of the shoulder
     - standing foot pointing up or toward the camera
     - working arm swinging or shrugging; elbow not travelling past the torso at the peak
+    - working arm wrapping over the back; forearm along the spine; DB hidden behind the hip
+    - splayed support-hand fingers, or the palm not flat on the pad
+    - standing knee locked straight or bent past ~30°
     - yanking the torso up to move the dumbbell
     - hips rotating open off the pad
 
@@ -167,7 +178,7 @@ qc:
       label: 무게가 엉덩이 옆에 없음
       frames: [peak]
       metric: working_hand_hip_m
-      max: 0.22
+      max: 0.34
     - name: elbow_past_torso
       label: 팔꿈치가 몸통을 지나지 않음
       autofix: spec_disable_ref_fit
@@ -200,6 +211,48 @@ qc:
       frames: [bottom, peak]
       metric: db_visible_frac
       min: 0.35
+    - name: peak_forearm_vertical
+      label: 피크에서 전완이 바닥에 수직이 아님
+      frames: [peak]
+      metric: working_forearm_from_vertical_deg
+      max: 20
+    - name: peak_db_below_torso
+      label: 피크에서 덤벨이 몸통 아래로 안 내려감
+      frames: [peak]
+      metric: db_below_torso_plane
+      equals: true
+    - name: peak_db_visible
+      label: 피크에서 덤벨이 안 보임
+      frames: [peak]
+      metric: db_visible
+      equals: true
+    - name: peak_elbow_above_torso
+      label: 피크에서 팔꿈치가 몸통 위로 너무 올라가거나 안 올라감
+      frames: [peak]
+      metric: working_elbow_above_torso_m
+      min: 0.0
+      max: 0.15
+    - name: peak_upper_arm_along_torso
+      label: 피크에서 윗팔이 몸통 옆과 나란하지 않음
+      frames: [peak]
+      metric: working_upper_arm_torso_deg
+      max: 30
+    - name: peak_arm_no_cross_back
+      label: 피크에서 작업팔이 등을 넘어감
+      frames: [peak]
+      metric: working_arm_crosses_back
+      equals: false
+    - name: support_hand_flat
+      label: 지지 손이 벌어져 있거나 패드에 평평하지 않음
+      frames: [bottom, peak]
+      metric: support_hand_flat
+      equals: true
+    - name: standing_knee_soft
+      label: 서는 무릎이 너무 펴져 있거나 너무 굽음
+      frames: [bottom, peak]
+      metric: standing_knee_flexion_deg
+      min: 10
+      max: 30
     - name: sil_iou
       label: 실루엣이 기준 사진과 다름
       source: overlay

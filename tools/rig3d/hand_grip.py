@@ -146,3 +146,138 @@ def metrics(Pw, labels, s_fing, h_center, h_axis, r, h_half_len=0.085):
         sep = abs(((ang(tip) - ang(np.mean(ft, 0))) + 180) % 360 - 180); out["thumb_opposition_deg"] = round(float(sep), 1)
     inside = (d < r - 0.001) & (np.abs(t) < h_half_len); out["handle_intersect_verts"] = int(inside.sum())
     return out
+
+
+def _label_hand(L, web_gap=0.004, mcp_back=0.015):
+    """Label bone-local hand verts (Y along fingers). Returns labels, a, f, n, y, y_k."""
+    y = L[:, 1]
+    c0 = np.median(L, 0)
+    P = L - c0
+    _w, V = np.linalg.eigh(np.cov(P[:, [0, 2]].T))
+    a0 = np.array([V[0, 1], 0.0, V[1, 1]])
+    x0 = L @ a0
+    gaps = []
+    for yy in np.arange(np.percentile(y, 30), np.percentile(y, 75), 0.01):
+        s = (y >= yy) & (y < yy + 0.01)
+        xs = np.sort(x0[s])
+        g = np.nonzero(np.diff(xs) > web_gap)[0]
+        if len(g):
+            gaps.append((yy, (xs[g[0]] + xs[g[0] + 1]) / 2, (xs[g[-1]] + xs[g[-1] + 1]) / 2,
+                         xs.min(), xs.max()))
+    if not gaps:
+        raise RuntimeError("hand_grip: no thumb gap found")
+    left_w = np.median([g[1] - g[3] for g in gaps])
+    right_w = np.median([g[4] - g[2] for g in gaps])
+    side = 1.0 if right_w < left_w else -1.0
+    gx = np.median([g[2] if side > 0 else g[1] for g in gaps])
+    y_k = max(g[0] for g in gaps) + 0.01
+    thumb = (side * (x0 - gx) > 0) & (y > np.percentile(y, 15)) & (y < y_k)
+    fing = (y >= y_k) & ~thumb
+    xf = x0[fing]
+    c = np.quantile(xf, [0.125, 0.375, 0.625, 0.875])
+    for _ in range(30):
+        lab = np.argmin(np.abs(xf[:, None] - c[None]), 1)
+        c = np.array([xf[lab == k].mean() if (lab == k).any() else c[k] for k in range(4)])
+    tc = L[thumb].mean(0)
+    order = np.argsort(np.abs(c - float(tc @ a0)))[::-1]
+    fc = np.array([L[fing][lab == k].mean(0) for k in order])
+    a = _u(fc[-1] - fc[0]); a[1] = 0.0; a = _u(a)
+    f = np.array([0.0, 1.0, 0.0])
+    n = _u(np.cross(a, f))
+    if float((tc - fc.mean(0)) @ n) < 0:
+        n = -n
+    ua = L @ a
+    labels = np.full(len(L), 5)
+    fl = np.zeros(fing.sum(), int)
+    for rank, k in enumerate(order):
+        fl[lab == k] = rank
+    labels[np.nonzero(fing)[0]] = fl
+    labels[thumb] = 4
+    fu0 = np.array([np.median(ua[labels == k]) for k in range(4)])
+    hw = 0.5 * float(np.median(np.diff(np.sort(fu0))))
+    y_b = y_k - mcp_back
+    strip = (labels == 5) & (y >= y_b) & (ua >= fu0.min() - hw) & (ua <= fu0.max() + hw)
+    labels[strip] = np.argmin(np.abs(ua[strip, None] - fu0[None]), 1)
+    y_k = y_b
+    return labels, a, f, n, y, y_k
+
+
+def flatten_palm(co_w, idx, bone_M, is_left=True, adduct=0.62, thumb_adduct=0.40, flatten=0.50):
+    """Bring splayed fingers together and flatten the palm onto a pad (no finger bones).
+
+    adduct: fraction of each finger's across-palm offset removed toward the four-finger mean.
+    flatten: fraction of palm-normal variation removed so the palm reads planar.
+    Returns dict with new_world (len idx), labels, finger_spread_m, palm_normal_world, info.
+    """
+    R, o = bone_M[:3, :3], bone_M[:3, 3]
+    L = (co_w[idx] - o) @ R
+    labels, a, f, n, y, y_k = _label_hand(L)
+    ua, un = L @ a, L @ n
+    newL = L.copy()
+    fing = labels <= 3
+    ua_mid = float(np.median(ua[fing])) if fing.any() else float(np.median(ua))
+    # Adduction: slide each finger toward the palm midline along the across-palm axis.
+    for k in range(4):
+        m = labels == k
+        if m.any():
+            newL[m] = newL[m] - np.outer(adduct * (ua[m] - ua_mid), a)
+    m = labels == 4
+    if m.any():
+        newL[m] = newL[m] - np.outer(thumb_adduct * (ua[m] - ua_mid), a)
+    # Flatten: pull palm and fingers toward a common palmar plane.
+    palm_un = float(np.median(un[labels == 5])) if (labels == 5).any() else float(np.median(un))
+    newL = newL - np.outer(flatten * (un - palm_un), n)
+    new_world = newL @ R.T + o
+    meas = measure_palm_local(newL, labels, a, n, y)
+    n_w = R @ n
+    info = {
+        "adduct": round(float(adduct), 3),
+        "flatten": round(float(flatten), 3),
+        "finger_spread_m": meas["finger_spread_m"],
+        "n_verts": int(len(idx)),
+        "is_left": bool(is_left),
+    }
+    return {
+        "new_world": new_world,
+        "labels": labels,
+        "finger_spread_m": meas["finger_spread_m"],
+        "palm_normal_world": n_w,
+        "info": info,
+    }
+
+
+def measure_palm_local(L, labels, a, n, y):
+    tips = []
+    for k in range(4):
+        m = labels == k
+        if not m.any():
+            continue
+        sel = L[m]
+        ys = y[m]
+        hi = ys >= np.percentile(ys, 88)
+        tips.append(sel[hi].mean(0) if hi.any() else sel[np.argmax(ys)])
+    spread = float(np.linalg.norm(tips[0] - tips[-1])) if len(tips) >= 2 else 0.0
+    return {"finger_spread_m": round(spread, 4)}
+
+
+def measure_palm(co_w, idx, bone_M, pad_normal=None):
+    """Measure posed-hand finger spread and how flat the palm sits on the pad."""
+    if pad_normal is None:
+        pad_normal = np.array([0.0, 0.0, 1.0])
+    R, o = bone_M[:3, :3], bone_M[:3, 3]
+    L = (co_w[idx] - o) @ R
+    labels, a, f, n, y, y_k = _label_hand(L)
+    meas = measure_palm_local(L, labels, a, n, y)
+    n_w = R @ n
+    pn = pad_normal / (np.linalg.norm(pad_normal) + 1e-12)
+    # Palmar normal should face into the pad (−Z on a horizontal bench).
+    into_pad = -pn
+    ang = float(np.degrees(np.arccos(np.clip(float(n_w @ into_pad), -1.0, 1.0))))
+    ang = min(ang, 180.0 - ang)
+    return {
+        "finger_spread_m": meas["finger_spread_m"],
+        "palm_from_pad_deg": round(ang, 2),
+        "palm_normal_world": n_w,
+        "labels": labels,
+    }
+

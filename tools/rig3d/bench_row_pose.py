@@ -14,14 +14,14 @@ def _n(v):
     return v / n if n > 1e-9 else v
 
 
-def _ik(sh, wt, la, lf, pole_hint):
+def _ik(sh, wt, la, lf, pole_hint, reach_frac=0.98):
     """Two-bone IK; returns (elbow, wrist)."""
     sh = np.asarray(sh, np.float64)
     wt = np.asarray(wt, np.float64)
     pole_hint = np.asarray(pole_hint, np.float64)
     dvec = wt - sh
     d = float(np.linalg.norm(dvec))
-    reach = 0.98 * (la + lf)
+    reach = float(reach_frac) * (la + lf)
     if d < 1e-4:
         dvec = np.array([0.0, 0.0, -1e-4])
         d = 1e-4
@@ -116,25 +116,35 @@ def build_landmarks(u, L, side=12):
     lwr = np.array([x_sup, float(lsh[1]), hand_z])
     lel, lwr = _ik(lsh, lwr, La, Lf, lsh + np.array([0.0, -0.04, -0.15]))
 
-    # Opposite foot planted flat beside the bench, slightly wide, knee soft.
-    reach_leg = 0.99 * (Lt + Ls)
-    down = hip_z - 0.055
-    if down >= reach_leg:
-        rank = np.array([rhip_x + 0.18, hip_y - 0.04, hip_z - reach_leg])
+    # Opposite foot planted flat beside the bench, slightly wide, ~16° flexion
+    # (gate: 10–30°). Hip height limits how wide we can step without locking.
+    flex_deg = 12.0
+    interior = math.radians(180.0 - flex_deg)
+    d_ha = math.sqrt(max(Lt * Lt + Ls * Ls - 2.0 * Lt * Ls * math.cos(interior), 1e-6))
+    dz = max(hip_z - 0.055, 0.05)
+    if d_ha + 1e-4 < dz:
+        rank = np.array([rhip_x + 0.08, hip_y, hip_z - min(d_ha, 0.99 * (Lt + Ls))])
     else:
-        leftover = math.sqrt(max(reach_leg * reach_leg - down * down, 0.0))
-        rank = np.array([rhip_x + min(0.22, 0.55 * leftover + 0.12),
-                         hip_y - min(0.10, 0.35 * leftover), 0.055])
-    rkn, rank = _ik(rhip, rank, Lt, Ls, rhip + np.array([0.16, 0.02, -0.18]))
+        d_xy = math.sqrt(max(d_ha * d_ha - dz * dz, 0.0))
+        dir_xy = np.array([0.92, -0.39]); dir_xy /= max(np.linalg.norm(dir_xy), 1e-9)
+        rank = np.array([rhip_x + dir_xy[0] * d_xy, hip_y + dir_xy[1] * d_xy, 0.055])
+    rkn, rank = _ik(rhip, rank, Lt, Ls, rhip + np.array([0.14, 0.0, -0.22]),
+                    reach_frac=0.995)
     rtoe = np.array([rank[0], rank[1] + 0.16, 0.015])
     rheel = np.array([rank[0], rank[1] - 0.05, 0.015])
 
-    # Working arm: hang straight down; peak = elbow driven back past the torso,
-    # dumbbell sitting beside the hip.
+    # Working arm hang: straight down under the shoulder (bottom stays as-is).
     wr_hang = rsh + np.array([0.02, 0.0, -(La + Lf) * 0.98])
     el_hang, wr_hang = _ik(rsh, wr_hang, La, Lf, rsh + np.array([0.04, 0.0, -0.40]))
-    wr_peak = rhip + np.array([0.12, 0.02, -0.03])
-    el_peak, wr_peak = _ik(rsh, wr_peak, La, Lf, rsh + np.array([0.08, -0.35, 0.16]))
+
+    # Textbook peak: upper arm alongside the torso, elbow just past the torso
+    # line and a little above the back; forearm hangs vertical; DB sits beside
+    # the lower ribs, below the back surface, out on the working side.
+    torso_to_hip = _n(rhip - rsh)
+    up_arm = _n(torso_to_hip + 0.18 * right + 0.18 * up)
+    el_hint = rsh + up_arm * La
+    wr_peak = el_hint + np.array([0.045, 0.0, -Lf])
+    el_peak, wr_peak = _ik(rsh, wr_peak, La, Lf, el_hint)
     _ = hand_ahead  # kept so older configs still load
 
     # Head / face: continue the spine; a small downward look keeps the gaze on the floor.
@@ -233,7 +243,7 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
     knee_on_pad = pad_contains(lkn, spec) and abs(lkn[2] - pad_z) < 0.08
     foot_on_floor = rank[2] < 0.16 and rank[0] > spec["origin_xy"][0] + spec["pad_half_xy"][0] - 0.02
     below = (rsh[2] - rwr[2]) > 0.22
-    near_hip = float(np.linalg.norm(rwr - rhip)) < 0.22
+    near_hip = float(np.linalg.norm(rwr - rhip)) < 0.34
 
     support_arm_from_vertical_deg = None
     support_hand_under_shoulder = None
@@ -264,6 +274,7 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
     if rel is not None:
         elbow_past_torso = bool(float(rel[1]) <= float(rsh[1]) + 0.01)
     standing_knee_deg = None
+    standing_knee_flexion_deg = None
     if rkn is not None:
         ua = np.asarray(rhip, float) - np.asarray(rkn, float)
         va = np.asarray(rank, float) - np.asarray(rkn, float)
@@ -271,6 +282,64 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
         if nu > 1e-6 and nv > 1e-6:
             standing_knee_deg = math.degrees(
                 math.acos(float(np.clip(np.dot(ua, va) / (nu * nv), -1, 1))))
+            standing_knee_flexion_deg = 180.0 - standing_knee_deg
+
+    # Torso plane: point at the shoulder midpoint, normal out the back (+Z).
+    right_v = np.array([1.0, 0.0, 0.0], float)
+    if lsh is not None:
+        lat = np.asarray(rsh, float) - np.asarray(lsh, float)
+        if float(np.linalg.norm(lat)) > 1e-6:
+            right_v = _n(lat)
+    back_n = _n(np.cross(right_v, tv))
+    if back_n[2] < 0:
+        back_n = -back_n
+    plane_p = np.asarray(sh, float)
+
+    def _sd(p):
+        return float(np.dot(np.asarray(p, float) - plane_p, back_n))
+
+    db_p = rec_pts.get("db", rwr)
+    db_torso_plane_m = _sd(db_p)
+    db_below_torso_plane = bool(db_torso_plane_m < 0.01)
+    elbow_above_m = None
+    forearm_from_vertical_deg = None
+    upper_arm_torso_deg = None
+    arm_crosses_back = None
+    if rel is not None:
+        elbow_above_m = _sd(rel)
+        fvec = np.asarray(rwr, float) - np.asarray(rel, float)
+        fn = float(np.linalg.norm(fvec))
+        if fn > 1e-6:
+            down = np.array([0.0, 0.0, -1.0])
+            forearm_from_vertical_deg = math.degrees(
+                math.acos(float(np.clip(np.dot(fvec / fn, down), -1, 1))))
+        uvec = np.asarray(rel, float) - np.asarray(rsh, float)
+        un = float(np.linalg.norm(uvec))
+        if un > 1e-6 and float(np.linalg.norm(tv)) > 1e-6:
+            # parallel to the torso side = aligned with hip->shoulder OR shoulder->hip
+            along = abs(float(np.dot(uvec / un, spine)))
+            upper_arm_torso_deg = math.degrees(math.acos(float(np.clip(along, -1, 1))))
+        mid_x = float(sh[0])
+        work_sign = 1.0 if float(rsh[0] - mid_x) >= 0 else -1.0
+        # Crossing the back: elbow or wrist goes to the support side of the spine.
+        arm_crosses_back = bool(
+            (float(rel[0]) - mid_x) * work_sign < -0.03
+            or (float(rwr[0]) - mid_x) * work_sign < -0.03)
+
+    support_finger_spread_m = rec_pts.get("support_finger_spread_m")
+    support_palm_from_pad_deg = rec_pts.get("support_palm_from_pad_deg")
+    if rec_pts.get("support_hand_flat") is not None:
+        support_hand_flat = bool(rec_pts.get("support_hand_flat"))
+    else:
+        support_hand_flat = None
+        if support_finger_spread_m is not None and support_palm_from_pad_deg is not None:
+            # Sign of the clustered palmar normal can flip; flatness is the
+            # acute angle between the palm plane and the pad plane.
+            palm_deg = min(float(support_palm_from_pad_deg),
+                           180.0 - float(support_palm_from_pad_deg))
+            support_hand_flat = bool(
+                float(support_finger_spread_m) <= 0.07
+                and palm_deg <= 28.0)
 
     out = {
         "torso_from_horizontal_deg": round(torso_from_horiz, 2),
@@ -295,6 +364,21 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
         "standing_foot_flat": bool(standing_foot_flat),
         "elbow_past_torso": elbow_past_torso,
         "standing_knee_deg": None if standing_knee_deg is None else round(float(standing_knee_deg), 1),
+        "standing_knee_flexion_deg": None if standing_knee_flexion_deg is None
+            else round(float(standing_knee_flexion_deg), 1),
+        "working_forearm_from_vertical_deg": None if forearm_from_vertical_deg is None
+            else round(float(forearm_from_vertical_deg), 2),
+        "working_elbow_above_torso_m": None if elbow_above_m is None else round(float(elbow_above_m), 4),
+        "working_upper_arm_torso_deg": None if upper_arm_torso_deg is None
+            else round(float(upper_arm_torso_deg), 2),
+        "working_arm_crosses_back": arm_crosses_back if arm_crosses_back is not None else None,
+        "db_torso_plane_m": round(float(db_torso_plane_m), 4),
+        "db_below_torso_plane": bool(db_below_torso_plane),
+        "support_finger_spread_m": None if support_finger_spread_m is None
+            else round(float(support_finger_spread_m), 4),
+        "support_palm_from_pad_deg": None if support_palm_from_pad_deg is None
+            else round(float(support_palm_from_pad_deg), 2),
+        "support_hand_flat": support_hand_flat,
         "shoulder_over_head": bool(over_head),
         "arm_torso_clear_m": round(clear, 4),
         "u": round(float(u), 3),
@@ -306,6 +390,7 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
         out["db_ndc"] = [round(float(xs), 3), round(float(ys), 3)]
     if db_visible_frac is not None:
         out["db_visible_frac"] = round(float(db_visible_frac), 3)
+        out["db_visible"] = bool(db_visible_frac >= 0.35)
     if db_contrast is not None:
         out["db_contrast"] = round(float(db_contrast), 2)
 
