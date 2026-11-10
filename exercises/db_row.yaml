@@ -90,9 +90,10 @@ grade:
   loops: 2                    # rep played N times
   detail_amount: 1.0          # unsharp detail pass on the body surface (sigma 1.6)
   detail_sigma: 1.6
-  backdrop_rgb: [35, 39, 43]
+  palette: demic_peach        # default; selectable: green (legacy mint). Muscle glow is peach; green is UI-only.
+  backdrop_rgb: [40, 40, 41]  # charcoal V~40 (measured demic backdrop V~37-44)
   target_muscles: [lats, rhomboids, mid_trap, rear_delt]
-  glow: right                 # green (correct form)
+  glow: right                 # peach on targets (correct form); compensators stay red when glow: wrong
   look: clay                   # default (inherits _shared); override with charcoal to compare
   fibre_amount: 0.80
   bloom_amount: 0.38
@@ -129,17 +130,17 @@ qc:
       skin_p90: [82, 145]
       skin_max: 215
     clay:
-      skin_p50: [135, 170]
-      skin_p75: [145, 195]
-      skin_p90: [160, 225]
-      skin_max: 255
+      skin_p50: [70, 95]
+      skin_p75: [85, 125]
+      skin_p90: [100, 160]
+      skin_max: 220
   backdrop_tol: 4
   floor_shadow_min: 1.5
   floor_horizon_jump_max: 28      # luma step at the floor's upper silhouette (hard horizon fails)
   floor_luma_delta_max: 24        # receding floor median luma minus backdrop (light-grey floor fails)
   glow_fibre_hp_min: 8.0          # high-pass std of green inside eroded glow core (flat mint blob fails)
-  glow_hue: [58, 72]              # measured @demicstory green (refs H~62-66)
-  glow_sat: [100, 170]            # measured demic green S~130-141
+  glow_hue: [8, 28]               # demic peach H~16 (palette: green uses [58, 72])
+  glow_sat: [40, 110]             # demic peach S~65 (palette: green uses [100, 170])
   glow_frac: [0.02, 0.34]     # green body pixels / body pixels
   glow_in_mask_min: 0.9
   sharp_rel_min: 0.35         # body Laplacian variance vs the Day 4 master reference

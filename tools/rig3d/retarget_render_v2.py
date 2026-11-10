@@ -815,7 +815,31 @@ if GC.get("enabled"):
 if GW.get("enabled"):      # after the garment copy (the briefs never carry the fist key)
     if not me.shape_keys: body.shape_key_add(name="Basis", from_mix=False)
     sk = body.shape_key_add(name="fist", from_mix=False); lc = np.empty(nv * 3); sk.data.foreach_get("co", lc); lc = lc.reshape(-1, 3)
-    Minv = np.linalg.inv(M4); lc[HIDX] = HG["new_world"] @ Minv[:3, :3].T + Minv[:3, 3]; sk.data.foreach_set("co", lc.ravel()); sk.value = 1.0
+    new_w = HG["new_world"]
+    if GRIP_MODE == "palm_neutral":
+        # Rebuild the wrap AFTER the palm→medial roll. The rest-pose wrap gave n_loc for the
+        # twist, but baking it as a shapekey and then rolling the forearm 55–118° sheared the
+        # fist through the handle (~170 intersecting verts). Evaluate the open posed hand,
+        # wrap in that frame, convert bone-local wrapped verts back through the REST bone
+        # matrix into mesh-local shapekey deltas (share=1.0 ⇒ bone-local shape is nearly constant).
+        sc.frame_set(1); bpy.context.view_layer.update()
+        _dg = bpy.context.evaluated_depsgraph_get()
+        _eb = body.evaluated_get(_dg); _m = _eb.to_mesh()
+        _p = np.empty(len(_m.vertices) * 3); _m.vertices.foreach_get("co", _p); _p = _p.reshape(-1, 3)
+        _Mw = np.array(_eb.matrix_world)
+        _pw = _p @ _Mw[:3, :3].T + _Mw[:3, 3]
+        _eb.to_mesh_clear()
+        Mh_p = np.array(arm.matrix_world @ pb[hand].matrix)
+        Mh_p[:3, :3] /= np.linalg.norm(Mh_p[:3, :3], axis=0)
+        HG = HGR.build(_pw, HIDX, Mh_p, hand.startswith("Left"),
+                       r=float(GW.get("handle_r_m", 0.016)), clear=float(GW.get("clear_m", 0.002)),
+                       max_wrap_deg=float(GW.get("max_wrap_deg", 250)), mcp_back=float(GW.get("mcp_back_m", 0.015)))
+        PALM[hand] = np.array(HG["handle_local"]["axis"])
+        log(f"grip wrap after roll: {HG['info']}")
+        Rp, op = Mh_p[:3, :3], Mh_p[:3, 3]
+        newL = (HG["new_world"] - op) @ Rp
+        new_w = newL @ _Mh[:3, :3].T + _Mh[:3, 3]
+    Minv = np.linalg.inv(M4); lc[HIDX] = new_w @ Minv[:3, :3].T + Minv[:3, 3]; sk.data.foreach_set("co", lc.ravel()); sk.value = 1.0
 # ---- dumbbell ---------------------------------------------------------------------------------------------------------
 def hexhead(xx):
     bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=0.06, depth=0.07, location=(xx, 0, 0), rotation=(0, math.pi / 2, 0)); return bpy.context.object
@@ -878,10 +902,17 @@ if AUTH_SPEC is not None:
         scale = float(np.percentile(np.abs(az), 90) or 1.0)
         az = np.clip(az / scale, -1.0, 1.0)
         for i in range(NF):
-            src = max(0, i - delay)
-            extra = mu.Quaternion(mu.Vector((1, 0, 0)), math.radians(tilt * float(az[i])))
+            # A delayed world rotation tilted the handle axis up to ~15° through a
+            # static fist shapekey (170 intersecting verts at mid-concentric). The
+            # handle centre already follows the palm; keep the handle AXIS locked to
+            # the current grip frame and apply any pendulum only as a spin about
+            # that axis (circular handle occupancy unchanged).
+            ha = rots[i] @ mu.Vector(DB_AX)
+            if ha.length < 1e-8:
+                ha = mu.Vector((1.0, 0.0, 0.0))
+            extra = mu.Quaternion(ha.normalized(), math.radians(tilt * float(az[i])))
             db.location = locs[i]
-            db.rotation_quaternion = extra @ rots[src]
+            db.rotation_quaternion = extra @ rots[i]
             db.keyframe_insert("location", frame=i + 1)
             db.keyframe_insert("rotation_quaternion", frame=i + 1)
         for fc in (db.animation_data.action.fcurves if hasattr(db.animation_data.action, "fcurves") else []):
@@ -1258,7 +1289,13 @@ ad = float(RC.get("albedo_detail", 0.50))
 sss_w = float(RC.get("sss_weight", 0.16))
 em_str = float(RC.get("glow_emission", 1.35))
 glow_wrong = C.get("grade", {}).get("glow") == "wrong"
-em_col = (1.0, 0.28, 0.10, 1) if glow_wrong else (0.16, 1.0, 0.42, 1)
+_pal = str((C.get("grade") or {}).get("palette") or "demic_peach").strip().lower()
+if glow_wrong:
+    em_col = (1.0, 0.28, 0.10, 1)            # compensators stay red
+elif _pal in ("green", "gymform_green", "mint", "neon"):
+    em_col = (0.16, 1.0, 0.42, 1)            # selectable legacy mint
+else:
+    em_col = (1.0, 0.62, 0.38, 1)            # demic peach (H~16); COMBO snap finishes H/S/V
 base_rgb = tuple(float(x) for x in RC.get("base_color", [0.22, 0.225, 0.232]))
 
 for m_ in body_mats:
@@ -1305,7 +1342,7 @@ try:
     nt_w = wd.node_tree
     lp = nt_w.nodes.new("ShaderNodeLightPath")
     bg_cam = nt_w.nodes.new("ShaderNodeBackground")
-    bg_cam.inputs["Color"].default_value = (0.022, 0.023, 0.025, 1)
+    bg_cam.inputs["Color"].default_value = (0.028, 0.028, 0.030, 1)
     bg_cam.inputs["Strength"].default_value = 1.0
     mx = nt_w.nodes.new("ShaderNodeMixShader")
     out_w = [n for n in nt_w.nodes if n.type == "OUTPUT_WORLD"][0]
@@ -1389,14 +1426,14 @@ if RC.get("floor", True):
     except RuntimeError: pass
     fm = bpy.data.materials.new("studio_floor"); fm.use_nodes = True
     nt = fm.node_tree; fb = nt.nodes["Principled BSDF"]
-    fb.inputs["Base Color"].default_value = (0.014, 0.015, 0.016, 1)
+    fb.inputs["Base Color"].default_value = (0.018, 0.018, 0.019, 1)
     fb.inputs["Roughness"].default_value = 0.62
     if "Specular IOR Level" in fb.inputs:
         fb.inputs["Specular IOR Level"].default_value = 0.22
     if "Emission Color" in fb.inputs:
-        fb.inputs["Emission Color"].default_value = (0.022, 0.023, 0.025, 1)
+        fb.inputs["Emission Color"].default_value = (0.028, 0.028, 0.030, 1)
         if "Emission Strength" in fb.inputs:
-            fb.inputs["Emission Strength"].default_value = 0.32
+            fb.inputs["Emission Strength"].default_value = 0.85
     floor.data.materials.clear(); floor.data.materials.append(fm)
     log(f"cyclorama bowl r_flat={R_flat} r_max={R_max} h={H_wall} z={flz:.3f} (opaque, all views)")
 sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(AUTH_META["fps"]) if AUTH_META else int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
@@ -1464,6 +1501,10 @@ if not a.mask_only:
         t = time.time(); render_set("d"); tim["beauty_tint_s"] = round(time.time() - t, 1); log(f"beauty tint {tim['beauty_tint_s']} s")
         flex_nodes[:] = GSH.switch_materials(body_mats, "post", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
 if not a.no_mask:
+    # Beauty used an opaque cyclorama (film_transparent=False) so every view is charcoal.
+    # Mask + ID must be transparent-film: otherwise alpha=255 everywhere (body reads as
+    # the whole frame) and the charcoal world decodes as muscle IDs 7/8 (front_delt/biceps).
+    sc.render.film_transparent = True
     if floor is not None:
         floor.hide_render = True                                                 # floor must not leak into the muscle mask
     GSH.teardown_compositor(sc)

@@ -20,11 +20,65 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sharp import neutral_lapvar, figure_lapvar   # noqa: E402
 
 # P0 look presets (t728u). charcoal = Day 4 identity with extra highlight headroom + high-pass so lighting survives.
-# clay = lifted mannequin near luma p50 140-160 (Demic-like volume, gymform green glow kept).
+# clay = demic body clay: low-sat luma p50 ~82 (measured V~79-84), not the earlier lifted p50~150 mannequin.
 LOOKS = {
     "charcoal": {"dst": [64.0, 74.0, 84.0, 102.0, 128.0, 178.0], "contrast": 0.58, "tint_rgb": [-3, 1, 3], "lo": 56.0, "hi": 255.0},
-    "clay":     {"dst": [88.0, 122.0, 150.0, 172.0, 198.0, 230.0], "contrast": 0.55, "tint_rgb": [-1, 0, 2], "lo": 70.0, "hi": 248.0},
+    "clay":     {"dst": [52.0, 68.0, 82.0, 100.0, 128.0, 168.0], "contrast": 0.50, "tint_rgb": [0, 0, 0], "lo": 44.0, "hi": 220.0},
 }
+
+# Glow palettes. demic_peach is the production default (measured @demicstory target-muscle glow:
+# H~16 S~65 V~220 warm peach, soft emissive). Green is reserved for UI rings/rims/capsules and
+# remains selectable via grade.palette: green. Wrong-form compensators stay red (H~8).
+PALETTES = {
+    "demic_peach": {
+        "right_h": 16.0, "right_s": 65.0, "right_v": 220.0, "val_mix": 0.55,
+        "wrong_h": 8.0, "wrong_s": 190.0,
+        "h_tol": 14.0, "s_min": 35.0, "v_min": 70.0,
+        "qc_hue": [8, 28], "qc_sat": [40, 110],
+    },
+    "green": {
+        "right_h": 64.0, "right_s": 136.0, "right_v": None, "val_mix": 0.0,
+        "wrong_h": 8.0, "wrong_s": 190.0,
+        "h_tol": 14.0, "s_min": 80.0, "v_min": 70.0,
+        "qc_hue": [58, 72], "qc_sat": [100, 170],
+    },
+}
+PALETTES["gymform_green"] = PALETTES["green"]
+PALETTES["mint"] = PALETTES["green"]
+
+
+def resolve_palette(G):
+    """Active glow palette from grade.palette (default demic_peach). glow_snap_* override the right-form target."""
+    G = G or {}
+    name = str(G.get("palette") or "demic_peach").strip().lower()
+    if name in ("gymform_green", "neon", "mint", "gymform"):
+        name = "green"
+    pal = dict(PALETTES.get(name, PALETTES["demic_peach"]))
+    pal["name"] = name if name in PALETTES else "demic_peach"
+    if G.get("glow_snap_hue") is not None:
+        pal["right_h"] = float(G["glow_snap_hue"])
+    if G.get("glow_snap_sat") is not None:
+        pal["right_s"] = float(G["glow_snap_sat"])
+    if G.get("glow_snap_val") is not None:
+        pal["right_v"] = float(G["glow_snap_val"])
+    if G.get("glow_snap_val_mix") is not None:
+        pal["val_mix"] = float(G["glow_snap_val_mix"])
+    return pal
+
+
+def detect_glow_mask(rgb, body=None, target_h=16.0, h_tol=14.0, s_min=35.0, v_min=70.0):
+    """Body pixels whose HSV matches the active glow target (peach or green). Not G-channel dominance."""
+    o = np.asarray(rgb, dtype=np.float32)
+    if o.ndim == 3 and o.shape[-1] > 3:
+        o = o[..., :3]
+    bgr = np.clip(o[..., ::-1], 0, 255).astype(np.uint8)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
+    dh = np.abs(hsv[..., 0] - float(target_h))
+    dh = np.minimum(dh, 180.0 - dh)
+    m = (dh <= float(h_tol)) & (hsv[..., 1] >= float(s_min)) & (hsv[..., 2] >= float(v_min))
+    if body is not None:
+        m = m & np.asarray(body, dtype=bool)
+    return m
 
 def skin_lock_lut(lum_skin, look):
     """Monotone luminance map whose skin percentiles land on the active look, plus room for rim highlights."""
@@ -92,28 +146,29 @@ def floor_quality_stats(L, floor_m, far, fy):
     return {"floor_bg_delta": round(fl - bg_l, 2), "floor_horizon_jump": round(jmed, 2)}
 
 def glow_quality_stats(o, green):
-    """Fibre texture (high-pass std of the green channel inside an eroded glow core) and HSV band."""
+    """Fibre texture (high-pass std of luma inside an eroded glow core) and HSV band (palette-agnostic)."""
     if not np.any(green):
-        return {"glow_fibre_hp_std": 0.0, "glow_hue_p50": None, "glow_sat_p50": None}
+        return {"glow_fibre_hp_std": 0.0, "glow_hue_p50": None, "glow_sat_p50": None, "glow_val_p50": None}
     inner = cv2.erode(green.astype(np.uint8), np.ones((11, 11), np.uint8)) > 0
     if inner.sum() < 200:
         inner = green
-    gc = o[..., 1]
-    hp = gc - cv2.GaussianBlur(gc, (0, 0), 2.5)
+    luma = 0.299 * o[..., 0] + 0.587 * o[..., 1] + 0.114 * o[..., 2]
+    hp = luma - cv2.GaussianBlur(luma, (0, 0), 2.5)
     bgr = np.clip(o[..., ::-1], 0, 255).astype(np.uint8)
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
     return {
         "glow_fibre_hp_std": round(float(hp[inner].std()), 2),
         "glow_hue_p50": round(float(np.percentile(hsv[..., 0][green], 50)), 1),
         "glow_sat_p50": round(float(np.percentile(hsv[..., 1][green], 50)), 1),
+        "glow_val_p50": round(float(np.percentile(hsv[..., 2][green], 50)), 1),
     }
 
 
-def wrap_glow_to_beauty(graded, base, src_l, hp_form, mus_w, reg_any, shorts):
+def wrap_glow_to_beauty(graded, base, src_l, hp_form, mus_w, reg_any, shorts, pal=None):
     """Shade 2D fibres with the underlying 3D lighting so the glow wraps the muscle
     volume (darker at grazing/shadow edges) and specular highlights survive.
-    Interior troughs are lifted just above the green-detect floor so fibre gaps
-    cannot split the connected glow component (clay v3.1 peak cc 0.8996)."""
+    The green-detect interior lift is only applied for the green palette; peach
+    keeps troughs on-hue via the later snap (a G-channel lift would mint-tint peach)."""
     w = np.clip(mus_w, 0, 1) * (1.0 - np.clip(shorts, 0, 1))
     if float(w.max()) <= 0:
         return graded
@@ -129,19 +184,23 @@ def wrap_glow_to_beauty(graded, base, src_l, hp_form, mus_w, reg_any, shorts):
     hp_pos = np.clip(hp_form, 0.0, None)
     spec = np.clip(hp_pos / 26.0, 0.0, 1.0) * w
     graded = np.clip(graded + (0.50 * hp_pos * spec)[..., None], 0, 255)
-    interior = cv2.erode(((reg_any > 0.16) & (shorts < 0.25)).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
-    g, r, b = graded[..., 1], graded[..., 0], graded[..., 2]
-    gdom = g - np.maximum(r, b)
-    need = interior & (gdom < 36.0)
-    lift = (36.0 - gdom) * need.astype(np.float32)
-    graded = graded.copy()
-    graded[..., 1] = np.clip(g + lift, 0, 255)
-    graded[..., 0] = np.clip(r + 0.14 * lift, 0, 255)
-    graded[..., 2] = np.clip(b + 0.38 * lift, 0, 255)
+    pname = str((pal or {}).get("name") or "demic_peach")
+    if pname in ("green", "gymform_green", "mint"):
+        interior = cv2.erode(((reg_any > 0.16) & (shorts < 0.25)).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+        g, r, b = graded[..., 1], graded[..., 0], graded[..., 2]
+        gdom = g - np.maximum(r, b)
+        need = interior & (gdom < 36.0)
+        lift = (36.0 - gdom) * need.astype(np.float32)
+        graded = graded.copy()
+        graded[..., 1] = np.clip(g + lift, 0, 255)
+        graded[..., 0] = np.clip(r + 0.14 * lift, 0, 255)
+        graded[..., 2] = np.clip(b + 0.38 * lift, 0, 255)
     return graded
 
-def snap_glow_hsv(rgb, w, target_h=64.0, target_s=136.0, hue_mix=0.90, sat_mix=0.82):
-    """Push glow pixels toward measured @demicstory green (H~64 S~136 from on-disk lat-raise refs) while keeping value."""
+def snap_glow_hsv(rgb, w, target_h=16.0, target_s=65.0, hue_mix=0.90, sat_mix=0.82,
+                  target_v=None, val_mix=0.0):
+    """Push glow pixels toward the active palette (default demic peach H16 S65 V220).
+    Value is mixed only when target_v is set, and only part-way so fibre ridges survive."""
     ww = np.clip(w, 0, 1).astype(np.float32)
     if float(ww.max()) <= 0:
         return rgb
@@ -150,6 +209,9 @@ def snap_glow_hsv(rgb, w, target_h=64.0, target_s=136.0, hue_mix=0.90, sat_mix=0
     hsv[..., 0] = hsv[..., 0] * (1.0 - hue_mix * ww) + target_h * (hue_mix * ww)
     s = hsv[..., 1]
     hsv[..., 1] = np.clip(s + (target_s - s) * sat_mix * ww, 0, 255)
+    if target_v is not None and float(val_mix) > 0:
+        v = hsv[..., 2]
+        hsv[..., 2] = np.clip(v + (float(target_v) - v) * float(val_mix) * ww, 0, 255)
     out = cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)[..., ::-1].astype(np.float32)
     return rgb * (1.0 - ww[..., None]) + out * ww[..., None]
 
@@ -211,19 +273,20 @@ def _muscle_seams(id_im, body):
         seams |= (id_im != sh) & (id_im > 0) & (sh > 0)
     return seams & (body > 0.5)
 
-def _apply_seams(rgb, seams, strength=0.28):
-    """Darken muscle-muscle borders but keep them just green enough that CC does not split."""
+def _apply_seams(rgb, seams, strength=0.28, pal=None):
+    """Darken muscle-muscle borders. The green-detect lift is only for the green palette."""
     if not np.any(seams):
         return rgb
     out = rgb.copy()
     out[seams] = out[seams] * (1.0 - strength)
-    g, r, b = out[..., 1], out[..., 0], out[..., 2]
-    gdom = g - np.maximum(r, b)
-    need = seams & (gdom < 34.0)
-    lift = (34.0 - gdom) * need.astype(np.float32)
-    out[..., 1] = np.clip(g + lift, 0, 255)
-    out[..., 0] = np.clip(r + 0.16 * lift, 0, 255)
-    out[..., 2] = np.clip(b + 0.40 * lift, 0, 255)
+    if str((pal or {}).get("name") or "") in ("green", "gymform_green", "mint"):
+        g, r, b = out[..., 1], out[..., 0], out[..., 2]
+        gdom = g - np.maximum(r, b)
+        need = seams & (gdom < 34.0)
+        lift = (34.0 - gdom) * need.astype(np.float32)
+        out[..., 1] = np.clip(g + lift, 0, 255)
+        out[..., 0] = np.clip(r + 0.16 * lift, 0, 255)
+        out[..., 2] = np.clip(b + 0.40 * lift, 0, 255)
     return out
 
 def _id_weight_map(id_im, weights, nnames=19):
@@ -300,7 +363,11 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
     flex_min = float(G.get("glow_flex_min", 0.58))
     flex_w = flex_min + (1.0 - flex_min) * flex_v
     is_wrong = G.get("glow", "right") == "wrong"
-    hue = 52.0 if is_wrong else float(G.get("glow_snap_hue", 64.0))  # 64 = measured demic green; wrong stays amber until H overrides
+    pal = resolve_palette(G)
+    hue = float(pal["wrong_h"] if is_wrong else pal["right_h"])
+    sat = float(pal["wrong_s"] if is_wrong else pal["right_s"])
+    val = None if is_wrong else pal.get("right_v")
+    vmix = 0.0 if val is None else float(pal.get("val_mix") or 0.0)
     is_combo = method == "COMBO"
     if (method == "H" or (is_combo and is_wrong)) and id_im is not None:
         from muscle_activation import COMPENSATORS
@@ -308,7 +375,8 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         ct = [NAME_TO_ID[n] for n in COMPENSATORS if n in NAME_TO_ID]
         reg_any = np.isin(id_im, ct).astype(np.float32) * body * (1.0 - np.clip(shorts, 0, 1))
         rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
-        hue = 8.0  # OpenCV red — project "wrong" hue 52 still reads green-yellow
+        hue = float(pal["wrong_h"])  # OpenCV red — wrong-form compensators stay red
+        sat = float(pal["wrong_s"]); val = None; vmix = 0.0
     if method in ("E", "COMBO") and id_im is not None and G.get("muscle_activation"):
         floor = float(G.get("glow_activation_floor", 0.58 if is_combo else 0.20))
         scale = float(G.get("glow_activation_scale", 0.42 if is_combo else 0.80))
@@ -342,7 +410,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         graded = base
         core_w = cv2.GaussianBlur(reg_any, (0, 0), 1.2)
         graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
-                               target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.50)
+                               target_h=hue, target_s=sat, target_v=val, val_mix=vmix, sat_mix=0.50)
         graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, 0.16 * flex_w)
     elif method == "B":
         # Translucent X-ray: dim the rest of the body, emissive fibres on targets.
@@ -352,8 +420,8 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
         graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", flex_v)
         graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
-        graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0], reg_any, shorts)
-        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)), target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.78)
+        graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0], reg_any, shorts, pal=pal)
+        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)), target_h=hue, target_s=sat, target_v=val, val_mix=vmix, sat_mix=0.78)
         graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, 0.28 * flex_w)
     elif method == "C":
         tgt = ((reg_any > 0.35) & (shorts < 0.25)).astype(np.uint8)
@@ -372,8 +440,8 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
         graded_full, core_w = gm.day4_fibre(F, graded, body, shorts, G.get("glow", "right") == "wrong", flex_v)
         graded = graded * (1.0 - fibre_amt) + graded_full * fibre_amt
-        graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0] * 0.65, reg_any, shorts)
-        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts) * 0.65), target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.70)
+        graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0] * 0.65, reg_any, shorts, pal=pal)
+        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts) * 0.65), target_h=hue, target_s=sat, target_v=val, val_mix=vmix, sat_mix=0.70)
         graded = graded * (1.0 - 0.88 * outline)[..., None] + neon * (0.88 * outline * (0.75 + 0.25 * flex_w))[..., None]
         graded = muscle_bloom(graded, outline + reg_any * (1.0 - shorts), body, 0.22 * flex_w)
     else:
@@ -381,9 +449,9 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
         graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", flex_v)
         graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
-        graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0], reg_any, shorts)
+        graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0], reg_any, shorts, pal=pal)
         graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
-                               target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.82)
+                               target_h=hue, target_s=sat, target_v=val, val_mix=vmix, sat_mix=0.82)
         graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.38)) * flex_w)
     if method in ("G", "X", "COMBO"):
         phase = float(G.get("pulse_phase", flex_v * 6.283185307179586))
@@ -407,10 +475,18 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
     if method == "COMBO":
         # E-floor weights at start are ~0.5; snap with a lifted mask so neon sat still lands in-band.
         ra = np.clip(reg_any * (1.0 - shorts), 0, 1)
-        wsnap = np.clip((ra - 0.12) / 0.28, 0, 1)
-        graded = snap_glow_hsv(graded, wsnap, target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.90, hue_mix=0.92)
+        # Snap the whole target sheet. A high-ra-only gate left ~60% of visible
+        # targets at residual day4_fibre green (H~45) instead of peach H16.
+        wsnap = np.clip(ra / 0.15, 0, 1)
+        graded = snap_glow_hsv(graded, wsnap, target_h=hue, target_s=sat, target_v=val, val_mix=vmix, sat_mix=0.92, hue_mix=0.96)
     if seams is not None:
-        graded = _apply_seams(graded, seams, 0.28)
+        graded = _apply_seams(graded, seams, 0.28, pal=pal)
+    # Guarantee the target-ID sheet (not just activation-weighted ra) lands on the
+    # palette. ra-gating left rhomboids/mid_trap/rear_delt at residual fibre H~45.
+    if (not is_wrong) and id_im is not None and tids and pal.get("name") not in ("green", "gymform_green", "mint"):
+        tw = np.isin(id_im, tids).astype(np.float32) * (body > 0.45).astype(np.float32) * (1.0 - np.clip(shorts, 0, 1))
+        graded = snap_glow_hsv(graded, tw, target_h=hue, target_s=sat, target_v=val, val_mix=vmix,
+                               sat_mix=0.92, hue_mix=0.96)
     sm = shorts > 0.45
     if np.any(sm):                                          # QC: 0 green pixels on the briefs
         graded[sm] = mono[sm]
@@ -455,10 +531,13 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
     ui["title"] = [int(xs_.min()), int(ty0 + ys_.min()), int(xs_.max()), int(ty0 + ys_.max())]
     # look stats (graded figure without UI)
     o = base8.astype(np.float32); L = 0.299 * o[..., 0] + 0.587 * o[..., 1] + 0.114 * o[..., 2]
-    gdom = o[..., 1] - np.maximum(o[..., 0], o[..., 2]); rdom = o[..., 0] - np.maximum(o[..., 1], o[..., 2])
-    bodyb = body > 0.5; green = bodyb & (gdom > 30)
+    rdom = o[..., 0] - np.maximum(o[..., 1], o[..., 2])
+    bodyb = body > 0.5
+    det_h = pal["wrong_h"] if is_wrong else pal["right_h"]
+    green = detect_glow_mask(o, bodyb, target_h=det_h, h_tol=pal.get("h_tol", 14),
+                             s_min=pal.get("s_min", 35), v_min=pal.get("v_min", 70))
     regd = cv2.dilate((reg_any > 0.15).astype(np.uint8), np.ones((25, 25), np.uint8)) > 0
-    skin_q = bodyb & (shorts < 0.2) & (core_w < 0.03) & (L > 46) & (gdom < 25)
+    skin_q = bodyb & (shorts < 0.2) & (core_w < 0.03) & (L > 46) & (~green)
     far = (cv2.dilate((fg > 0.02).astype(np.uint8), np.ones((61, 61), np.uint8)) == 0); far[ty0 - 10:ty1 + 10] = False
     er = cv2.erode(bodyb.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
     lap = cv2.Laplacian(cv2.cvtColor(base8, cv2.COLOR_RGB2GRAY), cv2.CV_32F)
