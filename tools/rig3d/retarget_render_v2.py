@@ -174,7 +174,7 @@ if LEGS == "bench_row":
     B, BENCH_SPEC = BRP.build_landmarks(_u, {
         "thigh": _Lt, "shin": _Ls, "upper_arm": _La, "forearm": _Lf,
         "torso": float(_tor), "shoulder_half": float(_shw), "hip_half": float(_hpw),
-        "pad_z": float(MO.get("bench_pad_z_m", 0.49)),
+        "pad_z": float(MO.get("bench_pad_z_m", 0.43)),
         "hand_ahead_m": float(MO.get("support_hand_ahead_m", 0.55)),
     }, side=side)
     NF = int(B.shape[0]); AUTH_U = _u
@@ -188,7 +188,7 @@ if LEGS == "bench_row":
         _ref = os.path.join(_repo, "_scratch", "refs", "db_row")
         if os.path.isfile(os.path.join(_ref, "lm2d_peak.npy")):
             _res = tuple(RC.get("res") or [540, 960])
-            _cam = RM.camera_from_cfg(RC.get("camera") or {})
+            _cam = RM.camera_from_cfg(RC.get("camera_fit") or RC.get("camera") or {})
             _Lfit = {"thigh": float(_Lt), "shin": float(_Ls), "upper_arm": float(_La),
                      "forearm": float(_Lf), "torso": float(_tor)}
             B, _fitinfo = RM.fit_cycle(B, AUTH_U, _ref, _cam, _res, BENCH_SPEC, _Lfit)
@@ -542,7 +542,24 @@ if MO.get("support_hand", "") == "bench_pad" and BENCH_SPEC is not None:
         E[pp_ + "ix"].location = Wt + fwdv.normalized() * 0.07
         for n_ in ("el", "wr", "ix"):
             E[pp_ + n_].keyframe_insert("location", frame=f + 1)
-    log(f"support hand locked to bench pad ({sp_})")
+    # Flat palm on the pad: keep finger aim (DAMPED_TRACK Y -> ix along the bench)
+    # and roll so a palmar axis points at world down.
+    down_e = empty("T_palm_down"); down_e.location = mu.Vector((0.0, 0.0, -80.0))
+    sc.frame_set(1); bpy.context.view_layer.update()
+    Rhm = np.array((arm.matrix_world @ pb[sp_ + "Hand"].matrix).to_3x3())
+    Rhm = Rhm / (np.linalg.norm(Rhm, axis=0, keepdims=True) + 1e-12)
+    down = np.array([0.0, 0.0, -1.0])
+    best_ax, best_name, best_dot = 0, "TRACK_NEGATIVE_Z", -1e9
+    for ai, pos, neg in ((0, "TRACK_X", "TRACK_NEGATIVE_X"), (2, "TRACK_Z", "TRACK_NEGATIVE_Z")):
+        d = float(np.dot(Rhm[:, ai], down))
+        name = pos if d >= 0 else neg
+        if abs(d) > best_dot:
+            best_dot, best_ax, best_name = abs(d), ai, name
+    cpalm = pb[sp_ + "Hand"].constraints.new("LOCKED_TRACK")
+    cpalm.target = down_e
+    cpalm.track_axis = best_name
+    cpalm.lock_axis = "LOCK_Y"
+    log(f"support hand locked to bench pad ({sp_}), palm-down {best_name} (align {best_dot:.2f})")
 if MO.get("elbow_path", "source") == "tuck_torso":
     # Shared construction: working elbow rebuilt on the 2-bone circle with the pole toward Spine01, so
     # MediaPipe flare cannot occur — the elbow tracks close to the torso toward the hip.
@@ -1012,7 +1029,9 @@ if GC.get("enabled"):
     bmesh.ops.delete(bm, geom=drop, context="FACES_ONLY")
     bmesh.ops.delete(bm, geom=[v_ for v_ in bm.verts if not v_.link_faces], context="VERTS")
     # weld the asset's UV-seam duplicates (else the offset opens hairline cracks)
-    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=0.02)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=0.008)
+    # close accidental crotch/hip pinholes (waist/hem loops have far more than 14 sides)
+    bmesh.ops.holes_fill(bm, edges=[e_ for e_ in bm.edges if e_.is_boundary], sides=14)
     bm.verts.ensure_lookup_table(); bm.normal_update()
     # offset outward (the Meshy-made body has some inward-facing normals: orient each normal away from its limb axis,
     # pelvis = vertical axis through x=0 above the crotch, thighs = x=+-0.09 below it)
@@ -1051,6 +1070,20 @@ if GC.get("enabled"):
     gev = np.empty(len(gm_.edges) * 2, np.int64); gm_.edges.foreach_get("vertices", gev); gev = gev.reshape(-1, 2)
     gco_w = gco @ M4[:3, :3].T + M4[:3, 3]; g_rest = np.linalg.norm(gco_w[gev[:, 0]] - gco_w[gev[:, 1]], axis=1); g_ok = g_rest > 1e-4
     region_counts.update({"briefs_verts": int(gnv), "briefs_faces": len(gm_.polygons)})
+    bpy.context.view_layer.objects.active = garm
+    try:
+        sol = garm.modifiers.new("briefs_solidify", "SOLIDIFY")
+        sol.thickness = 0.0032
+        sol.offset = 0.0
+        if hasattr(sol, "use_quality_normals"):
+            sol.use_quality_normals = True
+        cs = garm.modifiers.new("briefs_corrective", "CORRECTIVE_SMOOTH")
+        cs.factor = 0.7
+        cs.iterations = 10
+        if hasattr(cs, "smooth_type"):
+            cs.smooth_type = "LENGTH_WEIGHTED"
+    except Exception as _se:
+        log(f"briefs solidify/smooth skipped: {_se}")
     log(f"briefs garment: {gnv} verts, {len(gm_.polygons)} faces, offset {GC.get('offset_m', 0.008)} m")
 
 if GW.get("enabled"):      # after the garment copy (the briefs never carry the fist key)
@@ -1644,7 +1677,43 @@ if LEGS == "bench_row" and BENCH_SPEC is not None:
                 continue
             _q = world_to_camera_view(sc, CAM, arm.matrix_world @ pb[_bn].head)
             _xy[_ji] = (_q.x, 1.0 - _q.y)
-        np.save(a.out + f"/ours_lm2d_{_tag}.npy", _xy)
+        np.save(a.out + f"/ours_lm2d_{_tag}_render.npy", _xy)
+        # Overlay QC stays in the side-fit camera (Commons photo), not the 3/4 beauty camera.
+        try:
+            import ref_match as _RMo
+            _fitc = _RMo.camera_from_cfg(RC.get("camera_fit") or RC.get("camera") or {})
+            _reswh = (int(sc.render.resolution_x), int(sc.render.resolution_y))
+            _sxy = np.zeros((33, 2), np.float64)
+            for _ji, _bn in _mp_bones.items():
+                if not _bn or _bn not in pb:
+                    continue
+                _pw = np.array(arm.matrix_world @ pb[_bn].head)
+                _ndc, _ = _RMo.project_ndc(_pw, _fitc, _reswh)
+                _sxy[_ji] = (float(_ndc[0]), 1.0 - float(_ndc[1]))
+            np.save(a.out + f"/ours_lm2d_{_tag}.npy", _sxy)
+            # Rasterize the posed body (+briefs) through the side camera for silhouette IoU.
+            _dg = bpy.context.evaluated_depsgraph_get()
+            _ww, _hh = _reswh
+            _sil = np.zeros((_hh, _ww), np.uint8)
+            for _obn in (body, garm if "garm" in dir() and garm is not None else body):
+                if _obn is None:
+                    continue
+                _eb = _obn.evaluated_get(_dg); _mm = _eb.to_mesh()
+                _co = np.empty(len(_mm.vertices) * 3); _mm.vertices.foreach_get("co", _co)
+                _Mw = np.array(_eb.matrix_world)
+                _pts = _co.reshape(-1, 3) @ _Mw[:3, :3].T + _Mw[:3, 3]
+                _eb.to_mesh_clear()
+                _nd, _zz = _RMo.project_ndc(_pts[::3], _fitc, _reswh)
+                for (_u, _v), _z in zip(_nd, _zz):
+                    if _z <= 0.05 or not (0.0 <= _u <= 1.0 and 0.0 <= _v <= 1.0):
+                        continue
+                    _ix = int(round(_u * (_ww - 1)))
+                    _iy = int(round((1.0 - _v) * (_hh - 1)))
+                    _sil[max(0, _iy - 1):_iy + 2, max(0, _ix - 1):_ix + 2] = 255
+            np.save(a.out + f"/ours_sil_{_tag}.npy", _sil)
+        except Exception as _se:
+            log(f"side-overlay dump failed ({_tag}): {_se}")
+            np.save(a.out + f"/ours_lm2d_{_tag}.npy", _xy)
         uu = float(AUTH_U[_fi - 1]) if AUTH_U is not None else (1.0 if _tag == "peak" else 0.0)
         db_ndc = db_vis = db_con = None
         if "db" in dir() or True:
@@ -1683,7 +1752,7 @@ look_inscene = (
     str(RC.get("look_backend") or "").lower() in ("inscene", "native", "clay")
     or str((C.get("grade") or {}).get("glow_method") or "").upper() in ("NATIVE", "INSCENE", "CLAY")
 )
-ad = 0.0 if look_inscene else float(RC.get("albedo_detail", 0.50))
+ad = float(RC.get("albedo_detail", 0.0 if look_inscene else 0.50))
 sss_w = min(float(RC.get("sss_weight", 0.0 if look_inscene else 0.16)), 0.04 if look_inscene else 1.0)
 em_str = float(RC.get("glow_emission", 0.95 if look_inscene else 1.35))
 glow_wrong = C.get("grade", {}).get("glow") == "wrong"
@@ -1728,21 +1797,37 @@ for m_ in body_mats:
     if look_inscene:
         for l in list(bsdf.inputs["Roughness"].links):
             nt.links.remove(l)
-        bsdf.inputs["Roughness"].default_value = 0.62
-        # Soft AO into the clay albedo (display-referred matte, even studio).
+        bsdf.inputs["Roughness"].default_value = 0.68
+        # Soft AO into the clay albedo so grooves and separations read as shadows.
         ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
         ao.inputs["Distance"].default_value = float(RC.get("ao_distance", 0.14))
         aom = nt.nodes.new("ShaderNodeMix")
         aom.data_type = "RGBA"
         aom.blend_type = "MULTIPLY"
         aom.inputs[0].default_value = float(RC.get("ao_amount", 0.38))
-        # mix.outputs[2] is the shorts-aware clay colour
         base_src = bsdf.inputs["Base Color"].links[0].from_socket
         nt.links.new(base_src, aom.inputs[6])
         nt.links.new(ao.outputs["Color"], aom.inputs[7])
+        clay_src = aom.outputs[2]
+        cav = float(RC.get("cavity_amount", 0.0))
+        if cav > 0:
+            geo = nt.nodes.new("ShaderNodeNewGeometry")
+            ramp = nt.nodes.new("ShaderNodeValToRGB")
+            ramp.color_ramp.elements[0].position = 0.46
+            ramp.color_ramp.elements[0].color = (0.58, 0.58, 0.58, 1)
+            ramp.color_ramp.elements[1].position = 0.56
+            ramp.color_ramp.elements[1].color = (1, 1, 1, 1)
+            nt.links.new(geo.outputs["Pointiness"], ramp.inputs["Fac"])
+            cvm = nt.nodes.new("ShaderNodeMix")
+            cvm.data_type = "RGBA"
+            cvm.blend_type = "MULTIPLY"
+            cvm.inputs[0].default_value = cav
+            nt.links.new(clay_src, cvm.inputs[6])
+            nt.links.new(ramp.outputs["Color"], cvm.inputs[7])
+            clay_src = cvm.outputs[2]
         for l in list(bsdf.inputs["Base Color"].links):
             nt.links.remove(l)
-        nt.links.new(aom.outputs[2], bsdf.inputs["Base Color"])
+        nt.links.new(clay_src, bsdf.inputs["Base Color"])
     elif not bsdf.inputs["Roughness"].links:          # keep the packed roughness map when the GLB already wired it
         bsdf.inputs["Roughness"].default_value = 0.50
     if "Subsurface Weight" in bsdf.inputs:
@@ -1857,11 +1942,13 @@ def add_area(name, loc, energy, size, color):
 if look_inscene:
     # Large soft studio, front-biased toward the camera (the visible 3/4 surface),
     # even lighting, soft shadows, no cool-tinted rim. Matches demic's even clay.
-    add_area("key", ctr + key_from * 2.8 + upv * 1.9 + sidev * 0.4, RC.get("key_energy", 100), 6.4, (1.00, 0.99, 0.97))
-    add_area("fill", ctr + key_from * 2.0 + upv * 0.6 - sidev * 2.4, RC.get("fill_energy", 210), 7.2, (0.99, 0.99, 1.00))
-    add_area("rim", ctr - key_from * 2.2 + upv * 1.4 + sidev * 0.5, RC.get("rim_energy", 45), 4.0, (1.00, 1.00, 1.00))
-    add_area("top", ctr + upv * 3.6 + key_from * 0.4, RC.get("top_energy", 55), 6.0, (1.00, 0.99, 0.97))
-    log("studio: large soft key/fill/rim/top (inscene)")
+    add_area("key", ctr + key_from * 2.5 + upv * 2.4 + sidev * 1.15,
+             RC.get("key_energy", 100), float(RC.get("key_size", 3.2)), (1.00, 0.99, 0.97))
+    add_area("fill", ctr + key_from * 1.6 + upv * 0.35 - sidev * 2.6,
+             RC.get("fill_energy", 80), float(RC.get("fill_size", 5.0)), (0.99, 0.99, 1.00))
+    add_area("rim", ctr - key_from * 2.2 + upv * 1.4 + sidev * 0.5, RC.get("rim_energy", 22), 3.2, (1.00, 1.00, 1.00))
+    add_area("top", ctr + upv * 3.2 + key_from * 0.3 + sidev * 0.7, RC.get("top_energy", 28), 3.6, (1.00, 0.99, 0.97))
+    log("studio: directional upper-side key + weaker fill (demic clay)")
 else:
     add_area("key", ctr + key_from * 2.8 + upv * 1.8, RC.get("key_energy", 380), 2.2, (1.00, 0.98, 0.94))
     add_area("fill", ctr - key_from * 0.5 + sidev * 2.4 + upv * 2.2, RC.get("fill_energy", 150), 3.4, (0.90, 0.94, 1.00))
@@ -1879,7 +1966,7 @@ if look_inscene:
         add_area_aim("leg_key", leg_aim + key_from * 2.2 + upv * 0.7, _lk, 4.6, (1.00, 0.99, 0.97), leg_aim)
     if LEGS == "bench_row":
         _dbp = db.matrix_world.translation
-        add_area_aim("db_kicker", _dbp + mu.Vector((0.55, -0.30, 0.28)), 70, 0.55, (1.00, 0.96, 0.88), _dbp)
+        add_area_aim("db_kicker", _dbp + mu.Vector((0.55, -0.30, 0.28)), float(RC.get("db_kicker_energy", 20)), 0.40, (1.00, 0.96, 0.88), _dbp)
         log("studio: working-side DB kicker")
 else:
     add_area_aim("leg_key", leg_aim + key_from * 2.4 + upv * 0.55, RC.get("leg_key_energy", 190), 1.8, (1.00, 0.98, 0.94), leg_aim)

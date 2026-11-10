@@ -22,11 +22,11 @@ LOOKS = {
         "frame_metal": 1.0, "frame_rough": 0.40,
     },
     "gunmetal_black": {
-        "pad": (0.035, 0.035, 0.038),
+        "pad": (0.028, 0.023, 0.021),
         "frame": (0.11, 0.12, 0.135),
-        "feet": (0.07, 0.07, 0.075),
-        "pad_metal": 0.0, "pad_rough": 0.86,
-        "frame_metal": 0.88, "frame_rough": 0.38,
+        "feet": (0.045, 0.045, 0.048),
+        "pad_metal": 0.0, "pad_rough": 0.70,
+        "frame_metal": 0.88, "frame_rough": 0.36,
     },
 }
 # backwards-compat aliases used by the original builder
@@ -51,6 +51,13 @@ def mat(name, rgb, metal=0.0, rough=0.6):
     bs.inputs["Base Color"].default_value = (*rgb, 1)
     bs.inputs["Metallic"].default_value = metal
     bs.inputs["Roughness"].default_value = rough
+    if "pad" in name and metal < 0.05:
+        if "Specular IOR Level" in bs.inputs:
+            bs.inputs["Specular IOR Level"].default_value = 0.42
+        if "Sheen Weight" in bs.inputs:
+            bs.inputs["Sheen Weight"].default_value = 0.28
+            if "Sheen Roughness" in bs.inputs:
+                bs.inputs["Sheen Roughness"].default_value = 0.45
     return m
 
 
@@ -90,16 +97,60 @@ def build_bench(look="warm_grey", clear=True):
     feet_m = mat(f"bench_feet_{look}", L["feet"], metal=0.25, rough=0.62)
 
     # dimensions (m): flat bench, pad ~1.25 x 0.30, height ~0.45, pad top 0.49
-    pad = box("bench_pad", 1.25, 0.30, 0.08, (0, 0, 0.45), pad_m)
-    rail = box("bench_rail", 1.10, 0.06, 0.06, (0, 0, 0.38), frame_m)
-    # extra long rail + modest stretchers so the frame reads as a gym bench
-    rail2 = box("bench_rail2", 1.10, 0.04, 0.04, (0, 0, 0.22), frame_m)
-    leg_f = box("leg_F", 0.06, 0.28, 0.38, (0.45, 0, 0.19), frame_m)
-    leg_b = box("leg_B", 0.06, 0.28, 0.38, (-0.45, 0, 0.19), frame_m)
-    foot_f = box("foot_F", 0.12, 0.42, 0.04, (0.45, 0, 0.02), feet_m)
-    foot_b = box("foot_B", 0.12, 0.42, 0.04, (-0.45, 0, 0.02), feet_m)
+    # Commercial flat bench, local +X = length.
+    # Pad 120 x 30 x 8 cm, top at z=0.43 (origin = pad centre z=0.39).
+    PAD_L, PAD_W, PAD_T = 1.20, 0.30, 0.08
+    PAD_TOP = 0.43
+    PAD_CZ = PAD_TOP - PAD_T / 2.0          # 0.39
+    PAD_BOT = PAD_TOP - PAD_T               # 0.35
 
-    parts = [pad, rail, rail2, leg_f, leg_b, foot_f, foot_b]
+    pad = box("bench_pad", PAD_L, PAD_W, PAD_T, (0, 0, PAD_CZ), pad_m)
+    bpy.context.view_layer.objects.active = pad
+    bev = pad.modifiers.new("pad_bevel", "BEVEL")
+    bev.width = 0.016
+    bev.segments = 4
+    bev.limit_method = "ANGLE"
+    bev.angle_limit = math.radians(40)
+    bpy.ops.object.modifier_apply(modifier="pad_bevel")
+    for poly in pad.data.polygons:
+        poly.use_smooth = True
+
+    def tube(name, radius, length, loc):
+        bpy.ops.mesh.primitive_cylinder_add(
+            radius=radius, depth=length, location=loc,
+            rotation=(0.0, math.pi / 2.0, 0.0), vertices=24)
+        ob = bpy.context.object
+        ob.name = name
+        ob.data.materials.append(frame_m)
+        for poly in ob.data.polygons:
+            poly.use_smooth = True
+        return ob
+
+    # Central spine tube under the pad, overlapping the pad bottom and both uprights.
+    spine = tube("bench_spine", 0.026, 1.02, (0.0, 0.0, PAD_BOT - 0.004))
+    # End cross-members (T into the spine) so the under-pad frame is one piece.
+    xbar_h = box("xbar_H", 0.08, 0.22, 0.045, (0.48, 0.0, PAD_BOT - 0.01), frame_m)
+    xbar_f = box("xbar_F", 0.08, 0.22, 0.045, (-0.48, 0.0, PAD_BOT - 0.01), frame_m)
+    # Mounting plates between pad and frame.
+    plate_h = box("plate_H", 0.12, 0.16, 0.016, (0.48, 0.0, PAD_BOT + 0.002), frame_m)
+    plate_f = box("plate_F", 0.12, 0.16, 0.016, (-0.48, 0.0, PAD_BOT + 0.002), frame_m)
+    # T-uprights: thick along the length so they read from a side/3/4 camera.
+    # They run from the floor feet up into the cross-members (no gap).
+    up_h = 0.34
+    up_cz = up_h / 2.0                       # 0.17, top = 0.34 (into the xbar)
+    upright_h = box("upright_H", 0.09, 0.05, up_h, (0.48, 0.0, up_cz), frame_m)
+    upright_f = box("upright_F", 0.09, 0.05, up_h, (-0.48, 0.0, up_cz), frame_m)
+    # Lower stretcher ties the two T-frames into one solid.
+    stretch = box("stretcher", 0.90, 0.04, 0.04, (0.0, 0.0, 0.10), frame_m)
+    # T-feet on the floor (visible length + width) + rubber end caps.
+    foot_h = box("foot_H", 0.11, 0.40, 0.036, (0.48, 0.0, 0.018), frame_m)
+    foot_f = box("foot_F", 0.11, 0.40, 0.036, (-0.48, 0.0, 0.018), frame_m)
+    cap_parts = []
+    for sx, sy in ((0.48, 0.17), (0.48, -0.17), (-0.48, 0.17), (-0.48, -0.17)):
+        cap_parts.append(box(f"cap_{sx:.2f}_{sy:.2f}", 0.08, 0.08, 0.024, (sx, sy, 0.012), feet_m))
+
+    parts = [pad, spine, xbar_h, xbar_f, plate_h, plate_f,
+             upright_h, upright_f, stretch, foot_h, foot_f] + cap_parts
     bpy.ops.object.select_all(action="DESELECT")
     for o in parts:
         o.select_set(True)
@@ -110,11 +161,11 @@ def build_bench(look="warm_grey", clear=True):
 
     anchors = {}
     for name, loc in (
-        ("pad_center", (0, 0, 0.49)),
-        ("head_end", (0.55, 0, 0.49)),
-        ("foot_end", (-0.55, 0, 0.49)),
-        ("support_knee", (-0.12, 0.0, 0.49)),
-        ("support_hand", (0.32, 0.0, 0.49)),
+        ("pad_center", (0, 0, PAD_TOP)),
+        ("head_end", (0.52, 0, PAD_TOP)),
+        ("foot_end", (-0.52, 0, PAD_TOP)),
+        ("support_knee", (-0.12, 0.0, PAD_TOP)),
+        ("support_hand", (0.32, 0.0, PAD_TOP)),
         ("floor", (0, 0, 0)),
     ):
         e = empty(name, loc)
@@ -124,8 +175,8 @@ def build_bench(look="warm_grey", clear=True):
     meta = {
         "name": "bench_flat",
         "look": look,
-        "pad_size_m": [1.25, 0.30, 0.08],
-        "pad_top_z_m": 0.49,
+        "pad_size_m": [1.20, 0.30, 0.08],
+        "pad_top_z_m": 0.43,
         "pad_rgb": list(L["pad"]),
         "frame_rgb": list(L["frame"]),
         "note": ("Black pad + dark gunmetal frame." if look == "gunmetal_black"
@@ -139,8 +190,8 @@ def build_bench(look="warm_grey", clear=True):
     return bench, meta
 
 
-def place_bench(bench, origin_xy, yaw_z, origin_z=0.45):
-    """Put the bench so its object origin (pad centre, z=0.45) sits at origin_xy, z=origin_z.
+def place_bench(bench, origin_xy, yaw_z, origin_z=0.39):
+    """Put the bench so its object origin (pad centre, z=0.39) sits at origin_xy, z=origin_z.
     Local +X (pad length) aligns with world yaw_z (radians, atan2(fwd.y, fwd.x))."""
     bench.location = (float(origin_xy[0]), float(origin_xy[1]), float(origin_z))
     bench.rotation_euler = (0.0, 0.0, float(yaw_z))

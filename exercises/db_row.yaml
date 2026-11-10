@@ -59,6 +59,7 @@ motion:
   support_hand: bench_pad    # support hand locked to the pad (same side as the support knee)
   support_knee: bench_pad     # same-side knee locked to the pad
   support_hand_ahead_m: 0.55  # left hand 55 cm ahead of the left knee on the pad
+  bench_pad_z_m: 0.43         # pad top (commercial flat bench ~43 cm)
   lock_hips: true            # v5: pelvis static over the rep (upper body follows rigidly), knees steady
   pelvis_yaw: true           # v5: pelvis faces the lean direction before the hinge (no sideways pelvis roll)
   stance_width_m: 0.30       # v5: ankle-to-ankle width (YMove 'legs apart' is ~0.5 m: the wide rear leg could not bend)
@@ -69,7 +70,7 @@ garment:                     # black boxer briefs (드로즈): separate skinned 
   z_waist: 1.03
   z_hem: 0.80                # short snug leg (trunks), not baggy shorts
   max_abs_x: 0.22
-  offset_m: 0.012
+  offset_m: 0.0055             # tighter boxer (0.012 read bulky and opened a hip hole)
   hem_smooth_iters: 12
   clearance_min_m: 0.0005      # geometric touch = garment vertex within 0.5 mm of the deformed body surface
 render:
@@ -77,15 +78,17 @@ render:
   res: [1080, 1920]          # render at delivery size (720 + upscale measured 0.18x Day 4 sharpness)
   spp: 24
   denoise_prefilter: ACCURATE # OIDN guided by albedo + normal passes keeps the sculpt texture
-  normal_strength: 1.0
-  albedo_detail: 0.0
+  normal_strength: 1.22           # striations as soft relief
+  albedo_detail: 0.22            # asset fibre luminance into the clay
   sss_weight: 0.0
   sss_scale: 0.05
   glow_emission: 1.00
   hdri_strength: 0.0
-  key_energy: 75
-  fill_energy: 230
-  rim_energy: 40
+  key_energy: 36                # directional upper-side key
+  key_size: 3.2
+  fill_size: 4.8
+  fill_energy: 40                # keep lit clay around V 150-175
+  rim_energy: 18
   floor: true
   denoise: true
   look_backend: inscene
@@ -94,10 +97,11 @@ render:
     look: gunmetal_black
   body_source: grab3d            # smooth painted glow on the one-piece mannequin (ecorche kept, unused)
   view_transform: Standard
-  ambient_strength: 0.38
-  top_energy: 50
-  ao_distance: 0.14
-  ao_amount: 0.16
+  ambient_strength: 0.14
+  top_energy: 14
+  ao_distance: 0.11
+  ao_amount: 0.44                # cavity-like groove shadows
+  cavity_amount: 0.20            # subtle pointiness darkening in concave separations
   glow_blur_iters: 10
   glow_erode_rings: 0
   glow_fade_rings: 2
@@ -113,22 +117,31 @@ render:
   glow_fibre_bump: 0.14
   glow_fibre_line: 0.28         # subtle fibre ridges inside the glow
   glow_rim: 0.32
-  body_rim: 0.30                 # stronger cool Fresnel rim / soft halo
+  body_rim: 0.16                 # less white Fresnel wash on clay
   glow_bloom: true
   blender_bloom: 0.88
   glow_flex_min: 0.88
   base_color: [0.26, 0.27, 0.30]  # sampled demic row-ref clay (sRGB V~144 → lin ~0.27, cool tint)
   mask_spp: 4
   camera:
-    mode: fixed               # locked world preset matching the licensed side-view reference (no auto-frame / no search)
-    yaw_back_deg: 6           # 0 = pure +X working-side; +yaw rotates toward the feet (−Y)
+    mode: fixed               # working-side back 3/4, slightly above — glow reads as broad shapes
+    yaw_back_deg: 40          # 0 = pure +X side; +yaw rotates toward the feet / behind the back
+    elev_deg: 25
+    dist_m: 2.55
+    look: [0.16, 0.12, 0.58]
+    lens_mm: 50
+    shift_x: 0.0
+    shift_y: -0.06
+    search: false
+  camera_fit:                 # side view used only to fit/score against the Commons photo
+    mode: fixed
+    yaw_back_deg: 6
     elev_deg: 8
     dist_m: 2.45
-    look: [0.18, 0.18, 0.66]
+    look: [0.18, 0.18, 0.60]
     lens_mm: 50
     shift_x: 0.0
     shift_y: -0.08
-    search: false
 grade:
   out_res: [1080, 1920]
   fps: 30
@@ -177,7 +190,7 @@ qc:
     knee_on_pad: true
     foot_on_floor: true
     working_hand_drop_min_m: 0.22   # bottom of the rep: hand below the shoulder
-    working_hand_hip_max_m: 0.28    # peak: hand near the hip (photo-matched; was 0.22)
+    working_hand_hip_max_m: 0.22    # peak: demic squeeze, DB near the hip
     db_in_frame: true
     db_visible_frac_min: 0.35
     db_contrast_v_min: 12

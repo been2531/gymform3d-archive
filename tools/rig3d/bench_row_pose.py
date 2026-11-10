@@ -55,7 +55,7 @@ def build_landmarks(u, L, side=12):
     torso = float(L["torso"])
     half_w = float(L["shoulder_half"])
     hip_w = float(L["hip_half"])
-    pad_z = float(L.get("pad_z", 0.49))
+    pad_z = float(L.get("pad_z", 0.43))
     hand_ahead = float(L.get("hand_ahead_m", 0.55))  # 50–60 cm
 
     fwd = np.array([0.0, 1.0, 0.0])
@@ -119,8 +119,8 @@ def build_landmarks(u, L, side=12):
     # hand just outside and slightly below the right hip so the DB clears the mesh.
     wr_hang = rsh + np.array([0.02, 0.0, -(La + Lf) * 0.97])
     el_hang, wr_hang = _ik(rsh, wr_hang, La, Lf, rsh + np.array([0.08, -0.10, -0.18]))
-    wr_peak = rhip + np.array([0.16, 0.02, -0.10])
-    el_peak, wr_peak = _ik(rsh, wr_peak, La, Lf, rsh + np.array([0.04, -0.02, 0.22]))
+    wr_peak = rhip + np.array([0.13, -0.03, -0.06])
+    el_peak, wr_peak = _ik(rsh, wr_peak, La, Lf, rsh + np.array([0.06, -0.28, 0.00]))
 
     # Head / face: continue the spine toward +Y, face the floor (-Z).
     head = sh_mid + fwd * 0.20 + up * 0.02
@@ -153,7 +153,7 @@ def build_landmarks(u, L, side=12):
     yaw_z = math.pi / 2.0
     spec = {
         "origin_xy": (0.0, 0.0),
-        "origin_z": 0.45,
+        "origin_z": 0.39,
         "yaw_z": yaw_z,
         "support_knee": lkn.tolist(),
         "support_ankle": lank.tolist(),
@@ -162,7 +162,7 @@ def build_landmarks(u, L, side=12):
         "fwd": fwd.tolist(),
         "right": right.tolist(),
         "pad_z": pad_z,
-        "pad_half_xy": (0.15, 0.625),  # world (|x|, |y|) extents after +Y alignment
+        "pad_half_xy": (0.15, 0.60),  # world (|x|, |y|) extents after +Y alignment (30 x 120 cm)
         "hip_z": float(hip_z),
         "shoulder": rsh.tolist(),
         "hip_r": rhip.tolist(),
@@ -212,7 +212,7 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
     knee_on_pad = pad_contains(lkn, spec) and abs(lkn[2] - pad_z) < 0.08
     foot_on_floor = rank[2] < 0.16 and rank[0] > spec["origin_xy"][0] + spec["pad_half_xy"][0] - 0.02
     below = (rsh[2] - rwr[2]) > 0.22
-    near_hip = float(np.linalg.norm(rwr - rhip)) < 0.28
+    near_hip = float(np.linalg.norm(rwr - rhip)) < 0.22
 
     out = {
         "torso_from_horizontal_deg": round(torso_from_horiz, 2),
