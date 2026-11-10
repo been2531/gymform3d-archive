@@ -2578,7 +2578,11 @@ if not a.mask_only:
     except Exception:
         pass
     if look_inscene:
-        log(f"view_transform={sc.view_settings.view_transform} (colors as measured)")
+        try:
+            sc.view_settings.exposure = float(RC.get("exposure", 0.0))
+        except Exception:
+            pass
+        log(f"view_transform={sc.view_settings.view_transform} exposure={getattr(sc.view_settings, 'exposure', 0)}")
         if bool(RC.get("glow_bloom", True)) and not a.camera_sheet:
             try:
                 GSH.setup_compositor(sc, float(RC.get("blender_bloom", 0.22)))

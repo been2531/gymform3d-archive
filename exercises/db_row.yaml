@@ -90,12 +90,12 @@ render:
   albedo_detail: 0.06            # keep a hint of fibre, not dirt
   sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 0.800
+  glow_emission: 1.05
   hdri_strength: 0.18            # low-strength Poly Haven studio HDRI
-  key_energy: 36                # directional upper-side key
+  key_energy: 36                # keep form without clipping the working forearm
   key_size: 3.2
   fill_size: 4.8
-  fill_energy: 40                # keep lit clay around V 150-175
+  fill_energy: 40                # porcelain fill (Standard still clips the facing forearm)
   rim_energy: 18
   floor: true
   denoise: true
@@ -105,6 +105,7 @@ render:
     look: gunmetal_black
   body_source: grab3d            # smooth painted glow on the one-piece mannequin (ecorche kept, unused)
   view_transform: Standard
+  exposure: 0.0             # Standard; positive EV blew highlights
   ambient_strength: 0.14
   top_energy: 14
   ao_distance: 0.11
@@ -128,7 +129,7 @@ render:
   glow_rim: 0.32
   body_rim: 0.16                 # less white Fresnel wash on clay
   glow_bloom: true
-  blender_bloom: 0.36             # soft halo around opaque shells
+  blender_bloom: 0.70             # demic-like halo on the emission pass
   glow_flex_min: 0.88
   base_color: [0.44, 0.455, 0.485]  # cooler porcelain (kit.clay)
   mask_spp: 4

@@ -11,8 +11,14 @@ kit:
     method: cloth                # closed authored tube + rest-pose cloth; never copied faces
     waistband_h_m: 0.07          # wide elastic band
     waist_above_hip_m: 0.10
-    hem_blend: 0.48              # 0 = at knee, 1 = at hip; ~mid-thigh
-    ease_m: 0.016                # outward offset from the convex slice
+    hem_blend: 0.36              # 0 = at knee, 1 = at hip; ~mid-thigh
+    ease_m: 0.012                # default; per-region overrides below
+    ease_waist_m: 0.010
+    ease_hip_m: 0.015            # 15 mm from the body cross-section
+    pose_inflate_m: 0.010        # after armature, keep posed hips covered
+    ease_thigh_m: 0.014          # slight looseness at mid-thigh
+    clearance_m: 0.010           # post-cloth floor vs the rest body
+    cloth_collide_m: 0.005
     waistband_extra_m: 0.006     # band sits a bit proud of the shorts
     solidify_m: 0.003
     waistband_solidify_m: 0.008  # thicker separate elastic ring
@@ -20,7 +26,7 @@ kit:
     rings: 32
     leg_rings: 20
     cloth_frames: 28
-    cloth_shrink: 0.045
+    cloth_shrink: 0.010
     matte_rgb: [0.012, 0.012, 0.014]
     roughness: 0.95
   muscles:
@@ -41,9 +47,9 @@ kit:
   lights:
     hdri_strength: 0.18          # low; area lights shape the form
     ambient_strength: 0.10
-    key_energy: 42
+    key_energy: 36
     key_size: 3.4
-    fill_energy: 28
+    fill_energy: 40
     fill_size: 5.2
     rim_energy: 16
     rim_size: 2.8
@@ -56,7 +62,7 @@ kit:
     cavity_amount: 0.03
     normal_strength: 0.72
     albedo_detail: 0.06
-    roughness: 0.64
+    roughness: 0.72
     body_rim: 0.10
   bench:
     padded: true
@@ -74,8 +80,9 @@ garment:
   method: cloth
 render:
   glow_shape: attr
+  exposure: 0.0
   hdri_strength: 0.18
-  blender_bloom: 0.36
+  blender_bloom: 0.70
   glow_bloom: true
   glow_opacity: 0.0            # attr sheets add emission; clay stays the BSDF
   glow_tint: 0.18

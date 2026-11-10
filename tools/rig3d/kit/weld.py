@@ -174,37 +174,42 @@ def transfer_point_attrs(src_me, dst_me, nearest, skip=()):
 
 
 def apply_source_shapekey_mix(src, welded, log=print):
-    """Add src's current shapekey mix (no armature) onto the welded basis."""
-    import bpy
-    if not src.data.shape_keys:
+    """Copy src shapekey mix onto the welded basis via nearest (`src_vi`).
+
+    Reads Key blocks directly. `Object.to_mesh()` in Blender 5 returns the
+    basis when the armature is muted, which reported max_delta=0 and dropped
+    the working-hand fist.
+    """
+    sk = src.data.shape_keys
+    if not sk:
         return {"applied": False, "reason": "no shapekeys"}
     if "src_vi" not in welded.data.attributes:
         return {"applied": False, "reason": "no src_vi"}
     nearest = np.zeros(len(welded.data.vertices), np.int32)
     welded.data.attributes["src_vi"].data.foreach_get("value", nearest)
-    basis = np.empty(len(src.data.vertices) * 3, np.float64)
+    n = len(src.data.vertices)
+    basis = np.empty(n * 3, np.float64)
     src.data.vertices.foreach_get("co", basis)
     basis = basis.reshape(-1, 3)
-    muted = []
-    for m in src.modifiers:
-        if m.type == "ARMATURE" and m.show_viewport:
-            m.show_viewport = False
-            muted.append(m)
-    was_hide = bool(getattr(src, "hide_viewport", False))
-    src.hide_viewport = False
-    try:
-        bpy.context.view_layer.update()
-        ev = src.to_mesh()
-        mix = np.empty(len(ev.vertices) * 3, np.float64)
-        ev.vertices.foreach_get("co", mix)
-        mix = mix.reshape(-1, 3)
-        src.to_mesh_clear()
-    finally:
-        src.hide_viewport = was_hide
-        for m in muted:
-            m.show_viewport = True
-    if len(mix) != len(basis):
-        return {"applied": False, "reason": f"mix nv {len(mix)} != basis {len(basis)}"}
+    mix = basis.copy()
+    used = []
+    for kb in sk.key_blocks:
+        if kb.name == "Basis" or kb.mute:
+            continue
+        val = float(kb.value)
+        if abs(val) < 1e-8:
+            continue
+        kc = np.empty(len(kb.data) * 3, np.float64)
+        kb.data.foreach_get("co", kc)
+        kc = kc.reshape(-1, 3)
+        if len(kc) != n:
+            log(f"kit weld shapekey {kb.name} nv {len(kc)} != {n}")
+            continue
+        mix = mix + (kc - basis) * val
+        used.append(f"{kb.name}={val:.3f}")
+    if not used:
+        log("kit weld shapekey transfer: no active keys")
+        return {"applied": False, "reason": "no active keys", "keys": []}
     delta = mix - basis
     wco = np.empty(len(welded.data.vertices) * 3, np.float64)
     welded.data.vertices.foreach_get("co", wco)
@@ -213,8 +218,9 @@ def apply_source_shapekey_mix(src, welded, log=print):
     welded.data.vertices.foreach_set("co", wco.ravel())
     welded.data.update()
     moved = float(np.linalg.norm(delta[nearest], axis=1).max())
-    log(f"kit weld shapekey transfer max_delta={moved:.5f} m")
-    return {"applied": True, "max_delta_m": moved}
+    src_moved = float(np.linalg.norm(delta, axis=1).max())
+    log(f"kit weld shapekey transfer max_delta={moved:.5f} m src_max={src_moved:.5f} m keys={used}")
+    return {"applied": True, "max_delta_m": moved, "src_max_m": src_moved, "keys": used}
 
 
 def make_render_copy(body, arm, cfg, log=print, col=None, dist_world=None):

@@ -150,7 +150,7 @@ def build(ours_path, demic_sheet, out_path):
     row1_h = full_h + 110
     row2_h = hips_h + 110
     row3_h = back_h + 110
-    list_h = 440
+    list_h = 560
     footer_h = 36
     width = pad + full_w + gutter + full_w + pad
     # keep width at least wide enough for two 520 crops
@@ -184,9 +184,9 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours, full_w, full_h,
                "ours weld/attr/cloth  ·  full body  ·  f_0025",
-               "Porcelain and lights held. Continuous peach, purple and pink "
-               "sheets (no UV-seam cracks). Shorts are one garment, not flakes, "
-               "but clay still shows through a hole on the near hip.",
+               "Near-hip hole is closed; hem sits nearer mid-thigh. Fist is "
+               "closed on the handle. Porcelain is brighter than 6c46aa2, but "
+               "the working forearm still clips. Glow halo is milder than demic.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -202,9 +202,9 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours_hips, hips_w, hips_h,
                "ours weld/cloth  ·  hips  3×",
-               "A waistband ridge and a single cloth piece over the seat (not "
-               "shredded). A large clay hole remains on the camera-near hip. "
-               "Not a clean mid-thigh boxer wrap.",
+               "Seat and near hip are covered — no clay island. Slight looseness "
+               "on the thigh and a mid-thigh hem. Still boxier and more faceted "
+               "than demic, with a crotch notch. Hem-gap clay is not a seat hole.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -220,9 +220,9 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours_back, back_w, back_h,
                "ours attr glow  ·  back  3×",
-               "Peach-orange lats, purple mid-back, pink rear delt as geodesic "
-               "attribute sheets on the welded body. Clay grooves read through. "
-               "No seam cracks or overlay flakes. Still less painted than demic.",
+               "Peach-orange lats, purple mid-back, pink rear delt on the welded "
+               "body (method unchanged). Clay grooves read through; no seam cracks. "
+               "Emit-pass Fog Glow adds a mild halo, still weaker than demic.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -231,10 +231,11 @@ def build(ours_path, demic_sheet, out_path):
     lines = [
         ("h", "Ranked notes  ·  welded body, attribute glow, closed cloth tube"),
         ("sub", "Gates are a backstop only. See docs/specs/ROOTCAUSE_LOOK.md and docs/specs/KIT.md."),
-        ("n", "1  Drawers — not a pass. Headless cloth did run (ptcache.bake, ~42-59 mm shrink, not exploded). The result is one garment with a waistband ridge, not shredded flakes, but clay still shows through a hole on the near hip (gate: 4500 clay px / 4.2% of the shorts mask). Garment boundary 8 (not 0); waistband boundary 0."),
-        ("n", "2  Glow — method held. Continuous peach / purple / pink sheets on the welded manifold, clay grooves visible, no UV-seam cracks or overlay flakes. Morph-close gate still flags 3.1% as holes (soft edges and clay between the three hues). Not demic's painted-fibre look."),
-        ("n", "3  Light/clay — held. Porcelain, HDRI plus three-point and the contact floor are unchanged and still read slightly harder than demic."),
-        ("n", "4  Equipment — held. Padded bench and knurled handle are unchanged."),
+        ("n", "1  Drawers — hole closed, not a demic match. Tube sized from waist/hip/mid-thigh cross-sections (ease 10/15/14 mm), rest-pose cloth (5 mm collision, self-collision, shrink 0.010, max_disp 76 mm), stubs collapsed, then 10 mm seat-only inflate after armature. Garment and waistband boundary 0. No clay island in the seat. clay-in-mask 3035 px / 2.15% is the hem gap and inner-leg opening, not a poke-through. Shape is still boxier and more faceted than demic, with a crotch notch."),
+        ("n", "2  Fist — restored. Shapekey transfer now mixes Key blocks (Blender 5 Object.to_mesh was returning basis; max_delta 11.78 local). Working hand is a closed grip on the DB handle."),
+        ("n", "3  Glow — method held (accepted in 6c46aa2). Continuous peach / purple / pink on the welded body, clay grooves visible, no UV-seam cracks. Emit-pass Fog Glow (bloom 0.70) adds a mild halo; still less luminous and less painted than demic. Morph-close gate 2.8% is soft edges and clay between hues."),
+        ("n", "4  Light/clay — partial. Fill raised 28 to 40 and exposure left at 0 (Standard; +0.12 EV clipped highlights). Torso midtones are brighter than 6c46aa2 (body V p50 ~176) but the peak working forearm still blows (~14.5k px at V=255). Not as warm or soft as demic, and not clip-free."),
+        ("n", "5  Equipment — held. Padded bench and knurled handle are unchanged."),
     ]
     _text_block(d, (pad + 18, y + 16), lines, fonts, width=84)
 
