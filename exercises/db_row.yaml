@@ -92,10 +92,10 @@ render:
   sss_scale: 0.05
   glow_emission: 1.05
   hdri_strength: 0.18            # low-strength Poly Haven studio HDRI
-  key_energy: 36                # keep form without clipping the working forearm
+  key_energy: 10                # raking key; not on-axis to the working forearm
   key_size: 3.2
   fill_size: 4.8
-  fill_energy: 40                # porcelain fill (Standard still clips the facing forearm)
+  fill_energy: 6                 # weak camera-side fill; evens without blowout
   rim_energy: 18
   floor: true
   denoise: true
@@ -129,7 +129,7 @@ render:
   glow_rim: 0.32
   body_rim: 0.16                 # less white Fresnel wash on clay
   glow_bloom: true
-  blender_bloom: 0.70             # demic-like halo on the emission pass
+  blender_bloom: 0.32             # demic-like halo on the emission pass
   glow_flex_min: 0.88
   base_color: [0.44, 0.455, 0.485]  # cooler porcelain (kit.clay)
   mask_spp: 4

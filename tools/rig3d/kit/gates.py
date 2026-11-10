@@ -57,6 +57,40 @@ def clay_in_shorts(beauty_rgb, mask_rgb=None, hips_box=(20, 620, 380, 1140)):
             "pass": n_clay == 0}
 
 
+def hip_silhouette_fit(beauty_rgb, mask_rgb=None, hips_box=(20, 620, 380, 1140)):
+    """Garment width vs full figure width at the seat. Pass if ratio <= 1.08."""
+    import cv2
+    h, w = beauty_rgb.shape[:2]
+    x0, y0, x1, y1 = hips_box
+    x0, y0 = max(0, x0), max(0, y0)
+    x1, y1 = min(w, x1), min(h, y1)
+    hsv = cv2.cvtColor(beauty_rgb, cv2.COLOR_RGB2HSV)
+    if mask_rgb is not None:
+        garm = mask_rgb.min(axis=2) > 200
+    else:
+        crop = hsv[y0:y1, x0:x1]
+        dark = (crop[:, :, 2] < 45) & (crop[:, :, 1] < 70)
+        garm = np.zeros((h, w), dtype=bool)
+        garm[y0:y1, x0:x1] = dark
+    fig = hsv[:, :, 2] > 28
+    ratios = []
+    y_a = y0 + int(0.18 * (y1 - y0))
+    y_b = y0 + int(0.52 * (y1 - y0))
+    for y in range(y_a, y_b, 4):
+        gr = np.nonzero(garm[y, x0:x1])[0]
+        fr = np.nonzero(fig[y, x0:x1])[0]
+        if len(gr) < 8 or len(fr) < 8:
+            continue
+        gw = float(gr.max() - gr.min() + 1)
+        fw = float(fr.max() - fr.min() + 1)
+        if fw > 1:
+            ratios.append(gw / fw)
+    if not ratios:
+        return {"ratio": None, "n": 0, "pass": False}
+    ratio = float(np.median(ratios))
+    return {"ratio": round(ratio, 4), "n": len(ratios), "pass": ratio <= 1.08}
+
+
 def glow_holes(beauty_rgb):
     """Holes = pixels inside a morph-closed glow sheet that are not glow."""
     import cv2
@@ -82,5 +116,7 @@ def check_stills(beauty_path, mask_path=None, log=print):
     mask = _load_rgb(mask_path) if mask_path and os.path.isfile(mask_path) else None
     out["clay_in_shorts"] = clay_in_shorts(rgb, mask)
     out["glow_holes"] = glow_holes(rgb)
-    log(f"kit gates clay_in_shorts={out['clay_in_shorts']} glow_holes={out['glow_holes']}")
+    out["hip_silhouette"] = hip_silhouette_fit(rgb, mask)
+    log(f"kit gates clay_in_shorts={out['clay_in_shorts']} glow_holes={out['glow_holes']} "
+        f"hip_silhouette={out['hip_silhouette']}")
     return out

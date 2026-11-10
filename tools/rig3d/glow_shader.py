@@ -694,11 +694,11 @@ def setup_compositor(sc, bloom_strength=0.60):
         except Exception:
             pass
     try:
-        gl.threshold = 0.12
+        gl.threshold = 0.28
     except Exception:
-        gl.inputs["Threshold"].default_value = 0.12
+        gl.inputs["Threshold"].default_value = 0.28
     try:
-        gl.size = 9
+        gl.size = 6
     except Exception:
         if "Size" in gl.inputs:
             gl.inputs["Size"].default_value = 0.70

@@ -115,22 +115,8 @@ def build_bench(look="warm_grey", clear=True, padded=False):
     for poly in pad.data.polygons:
         poly.use_smooth = True
     piping = None
-    if padded:
-        # Seam piping around the pad top. Pad top stays at 0.43 so the posed
-        # hand and knee contacts do not move.
-        bpy.ops.mesh.primitive_torus_add(
-            major_radius=0.58, minor_radius=0.007,
-            major_segments=48, minor_segments=10,
-            location=(0.0, 0.0, PAD_TOP - 0.004),
-            rotation=(math.pi / 2.0, 0.0, 0.0))
-        piping = bpy.context.object
-        piping.name = "bench_piping"
-        piping.scale = (1.03, 0.27, 1.0)
-        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-        pipe_m = mat(f"bench_pipe_{look}", (0.05, 0.05, 0.055), metal=0.05, rough=0.55)
-        piping.data.materials.append(pipe_m)
-        for poly in piping.data.polygons:
-            poly.use_smooth = True
+    # Do not add a torus around the pad. Even when scaled toward the pad
+    # outline it photographs as a black hoop circling the figure.
 
     def tube(name, radius, length, loc):
         bpy.ops.mesh.primitive_cylinder_add(
