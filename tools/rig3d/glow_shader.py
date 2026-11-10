@@ -664,17 +664,20 @@ def setup_compositor(sc, bloom_strength=0.60):
     for n in list(nt.nodes):
         nt.nodes.remove(n)
     rl = nt.nodes.new("CompositorNodeRLayers"); rl.location = (0, 0)
-    # Isolate the painted muscle in the beauty (more reliable than the Emission pass).
-    mul = _cmp_mix(nt, "MULTIPLY", 1.0); mul.name = "GF_MUL"; mul.location = (280, -80)
     img = rl.outputs["Image"]
     mask = rl.outputs.get("glow_mask")
     if mask is None:
-        # Do not fall back to the beauty — multiplying/inverting the image
-        # itself lifts G/B on the core and washes saturation.
         blk = nt.nodes.new("CompositorNodeRGB"); blk.name = "GF_NOMASK"
         blk.outputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
         mask = blk.outputs[0]
-    nt.links.new(img, mul.inputs[1]); nt.links.new(mask, mul.inputs[2])
+    # Halo from the emission pass only (not the lit clay). Fall back to
+    # beauty * glow_mask if this Blender build has no Emit socket.
+    emit = rl.outputs.get("Emit") or rl.outputs.get("Emission")
+    mul = _cmp_mix(nt, "MULTIPLY", 1.0); mul.name = "GF_MUL"; mul.location = (280, -80)
+    if emit is not None:
+        nt.links.new(emit, mul.inputs[1]); nt.links.new(mask, mul.inputs[2])
+    else:
+        nt.links.new(img, mul.inputs[1]); nt.links.new(mask, mul.inputs[2])
     gl = nt.nodes.new("CompositorNodeGlare"); gl.location = (520, -80)
     try:
         gl.glare_type = "FOG_GLOW"
@@ -691,9 +694,9 @@ def setup_compositor(sc, bloom_strength=0.60):
         except Exception:
             pass
     try:
-        gl.threshold = 0.22
+        gl.threshold = 0.12
     except Exception:
-        gl.inputs["Threshold"].default_value = 0.22
+        gl.inputs["Threshold"].default_value = 0.12
     try:
         gl.size = 9
     except Exception:

@@ -233,6 +233,142 @@ def _matte_black(rgb, rough):
 
 
 
+
+def _widest_z(pts, z0, z1, step=0.012):
+    best_z, best_r = 0.5 * (z0 + z1), -1.0
+    z = float(min(z0, z1))
+    z_hi = float(max(z0, z1))
+    while z <= z_hi + 1e-9:
+        sl = pts[np.abs(pts[:, 2] - z) <= 0.03]
+        if len(sl) >= 8:
+            xy = sl[:, :2]
+            r = float(np.linalg.norm(xy - xy.mean(0), axis=1).max())
+            if r > best_r:
+                best_r, best_z = r, z
+        z += step
+    return best_z, best_r
+
+
+def _push_clearance(garm, body_pts, min_clear=0.010, log=print):
+    """Push any garment vert closer than min_clear off the rest body."""
+    from mathutils.kdtree import KDTree
+    if body_pts is None or len(body_pts) < 8:
+        return 0
+    kd = KDTree(len(body_pts))
+    for i, p in enumerate(body_pts):
+        kd.insert((float(p[0]), float(p[1]), float(p[2])), int(i))
+    kd.balance()
+    gco = np.empty(len(garm.data.vertices) * 3, np.float64)
+    garm.data.vertices.foreach_get("co", gco)
+    gco = gco.reshape(-1, 3)
+    n_push = 0
+    for i, p in enumerate(gco):
+        _co, idx, dist = kd.find((float(p[0]), float(p[1]), float(p[2])))
+        bp = body_pts[int(idx)]
+        delta = p - bp
+        d = float(np.linalg.norm(delta))
+        if d >= min_clear:
+            continue
+        if d < 1e-6:
+            nrm = np.array([p[0], p[1], 0.0], dtype=np.float64)
+            ln = float(np.linalg.norm(nrm))
+            nrm = nrm / ln if ln > 1e-9 else np.array([0.0, 0.0, 1.0])
+        else:
+            nrm = delta / d
+        gco[i] = bp + nrm * float(min_clear)
+        n_push += 1
+    if n_push:
+        garm.data.vertices.foreach_set("co", gco.ravel())
+        garm.data.update()
+    log(f"garment clearance min={min_clear:.3f} m pushed={n_push}/{len(gco)}")
+    return n_push
+
+
+def _fill_loop(bm, loop):
+    if len(loop) < 3:
+        return False
+    used = set()
+    e = loop[0]
+    v = e.verts[0]
+    verts = []
+    guard = 0
+    while e not in used and guard < 10000:
+        used.add(e)
+        verts.append(v)
+        v = e.other_vert(v)
+        nxt = None
+        for ee in v.link_edges:
+            if ee.is_boundary and ee not in used:
+                nxt = ee
+                break
+        if nxt is None:
+            break
+        e = nxt
+        guard += 1
+    if len(verts) < 3:
+        return False
+    try:
+        bm.faces.new(verts)
+        return True
+    except ValueError:
+        pass
+    c = np.mean([np.array(vv.co) for vv in verts], axis=0)
+    cv = bm.verts.new(tuple(c))
+    ok = 0
+    n = len(verts)
+    for i in range(n):
+        try:
+            bm.faces.new((verts[i], verts[(i + 1) % n], cv))
+            ok += 1
+        except ValueError:
+            pass
+    return ok > 0
+
+
+def _close_mesh_holes(obj, keep_open=3, weld_dist=0.0002, log=print):
+    """Fill extra holes and collapse 1–2-edge stubs, keeping the 3 openings."""
+    import bmesh
+    from .weld import topology_stats
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=float(weld_dist))
+    loops = sorted(_boundary_loops(bm), key=len, reverse=True)
+    log(f"garment close_holes loops={[len(L) for L in loops]}")
+    filled = 0
+    for loop in loops[int(keep_open):]:
+        if len(loop) >= 3 and _fill_loop(bm, loop):
+            filled += 1
+    loops = sorted(_boundary_loops(bm), key=len, reverse=True)
+    keep = {e for loop in loops[:int(keep_open)] for e in loop}
+    stubs = [e for e in bm.edges if e.is_boundary and e not in keep]
+    collapsed = 0
+    if stubs:
+        try:
+            bmesh.ops.collapse(bm, edges=stubs, uvs=False)
+            collapsed = len(stubs)
+        except Exception:
+            for e in list(stubs):
+                try:
+                    vs = list(e.verts)
+                    mid = tuple(0.5 * (np.array(vs[0].co) + np.array(vs[1].co)))
+                    bmesh.ops.pointmerge(bm, verts=vs, merge_co=mid)
+                    collapsed += 1
+                except Exception:
+                    pass
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=float(weld_dist) * 2.0)
+    loose = [v for v in bm.verts if not v.link_faces]
+    if loose:
+        bmesh.ops.delete(bm, geom=loose, context="VERTS")
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    st = topology_stats(obj.data)
+    log(f"garment close_holes filled={filled} collapsed={collapsed} "
+        f"bound={st['boundary_edges']} nonman={st['nonmanifold_edges']}")
+    return st
+
+
 def _seal_boundary(obj, log):
     """Cap leftover boundary loops after solidify (fabric rims, not wear-holes)."""
     import bmesh
@@ -285,6 +421,22 @@ def _seal_boundary(obj, log):
     loose = [v for v in bm.verts if not v.link_faces]
     if loose:
         bmesh.ops.delete(bm, geom=loose, context="VERTS")
+    stubs = [e for e in bm.edges if e.is_boundary]
+    if stubs:
+        try:
+            bmesh.ops.collapse(bm, edges=stubs, uvs=False)
+        except Exception:
+            for e in list(stubs):
+                try:
+                    vs = list(e.verts)
+                    mid = tuple(0.5 * (np.array(vs[0].co) + np.array(vs[1].co)))
+                    bmesh.ops.pointmerge(bm, verts=vs, merge_co=mid)
+                except Exception:
+                    pass
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0004)
+        loose = [v for v in bm.verts if not v.link_faces]
+        if loose:
+            bmesh.ops.delete(bm, geom=loose, context="VERTS")
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(obj.data)
     bm.free()
@@ -339,35 +491,37 @@ def _bind_to_body(obj, donor, arm, log):
     obj.data.update()
     obj.matrix_world = donor.matrix_world.copy()
 
-    dt = obj.modifiers.new("kit_garm_weights", "DATA_TRANSFER")
-    dt.object = donor
-    dt.use_vert_data = True
-    try:
-        dt.data_types_verts = {"VGROUP_WEIGHTS"}
-        dt.vert_mapping = "NEAREST"
-        dt.layers_vgroup_select_src = "ALL"
-        dt.layers_vgroup_replace_dst = True
-    except Exception:
-        try:
-            dt.data_types_verts = {"VGROUP_WEIGHTS"}
-        except Exception:
-            pass
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-    try:
-        bpy.ops.object.datalayout_transfer(modifier="kit_garm_weights")
-    except Exception:
-        pass
-    try:
-        bpy.ops.object.modifier_apply(modifier="kit_garm_weights")
-    except Exception as e:
-        log(f"garment weight transfer apply: {e}")
+    from .weld import nearest_map, transfer_vgroups
+    src_pts = np.empty(len(donor.data.vertices) * 3, np.float64)
+    donor.data.vertices.foreach_get("co", src_pts)
+    src_pts = src_pts.reshape(-1, 3)
+    dst_pts = np.empty(len(obj.data.vertices) * 3, np.float64)
+    obj.data.vertices.foreach_get("co", dst_pts)
+    dst_pts = dst_pts.reshape(-1, 3)
+    nearest = nearest_map(src_pts, dst_pts)
+    transfer_vgroups(donor, obj, nearest, log=log)
     am = obj.modifiers.new("kit_garm_arm", "ARMATURE")
     am.object = arm
+    # After skinning, push the cloth off the posed body so a rest-fit tube
+    # cannot be swallowed by the hinged hip. Strength is world metres / scale.
+    inflate = float(getattr(_bind_to_body, "_inflate_m", 0.0) or 0.0)
+    if inflate > 1e-5:
+        scale = float(np.mean(np.abs(np.array(donor.matrix_world.to_scale())))) or 1.0
+        disp = obj.modifiers.new("kit_garm_inflate", "DISPLACE")
+        disp.mid_level = 0.0
+        disp.strength = inflate / scale
+        try:
+            disp.direction = "NORMAL"
+        except Exception:
+            pass
+        if "pose_inflate" in obj.vertex_groups:
+            disp.vertex_group = "pose_inflate"
+        log(f"garment inflate {inflate:.3f} m (local {disp.strength:.3f}) "
+            f"vg={'pose_inflate' if 'pose_inflate' in obj.vertex_groups else 'all'}")
     return True
 
 
-def _try_cloth(garm, collider, pin_name, frames, shrink, log):
+def _try_cloth(garm, collider, pin_name, frames, shrink, log, collide_dist=0.005):
     """Attempt a headless cloth bake. Returns a report dict; never fakes success."""
     import bpy
     from .weld import topology_stats
@@ -393,8 +547,8 @@ def _try_cloth(garm, collider, pin_name, frames, shrink, log):
 
     colm = collider.modifiers.new("kit_collide", "COLLISION")
     try:
-        collider.collision.thickness_outer = 0.004
-        collider.collision.thickness_inner = 0.003
+        collider.collision.thickness_outer = float(collide_dist)
+        collider.collision.thickness_inner = float(collide_dist)
         collider.collision.use_culling = False
     except Exception as e:
         log(f"cloth collision settings: {e}")
@@ -428,10 +582,10 @@ def _try_cloth(garm, collider, pin_name, frames, shrink, log):
     cc = cl.collision_settings
     try:
         cc.use_collision = True
-        cc.distance_min = 0.004
+        cc.distance_min = float(collide_dist)
         cc.use_self_collision = True
         if hasattr(cc, "self_distance_min"):
-            cc.self_distance_min = 0.0025
+            cc.self_distance_min = max(0.002, float(collide_dist) * 0.5)
         if hasattr(cc, "impulse_clamp"):
             cc.impulse_clamp = 8.0
     except Exception as e:
@@ -566,10 +720,13 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
     gcfg = ((cfg.get("kit") or {}).get("garment") or {})
     n = int(gcfg.get("rings", 32))
     n_leg = int(gcfg.get("leg_rings", max(16, n // 2)))
-    ease = float(gcfg.get("ease_m", 0.016))
+    ease = float(gcfg.get("ease_m", 0.012))
+    ease_waist = float(gcfg.get("ease_waist_m", 0.010))
+    ease_hip = float(gcfg.get("ease_hip_m", 0.015))
+    ease_thigh = float(gcfg.get("ease_thigh_m", 0.014))
     wb_h = float(gcfg.get("waistband_h_m", 0.07))
     waist_above = float(gcfg.get("waist_above_hip_m", 0.10))
-    hem_blend = float(gcfg.get("hem_blend", 0.48))
+    hem_blend = float(gcfg.get("hem_blend", 0.36))
     wb_extra = float(gcfg.get("waistband_extra_m", 0.006))
     thick = float(gcfg.get("solidify_m", 0.003))
     thick_wb = float(gcfg.get("waistband_solidify_m", 0.008))
@@ -578,7 +735,9 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
     rough = float(gcfg.get("roughness", 0.95))
     cloth_on = str(gcfg.get("method") or "cloth").lower() in ("cloth", "closed", "tube")
     cloth_frames = int(gcfg.get("cloth_frames", 28))
-    cloth_shrink = float(gcfg.get("cloth_shrink", 0.045))
+    cloth_shrink = float(gcfg.get("cloth_shrink", 0.01))
+    collide_dist = float(gcfg.get("cloth_collide_m", 0.005))
+    min_clear = float(gcfg.get("clearance_m", 0.010))
     want_cloth = bool(gcfg.get("cloth", cloth_on))
 
     pb = arm.pose.bones
@@ -589,7 +748,7 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
     z_wb_top = hip_z + waist_above
     z_wb_bot = z_wb_top - wb_h
     z_hem = (1.0 - hem_blend) * knee_z + hem_blend * hip_z
-    z_hem = min(z_hem, crotch_z - 0.06)
+    z_hem = min(z_hem, crotch_z - 0.14)
     z_hem = max(z_hem, knee_z + 0.10)
 
     # REST pose world verts of the collision/render body
@@ -599,17 +758,25 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
     try:
         donor = collider if collider is not None else body
         pts = _torso_world_verts(body)
-        max_abs_x = float(gcfg.get("max_abs_x", 0.20))
+        # Do not clip the body's own hip width; only drop obvious arm outliers.
+        max_abs_x = float(gcfg.get("max_abs_x", 0.28))
         pts = pts[np.abs(pts[:, 0]) <= max_abs_x]
         if len(pts) < 64:
             pts = _torso_world_verts(body)
-        half = 0.028
-        z_hip = 0.5 * (z_wb_bot + crotch_z)
+        half = 0.036
+        z_wide, hip_r = _widest_z(pts, crotch_z + 0.02, z_wb_bot - 0.01)
+        z_mid = 0.5 * (z_wb_bot + crotch_z)
         z_seat = crotch_z + 0.018
-        torso_zs = [z_wb_top, z_wb_bot, z_hip, z_seat]
+        torso_spec = [
+            (z_wb_top, ease_waist + wb_extra),
+            (z_wb_bot, ease_waist + wb_extra),
+        ]
+        for z, e in ((z_mid, ease_hip), (z_wide, ease_hip), (z_seat, ease_hip)):
+            if all(abs(z - z0) > 0.018 for z0, _e in torso_spec):
+                torso_spec.append((z, e))
+        z_hip = z_wide
         torso_rings = []
-        for z in torso_zs:
-            e = ease + (wb_extra if z >= z_wb_bot - 1e-4 else 0.0)
+        for z, e in torso_spec:
             r = _slice_hull(pts, z, half, n=n, ease=e)
             if r is None:
                 raise RuntimeError(f"garment: empty hull at z={z:.3f}")
@@ -617,12 +784,15 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
         thigh_zs = [crotch_z - 0.008, 0.5 * (crotch_z + z_hem), z_hem]
         left_rings, right_rings = [], []
         for z in thigh_zs:
-            rl = _slice_hull(pts, z, half, n=n_leg, side="L", ease=ease)
-            rr = _slice_hull(pts, z, half, n=n_leg, side="R", ease=ease)
+            rl = _slice_hull(pts, z, half, n=n_leg, side="L", ease=ease_thigh)
+            rr = _slice_hull(pts, z, half, n=n_leg, side="R", ease=ease_thigh)
             if rl is None or rr is None:
                 raise RuntimeError(f"garment: empty thigh hull at z={z:.3f}")
             left_rings.append(rl)
             right_rings.append(rr)
+        log(f"garment rings waist={z_wb_top:.3f}/{z_wb_bot:.3f} hip={z_hip:.3f} "
+            f"(r={hip_r:.3f}) seat={z_seat:.3f} hem={z_hem:.3f} "
+            f"ease_w/h/t={ease_waist}/{ease_hip}/{ease_thigh}")
 
         bm = bmesh.new()
         t_loops = _loft_into(bm, torso_rings)
@@ -687,10 +857,13 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
 
         cloth_report = {"attempted": False, "ok": False, "applied": False}
         if want_cloth:
-            cloth_report = _try_cloth(garm, donor, "waistband", cloth_frames, cloth_shrink, log)
+            cloth_report = _try_cloth(garm, donor, "waistband", cloth_frames, cloth_shrink, log,
+                                      collide_dist=collide_dist)
         else:
             log("kit cloth skipped (method does not request it)")
 
+        _push_clearance(garm, pts, min_clear=min_clear, log=log)
+        _close_mesh_holes(garm, keep_open=3, weld_dist=0.00025, log=log)
         _solidify_close(garm, thick, smooth_n, log)
         closed = _seal_boundary(garm, log)
 
@@ -735,6 +908,19 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
             log(f"kit waistband failed: {e}")
             waist = None
 
+        inf_grp = garm.vertex_groups.new(name="pose_inflate")
+        v_inf = np.empty(len(garm.data.vertices) * 3, np.float64)
+        garm.data.vertices.foreach_get("co", v_inf)
+        v_inf = v_inf.reshape(-1, 3)
+        for i, zi in enumerate(v_inf[:, 2]):
+            if zi >= (z_hem + 0.05):
+                w = 1.0
+            elif zi <= z_hem:
+                w = 0.0
+            else:
+                w = float((zi - z_hem) / 0.05)
+            inf_grp.add([int(i)], w, "REPLACE")
+        _bind_to_body._inflate_m = float(gcfg.get("pose_inflate_m", 0.010))
         _bind_to_body(garm, body, arm, log)
     finally:
         arm.data.pose_position = prev_pp
