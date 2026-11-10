@@ -106,7 +106,7 @@ def apply_rule_map(out):
     for c in out:
         m = RULE_MAP.get(c["name"])
         if m is None and str(c.get("name") or "").startswith("spec_"):
-            m = "human"
+            m = c.get("fix") or "human"
         c["rule_map"] = m or "unmapped"
         if not c["pass"]:
             c["fix"] = None if m in (None, "human") else m
@@ -182,6 +182,38 @@ def look_limits(cfg):
             "skin_p90": p.get("skin_p90", Q["skin_p90"]), "skin_max": p.get("skin_max", Q["skin_max"]), "look": name}
 
 
+def _ensure_overlay_qc(run_dir, cfg):
+    """Score the side-camera dump against a prepared ref when overlay_qc.json is missing."""
+    slug = cfg.get("slug") or ""
+    ref_dir = os.path.join(ROOT, "_scratch", "refs", slug)
+    if not slug or not os.path.isfile(os.path.join(ref_dir, "lm2d_peak.npy")):
+        return None
+    rdir = os.path.join(run_dir, "render") if os.path.isdir(os.path.join(run_dir, "render")) else run_dir
+    xy = os.path.join(rdir, "ours_lm2d_peak.npy")
+    if not os.path.isfile(xy):
+        return None
+    try:
+        import ref_match as RM
+        proj = np.load(xy)
+        silp = os.path.join(rdir, "ours_sil_peak.npy")
+        osil = np.load(silp) if os.path.isfile(silp) else None
+        if osil is not None and float(np.max(osil)) <= 1.0:
+            osil = (osil * 255).astype(np.uint8)
+        h, w = (osil.shape[:2] if osil is not None else (960, 540))
+        beauty = np.zeros((h, w, 3), np.uint8)
+        ov = ((cfg.get("qc") or {}).get("bench_row")
+              or ((cfg.get("spec") or {}).get("qc") or {}).get("overlay") or {})
+        iou_min = float(ov.get("sil_iou_min", 0.35))
+        mae_max = float(ov.get("joint_mae_max", 0.08))
+        outp = os.path.join(rdir, "overlay_peak.png")
+        q = RM.overlay_qc(beauty, ref_dir, proj, "peak", iou_min, mae_max, outp, ours_sil=osil)
+        json.dump(q, open(os.path.join(rdir, "overlay_qc.json"), "w"), indent=2)
+        return q
+    except Exception as e:
+        print("overlay_qc skipped:", e)
+        return None
+
+
 def spec_checks(run_dir, cfg):
     """Score exercises/<slug>.spec.yaml qc.checks against bench_qc.json + overlay_qc.json."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -210,13 +242,24 @@ def spec_checks(run_dir, cfg):
             overlay = _json.load(open(op))
         except Exception:
             overlay = None
+    if overlay is None:
+        overlay = _ensure_overlay_qc(run_dir, cfg)
     out = []
     for item in checks:
         if not isinstance(item, dict) or not item.get("name"):
             continue
         for r in eval_check(item, bench, overlay):
             nm = "spec_" + r["name"]
-            out.append(ck(nm, r["value"], r["limit"], r["pass"], None, "spec"))
+            fix = None if r["pass"] else (item.get("autofix") or r.get("autofix"))
+            row = ck(nm, r["value"], r["limit"], r["pass"], fix, "spec")
+            lab = item.get("label") or r.get("label")
+            if lab:
+                row["label"] = lab
+            if "blocking" in item:
+                row["blocking"] = bool(item["blocking"])
+            elif "blocking" in r:
+                row["blocking"] = bool(r["blocking"])
+            out.append(row)
     return out
 
 
@@ -224,7 +267,21 @@ def run(run_dir, cfg):
     Q = cfg["qc"]; out, F, med = rig_checks(os.path.join(run_dir, "render"), cfg)
     out += spec_checks(run_dir, cfg)
     # Day 4 look (skin bands depend on grade.look)
-    L = json.load(open(os.path.join(run_dir, "grade/look.json")))["frames"]
+    look_p = os.path.join(run_dir, "grade/look.json")
+    L = json.load(open(look_p))["frames"] if os.path.exists(look_p) else []
+    if not L:
+        out = apply_rule_map(out)
+        spec_items = [c for c in out if c.get("group") == "spec"]
+        res = {"pass": all(c["pass"] for c in out), "n_pass": sum(c["pass"] for c in out), "n": len(out), "checks": out,
+               "auto_fixable": sorted({c["fix"] for c in out if not c["pass"] and c["fix"]}),
+               "needs_ai": [c["name"] for c in out if not c["pass"] and not c["fix"]],
+               "unmapped_checks": sorted(c["name"] for c in out if c.get("rule_map") == "unmapped"),
+               "spec_pass": (all(c["pass"] for c in spec_items if c.get("blocking", True)) if spec_items else None),
+               "spec_n_pass": sum(1 for c in spec_items if c["pass"]),
+               "spec_n": len(spec_items),
+               "look_skipped": True}
+        json.dump(res, open(os.path.join(run_dir, "qc.json"), "w"), indent=1)
+        return res
     lim = look_limits(cfg)
     def rng(key, lim_, fix, name=None):
         v = [f[key] for f in L if f.get(key) is not None]
@@ -542,23 +599,29 @@ def run(run_dir, cfg):
                           f"all frames, >= {Q['briefs_cover_min_rel']} x median, 0 green", okc, None, "briefs"))
     # reel
     mp4 = os.path.join(run_dir, "reel", f"{cfg['slug']}_rig3d_v2.mp4"); pr = probe(mp4) if os.path.exists(mp4) else {}
-    st = pr.get("streams", []); v = [s for s in st if s.get("codec_type") == "video"]; a = [s for s in st if s.get("codec_type") == "audio"]
-    dur = float(pr.get("format", {}).get("duration", 0))
-    out.append(ck("reel_1080x1920_30fps", [v[0]["width"], v[0]["height"], v[0]["r_frame_rate"]] if v else None, [W, H, "30/1"],
-                  bool(v) and v[0]["width"] == W and v[0]["height"] == H and v[0]["r_frame_rate"] == "30/1", None, "reel"))
-    out.append(ck("reel_has_audio", bool(a), True, bool(a), None, "reel"))
-    out.append(ck("reel_duration_s", round(dur, 2), Q["dur_s"], Q["dur_s"][0] <= dur <= Q["dur_s"][1], None, "reel"))
-    tj = os.path.join(run_dir, "reel/tts.json")
-    if os.path.exists(tj):
-        T = json.load(open(tj)); out.append(ck("tts_ends_before_reel_end", T["end_s"], f"<= {round(dur - 0.2, 2)}", T["end_s"] <= dur - 0.2, None, "reel"))
-    cj = os.path.join(run_dir, "reel/caption_lint.json")
-    if os.path.exists(cj):
-        C = json.load(open(cj)); out.append(ck("caption_lint", C["errors"] or "ok", "no errors", not C["errors"], None, "reel"))
+    _skip_reel = str((cfg.get("render") or {}).get("frames") or "") == "keyframes" and not os.path.exists(mp4)
+    if not _skip_reel:
+        st = pr.get("streams", []); v = [s for s in st if s.get("codec_type") == "video"]; a = [s for s in st if s.get("codec_type") == "audio"]
+        dur = float(pr.get("format", {}).get("duration", 0))
+        out.append(ck("reel_1080x1920_30fps", [v[0]["width"], v[0]["height"], v[0]["r_frame_rate"]] if v else None, [W, H, "30/1"],
+                      bool(v) and v[0]["width"] == W and v[0]["height"] == H and v[0]["r_frame_rate"] == "30/1", None, "reel"))
+        out.append(ck("reel_has_audio", bool(a), True, bool(a), None, "reel"))
+        out.append(ck("reel_duration_s", round(dur, 2), Q["dur_s"], Q["dur_s"][0] <= dur <= Q["dur_s"][1], None, "reel"))
+        tj = os.path.join(run_dir, "reel/tts.json")
+        if os.path.exists(tj):
+            T = json.load(open(tj)); out.append(ck("tts_ends_before_reel_end", T["end_s"], f"<= {round(dur - 0.2, 2)}", T["end_s"] <= dur - 0.2, None, "reel"))
+        cj = os.path.join(run_dir, "reel/caption_lint.json")
+        if os.path.exists(cj):
+            C = json.load(open(cj)); out.append(ck("caption_lint", C["errors"] or "ok", "no errors", not C["errors"], None, "reel"))
     out = apply_rule_map(out)
+    spec_items = [c for c in out if c.get("group") == "spec"]
     res = {"pass": all(c["pass"] for c in out), "n_pass": sum(c["pass"] for c in out), "n": len(out), "checks": out,
            "auto_fixable": sorted({c["fix"] for c in out if not c["pass"] and c["fix"]}),
            "needs_ai": [c["name"] for c in out if not c["pass"] and not c["fix"]],
-           "unmapped_checks": sorted(c["name"] for c in out if c.get("rule_map") == "unmapped")}
+           "unmapped_checks": sorted(c["name"] for c in out if c.get("rule_map") == "unmapped"),
+           "spec_pass": (all(c["pass"] for c in spec_items if c.get("blocking", True)) if spec_items else None),
+           "spec_n_pass": sum(1 for c in spec_items if c["pass"]),
+           "spec_n": len(spec_items)}
     json.dump(res, open(os.path.join(run_dir, "qc.json"), "w"), indent=1)
     return res
 

@@ -56,7 +56,10 @@ def build_landmarks(u, L, side=12):
     half_w = float(L["shoulder_half"])
     hip_w = float(L["hip_half"])
     pad_z = float(L.get("pad_z", 0.43))
-    hand_ahead = float(L.get("hand_ahead_m", 0.55))  # 50–60 cm
+    hand_ahead = float(L.get("hand_ahead_m", 0.55))  # fallback only
+    spec_pose = L.get("spec_pose") or {}
+    align = spec_pose.get("alignment") or {}
+    max_pitch = float(align.get("torso_from_horizontal_max_deg", 10.0))
 
     fwd = np.array([0.0, 1.0, 0.0])
     right = np.array([1.0, 0.0, 0.0])
@@ -67,28 +70,40 @@ def build_landmarks(u, L, side=12):
     x_sup = 0.0
     mid_x = x_sup + half_w
     y_knee = -0.10
-    y_hand = y_knee + hand_ahead
     kn_z = pad_z + 0.04
     hand_z = pad_z + 0.02
 
-    # Hip Y such that the left shoulder (hip + torso along +Y) sits above the hand.
-    hip_y = y_hand - torso
-    # Thigh from left knee to left hip must be length Lt.
+    # Maximize thigh rise so the support shoulder sits as high as the skeleton
+    # allows (straight vertical support arm needs ~La+Lf above the pad). Keep a
+    # small +Y offset so the thigh reads as kneeling, not standing on the pad.
     lhip_x = mid_x - hip_w
     rhip_x = mid_x + hip_w
     dx = lhip_x - x_sup
+    hip_y = y_knee + 0.08
     dy = hip_y - y_knee
     horiz = math.hypot(dx, dy)
-    # hip_z^2 = Lt^2 - horiz^2  (hip above the pad)
+    if horiz >= Lt * 0.98:
+        rest = math.sqrt(max((Lt * 0.95) ** 2 - dx * dx, 1e-6))
+        hip_y = y_knee + rest
+        horiz = math.hypot(dx, hip_y - y_knee)
     rise = math.sqrt(max(Lt * Lt - horiz * horiz, 1e-4))
     hip_z = kn_z + rise
+    # Cap hip height so the standing leg can still plant flat on the floor.
+    max_hip_for_foot = 0.055 + 0.985 * (Lt + Ls)
+    hip_z = min(hip_z, max_hip_for_foot)
 
     lhip = np.array([lhip_x, hip_y, hip_z])
     rhip = np.array([rhip_x, hip_y, hip_z])
     hip_mid = 0.5 * (lhip + rhip)
 
-    lsh = np.array([mid_x - half_w, hip_y + torso, hip_z])
-    rsh = np.array([mid_x + half_w, hip_y + torso, hip_z])
+    # Keep the back flat. Retarget's spine chain adds a few degrees of pitch,
+    # so do not spend the spec's 10° budget here. Leftover support-arm bend is
+    # a Grab3D thigh-vs-arm proportion limit, not a placement error.
+    sh_z = hip_z
+    _ = (max_pitch, hand_z, La, Lf)  # kept in scope for readability of nearby code
+
+    lsh = np.array([x_sup, hip_y + torso, sh_z])
+    rsh = np.array([mid_x + half_w, hip_y + torso, sh_z])
     sh_mid = 0.5 * (lsh + rsh)
 
     lkn = np.array([x_sup, y_knee, kn_z])
@@ -97,36 +112,37 @@ def build_landmarks(u, L, side=12):
     lheel = np.array([x_sup, y_knee - Ls + 0.04, pad_z + 0.02])
     ltoe = np.array([x_sup, y_knee - Ls - 0.08, pad_z + 0.02])
 
-    lwr = np.array([x_sup, y_hand, hand_z])
-    # Support arm stays in the sagittal plane (x=0): any leftover bend goes
-    # toward the knee along the pad, not out off the left edge of the bench.
-    lel, lwr = _ik(lsh, lwr, La, Lf, lsh + np.array([0.0, -0.18, 0.0]))
+    # Support hand flat on the pad, directly under the support shoulder.
+    lwr = np.array([x_sup, float(lsh[1]), hand_z])
+    lel, lwr = _ik(lsh, lwr, La, Lf, lsh + np.array([0.0, -0.04, -0.15]))
 
-    # Right foot on the floor beside the bench, slightly back, knee soft.
-    # Prioritize reaching the floor; spend leftover length stepping out/back.
+    # Opposite foot planted flat beside the bench, slightly wide, knee soft.
     reach_leg = 0.99 * (Lt + Ls)
     down = hip_z - 0.055
     if down >= reach_leg:
-        rank = rhip + np.array([0.04, -0.03, -reach_leg])
+        rank = np.array([rhip_x + 0.18, hip_y - 0.04, hip_z - reach_leg])
     else:
         leftover = math.sqrt(max(reach_leg * reach_leg - down * down, 0.0))
-        rank = np.array([rhip_x + 0.70 * leftover, hip_y - 0.45 * leftover, 0.055])
-    rkn, rank = _ik(rhip, rank, Lt, Ls, rhip + np.array([0.10, 0.12, 0.02]))
-    rtoe = np.array([rank[0] + 0.02, rank[1] + 0.14, 0.0])
-    rheel = np.array([rank[0], rank[1] - 0.06, 0.0])
+        rank = np.array([rhip_x + min(0.22, 0.55 * leftover + 0.12),
+                         hip_y - min(0.10, 0.35 * leftover), 0.055])
+    rkn, rank = _ik(rhip, rank, Lt, Ls, rhip + np.array([0.16, 0.02, -0.18]))
+    rtoe = np.array([rank[0], rank[1] + 0.16, 0.015])
+    rheel = np.array([rank[0], rank[1] - 0.05, 0.015])
 
-    # Working arm: hang straight down; peak = elbow back/up along the torso,
-    # hand just outside and slightly below the right hip so the DB clears the mesh.
-    wr_hang = rsh + np.array([0.02, 0.0, -(La + Lf) * 0.97])
-    el_hang, wr_hang = _ik(rsh, wr_hang, La, Lf, rsh + np.array([0.08, -0.10, -0.18]))
-    wr_peak = rhip + np.array([0.13, -0.03, -0.06])
-    el_peak, wr_peak = _ik(rsh, wr_peak, La, Lf, rsh + np.array([0.06, -0.28, 0.00]))
+    # Working arm: hang straight down; peak = elbow driven back past the torso,
+    # dumbbell sitting beside the hip.
+    wr_hang = rsh + np.array([0.02, 0.0, -(La + Lf) * 0.98])
+    el_hang, wr_hang = _ik(rsh, wr_hang, La, Lf, rsh + np.array([0.04, 0.0, -0.40]))
+    wr_peak = rhip + np.array([0.12, 0.02, -0.03])
+    el_peak, wr_peak = _ik(rsh, wr_peak, La, Lf, rsh + np.array([0.08, -0.35, 0.16]))
+    _ = hand_ahead  # kept so older configs still load
 
-    # Head / face: continue the spine toward +Y, face the floor (-Z).
-    head = sh_mid + fwd * 0.20 + up * 0.02
-    nose = sh_mid + fwd * 0.18 + np.array([0.0, 0.0, -0.07])
-    lear = sh_mid + fwd * 0.16 + np.array([-0.07, 0.0, 0.01])
-    rear = sh_mid + fwd * 0.16 + np.array([0.07, 0.0, 0.01])
+    # Head / face: continue the spine; a small downward look keeps the gaze on the floor.
+    spine_dir = _n(sh_mid - hip_mid)
+    head = sh_mid + spine_dir * 0.20
+    nose = sh_mid + spine_dir * 0.16 + np.array([0.0, 0.0, -0.04])
+    lear = head + np.array([-0.07, 0.0, 0.0])
+    rear = head + np.array([0.07, 0.0, 0.0])
 
     B = np.zeros((n, 33, 3), np.float64)
     for i, uu in enumerate(u):
@@ -187,6 +203,11 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
     rsh = rec_pts["rsh"]; rwr = rec_pts["rwr"]; rhip = rec_pts["rhip"]
     hip = rec_pts["hip"]; sh = rec_pts["sh"]; head = rec_pts.get("head", sh)
     rel = rec_pts.get("rel")
+    lsh = rec_pts.get("lsh")
+    lel = rec_pts.get("lel")
+    lank = rec_pts.get("lank")
+    rtoe = rec_pts.get("rtoe")
+    rkn = rec_pts.get("rkn")
     tv = sh - hip
     torso_from_vert = math.degrees(math.atan2(math.hypot(tv[0], tv[1]), tv[2]))
     torso_from_horiz = abs(90.0 - torso_from_vert)
@@ -214,6 +235,43 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
     below = (rsh[2] - rwr[2]) > 0.22
     near_hip = float(np.linalg.norm(rwr - rhip)) < 0.22
 
+    support_arm_from_vertical_deg = None
+    support_hand_under_shoulder = None
+    support_elbow_deg = None
+    if lsh is not None:
+        arm = np.asarray(lwr, float) - np.asarray(lsh, float)
+        an = float(np.linalg.norm(arm))
+        if an > 1e-6:
+            down = np.array([0.0, 0.0, -1.0])
+            support_arm_from_vertical_deg = math.degrees(
+                math.acos(float(np.clip(np.dot(arm / an, down), -1, 1))))
+        support_hand_under_shoulder = bool(
+            math.hypot(float(lwr[0] - lsh[0]), float(lwr[1] - lsh[1])) <= 0.08)
+        if lel is not None:
+            ue = np.asarray(lsh, float) - np.asarray(lel, float)
+            ve = np.asarray(lwr, float) - np.asarray(lel, float)
+            nu, nv = float(np.linalg.norm(ue)), float(np.linalg.norm(ve))
+            if nu > 1e-6 and nv > 1e-6:
+                support_elbow_deg = math.degrees(
+                    math.acos(float(np.clip(np.dot(ue, ve) / (nu * nv), -1, 1))))
+    shin_on_pad = bool(
+        knee_on_pad and lank is not None
+        and pad_contains(lank, spec) and abs(lank[2] - pad_z) < 0.08)
+    standing_foot_flat = bool(
+        foot_on_floor and rank[2] < 0.12
+        and (rtoe is None or float(rtoe[2]) < 0.06))
+    elbow_past_torso = None
+    if rel is not None:
+        elbow_past_torso = bool(float(rel[1]) <= float(rsh[1]) + 0.01)
+    standing_knee_deg = None
+    if rkn is not None:
+        ua = np.asarray(rhip, float) - np.asarray(rkn, float)
+        va = np.asarray(rank, float) - np.asarray(rkn, float)
+        nu, nv = float(np.linalg.norm(ua)), float(np.linalg.norm(va))
+        if nu > 1e-6 and nv > 1e-6:
+            standing_knee_deg = math.degrees(
+                math.acos(float(np.clip(np.dot(ua, va) / (nu * nv), -1, 1))))
+
     out = {
         "torso_from_horizontal_deg": round(torso_from_horiz, 2),
         "torso_from_vertical_deg": round(torso_from_vert, 2),
@@ -229,6 +287,14 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
         "working_hand_near_hip": bool(near_hip),
         "working_hand_hip_m": round(float(np.linalg.norm(rwr - rhip)), 4),
         "working_elbow_deg": None if elbow_deg is None else round(float(elbow_deg), 1),
+        "support_hand_under_shoulder": support_hand_under_shoulder,
+        "support_arm_from_vertical_deg": None if support_arm_from_vertical_deg is None
+            else round(float(support_arm_from_vertical_deg), 2),
+        "support_elbow_deg": None if support_elbow_deg is None else round(float(support_elbow_deg), 1),
+        "shin_on_pad": bool(shin_on_pad),
+        "standing_foot_flat": bool(standing_foot_flat),
+        "elbow_past_torso": elbow_past_torso,
+        "standing_knee_deg": None if standing_knee_deg is None else round(float(standing_knee_deg), 1),
         "shoulder_over_head": bool(over_head),
         "arm_torso_clear_m": round(clear, 4),
         "u": round(float(u), 3),

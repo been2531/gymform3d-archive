@@ -8,6 +8,7 @@ version: 1
 
 pose:
   name: textbook bench-supported one-arm dumbbell row
+  ref_fit: false               # authored world targets win over the overlay photo
   side: right_working          # left knee/hand on the pad; right foot on the floor; right arm rows
   reference:
     page: https://commons.wikimedia.org/wiki/File:DumbbellBentOverRow.JPG
@@ -79,6 +80,13 @@ camera:
     shift_y: -0.08
     up: world
 
+render:
+  frames: keyframes            # beauty stills: bottom + peak; proof camera is extra
+
+notify:
+  title: 벤치 원암 로우
+  task: 기준 검사
+
 look:
   clay_v: [150, 175]          # body V p50 target (sRGB, Standard view transform)
   clay_clip_max: 250          # nothing in the still may exceed this
@@ -102,79 +110,108 @@ qc:
     joint_mae_max: 0.08       # mean joint error / frame diagonal
   checks:
     - name: torso_horizontal
+      label: 등이 바닥에 수평이 아님
       frames: [bottom, peak]
       metric: torso_from_horizontal_deg
       max: 10
     - name: head_spine
+      label: 고개가 척추와 안 맞음
       frames: [bottom, peak]
       metric: head_spine_deg
       max: 22
     - name: support_hand_on_pad
+      label: 지지 손이 패드에 없음
       frames: [bottom, peak]
       metric: support_hand_on_pad
       equals: true
     - name: support_hand_under_shoulder
+      label: 지지 손이 어깨 아래가 아님
+      autofix: spec_disable_ref_fit
       frames: [bottom, peak]
       metric: support_hand_under_shoulder
       equals: true
     - name: support_arm_vertical
+      label: 지지 팔이 수직이 아님
+      autofix: spec_disable_ref_fit
       frames: [bottom, peak]
       metric: support_arm_from_vertical_deg
       max: 15
     - name: knee_on_pad
+      label: 지지 무릎이 패드에 없음
       frames: [bottom, peak]
       metric: knee_on_pad
       equals: true
     - name: shin_on_pad
+      label: 정강이가 패드에 없음
+      autofix: spec_disable_ref_fit
       frames: [bottom, peak]
       metric: shin_on_pad
       equals: true
     - name: foot_on_floor
+      label: 서는 발이 바닥에 없음
       frames: [bottom, peak]
       metric: foot_on_floor
       equals: true
     - name: foot_flat
+      label: 서는 발이 바닥에 평평하지 않음
+      autofix: spec_disable_ref_fit
       frames: [bottom, peak]
       metric: standing_foot_flat
       equals: true
     - name: working_hand_below_shoulder
+      label: 무게가 어깨 아래로 안 내려감
       frames: [bottom]
       metric: working_hand_drop_m
       min: 0.22
     - name: working_hand_near_hip
+      label: 무게가 엉덩이 옆에 없음
       frames: [peak]
       metric: working_hand_hip_m
       max: 0.22
     - name: elbow_past_torso
+      label: 팔꿈치가 몸통을 지나지 않음
+      autofix: spec_disable_ref_fit
       frames: [peak]
       metric: elbow_past_torso
       equals: true
     - name: working_elbow
+      label: 바닥에서 팔꿈치 각도가 기준 밖
+      autofix: spec_disable_ref_fit
       frames: [bottom]
       metric: working_elbow_deg
       min: 150
       max: 178
     - name: working_elbow
+      label: 피크에서 팔꿈치 각도가 기준 밖
+      autofix: spec_disable_ref_fit
       frames: [peak]
       metric: working_elbow_deg
       min: 70
       max: 130
     - name: db_in_frame
+      label: 덤벨이 화면 밖으로 나감
+      autofix: spec_camera_pullback
       frames: [bottom, peak]
       metric: db_in_frame
       equals: true
     - name: db_visible
+      label: 덤벨이 잘 안 보임
+      autofix: spec_camera_pullback
       frames: [bottom, peak]
       metric: db_visible_frac
       min: 0.35
     - name: sil_iou
+      label: 실루엣이 기준 사진과 다름
       source: overlay
       metric: sil_iou
       min: 0.35
+      blocking: false             # authored world targets win over the photo (pose.ref_fit: false)
     - name: joint_mae
+      label: 관절 위치가 기준 사진과 다름
       source: overlay
       metric: joint_mae_diag
       max: 0.08
+      blocking: false
   eye_checklist:
     - bench is visible and reads as a horizontal flat bench
     - head is on screen-left or upper-left in the beauty view, or clearly readable in the side proof
