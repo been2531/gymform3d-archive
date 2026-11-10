@@ -235,7 +235,7 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     nt.links.new(am.outputs["Color"], msep.inputs["Color"])
     tex = nt.nodes.new("ShaderNodeTexCoord"); tex.name = GF + "FCOORD"
     w_lat = _wave(nt, "LAT", tex.outputs["Object"], float(fibre_scale), 0.45, "X", (0.0, 0.85, 0.0))
-    w_rho = _wave(nt, "RHO", tex.outputs["Object"], float(fibre_scale) * 1.10, 0.35, "Z", (0.0, 0.0, 0.0))
+    w_rho = _wave(nt, "RHO", tex.outputs["Object"], float(fibre_scale) * 1.10, 0.35, "Y", (0.0, 0.0, 0.0))
     w_trp = _wave(nt, "TRP", tex.outputs["Object"], float(fibre_scale) * 0.95, 0.35, "X", (0.0, 0.0, 0.0))
     ml = nt.nodes.new("ShaderNodeMath"); ml.name = GF + "FL"; ml.operation = "MULTIPLY"
     nt.links.new(msep.outputs["Red"], ml.inputs[0]); nt.links.new(w_lat, ml.inputs[1])
@@ -337,6 +337,9 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     nt.links.new(fac.outputs[0], rgb.inputs["Green"])
     nt.links.new(fac.outputs[0], rgb.inputs["Blue"])
     nt.links.new(rgb.outputs["Color"], aov.inputs["Color"])
+    rid_at = nt.nodes.new("ShaderNodeAttribute"); rid_at.name = GF + "RID"; rid_at.attribute_name = "region_id"
+    aovr = nt.nodes.new("ShaderNodeOutputAOV"); aovr.name = GF + "AOVRID"; aovr.aov_name = "region_id"
+    nt.links.new(rid_at.outputs["Color"], aovr.inputs["Color"])
     return _flex
 
 
@@ -489,6 +492,7 @@ def _cmp_mix(nt, blend, fac=1.0):
 def setup_compositor(sc, bloom_strength=0.60):
     """Subtle Fog Glow on the glowing muscle only (beauty * glow_mask). Blender 4.2 + 5.x."""
     _ensure_aov(sc, "glow_mask")
+    _ensure_aov(sc, "region_id")
     sc.use_nodes = True
     use_group = hasattr(sc, "compositing_node_group")
     if use_group:
@@ -551,9 +555,25 @@ def setup_compositor(sc, bloom_strength=0.60):
     glow_out = gl.outputs.get("Glare") or gl.outputs["Image"]
     # Halo = bloom that spilled *outside* the sharp muscle. Zero the interior so
     # Fog-Glow cannot lift G/B on the already-correct opaque core.
+    # Dilate the mask before inverting so bloom cannot flood thin internal
+    # seams / sculpt grooves (those read as clipped white Y-channels).
+    try:
+        mdil = nt.nodes.new("CompositorNodeDilateErode")
+        mdil.name = "GF_MDIL"
+        mdil.location = (560, -200)
+        try:
+            mdil.mode = "DISTANCE"
+        except Exception:
+            pass
+        mdil.distance = 3
+        minp = mdil.inputs.get("Mask") or mdil.inputs[0]
+        nt.links.new(mask, minp)
+        mask_for_inv = mdil.outputs[0]
+    except Exception:
+        mask_for_inv = mask
     inv = _cmp_mix(nt, "SUBTRACT", 1.0); inv.name = "GF_INVM"; inv.location = (740, -160)
     inv.inputs[1].default_value = (1.0, 1.0, 1.0, 1.0)
-    nt.links.new(mask, inv.inputs[2])
+    nt.links.new(mask_for_inv, inv.inputs[2])
     ring = _cmp_mix(nt, "MULTIPLY", 1.0); ring.name = "GF_RING"; ring.location = (740, -80)
     nt.links.new(glow_out, ring.inputs[1])
     nt.links.new(inv.outputs[0], ring.inputs[2])
@@ -562,6 +582,46 @@ def setup_compositor(sc, bloom_strength=0.60):
     nt.links.new(ring.outputs[0], fade.inputs[2])
     add = _cmp_mix(nt, "ADD", 1.0); add.name = "GF_ADD"; add.location = (1180, 40)
     nt.links.new(img, add.inputs[1]); nt.links.new(fade.outputs[0], add.inputs[2])
+    beauty = add.outputs[0]
+    # Thin dark separators from region_id edges (screen-space, ~1-2 px).
+    _ensure_aov(sc, "region_id")
+    rid = rl.outputs.get("region_id")
+    if rid is not None:
+        flt = nt.nodes.new("CompositorNodeFilter"); flt.name = "GF_SOBEL"; flt.location = (1400, -160)
+        try:
+            flt.filter_type = "SOBEL"
+        except Exception:
+            pass
+        img_in = flt.inputs.get("Image") or flt.inputs[0]
+        nt.links.new(rid, img_in)
+        bw = nt.nodes.new("CompositorNodeRGBToBW"); bw.name = "GF_EBW"; bw.location = (1580, -160)
+        nt.links.new(flt.outputs[0], bw.inputs[0])
+        try:
+            boost = nt.nodes.new("CompositorNodeMath")
+        except Exception:
+            boost = nt.nodes.new("ShaderNodeMath")
+        boost.name = "GF_EBOOST"; boost.operation = "MULTIPLY"
+        boost.inputs[1].default_value = 3.8
+        nt.links.new(bw.outputs[0], boost.inputs[0])
+        try:
+            clp = nt.nodes.new("CompositorNodeMath")
+        except Exception:
+            clp = nt.nodes.new("ShaderNodeMath")
+        clp.name = "GF_ECLP"; clp.operation = "MINIMUM"
+        clp.inputs[1].default_value = 1.0
+        nt.links.new(boost.outputs[0], clp.inputs[0])
+        try:
+            amt = nt.nodes.new("CompositorNodeMath")
+        except Exception:
+            amt = nt.nodes.new("ShaderNodeMath")
+        amt.name = "GF_EAMT"; amt.operation = "MULTIPLY"
+        amt.inputs[1].default_value = 0.90
+        nt.links.new(clp.outputs[0], amt.inputs[0])
+        stroke = _cmp_mix(nt, "MIX", 1.0); stroke.name = "GF_STROKE"; stroke.location = (1760, 40)
+        nt.links.new(amt.outputs[0], stroke.inputs[0])
+        nt.links.new(beauty, stroke.inputs[1])
+        stroke.inputs[2].default_value = (0.02, 0.016, 0.014, 1.0)
+        beauty = stroke.outputs[0]
     if use_group and hasattr(nt, "interface"):
         for item in list(getattr(nt.interface, "items_tree", []) or []):
             try:
@@ -569,11 +629,11 @@ def setup_compositor(sc, bloom_strength=0.60):
             except Exception:
                 pass
         nt.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-        gout = nt.nodes.new("NodeGroupOutput"); gout.location = (1420, 40)
-        nt.links.new(add.outputs[0], gout.inputs[0])
+        gout = nt.nodes.new("NodeGroupOutput"); gout.location = (1980, 40)
+        nt.links.new(beauty, gout.inputs[0])
     else:
-        comp = nt.nodes.new("CompositorNodeComposite"); comp.location = (1420, 40)
-        nt.links.new(add.outputs[0], comp.inputs["Image"])
+        comp = nt.nodes.new("CompositorNodeComposite"); comp.location = (1980, 40)
+        nt.links.new(beauty, comp.inputs["Image"])
     sc.render.use_compositing = True
     try:
         sc.render.use_sequencer = False
