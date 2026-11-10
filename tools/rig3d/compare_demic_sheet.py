@@ -11,6 +11,7 @@ to copy; this script must not be used to commit those images.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import textwrap
 
@@ -26,11 +27,18 @@ DEMIC_SHEET = os.path.join(ROOT, "output/_rig3d/v4_authored/peach34_air/ours_vs_
 
 # Pixel boxes in the original frames (left, top, right, bottom).
 # ours f_0025 is 1080x1920. Demic panel extracted below is 424x720.
-OURS_HIPS = (20, 620, 380, 1140)
+# OURS hips/back are derived from projected bones (bone_proj.json) so a
+# camera change cannot point the 3x crops at a foot or empty floor.
+OURS_HIPS = (20, 620, 380, 1140)  # fallback only
 OURS_BACK = (160, 430, 780, 880)
 DEMIC_PANEL = (58, 84, 482, 804)
 DEMIC_HIPS = (40, 280, 400, 700)   # coords inside the extracted demic panel
 DEMIC_BACK = (40, 40, 390, 360)
+BONE_PROJ = os.path.join(ROOT, "output/_rig3d/db_row/render/bone_proj.json")
+
+HIPS_BONES = ("Hips", "LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg", "Spine")
+BACK_BONES = ("Spine", "Spine01", "Spine02", "Neck",
+              "LeftShoulder", "RightShoulder", "LeftArm", "RightArm")
 
 BG = (18, 18, 20)
 CARD = (28, 28, 32)
@@ -112,6 +120,56 @@ def _text_block(draw, xy, lines, fonts, width):
     return y
 
 
+def _clamp_box(box, w, h):
+    l, t, r, b = box
+    l = max(0, min(w - 2, int(l)))
+    t = max(0, min(h - 2, int(t)))
+    r = max(l + 2, min(w, int(r)))
+    b = max(t + 2, min(h, int(b)))
+    return (l, t, r, b)
+
+
+def box_from_bones(proj, names, frame_size, pad_frac=0.22, min_frac=(0.22, 0.22), aspect=None):
+    """Axis-aligned crop around named projected bones, padded, optionally set to aspect."""
+    W, H = frame_size
+    px = (proj or {}).get("px") or {}
+    pts = [px[n] for n in names if n in px]
+    if len(pts) < 2:
+        return None
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    l, r = min(xs), max(xs)
+    t, b = min(ys), max(ys)
+    bw = max(r - l, 8)
+    bh = max(b - t, 8)
+    cx, cy = 0.5 * (l + r), 0.5 * (t + b)
+    bw = max(bw * (1.0 + 2 * pad_frac), min_frac[0] * W)
+    bh = max(bh * (1.0 + 2 * pad_frac), min_frac[1] * H)
+    if aspect:
+        # aspect = width / height
+        if bw / bh < aspect:
+            bw = bh * aspect
+        else:
+            bh = bw / aspect
+    box = (cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2)
+    return _clamp_box(box, W, H)
+
+
+def load_ours_crops(ours_size, proj_path=BONE_PROJ):
+    W, H = ours_size
+    proj = None
+    if os.path.isfile(proj_path):
+        try:
+            proj = json.load(open(proj_path))
+        except Exception:
+            proj = None
+    hips = box_from_bones(proj, HIPS_BONES, (W, H), pad_frac=0.28,
+                          min_frac=(0.26, 0.22), aspect=520 / 640)
+    back = box_from_bones(proj, BACK_BONES, (W, H), pad_frac=0.32,
+                          min_frac=(0.30, 0.16), aspect=520 / 400)
+    return hips or OURS_HIPS, back or OURS_BACK
+
+
 def extract_demic_panel(path):
     im = Image.open(path)
     return im.crop(DEMIC_PANEL)
@@ -134,8 +192,9 @@ def build(ours_path, demic_sheet, out_path):
         "small": _font(13, False),
     }
 
-    ours_hips = ours.crop(OURS_HIPS)
-    ours_back = ours.crop(OURS_BACK)
+    hips_box, back_box = load_ours_crops(ours.size)
+    ours_hips = ours.crop(hips_box)
+    ours_back = ours.crop(back_box)
     demic_hips = demic.crop(DEMIC_HIPS)
     demic_back = demic.crop(DEMIC_BACK)
 
