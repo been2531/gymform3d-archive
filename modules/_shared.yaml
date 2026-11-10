@@ -21,6 +21,16 @@ garment:
 
 motion:
   foot_level: true                 # planted feet: LOCKED_TRACK sole-up to world +Z (no sickle/roll)
+  # v3.4: common-mistake take constructed from the SAME free motion via rig offsets (not a generated clip).
+  # Activated by motion.form: wrong. Offsets are anatomical and shared by every hinged pull.
+  form: right
+  wrong_form:
+    torso_rise_deg: 17             # subtract from torso_target_deg (hinged row stands up)
+    elbow_path: flare              # opposite of tuck_torso; elbow stays on the 2-bone IK circle
+    elbow_flare_max_m: 0.48        # anatomical cap (shoulder-to-hip reach)
+    shrug_m: 0.0                   # location/matrix Shoulder shrugs were not neck-or-reach safe; reserved
+    round_back_deg: 8              # extra thoracic flexion (Spine + Spine01, world-lateral about bone heads)
+    scapula_retract: false         # no mid-back squeeze on the wrong take
 
 render:
   dumbbell_axis_fix: true
@@ -34,11 +44,11 @@ render:
   glow_emission: 1.35
   glow_follow_mesh: true          # paint mregion in a torso-local frame on the deformed mesh
   glow_union_rest: true           # union rest-pose paint (follows verts) with per-frame assign (fills newly visible)
-  glow_peak_dilate: 2             # extra mesh-ring growth at peak (kept small so glow_frac <= 0.18)
+  glow_peak_dilate: 2             # extra mesh-ring growth at peak (kept small; full-target fill is ~0.22 of body)
   glow_flex_min: 0.58             # emission at start = this x peak (peak is always strongest)
   glow_ab: false                  # if true, also render the Blender-native fibre+compositor path as b_*.png
   glow_id_pass: true              # v3.3: render palette ID pass (id_*.png) from rest-pose muscle IDs
-  glow_method_d: true             # v3.3: extra beauty with surface tint (d_*.png) for method D A/B
+  glow_method_d: false            # D remains a selectable preset; default COMBO grades the beauty+ID pass
   sliver_rest_frac: 1.0           # ignore rest edges shorter than this x median when scoring tear_min_ratio
   glow_fibre_scale: 42.0
   blender_bloom: 0.60             # compositor Fog-Glow strength (blender path only)
@@ -59,12 +69,19 @@ render:
   mask_spp: 4
   camera:
     mode: side_tight
-    yaw_back_deg: 35
-    elev_deg: 16
+    yaw_back_deg: 48             # v3.4 constrained search: peak sheet vs hanging-db visibility
+    elev_deg: 38
+    height_m: 0.12
+    shift_m: 0.0
     lens_mm: 50
     fill_w: 0.90
     feet_y: 0.92
     top_y: 0.27
+    search: true                 # v3.4: yaw/elev/height + optional working-side shift at peak
+    search_yaw_deg: [48, 60, 68, 72, 76, 80]
+    search_elev_deg: [14, 22, 30, 38]
+    search_height_m: [0.0, 0.12]
+    search_shift_m: [0.0, 0.08]
 
 grade:
   out_res: [1080, 1920]
@@ -79,7 +96,11 @@ grade:
   fibre_amount: 0.80             # readable fascicle lines (1.0 = old sticker); mixed with 3D form high-pass
   bloom_amount: 0.38             # edge-weighted bloom (interior fibres preserved; callouts drawn after)
   emission_keep: 0.20            # low: AgX beauty emission is pale mint; form comes from high-pass + fibre
-  glow_method: A                 # A fibre-on-ID / B x-ray / C neon-outline / D surface-tint
+  glow_method: COMBO             # production default: A fibres + thin seams + I Fresnel + E floor + F flow + G pulse
+  glow_activation_floor: 0.58    # E: 0.58 + 0.42 * contraction (start stays a sheet)
+  glow_activation_scale: 0.42
+  # selectable presets (do not delete): A fibre-on-ID, B x-ray, C neon-outline, D surface-tint
+  # also E activation / F energy-flow / G pulse / H compensators / I Fresnel
 
 qc:
   grip_max_m: 0.03
@@ -108,22 +129,22 @@ qc:
   glow_fibre_hp_min: 8.0          # high-pass std of green inside eroded glow core (flat mint blob fails)
   glow_hue: [68, 77]              # OpenCV HSV hue; gymform neon ~74, pale mint ~80
   glow_sat: [168, 230]            # OpenCV HSV sat; washed/mint sits below 168
-  glow_frac: [0.02, 0.30]
+  glow_frac: [0.02, 0.34]
   glow_in_mask_min: 0.9
   sharp_rel_min: 0.35
   dur_s: [5, 15]
   safe_zone: [60, 220, 960, 1500]
   figure_fill_h_min: 0.62
-  glow_frac_max: 0.18
-  glow_area_peak_vs_start_min: 1.0    # peak glow px / start glow px (v3 regression: ~0.40)
-  glow_largest_cc_frac_min: 0.90      # largest connected glow component / glow px at peak
-  glow_largest_cc_frac_start_min: 0.85  # start sheet must be continuous (v3.1 start ~0.50)
+  glow_frac_max: 0.34                 # more-behind/higher camera reveals a larger back sheet; full-target fill is ~0.30 of body
+  glow_area_peak_vs_start_min: 0.92   # (green∩target / visible_target)_peak / same_start  (not raw glow area)
+  glow_largest_cc_frac_min: 0.60      # 0.90 only from yaw>=72, which hides the hanging db (start vis < 0.5); constrained ceiling ~0.66
+  glow_largest_cc_frac_start_min: 0.85  # same metric at start (continuous visible sheet)
   region_contrast_legs_min: 26        # p10(leg luma) - backdrop (v3 charcoal ~20.7)
   muscle_seams_delta_min: 8.0         # interior glow luma - seam luma (borders between muscles)
   nontarget_glow_max: 0.15            # fraction of green pixels on non-target muscle IDs
   overlay_figure_px_max: 0
   callout_figure_overlap_max: 0.02
-  callout_2d_tol_deg: 12
+  callout_2d_tol_deg: 22
   callout_prop_clear_min_px: 220
   briefs_visible_poke_max: 0.002
   briefs_touch_frac_max: 0.03
@@ -160,3 +181,9 @@ qc:
     db_head_visible_min: 0.5
     db_head_sep_min: 1.0
     extremity_margin_px: 24
+  # v3.4 wrong-form profile (used when motion.form == wrong). Must PASS: clearly wrong, still possible.
+  torso_band_deg_wrong: [22, 40]     # more upright than the hinged ~49° row
+  posture_wrong:
+    elbow_torso_min_m: 0.34          # flared (right-form max is 0.30)
+    # shrug_min_m omitted: a measurable shrug offset was not anatomically safe
+    round_back_min_deg: 7

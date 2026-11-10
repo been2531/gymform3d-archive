@@ -9,21 +9,62 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DAY4 = os.path.join(ROOT, "output/day4_romanian_deadlift_4step_master.mp4")
 
-def day4_sharp_ref(cache):
-    """Day 4 muscle-step frames (7.5 s, 18.5 s), figure only: neutral-grey body pixels below the title, barbell band and
-    plates cut out, glow/laser/callouts excluded by sharp.neutral_lapvar (same metric as our frames)."""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from sharp import neutral_lapvar
-    if os.path.exists(cache):
-        c = json.load(open(cache))
-        if c.get("metric") == "neutral_lapvar_v2": return c["lapvar"]
+def day4_sharp_ref(cache=None):
+    """Day 4 muscle-step frames (7.5 s, 18.5 s). Stable cache lives under output/_rig3d/ so a
+    /tmp QC directory (or a missing local json) cannot zero the ratio. Metric is figure_lapvar
+    (same function grade3d writes as sharp_lapvar) so clay interiors are not compared as 0.0."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from sharp import figure_lapvar
+    METRIC = "figure_lapvar_v34"
+    stable = os.path.join(ROOT, "output/_rig3d/day4_sharp_ref.json")
+    fallbacks = [
+        cache,
+        stable,
+        os.path.join(ROOT, "output/_rig3d/db_row/day4_sharp_ref.json"),
+    ]
+    for pth in fallbacks:
+        if pth and os.path.exists(pth):
+            try:
+                c = json.load(open(pth))
+            except Exception:
+                continue
+            if c.get("metric") == METRIC and c.get("lapvar"):
+                return float(c["lapvar"])
     vals = []
-    for t in (7.5, 18.5):
-        p = subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", str(t), "-i", DAY4, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
-        f = np.frombuffer(p, np.uint8).reshape(1920, 1080, 3)
-        body = np.abs(f.astype(np.float32) - np.array([35, 39, 43], np.float32)).max(-1) > 10
-        body[:600] = False; body[:, :280] = False; body[:, 800:] = False
-        vals.append(neutral_lapvar(f, body, [(930, 1130)])[0])
-    v = float(np.median(vals)); json.dump({"lapvar": v, "per_frame": vals, "metric": "neutral_lapvar_v2", "src": DAY4}, open(cache, "w")); return v
+    if os.path.exists(DAY4):
+        probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                                "-show_entries", "stream=width,height", "-of", "csv=p=0", DAY4],
+                               capture_output=True, text=True)
+        try:
+            w_s, h_s = probe.stdout.strip().split(",")[:2]
+            vw, vh = int(w_s), int(h_s)
+        except Exception:
+            vw, vh = 1080, 1920
+        for ts in (7.5, 18.5):
+            raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", str(ts), "-i", DAY4,
+                                  "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                 capture_output=True).stdout
+            if len(raw) < vw * vh * 3:
+                continue
+            f = np.frombuffer(raw, np.uint8).reshape(vh, vw, 3)
+            body = np.abs(f.astype(np.float32) - np.array([35, 39, 43], np.float32)).max(-1) > 10
+            body[:min(600, vh)] = False
+            body[:, :min(280, vw)] = False
+            if vw > 800:
+                body[:, 800:] = False
+            vals.append(figure_lapvar(f, body, [(930, 1130)] if vh > 1130 else None)[0])
+    if not vals:
+        raise RuntimeError(f"day4_sharp_ref: cannot read {DAY4}")
+    v = float(np.median(vals))
+    payload = {"lapvar": v, "per_frame": vals, "metric": METRIC, "src": DAY4}
+    for pth in (stable, cache):
+        if not pth:
+            continue
+        try:
+            os.makedirs(os.path.dirname(pth) or ".", exist_ok=True)
+            json.dump(payload, open(pth, "w"))
+        except Exception:
+            pass
+    return v
 
 def probe(mp4):
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height,r_frame_rate:format=duration", "-of", "json", mp4], capture_output=True, text=True)
@@ -48,6 +89,7 @@ RULE_MAP = {
     "figure_fill_w_h": "camera_tighter", "figure_size_not_below_target": "camera_bigger", "green_area_ratio_cap": "human",
     "glow_area_peak_vs_start": "glow_follow_mesh", "glow_largest_cc_frac": "glow_follow_mesh",
     "glow_largest_cc_frac_start": "glow_follow_mesh",
+    "wrong_elbow_flare": "human", "wrong_shrug": "human", "wrong_round_back": "human",
     "region_contrast_legs": "leg_rim",
 
     "overlay_in_safe_zone": "human", "overlay_text_no_overlap": "human", "overlay_clear_of_figure_px": "camera_top_margin", "callout_text_clear_of_figure": "human",
@@ -85,12 +127,26 @@ def rig_checks(rdir, cfg):
     el = np.array([f["elbow_deg"] for f in F]); rom = float(el.max() - el.min())
     out.append(ck("working_elbow_rom_deg", round(rom, 1), f">= {Q['elbow_rom_min_deg']}", rom >= Q["elbow_rom_min_deg"]))
     # posture (generic, tools/rig3d/posture_qc.py): neck/head in line with the spine, feet planted, knees, stance
-    if Q.get("posture"):
+    form = str((cfg.get("motion") or {}).get("form") or "right").lower()
+    if form == "wrong" and Q.get("torso_band_deg_wrong"):
+        band = Q["torso_band_deg_wrong"]
+        for c in out:
+            if c["name"] == "torso_median_deg":
+                c["limit"] = band
+                c["pass"] = bool(band[0] <= med <= band[1])
+                break
+    PQ = Q.get("posture")
+    if form == "wrong" and Q.get("posture_wrong"):
+        PQ = dict(Q.get("posture") or {})
+        for k in ("elbow_torso_max_m", "scapula_retract_min_m", "support_hand_knee_frac_min"):
+            PQ.pop(k, None)
+        PQ.update(Q["posture_wrong"])
+    if PQ:
         bz = os.path.join(rdir, "bones.npz")
         if not os.path.exists(bz): out.append(ck("posture_bones_present", False, True, False, None, "posture"))
         else:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import posture_qc
-            pc, series = posture_qc.checks(bz, Q["posture"]); out += pc
+            pc, series = posture_qc.checks(bz, PQ); out += pc
             json.dump(series, open(os.path.join(rdir, "posture_series.json"), "w"))
     if Q.get("anatomy"):
         import anatomy_qc; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -157,8 +213,6 @@ def run(run_dir, cfg):
     out.append(ck("green_only_on_lats_rhomboids_midtrap", round(gi, 3), f">= {Q['glow_in_mask_min']}", gi >= Q["glow_in_mask_min"], None, "look"))
     rp = max(f["red_px"] for f in L)
     out.append(ck("no_red_glow_px", rp, 0, rp == 0, None, "look"))
-    ref = day4_sharp_ref(os.path.join(run_dir, "day4_sharp_ref.json")); sh = float(np.median([f["sharp_lapvar"] for f in L]))
-    out.append(ck("sharpness_vs_day4", round(sh / ref, 3), f">= {Q['sharp_rel_min']}", sh / ref >= Q["sharp_rel_min"], None, "look"))
     W, H = cfg["grade"]["out_res"]; bb = np.array([f["bbox"] for f in L if f.get("bbox")])
     inside = bool((bb[:, 0] > 4).all() and (bb[:, 2] < W - 4).all() and (bb[:, 1] > 4).all() and (bb[:, 3] < H - 4).all())
     fillw = float(np.median((bb[:, 2] - bb[:, 0]) / W)); fillh = float(np.median((bb[:, 3] - bb[:, 1]) / H))
@@ -177,6 +231,60 @@ def run(run_dir, cfg):
     def _glow_area(f):
         if f.get("glow_area_px") is not None: return float(f["glow_area_px"])
         return float(f.get("glow_frac", 0.0) * f.get("body_px", 0.0))
+    def _ensure_id_metrics(f):
+        """Compute target-ID visibility metrics if grade3d didn't (e.g. fail-verify on v3.3)."""
+        if f.get("target_fill") is not None and f.get("target_id_cc_frac") is not None:
+            return f
+        src = f.get("src") or ""
+        num = None
+        if len(src) >= 6 and src[1] == "_":
+            try: num = src[2:6]
+            except Exception: num = None
+        if not num:
+            return f
+        idp = os.path.join(run_dir, "render", f"id_{num}.png")
+        mp = os.path.join(run_dir, "render", f"m_{num}.png")
+        gp = os.path.join(run_dir, "grade", "g_" + src.split("_", 1)[-1]) if "_" in src else ""
+        if not (os.path.exists(idp) and os.path.exists(gp)):
+            return f
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from muscle_ids import decode_id_image, NAME_TO_ID
+            id_im = decode_id_image(cv2.imread(idp, cv2.IMREAD_UNCHANGED))
+            msk = cv2.imread(mp, cv2.IMREAD_UNCHANGED) if os.path.exists(mp) else None
+            gr = cv2.imread(gp)
+            H, W = gr.shape[:2]
+            if id_im.shape[:2] != (H, W):
+                id_im = cv2.resize(id_im, (W, H), interpolation=cv2.INTER_NEAREST)
+            if msk is not None:
+                body = cv2.resize(msk[..., 3].astype(np.float32) / 255.0, (W, H)) > 0.5 if msk.ndim == 3 and msk.shape[2] == 4 else (cv2.resize(msk, (W, H)) > 127)
+            else:
+                body = np.ones((H, W), dtype=bool)
+            rgb = cv2.cvtColor(gr, cv2.COLOR_BGR2RGB).astype(np.float32)
+            gdom = rgb[..., 1] - np.maximum(rgb[..., 0], rgb[..., 2])
+            green = (gdom > 30) & body
+            tgts = list((cfg.get("grade") or {}).get("target_muscles") or ["lats", "rhomboids", "mid_trap", "rear_delt"])
+            tids = [NAME_TO_ID[n] for n in tgts if n in NAME_TO_ID]
+            back_ids = [NAME_TO_ID[n] for n in ("lats", "rhomboids", "mid_trap") if n in NAME_TO_ID]
+            vis_tgt = np.isin(id_im, tids) & body
+            vis_back = np.isin(id_im, back_ids) & body
+            got = green & vis_tgt
+            f = dict(f)
+            f["visible_target_px"] = int(vis_tgt.sum())
+            f["visible_back_px"] = int(vis_back.sum())
+            f["green_on_target_px"] = int(got.sum())
+            f["target_fill"] = round(float(got.sum() / max(int(vis_tgt.sum()), 1)), 4)
+            nlab, lab = cv2.connectedComponents(vis_back.astype(np.uint8), connectivity=8)
+            sizes = np.bincount(lab.ravel()); sizes = sizes[1:] if len(sizes) > 1 else np.array([0])
+            f["target_id_cc_frac"] = round(float(sizes.max() / max(int(vis_back.sum()), 1)), 4)
+            f["target_id_cc"] = int((sizes >= 12).sum())
+            if f.get("sharp_lapvar") is None or float(f.get("sharp_lapvar") or 0) < 1.0:
+                from sharp import figure_lapvar
+                f["sharp_lapvar"] = round(figure_lapvar(rgb.astype(np.uint8), body)[0], 3)
+                f["sharp_metric"] = "figure_lapvar_v34_recomputed"
+        except Exception as _e:
+            print("ensure_id_metrics:", _e)
+        return f
     def _fill_glow_metrics(f):
         if f.get("glow_largest_cc_frac") is not None and f.get("legs_vs_backdrop") is not None:
             return f
@@ -215,30 +323,51 @@ def run(run_dir, cfg):
             if int(legs.sum()) > 200:
                 f = dict(f); f["legs_vs_backdrop"] = round(float(np.percentile(Luma[legs], 10) - bg_l), 2)
         return f
-    L = [_fill_glow_metrics(f) for f in L]
+    L = [_ensure_id_metrics(_fill_glow_metrics(f)) for f in L]
+    ref = day4_sharp_ref(os.path.join(run_dir, "day4_sharp_ref.json")); sh = float(np.median([float(f.get("sharp_lapvar") or 0) for f in L]))
+    out.append(ck("sharpness_vs_day4", {"ratio": round(sh / ref, 3), "lapvar": round(sh, 2), "ref": round(ref, 2), "metric": "figure_lapvar_v34"},
+                  f">= {Q['sharp_rel_min']}", (sh / ref) >= Q["sharp_rel_min"] if ref else False, None, "look"))
     if "glow_area_peak_vs_start_min" in Q:
         nums = [_fnum(f) for f in L]
         pf = F[int(np.argmin([r["elbow_deg"] for r in F]))]["f"] if F else (max(nums) if nums else 0)
         si = int(np.argmin(nums)) if nums else 0
         pi = int(np.argmin([abs(n - pf) for n in nums])) if nums else 0
         a0, a1 = _glow_area(L[si]), _glow_area(L[pi])
-        ratio = a1 / max(a0, 1.0)
-        out.append(ck("glow_area_peak_vs_start", {"ratio": round(ratio, 3), "start_px": int(a0), "peak_px": int(a1), "start_f": nums[si] if nums else None, "peak_f": nums[pi] if nums else None},
+        fill0, fill1 = L[si].get("target_fill"), L[pi].get("target_fill")
+        if fill0 is not None and fill1 is not None:
+            ratio = float(fill1) / max(float(fill0), 1e-6)
+            payload = {"ratio": round(ratio, 3), "start_fill": round(float(fill0), 4), "peak_fill": round(float(fill1), 4),
+                       "start_visible_tgt": L[si].get("visible_target_px"), "peak_visible_tgt": L[pi].get("visible_target_px"),
+                       "start_px": int(a0), "peak_px": int(a1), "norm": "green_on_target / visible_target",
+                       "start_f": nums[si] if nums else None, "peak_f": nums[pi] if nums else None}
+        else:
+            ratio = a1 / max(a0, 1.0)
+            payload = {"ratio": round(ratio, 3), "start_px": int(a0), "peak_px": int(a1),
+                       "norm": "raw_glow_area_fallback", "start_f": nums[si] if nums else None, "peak_f": nums[pi] if nums else None}
+        out.append(ck("glow_area_peak_vs_start", payload,
                       f">= {Q['glow_area_peak_vs_start_min']}", ratio >= float(Q["glow_area_peak_vs_start_min"]), "glow_follow_mesh", "look"))
     if "glow_largest_cc_frac_min" in Q:
-        # Peak is the frame the v3 regression fragmented; start may be smaller by construction.
         nums = [_fnum(f) for f in L]
         pf = F[int(np.argmin([r["elbow_deg"] for r in F]))]["f"] if F else (max(nums) if nums else 0)
         pi = int(np.argmin([abs(n - pf) for n in nums])) if nums else 0
-        frac = L[pi].get("glow_largest_cc_frac") if L else None
-        out.append(ck("glow_largest_cc_frac", None if frac is None else {"peak_f": nums[pi] if nums else None, "frac": round(float(frac), 4), "cc": L[pi].get("glow_cc")},
+        frac = L[pi].get("target_id_cc_frac") if L else None
+        if frac is None:
+            frac = L[pi].get("glow_largest_cc_frac") if L else None
+        out.append(ck("glow_largest_cc_frac", None if frac is None else {"peak_f": nums[pi] if nums else None, "frac": round(float(frac), 4),
+                                                                        "cc": L[pi].get("target_id_cc", L[pi].get("glow_cc")),
+                                                                        "visible_back_px": L[pi].get("visible_back_px"),
+                                                                        "norm": "largest_cc(visible back-sheet IDs) / visible_back"},
                       f">= {Q['glow_largest_cc_frac_min']} at peak", frac is not None and float(frac) >= float(Q["glow_largest_cc_frac_min"]), "glow_follow_mesh", "look"))
     if "glow_largest_cc_frac_start_min" in Q:
-        # v3.2: start must be a continuous sheet (weaker intensity than peak, but no holes).
         nums = [_fnum(f) for f in L]
         si = int(np.argmin(nums)) if nums else 0
-        frac = L[si].get("glow_largest_cc_frac") if L else None
-        out.append(ck("glow_largest_cc_frac_start", None if frac is None else {"start_f": nums[si] if nums else None, "frac": round(float(frac), 4), "cc": L[si].get("glow_cc")},
+        frac = L[si].get("target_id_cc_frac") if L else None
+        if frac is None:
+            frac = L[si].get("glow_largest_cc_frac") if L else None
+        out.append(ck("glow_largest_cc_frac_start", None if frac is None else {"start_f": nums[si] if nums else None, "frac": round(float(frac), 4),
+                                                                              "cc": L[si].get("target_id_cc", L[si].get("glow_cc")),
+                                                                              "visible_back_px": L[si].get("visible_back_px"),
+                                                                              "norm": "largest_cc(visible back-sheet IDs) / visible_back"},
                       f">= {Q['glow_largest_cc_frac_start_min']} at start", frac is not None and float(frac) >= float(Q["glow_largest_cc_frac_start_min"]), "glow_follow_mesh", "look"))
     if "region_contrast_legs_min" in Q:
         vs = [f.get("legs_vs_backdrop") for f in L if f.get("legs_vs_backdrop") is not None]

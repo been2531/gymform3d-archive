@@ -78,6 +78,21 @@ def measure(npz):
         elang = _ang(shj - el, wr - el); dxy = np.hypot(shj[:, 0] - spn[:, 0], shj[:, 1] - spn[:, 1]); peak = int(elang.argmin())
         out["working_elbow_deg"] = elang; out["working_elbow_torso_m"] = np.linalg.norm(el - spn, axis=1)
         out["scapula_xy_m"] = dxy; out["scapula_retract_m"] = float(dxy[0] - dxy[peak]); out["working_peak_i"] = peak
+        # v3.4: shrug (working shoulder rises toward the ear) and thoracic round-back vs rest
+        hd = head(top)
+        out["shoulder_to_head_m"] = np.linalg.norm(hd - shj, axis=1)
+        # chest-local elevation: working shoulder along thoracic up (Spine01 -> neck).
+        # Shoulder-to-head shrinks when round_back drops the head, so it is not a shrug.
+        th_up = _u((head("neck") if "neck" in ix else hd) - (head("Spine01") if "Spine01" in ix else head("Spine")))
+        elev = ((shj - (head("Spine01") if "Spine01" in ix else head("Spine"))) * th_up).sum(-1)
+        out["shrug_m"] = float((elev - elev[0]).max())
+        hips_p = head("Hips"); s1 = head("Spine01") if "Spine01" in ix else head("Spine")
+        s_up = head("neck") if "neck" in ix else head(top)
+        thor = _ang(s1 - hips_p, s_up - s1)
+        hips0 = rhead("Hips"); s10 = rhead("Spine01") if "Spine01" in ix else rhead("Spine")
+        s_up0 = rhead("neck") if "neck" in ix else rhead(top)
+        thor0 = float(_ang(s10 - hips0, s_up0 - s10))
+        out["round_back_deg"] = thor - thor0
     rolls = {}
     for s in ("Left", "Right"):
         if s + "Foot" not in ix: continue
@@ -155,6 +170,13 @@ def checks(npz, Q):
         idx = [0] + ([int(M["working_peak_i"])] if "working_peak_i" in M else [])
         v = float(min(M["support_hand_knee_frac"][i] for i in idx))
         out.append(_ck("support_hand_near_knee_frac", r(v, 3), f">= {Q['support_hand_knee_frac_min']} at start+peak", v >= Q["support_hand_knee_frac_min"], "support_hand_visible"))
+    if "elbow_torso_min_m" in Q and "working_elbow_torso_m" in M:
+        i = int(M.get("working_peak_i", int(np.argmin(M["working_elbow_deg"])))); v = float(M["working_elbow_torso_m"][i])
+        out.append(_ck("wrong_elbow_flare", r(v, 3), f">= {Q['elbow_torso_min_m']} at peak (flared)", v >= Q["elbow_torso_min_m"]))
+    if "shrug_min_m" in Q and "shrug_m" in M:
+        v = float(M["shrug_m"]); out.append(_ck("wrong_shrug", r(v, 3), f">= {Q['shrug_min_m']} (start − peak shoulder-to-head)", v >= Q["shrug_min_m"]))
+    if "round_back_min_deg" in Q and "round_back_deg" in M:
+        v = float(np.median(M["round_back_deg"])); out.append(_ck("wrong_round_back", r(v, 1), f">= {Q['round_back_min_deg']} deg median vs rest", v >= Q["round_back_min_deg"]))
     if "ankle_roll_max_deg" in Q and "ankle_roll_deg" in M:
         planted = M.get("legs", "planted") == "planted"
         if planted:

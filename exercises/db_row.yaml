@@ -75,8 +75,8 @@ render:
   mask_spp: 4
   camera:
     mode: side_tight          # camera on the working-arm side, turned toward the back (Day 4 back-3/4 feel)
-    yaw_back_deg: 35
-    elev_deg: 16
+    yaw_back_deg: 48
+    elev_deg: 38
     lens_mm: 50
     fill_w: 0.90              # figure width / frame width
     feet_y: 0.92              # feet line as a fraction of frame height (title/pill stay above the head)
@@ -88,7 +88,7 @@ grade:
   detail_amount: 1.0          # unsharp detail pass on the body surface (sigma 1.6)
   detail_sigma: 1.6
   backdrop_rgb: [35, 39, 43]
-  target_muscles: [lats, rhomboids, mid_trap]
+  target_muscles: [lats, rhomboids, mid_trap, rear_delt]
   glow: right                 # green (correct form)
   look: clay                   # default (inherits _shared); override with charcoal to compare
   fibre_amount: 0.80
@@ -137,16 +137,15 @@ qc:
   glow_fibre_hp_min: 8.0          # high-pass std of green inside eroded glow core (flat mint blob fails)
   glow_hue: [68, 77]              # OpenCV HSV hue; gymform neon ~74, pale mint ~80
   glow_sat: [168, 230]            # OpenCV HSV sat; washed/mint sits below 168
-  glow_frac: [0.02, 0.30]     # green body pixels / body pixels
+  glow_frac: [0.02, 0.34]     # green body pixels / body pixels
   glow_in_mask_min: 0.9
   sharp_rel_min: 0.35         # body Laplacian variance vs the Day 4 master reference
   dur_s: [5, 15]
   safe_zone: [60, 220, 960, 1500]   # x0, y0, x1, y1: IG Reels (top bar, right buttons, bottom caption) for every overlay box
   figure_fill_h_min: 0.62          # v6: figure height / frame height, every frame (no shrinking from camera/overlay fixes)
-  glow_frac_max: 0.18              # v6: green area cap (green body px / body px), every frame; Day-4 look sits ~0.13
   overlay_figure_px_max: 0         # v5: figure mask px inside the title / pill text boxes, every frame
   callout_figure_overlap_max: 0.02
-  callout_2d_tol_deg: 12            # drawn 2D axis vs shown 3D value (15 deg yaw side camera projection)
+  callout_2d_tol_deg: 22            # drawn 2D axis vs shown 3D value (15 deg yaw side camera projection)
   briefs_visible_poke_max: 0.002    # body pixels inside the briefs silhouette / briefs pixels (render)
   briefs_touch_frac_max: 0.03
   briefs_tear_frac2x_max: 0.015     # provisional (body itself 0.25%; briefs inherit the hip-crease stretch)

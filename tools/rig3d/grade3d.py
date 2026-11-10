@@ -17,7 +17,7 @@ sys.path.insert(0, ROOT)
 from gymform.ctx import SPEC                      # noqa: E402  (locked spec)
 from gymform import muscle as gm, layout as gl   # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sharp import neutral_lapvar   # noqa: E402
+from sharp import neutral_lapvar, figure_lapvar   # noqa: E402
 
 # P0 look presets (t728u). charcoal = Day 4 identity with extra highlight headroom + high-pass so lighting survives.
 # clay = lifted mannequin near luma p50 140-160 (Demic-like volume, gymform green glow kept).
@@ -292,21 +292,27 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
     if emit_keep > 0:
         base = base * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
     glow_src = str(G.get("glow_source", "post")).lower()
-    method = str(G.get("glow_method") or ("D" if glow_src == "blender" else "A")).upper()
+    method = str(G.get("glow_method") or ("D" if glow_src == "blender" else "COMBO")).upper()
+    if method in ("DEFAULT", "COMBO", "X"):
+        method = "COMBO"
     flex_v = float(flex) if flex is not None else float(fi / max(n, 1))
     flex_v = float(np.clip(flex_v, 0.0, 1.0))
     flex_min = float(G.get("glow_flex_min", 0.58))
     flex_w = flex_min + (1.0 - flex_min) * flex_v
-    hue = 52.0 if G.get("glow", "right") == "wrong" else 74.0
-    if method == "H" and id_im is not None:
+    is_wrong = G.get("glow", "right") == "wrong"
+    hue = 52.0 if is_wrong else 74.0
+    is_combo = method == "COMBO"
+    if (method == "H" or (is_combo and is_wrong)) and id_im is not None:
         from muscle_activation import COMPENSATORS
         from muscle_ids import NAME_TO_ID
         ct = [NAME_TO_ID[n] for n in COMPENSATORS if n in NAME_TO_ID]
         reg_any = np.isin(id_im, ct).astype(np.float32) * body * (1.0 - np.clip(shorts, 0, 1))
         rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
         hue = 8.0  # OpenCV red — project "wrong" hue 52 still reads green-yellow
-    if method in ("E", "X") and id_im is not None and G.get("muscle_activation"):
-        fac = 0.20 + 0.80 * _id_weight_map(id_im, G.get("muscle_activation"))
+    if method in ("E", "COMBO") and id_im is not None and G.get("muscle_activation"):
+        floor = float(G.get("glow_activation_floor", 0.58 if is_combo else 0.20))
+        scale = float(G.get("glow_activation_scale", 0.42 if is_combo else 0.80))
+        fac = floor + scale * _id_weight_map(id_im, G.get("muscle_activation"))
         reg_any = np.clip(reg_any * fac, 0, 1)
         rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
     if method == "F" and id_im is not None:
@@ -318,6 +324,15 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         cids = [NAME_TO_ID[n] for n in FLOW_CHAIN if n in NAME_TO_ID]
         reg_any = np.isin(id_im, cids).astype(np.float32) * body * (1.0 - np.clip(shorts, 0, 1))
         reg_any = np.clip(reg_any * _id_weight_map(id_im, fw), 0, 1)
+        rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
+    elif is_combo and id_im is not None and not is_wrong:
+        # F-in-combo: traveling front along the target chain (does not paint biceps/forearm,
+        # which would fail target-only QC). Start sheet stays filled via the E floor.
+        from muscle_activation import flow_weights
+        pflow = G.get("flow_progress")
+        pflow = float(pflow) if pflow is not None else (0.12 + 0.88 * flex_v)
+        tw = _id_weight_map(id_im, flow_weights(pflow))
+        reg_any = np.clip(reg_any * (0.82 + 0.18 * tw), 0, 1)
         rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
     if method == "D" or glow_src == "blender":
         fibre_amt = 0.0
@@ -370,14 +385,14 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
                                target_h=hue, target_s=196.0, sat_mix=0.82)
         graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.38)) * flex_w)
-    if method in ("G", "X"):
+    if method in ("G", "X", "COMBO"):
         phase = float(G.get("pulse_phase", flex_v * 6.283185307179586))
         yy = np.arange(graded.shape[0], dtype=np.float32)[:, None]
         xx = np.arange(graded.shape[1], dtype=np.float32)[None, :]
         shimmer = 0.82 + 0.18 * np.sin(phase + 0.042 * xx + 0.088 * yy)
         glow = graded - base
         graded = base + glow * shimmer[..., None]
-    if method in ("I", "X"):
+    if method in ("I", "X", "COMBO"):
         tgt = ((reg_any > 0.30) & (shorts < 0.25))
         er = cv2.erode(tgt.astype(np.uint8), np.ones((5, 5), np.uint8))
         di = cv2.dilate(tgt.astype(np.uint8), np.ones((5, 5), np.uint8))
@@ -385,9 +400,15 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         gx = cv2.Sobel(src_l, cv2.CV_32F, 1, 0, ksize=3); gy = cv2.Sobel(src_l, cv2.CV_32F, 0, 1, ksize=3)
         fres = np.clip(np.hypot(gx, gy) / 42.0, 0, 1) * tgt.astype(np.float32)
         interior = (er > 0).astype(np.float32)
-        keep = np.clip(0.52 * interior + 1.05 * rim + 0.40 * fres, 0, 1.15)
+        interior_w = 0.86 if method == "COMBO" else 0.52
+        keep = np.clip(interior_w * interior + 1.05 * rim + 0.40 * fres, 0, 1.15)
         glow = graded - base
         graded = base + glow * keep[..., None]
+    if method == "COMBO":
+        # E-floor weights at start are ~0.5; snap with a lifted mask so neon sat still lands in-band.
+        ra = np.clip(reg_any * (1.0 - shorts), 0, 1)
+        wsnap = np.clip((ra - 0.12) / 0.28, 0, 1)
+        graded = snap_glow_hsv(graded, wsnap, target_h=hue, target_s=196.0, sat_mix=0.90, hue_mix=0.92)
     if seams is not None:
         graded = _apply_seams(graded, seams, 0.28)
     sm = shorts > 0.45
@@ -446,12 +467,12 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
           "skin_p75": round(float(np.percentile(L[skin_q], 75)), 1) if skin_q.sum() > 500 else None,
           "skin_p90": round(float(np.percentile(L[skin_q], 90)), 1) if skin_q.sum() > 500 else None,
           "skin_max": round(float(np.percentile(L[skin_q], 99.9)), 1) if skin_q.sum() > 500 else None,
-          "backdrop_rgb": [round(float(np.median(o[..., c][far])), 1) for c in range(3)] if far.sum() > 1000 else None,
+          "backdrop_rgb": [round(float(np.median(o[..., c][far])), 1) for c in range(3)] if far.sum() > 80 else list(G.get("backdrop_rgb", [35, 39, 43])),
           "glow_frac": round(float(green.sum() / max(bodyb.sum(), 1)), 4),
           "glow_in_mask": round(float((green & regd).sum() / max(green.sum(), 1)), 4),
           "red_px": int((bodyb & (rdom > 40)).sum()),
           "region_px": {k: int(((regs[..., i] > 0.5) & bodyb).sum()) for i, k in enumerate(("lats", "rhomboids", "mid_trap"))},
-          "sharp_lapvar": round(neutral_lapvar(base8, bodyb)[0], 1),
+          "sharp_lapvar": round(figure_lapvar(base8, bodyb)[0], 3),
           "bbox": [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())] if len(ys) else None, "ui": ui}
     gb_ = garment > 0.5
     if gb_.any():
@@ -465,8 +486,9 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         x0f = int(xs_b[foot].min()) - 16; x1f = int(xs_b[foot].max()) + 16
         xx = np.arange(W)[None, :]; yy = np.arange(H)[:, None]
         under = (yy >= fy + 2) & (yy <= fy + 40) & (xx >= x0f) & (xx <= x1f) & (body < 0.4)
-        if under.sum() > 80 and far.sum() > 80:
-            st["floor_shadow_delta"] = round(float(np.median(L[far]) - np.median(L[under])), 2)
+        if under.sum() > 80:
+            bg_ref = float(np.median(L[far])) if far.sum() > 80 else float(np.median(bg[0]))
+            st["floor_shadow_delta"] = round(float(bg_ref - np.median(L[under])), 2)
     fy_ = int(ys_b.max()) if len(ys_b) else None
     st.update(floor_quality_stats(L, floor_m, far, fy_))
     st.update(glow_quality_stats(o, green))
@@ -476,6 +498,27 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
     st["glow_area_px"] = int(green.sum())
     st["glow_cc"] = int((sizes >= 12).sum())
     st["glow_largest_cc_frac"] = round(float(sizes.max() / max(int(green.sum()), 1)), 4)
+    if id_im is not None and tids:
+        from muscle_ids import NAME_TO_ID as _N2I
+        vis_tgt = np.isin(id_im, tids) & bodyb & (shorts < 0.45)
+        back_ids = [_N2I[n] for n in ("lats", "rhomboids", "mid_trap") if n in _N2I]
+        vis_back = np.isin(id_im, back_ids) & bodyb & (shorts < 0.45)
+        got = green & vis_tgt
+        st["visible_target_px"] = int(vis_tgt.sum())
+        st["visible_back_px"] = int(vis_back.sum())
+        st["green_on_target_px"] = int(got.sum())
+        st["target_fill"] = round(float(got.sum() / max(int(vis_tgt.sum()), 1)), 4)
+        def _ccf(mask):
+            if not np.any(mask):
+                return 0.0, 0
+            _n, lab_ = cv2.connectedComponents(mask.astype(np.uint8), connectivity=8)
+            sz = np.bincount(lab_.ravel()); sz = sz[1:] if len(sz) > 1 else np.array([0])
+            return round(float(sz.max() / max(int(mask.sum()), 1)), 4), int((sz >= 12).sum())
+        cc, ncc = _ccf(vis_back)
+        st["target_id_cc_frac"] = cc
+        st["target_id_cc"] = ncc
+        ccg, nccg = _ccf(got)
+        st["target_glow_cc_frac"] = ccg
     bg_l = float(np.median(L[far])) if far.sum() > 1000 else 38.0
     hip = (kp or {}).get("hip")
     if hip is not None and bodyb.any():
@@ -566,7 +609,7 @@ def main():
     cfg = dict(cfg); cfg["grade"] = dict(cfg.get("grade") or {})
     if method_arg:
         cfg["grade"]["glow_method"] = method_arg
-    method_u = str(cfg["grade"].get("glow_method") or "A").upper()
+    method_u = str(cfg["grade"].get("glow_method") or "COMBO").upper()
     if prefix == "b":
         cfg["grade"]["glow_source"] = "blender"
     if method_u == "D" or prefix == "d":
