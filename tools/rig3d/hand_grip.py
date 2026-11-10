@@ -227,6 +227,10 @@ def flatten_palm(co_w, idx, bone_M, is_left=True, adduct=0.62, thumb_adduct=0.40
     # Flatten: pull palm and fingers toward a common palmar plane.
     palm_un = float(np.median(un[labels == 5])) if (labels == 5).any() else float(np.median(un))
     newL = newL - np.outer(flatten * (un - palm_un), n)
+    # Fade the delta out at the wrist so the hand/forearm seam does not ring.
+    y_lo = float(np.percentile(y, 8))
+    ramp = np.clip((y - y_lo) / max(float(y_k) - y_lo, 1e-4), 0.0, 1.0)
+    newL = L + (newL - L) * ramp[:, None]
     new_world = newL @ R.T + o
     meas = measure_palm_local(newL, labels, a, n, y)
     n_w = R @ n

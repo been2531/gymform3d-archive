@@ -214,6 +214,27 @@ def _ensure_overlay_qc(run_dir, cfg):
         return None
 
 
+
+def glow_dark_seam_frac(rgb):
+    """Fraction of the closed glow sheet that is a dark gap or crack.
+
+    UV-seam holes show up as low-sat clay slivers inside orange/purple glow.
+    """
+    if rgb is None or getattr(rgb, "size", 0) == 0:
+        return None
+    import cv2
+    hsv = cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2HSV)
+    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    glow = (s > 40) & (v > 55) & (((h < 28) | (h > 125)) & (h < 178))
+    n = int(glow.sum())
+    if n < 200:
+        return 0.0
+    k = np.ones((7, 7), np.uint8)
+    closed = cv2.morphologyEx(glow.astype(np.uint8), cv2.MORPH_CLOSE, k).astype(bool)
+    gaps = closed & ~glow & (v < 170)
+    return float(gaps.sum() / max(int(closed.sum()), 1))
+
+
 def spec_checks(run_dir, cfg):
     """Score exercises/<slug>.spec.yaml qc.checks against bench_qc.json + overlay_qc.json."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -244,6 +265,28 @@ def spec_checks(run_dir, cfg):
             overlay = None
     if overlay is None:
         overlay = _ensure_overlay_qc(run_dir, cfg)
+    if overlay is None:
+        overlay = {}
+    if "glow_dark_seam_frac" not in overlay:
+        fracs = []
+        rdir = os.path.join(run_dir, "render")
+        gdir = os.path.join(run_dir, "grade")
+        for name in ("f_0001.png", "f_0025.png"):
+            for folder in (gdir, rdir):
+                fp = os.path.join(folder, name)
+                if not os.path.isfile(fp):
+                    continue
+                im = cv2.imread(fp)
+                if im is None:
+                    continue
+                rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+                val = glow_dark_seam_frac(rgb)
+                if val is not None:
+                    fracs.append(val)
+                break
+        if fracs:
+            overlay = dict(overlay)
+            overlay["glow_dark_seam_frac"] = round(float(max(fracs)), 4)
     out = []
     for item in checks:
         if not isinstance(item, dict) or not item.get("name"):

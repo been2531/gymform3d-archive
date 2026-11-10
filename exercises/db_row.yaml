@@ -68,9 +68,11 @@ motion:
 garment:                     # black boxer briefs (드로즈): separate skinned mesh, matte black, never in the muscle mask
   enabled: true
   z_waist: 1.03
-  z_hem: 0.76                # a bit more thigh so the kneeling glute stays covered
+  z_hem: 0.80                # upper-to-mid thigh openings (boxer-brief length)
   max_abs_x: 0.22
-  offset_m: 0.008              # cover glute without the old bulky 0.012 bag
+  offset_m: 0.001              # tiny rest gap; posed fit is the shrink-wrap
+  wrap_offset_m: 0.004         # shrink-wrap to the posed body, 4 mm (3–6 mm range)
+  solidify_m: 0.0              # no separate puffy shell
   hem_smooth_iters: 12
   clearance_min_m: 0.0005      # geometric touch = garment vertex within 0.5 mm of the deformed body surface
 render:
@@ -101,7 +103,7 @@ render:
   top_energy: 14
   ao_distance: 0.11
   ao_amount: 0.44                # cavity-like groove shadows
-  cavity_amount: 0.20            # subtle pointiness darkening in concave separations
+  cavity_amount: 0.12            # lighter cavity so seams do not crack the glow
   glow_blur_iters: 10
   glow_erode_rings: 0
   glow_fade_rings: 2
@@ -115,7 +117,7 @@ render:
   glow_shape: project
   glow_proj_tex: tools/rig3d/masks/db_row_back_paint.png
   glow_fibre_bump: 0.14
-  glow_fibre_line: 0.28         # subtle fibre ridges inside the glow
+  glow_fibre_line: 0.10         # keep ridges; avoid dark crack lines in the glow
   glow_rim: 0.32
   body_rim: 0.16                 # less white Fresnel wash on clay
   glow_bloom: true

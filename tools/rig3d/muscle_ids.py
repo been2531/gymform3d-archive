@@ -369,7 +369,38 @@ def blur_mask(mask, adj, iters=7, core_hold=0.94, dilate=2):
 
 def write_glow_w(me, weights):
     """FLOAT_COLOR point attribute `glow_w` (R=G=B = weight) for the in-scene mix."""
-    w = np.asarray(weights, np.float32)
+    w = np.asarray(weights, np.float32).copy()
+    # UV-island splits share a location but not a vertex: take the max weight so
+    # glow does not drop to zero along a seam (that reads as a dark crack).
+    try:
+        co = np.empty(len(me.vertices) * 3, np.float32)
+        me.vertices.foreach_get("co", co)
+        co = co.reshape(-1, 3)
+        key = np.round(co, 4)
+        order = np.lexsort(key.T)
+        ks = key[order]
+        same = np.all(ks[1:] == ks[:-1], axis=1)
+        start = 0
+        for i, s in enumerate(same, 1):
+            if s:
+                continue
+            ids = order[start:i]
+            if len(ids) > 1:
+                w[ids] = w[ids].max()
+            start = i
+        ids = order[start:]
+        if len(ids) > 1:
+            w[ids] = w[ids].max()
+        ev = np.empty(len(me.edges) * 2, np.int64)
+        me.edges.foreach_get("vertices", ev)
+        ev = ev.reshape(-1, 2)
+        for _ in range(2):
+            w2 = w.copy()
+            np.maximum.at(w2, ev[:, 0], w[ev[:, 1]])
+            np.maximum.at(w2, ev[:, 1], w[ev[:, 0]])
+            w = w2
+    except Exception:
+        pass
     col = np.zeros((len(w), 4), np.float32)
     col[:, 0] = w; col[:, 1] = w; col[:, 2] = w; col[:, 3] = 1.0
     va = me.color_attributes.get("glow_w")
