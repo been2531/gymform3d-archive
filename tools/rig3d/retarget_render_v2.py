@@ -180,6 +180,27 @@ if LEGS == "bench_row":
     NF = int(B.shape[0]); AUTH_U = _u
     AUTH_META = {"u": _u, "fps": _fps, "dur_s": _dur, "n": NF, "form": _form,
                  "torso_start_deg": 90.0, "torso_peak_deg": 90.0, "world_targets": True}
+    np.save(a.out + "/authored_landmarks_prior.npy", B)
+    try:
+        import ref_match as RM
+        _here = os.path.dirname(os.path.abspath(__file__))
+        _repo = os.path.dirname(os.path.dirname(_here))
+        _ref = os.path.join(_repo, "_scratch", "refs", "db_row")
+        if os.path.isfile(os.path.join(_ref, "lm2d_peak.npy")):
+            _res = tuple(RC.get("res") or [540, 960])
+            _cam = RM.camera_from_cfg(RC.get("camera") or {})
+            _Lfit = {"thigh": float(_Lt), "shin": float(_Ls), "upper_arm": float(_La),
+                     "forearm": float(_Lf), "torso": float(_tor)}
+            B, _fitinfo = RM.fit_cycle(B, AUTH_U, _ref, _cam, _res, BENCH_SPEC, _Lfit)
+            AUTH_META["ref_fit"] = _fitinfo
+            json.dump(_fitinfo, open(a.out + "/ref_fit.json", "w"), indent=2)
+            log(f"ref-fit bottom mae={_fitinfo['bottom']['joint_mae_ndc']} peak mae={_fitinfo['peak']['joint_mae_ndc']}")
+        else:
+            log(f"ref-fit skipped: no prepared landmarks at {_ref}")
+    except Exception as _fe:
+        import traceback
+        log(f"ref-fit failed: {_fe}")
+        traceback.print_exc()
     np.save(a.out + "/authored_landmarks.npy", B)
     np.save(a.out + "/authored_u.npy", AUTH_U)
     json.dump({k: AUTH_META[k] for k in AUTH_META if k != "u"}, open(a.out + "/authored_meta.json", "w"), default=float)
@@ -1232,7 +1253,37 @@ pr = np.array([world_to_camera_view(sc, CAM, mu.Vector(p_.tolist()))[:2] for p_ 
 framing = {"x_min": round(float(pr[:, 0].min()), 3), "x_max": round(float(pr[:, 0].max()), 3), "y_top": round(float(1 - pr[:, 1].max()), 3),
            "y_feet": round(float(1 - pr[:, 1].min()), 3), "dist_m": round(Dd, 2), "lens": camd.lens}
 log(f"camera {framing}")
-if LEGS == "bench_row":
+if str(CAMC.get("mode") or "").lower() == "fixed":
+    # Locked per-exercise world preset (no auto-frame, no binary-search).
+    look_v = mu.Vector([float(x) for x in (CAMC.get("look") or [0.18, 0.18, 0.78])])
+    dist = float(CAMC.get("dist_m", 2.65))
+    yaw = math.radians(float(CAMC.get("yaw_back_deg", 8)))
+    el = math.radians(float(CAMC.get("elev_deg", 8)))
+    dirv = mu.Vector((math.cos(yaw) * math.cos(el),
+                      -math.sin(yaw) * math.cos(el),
+                      math.sin(el))).normalized()
+    CAM.location = look_v + dirv * dist
+    CAM.rotation_euler = (look_v - CAM.location).to_track_quat("-Z", "Y").to_euler()
+    camd.lens = float(CAMC.get("lens_mm", 50))
+    camd.shift_x = float(CAMC.get("shift_x", 0.0))
+    camd.shift_y = float(CAMC.get("shift_y", 0.02))
+    bpy.context.view_layer.update()
+    pr = np.array([world_to_camera_view(sc, CAM, mu.Vector(p_.tolist()))[:2] for p_ in P[::5]])
+    framing.update({"mode": "fixed",
+                    "yaw_back_deg": float(CAMC.get("yaw_back_deg", 8)),
+                    "elev_deg": float(CAMC.get("elev_deg", 8)),
+                    "dist_m": round(dist, 2),
+                    "look": [round(float(x), 3) for x in look_v],
+                    "shift_x": camd.shift_x, "shift_y": camd.shift_y,
+                    "x_min": round(float(pr[:, 0].min()), 3), "x_max": round(float(pr[:, 0].max()), 3),
+                    "y_top": round(float(1 - pr[:, 1].max()), 3),
+                    "y_feet": round(float(1 - pr[:, 1].min()), 3)})
+    try:
+        json.dump(framing, open(a.out + "/camera_fixed.json", "w"), indent=2)
+    except Exception:
+        pass
+    log(f"camera FIXED yaw={framing['yaw_back_deg']} elev={framing['elev_deg']} dist={dist:.2f} look={framing['look']} {framing}")
+elif LEGS == "bench_row":
     # Back 3/4 from the working side and slightly above, from the HEAD end
     # so the glowing back fills the upper middle of the 9:16 frame.
     peak_f = 25 if NF >= 25 else max(1, NF // 2)
@@ -1577,9 +1628,23 @@ if LEGS == "bench_row" and BENCH_SPEC is not None:
         rec_pts = {
             "lkn": _bp("LeftLeg"), "lwr": _bp("LeftHand"), "rank": _bp("RightFoot"),
             "rsh": _bp("RightArm"), "rwr": _bp("RightHand"), "rhip": _bp("RightUpLeg"),
+            "rel": _bp("RightForeArm"),
             "hip": _bp("Hips"), "sh": 0.5 * (_bp("LeftArm") + _bp("RightArm")),
             "head": _bp("Head") if "Head" in pb else _bp("head_end"),
         }
+        _mp_bones = {0: "Head", 11: "LeftArm", 12: "RightArm", 13: "LeftForeArm",
+                     14: "RightForeArm", 15: "LeftHand", 16: "RightHand",
+                     23: "LeftUpLeg", 24: "RightUpLeg", 25: "LeftLeg", 26: "RightLeg",
+                     27: "LeftFoot", 28: "RightFoot",
+                     31: "LeftToeBase" if "LeftToeBase" in pb else None,
+                     32: "RightToeBase" if "RightToeBase" in pb else None}
+        _xy = np.zeros((33, 2), np.float64)
+        for _ji, _bn in _mp_bones.items():
+            if not _bn or _bn not in pb:
+                continue
+            _q = world_to_camera_view(sc, CAM, arm.matrix_world @ pb[_bn].head)
+            _xy[_ji] = (_q.x, 1.0 - _q.y)
+        np.save(a.out + f"/ours_lm2d_{_tag}.npy", _xy)
         uu = float(AUTH_U[_fi - 1]) if AUTH_U is not None else (1.0 if _tag == "peak" else 0.0)
         db_ndc = db_vis = db_con = None
         if "db" in dir() or True:
