@@ -90,6 +90,10 @@ RULE_MAP = {
     "glow_area_peak_vs_start": "glow_follow_mesh", "glow_largest_cc_frac": "glow_follow_mesh",
     "glow_largest_cc_frac_start": "glow_follow_mesh",
     "wrong_elbow_flare": "human", "wrong_shrug": "human", "wrong_round_back": "human",
+    "joint_jerk_max": "authored_motion", "head_jerk_max": "authored_motion",
+    "foot_slide_mm": "plant_legs", "head_ang_vel_max_deg_s": "authored_motion",
+    "segment_seam_pose_delta_mm": "authored_loop", "elbow_lockout_speed_deg_s": "soft_lockout",
+    "motion_bones_present": "authored_motion",
     "region_contrast_legs": "leg_rim",
 
     "overlay_in_safe_zone": "human", "overlay_text_no_overlap": "human", "overlay_clear_of_figure_px": "camera_top_margin", "callout_text_clear_of_figure": "human",
@@ -135,6 +139,13 @@ def rig_checks(rdir, cfg):
                 c["limit"] = band
                 c["pass"] = bool(band[0] <= med <= band[1])
                 break
+    if form == "wrong" and Q.get("torso_tol_deg_wrong") is not None:
+        for c in out:
+            if c["name"] == "torso_steady_maxdev_deg":
+                lim = float(Q["torso_tol_deg_wrong"])
+                c["limit"] = lim
+                c["pass"] = bool(dev <= lim)
+                break
     PQ = Q.get("posture")
     if form == "wrong" and Q.get("posture_wrong"):
         PQ = dict(Q.get("posture") or {})
@@ -151,6 +162,13 @@ def rig_checks(rdir, cfg):
     if Q.get("anatomy"):
         import anatomy_qc; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         out += anatomy_qc.run(rdir, Q["anatomy"], cfg)
+    if Q.get("motion_smooth"):
+        import motion_qc
+        _fps = 25.0
+        _am = os.path.join(rdir, "authored_meta.json")
+        if os.path.exists(_am):
+            _fps = float(json.load(open(_am)).get("fps") or 30)
+        out += motion_qc.checks(rdir, Q["motion_smooth"], _fps)
     return out, F, med
 
 def look_limits(cfg):

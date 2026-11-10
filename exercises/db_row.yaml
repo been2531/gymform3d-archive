@@ -17,6 +17,9 @@ asset:
     file: _scratch/hdri/studio_small_09_1k.hdr       # gitignored
     strength: 0.55
 motion:
+  authored:
+    enabled: true
+    preset: pull_row         # modules/authored/pull_row.yaml (anatomical arm path, eased timing)
   rep: auto                  # auto = the first full rep (bottom -> bottom) of the working elbow
   rep_index: 0
   torso_target_deg: 49       # forward hinge from vertical; upper body re-aimed per frame, arms keep their world direction

@@ -24,6 +24,9 @@ motion:
   # v3.4: common-mistake take constructed from the SAME free motion via rig offsets (not a generated clip).
   # Activated by motion.form: wrong. Offsets are anatomical and shared by every hinged pull.
   form: right
+  authored:
+    enabled: false          # per-exercise opt-in (exercises/db_row.yaml)
+    fps: 30
   wrong_form:
     torso_rise_deg: 17             # subtract from torso_target_deg (hinged row stands up)
     elbow_path: flare              # opposite of tuck_torso; elbow stays on the 2-bone IK circle
@@ -187,3 +190,11 @@ qc:
     elbow_torso_min_m: 0.34          # flared (right-form max is 0.30)
     # shrug_min_m omitted: a measurable shrug offset was not anatomically safe
     round_back_min_deg: 7
+  torso_tol_deg_wrong: 16            # authored yank rises ~13 deg (start 40 -> peak 27)
+  motion_smooth:
+    joint_jerk_max: 50               # m/s^3 on working arm + head (raw MediaPipe forearm ~302)
+    head_jerk_max: 3.0               # MediaPipe Head ~4.14
+    foot_slide_mm: 3.0
+    head_ang_vel_max_deg_s: 30
+    seam_pos_mm: 5.0                 # MediaPipe loop seam ~20 mm
+    elbow_lockout_speed_max_deg_s: 160 # 0.8s min-jerk 10→95° crosses flex<25 at ~136°/s; MP snap is 345
