@@ -105,7 +105,15 @@ def load_exercise(slug, root=None):
         for k in ("_doc", "primitive", "fault", "risks", "motion_hint", "status"):
             d.pop(k, None)
         return d
-    cfg = deep_merge(strip_meta(shared), strip_meta(mod))
+    kit_path = os.path.join(root, "modules", "kit.yaml")
+    want_kit = False
+    for layer in (shared, mod, ex):
+        k = layer.get("kit")
+        if isinstance(k, dict) and k.get("enabled"):
+            want_kit = True
+    kit = _load_yaml(kit_path) if want_kit else {}
+    cfg = deep_merge(strip_meta(shared), strip_meta(kit))
+    cfg = deep_merge(cfg, strip_meta(mod))
     cfg = deep_merge(cfg, strip_meta(ex))
     cfg["slug"] = cfg.get("slug") or slug
     cfg["_module"] = module_name
@@ -113,6 +121,7 @@ def load_exercise(slug, root=None):
         "exercise": ex_path,
         "module": os.path.join(root, "modules", f"{module_name}.yaml") if module_name else None,
         "shared": os.path.join(root, "modules", "_shared.yaml"),
+        "kit": kit_path if want_kit else None,
     }
     spec_p = os.path.join(root, "exercises", f"{slug}.spec.yaml")
     if os.path.isfile(spec_p):

@@ -223,7 +223,8 @@ if LEGS == "bench_row":
         _BF = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_BF)
         _bdict = RC.get("bench") if isinstance(RC.get("bench"), dict) else {}
         _look = str(_bdict.get("look") or MO.get("bench_look") or "gunmetal_black")
-        BENCH_OBJ, BENCH_META = _BF.build_bench(look=_look, clear=False)
+        _padded = bool(((C.get("kit") or {}).get("bench") or {}).get("padded"))
+        BENCH_OBJ, BENCH_META = _BF.build_bench(look=_look, clear=False, padded=_padded)
         _BF.place_bench(BENCH_OBJ, BENCH_SPEC["origin_xy"], BENCH_SPEC["yaw_z"], BENCH_SPEC["origin_z"])
         log(f"bench_row WORLD +Y hip_z={BENCH_SPEC['hip_z']:.3f} kn={np.asarray(BENCH_SPEC['support_knee']).round(3).tolist()} hand={np.asarray(BENCH_SPEC['support_hand']).round(3).tolist()}")
     except Exception as _be:
@@ -879,7 +880,16 @@ if USE_MID:
             _rest = co
             log(f"glow rest-pos fallback: {_re}")
         _shape = str(RC.get("glow_shape") or "hull").lower()
-        if _shape == "project":
+        if _shape == "shells":
+            log("glow_shape=shells: skipping projection paint (kit overlay shells)")
+            _gw = np.zeros(nv, np.float32)
+            _grgb = np.zeros((nv, 3), np.float32)
+            _gst = {"shape": "shells"}
+            try:
+                MIDS.write_glow_attrs(me, _gw, _grgb)
+            except Exception:
+                pass
+        elif _shape == "project":
             import project_paint as PPAINT
             _tex = RC.get("glow_proj_tex") or os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), "masks", "db_row_back_paint.png")
@@ -919,7 +929,9 @@ if USE_MID:
         log(f"glow bake failed: {_e}")
 else:
     log(f"muscle IDs unused nv={nv} built={None if not MID else MID.get('nv')}")
-    if str(RC.get("glow_shape") or "hull").lower() == "project":
+    if str(RC.get("glow_shape") or "hull").lower() == "shells":
+        log("glow_shape=shells (no MID): projection paint not used")
+    elif str(RC.get("glow_shape") or "hull").lower() == "project":
         import project_paint as PPAINT
         _tex = RC.get("glow_proj_tex") or os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "masks", "db_row_back_paint.png")
@@ -1021,7 +1033,33 @@ log(f"regions {region_counts}")
 # along the normals, keeping the body's vertex groups + armature modifier -> skinned exactly like the body (no sim).
 GC = C.get("garment", {"enabled": False})
 garm, g_src = None, None
-if GC.get("enabled"):
+SHELL_OBJS, SHELL_FLEX = [], []
+_kit = C.get("kit") or {}
+_kit_gmethod = str((( _kit.get("garment") or {}).get("method")) or GC.get("method") or "").lower()
+if GC.get("enabled") and _kit.get("enabled") and _kit_gmethod == "loft":
+    try:
+        import kit.garment as KITG
+        garm, _gmeta = KITG.build_boxer_shorts(body, arm, C, log=log, col=col)
+        g_src = None
+        gm_ = garm.data
+        gev = np.empty(len(gm_.edges) * 2, np.int64)
+        gm_.edges.foreach_get("vertices", gev)
+        gev = gev.reshape(-1, 2)
+        _gco = np.empty(len(gm_.vertices) * 3)
+        gm_.vertices.foreach_get("co", _gco)
+        _gco = _gco.reshape(-1, 3)
+        _Mw = np.array(garm.matrix_world)
+        _gw = _gco @ _Mw[:3, :3].T + _Mw[:3, 3]
+        g_rest = np.linalg.norm(_gw[gev[:, 0]] - _gw[gev[:, 1]], axis=1)
+        g_ok = g_rest > 1e-4
+        region_counts.update({"briefs_verts": int(len(gm_.vertices)), "briefs_faces": len(gm_.polygons)})
+        log(f"kit garment ok {_gmeta}")
+    except Exception as _ge:
+        import traceback
+        log(f"kit garment failed: {_ge}")
+        log(traceback.format_exc())
+        garm = None
+elif GC.get("enabled"):
     import bmesh
     gz0, gz1, gx = float(GC.get("z_hem", 0.78)), float(GC.get("z_waist", 1.03)), float(GC.get("max_abs_x", 0.22))
     sel = (z >= gz0) & (z <= gz1) & (ax_ <= gx)
@@ -1151,6 +1189,24 @@ if GC.get("enabled"):
     log(f"briefs garment: {gnv} verts, {len(gm_.polygons)} faces, offset {GC.get('offset_m', 0.001)} m "
         f"wrap {GC.get('wrap_offset_m', 0.004)} m local_scale={_gscale:.4f} mods={_mod_order}")
 
+if _kit.get("enabled") and str(RC.get("glow_shape") or "").lower() == "shells":
+    try:
+        import kit.muscle_shells as KITS
+        _hues = dict(MIDS.DEFAULT_HUES)
+        _yh = (C.get("grade") or {}).get("muscle_hues") or {}
+        if isinstance(_yh, dict):
+            _hues.update(_yh)
+        _tid = tid if "tid" in dir() else None
+        _names = list((MID or {}).get("names") or [])
+        SHELL_OBJS, SHELL_FLEX, _sinfo = KITS.build_overlay_shells(
+            body, arm, _tid, _names, _hues, C, adj=ADJ if "ADJ" in dir() else None,
+            log=log, col=col)
+        log(f"kit muscle shells {_sinfo}")
+    except Exception as _se:
+        import traceback
+        log(f"kit muscle shells failed: {_se}")
+        log(traceback.format_exc())
+
 if GW.get("enabled"):      # after the garment copy (the briefs never carry the fist key)
     if not me.shape_keys: body.shape_key_add(name="Basis", from_mix=False)
     sk = body.shape_key_add(name="fist", from_mix=False); lc = np.empty(nv * 3); sk.data.foreach_get("co", lc); lc = lc.reshape(-1, 3)
@@ -1242,7 +1298,21 @@ def db_plate(xx):
                                         rotation=(0, math.pi / 2, 0))
     return bpy.context.object
 h1, h2 = db_plate(-0.118), db_plate(0.118)
-bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=0.016, depth=0.22, rotation=(0, math.pi / 2, 0)); hd = bpy.context.object
+_knurl = bool(((_kit if "_kit" in dir() else {}).get("dumbbell") or {}).get("knurl") or (C.get("kit") or {}).get("dumbbell", {}).get("knurl"))
+_hv = 48 if _knurl else 24
+bpy.ops.mesh.primitive_cylinder_add(vertices=_hv, radius=0.016, depth=0.22, rotation=(0, math.pi / 2, 0)); hd = bpy.context.object
+if _knurl:
+    try:
+        import kit.dumbbell as KITD
+        _kd = (C.get("kit") or {}).get("dumbbell") or {}
+        _kinfo = KITD.add_handle_knurl(
+            hd, axis=(0.0, 0.0, 1.0),
+            amp=float(_kd.get("knurl_amp_m", 0.0007)),
+            around=int(_kd.get("knurl_around", 14)),
+            along=int(_kd.get("knurl_along", 22)))
+        log(f"kit dumbbell knurl {_kinfo}")
+    except Exception as _ke:
+        log(f"kit knurl failed: {_ke}")
 # slim collars so the plate-to-handle junction reads as a real hex/round dumbbell
 def db_collar(xx):
     bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.020, depth=0.012, location=(xx, 0, 0),
@@ -1767,7 +1837,7 @@ for f in range(1, NF + 1):
         if len(bad):
             u_, n_ = np.unique(dom[bad], return_counts=True); o_ = np.argsort(-n_)[:3]
             rec["tear_where"] = {GN.get(int(u_[i]), "?"): int(n_[i]) for i in o_}
-    if garm is not None and (f % 3 == 1 or f == NF):
+    if garm is not None and (f % 3 == 1 or f == NF) and "gev" in dir() and "g_ok" in dir():
         from mathutils.bvhtree import BVHTree
         dg = bpy.context.evaluated_depsgraph_get(); eb = body.evaluated_get(dg); mb = eb.to_mesh(); Mw = eb.matrix_world.copy()
         bc = np.empty(len(mb.vertices) * 3); mb.vertices.foreach_get("co", bc); bc = bc.reshape(-1, 3) @ np.array(Mw)[:3, :3].T + np.array(Mw)[:3, 3]
@@ -1960,6 +2030,9 @@ elif look_inscene:
 else:
     em_col = (1.0, 0.62, 0.38, 1)            # demic peach (H~16); COMBO snap finishes H/S/V
 base_rgb = tuple(float(x) for x in RC.get("base_color", [0.325, 0.327, 0.332] if look_inscene else [0.22, 0.225, 0.232]))
+_clay = (_kit.get("clay") or {}) if "_kit" in dir() else {}
+if _clay.get("base_color"):
+    base_rgb = tuple(float(x) for x in _clay["base_color"])
 if look_inscene:
     log(f"look_inscene clay albedo={tuple(round(c,3) for c in base_rgb)} em={tuple(round(c,3) for c in em_col[:3])} ad=0 sss={sss_w}")
 
@@ -1981,7 +2054,7 @@ for m_ in body_mats:
     if look_inscene:
         for l in list(bsdf.inputs["Roughness"].links):
             nt.links.remove(l)
-        bsdf.inputs["Roughness"].default_value = 0.78
+        bsdf.inputs["Roughness"].default_value = float(_clay.get("roughness") or 0.78)
         # Soft AO into the clay albedo so grooves and separations read as shadows.
         ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
         ao.inputs["Distance"].default_value = float(RC.get("ao_distance", 0.14))
@@ -2061,17 +2134,21 @@ for m_ in body_mats:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import glow_shader as GSH
 _flex_min = float(RC.get("glow_flex_min", 0.88 if look_inscene else 0.58))
 _backend = "inscene" if look_inscene else "post"
-flex_nodes = GSH.switch_materials(
-    body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 72.0)),
-    tint_mix=float(RC.get("glow_tint", 0.12)),
-    fibre_bump=float(RC.get("glow_fibre_bump", 0.22)),
-    rim=float(RC.get("glow_rim", 0.28)),
-    body_rim=float(RC.get("body_rim", 0.28)),
-    fibre_line=float(RC.get("glow_fibre_line", 0.45)),
-    opacity=float(RC.get("glow_opacity", 0.94)),
-)
+if str(RC.get("glow_shape") or "").lower() == "shells":
+    flex_nodes = list(SHELL_FLEX) if "SHELL_FLEX" in dir() else []
+    log(f"kit: porcelain clay on body, {len(flex_nodes)} overlay shell flex nodes")
+else:
+    flex_nodes = GSH.switch_materials(
+        body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 72.0)),
+        tint_mix=float(RC.get("glow_tint", 0.12)),
+        fibre_bump=float(RC.get("glow_fibre_bump", 0.22)),
+        rim=float(RC.get("glow_rim", 0.28)),
+        body_rim=float(RC.get("body_rim", 0.28)),
+        fibre_line=float(RC.get("glow_fibre_line", 0.45)),
+        opacity=float(RC.get("glow_opacity", 0.94)),
+    )
 if look_inscene:
-    log(f"glow backend=inscene flex_min={_flex_min} em_str={em_str}")
+    log(f"glow backend=inscene flex_min={_flex_min} em_str={em_str} shape={RC.get('glow_shape')}")
 
 _eco_path = str((C.get("asset") or {}).get("ecorche_glb") or "")
 _body_src = str(RC.get("body_source") or "grab3d").lower()
@@ -2110,7 +2187,11 @@ if look_inscene and _body_src in ("ecorche", "eco", "mesh") and _eco_path:
 sc.render.engine = "CYCLES"; sc.cycles.device = "CPU"; sc.render.film_transparent = False
 wd = bpy.data.worlds.new("w"); sc.world = wd; wd.use_nodes = True; bg = wd.node_tree.nodes["Background"]
 hdri = C["asset"]["hdri"]
-if look_inscene:
+if "_kit" in dir() and _kit.get("enabled") and (_kit.get("lights") or {}):
+    import kit.lights as KITL
+    KITL.apply_studio_world(sc, hdri, C, log=log)
+    bg = sc.world.node_tree.nodes.get("KIT_HDRI_BG") or bg
+elif look_inscene:
     # Neutral even ambient — no photographed HDRI hotspots (those dirtied non-targets).
     bg.inputs["Color"].default_value = (0.82, 0.83, 0.85, 1)
     bg.inputs["Strength"].default_value = float(RC.get("ambient_strength", 0.28))
@@ -2120,7 +2201,11 @@ else:
     wd.node_tree.links.new(envn.outputs["Color"], bg.inputs["Color"])
     bg.inputs["Strength"].default_value = float(RC.get("hdri_strength", hdri.get("strength", 0.35)))
 # Camera rays see dark charcoal (never a black void / photographed HDRI). Lighting rays still use HDRI/ambient.
+# Kit world already built this mix; do not rewire a cleared node tree.
+_kit_world = "_kit" in dir() and _kit.get("enabled") and (_kit.get("lights") or {})
 try:
+    if _kit_world:
+        raise RuntimeError("kit-world-already-wired")
     nt_w = wd.node_tree
     lp = nt_w.nodes.new("ShaderNodeLightPath")
     bg_cam = nt_w.nodes.new("ShaderNodeBackground")
@@ -2141,7 +2226,8 @@ try:
 except Exception as e:
     if hasattr(wd, "cycles_visibility") and hasattr(wd.cycles_visibility, "camera"):
         wd.cycles_visibility.camera = False
-    log(f"world charcoal fallback: {e}")
+    if str(e) != "kit-world-already-wired":
+        log(f"world charcoal fallback: {e}")
 key_from = (CAM.location - ctr); key_from.z = 0; key_from.normalize()
 upv = mu.Vector((0.0, 0.0, 1.0)); sidev = key_from.cross(upv)
 sidev = (sidev if sidev.length > 1e-4 else mu.Vector((1.0, 0.0, 0.0))).normalized()
@@ -2151,7 +2237,10 @@ def add_area(name, loc, energy, size, color):
     o = bpy.data.objects.new(name, Lt); col.objects.link(o)
     o.location = loc; o.rotation_euler = (ctr - o.location).to_track_quat("-Z", "Y").to_euler(); return o
 
-if look_inscene:
+if "_kit" in dir() and _kit.get("enabled") and (_kit.get("lights") or {}):
+    import kit.lights as KITL
+    KITL.add_three_point(col, ctr, CAM.location, C, log=log)
+elif look_inscene:
     # Large soft studio, front-biased toward the camera (the visible 3/4 surface),
     # even lighting, soft shadows, no cool-tinted rim. Matches demic's even clay.
     add_area("key", ctr + key_from * 2.5 + upv * 2.4 + sidev * 1.15,
@@ -2250,6 +2339,12 @@ if RC.get("floor", True):
                 fb.inputs["Emission Strength"].default_value = 0.85
     floor.data.materials.clear(); floor.data.materials.append(fm)
     log(f"cyclorama bowl r_flat={R_flat} r_max={R_max} h={H_wall} z={flz:.3f} (opaque, all views)")
+    if "_kit" in dir() and _kit.get("enabled"):
+        try:
+            import kit.lights as KITL
+            KITL.shade_contact_floor(floor, C, log=log)
+        except Exception as _fe:
+            log(f"kit floor shade: {_fe}")
 sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(AUTH_META["fps"]) if AUTH_META else int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
 if a.frames == "all":
     frames = list(range(1, NF + 1))

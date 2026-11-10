@@ -1,0 +1,74 @@
+# Reusable base-asset kit. Merged when kit.enabled is true (exercise opts in).
+# All meshes are authored in tools/rig3d/kit/ (CC0). The Poly Haven HDRI is
+# fetched into _scratch/hdri/ and is not committed.
+_doc: "CC0 studio kit: overlay muscle shells, lofted boxer shorts, porcelain clay, padded bench, knurled DB, studio lights."
+kit:
+  enabled: false
+  licence: CC0-1.0
+  garment:
+    method: loft                 # convex-hull loft; never a body-face offset
+    waistband_h_m: 0.07          # wide elastic band
+    waist_above_hip_m: 0.10
+    hem_blend: 0.48              # 0 = at knee, 1 = at hip; ~mid-thigh
+    ease_m: 0.012                # outward offset from the convex slice
+    waistband_extra_m: 0.004     # band sits a bit proud of the shorts
+    solidify_m: 0.003
+    smooth_iters: 8
+    rings: 28
+    matte_rgb: [0.012, 0.012, 0.014]
+    roughness: 0.95
+  muscles:
+    method: shells               # separate remeshed overlay meshes
+    hue: {h: 12, s: 200, v: 244} # vivid peach-orange for every shell (not QC identity hues)
+    groups:
+      - {name: lats, ids: [lats]}
+      - {name: mid_back, ids: [rhomboids, mid_trap]}
+      - {name: rear_delt, ids: [rear_delt]}
+    inflate_m: 0.007
+    voxel_m: 0.011
+    smooth_iters: 18
+    dilate_rings: 2
+    edge_min: 0.38
+    emission: 1.15
+    flex_min: 0.88
+  lights:
+    hdri_strength: 0.18          # low; area lights shape the form
+    ambient_strength: 0.10
+    key_energy: 42
+    key_size: 3.4
+    fill_energy: 28
+    fill_size: 5.2
+    rim_energy: 16
+    rim_size: 2.8
+    top_energy: 0                # three-point only
+    floor_receive_shadows: true
+  clay:
+    base_color: [0.44, 0.455, 0.485]   # cooler porcelain, higher value
+    ao_amount: 0.14
+    ao_distance: 0.10
+    cavity_amount: 0.03
+    normal_strength: 0.72
+    albedo_detail: 0.06
+    roughness: 0.64
+    body_rim: 0.10
+  bench:
+    padded: true
+    pad_thickness_m: 0.10
+    pad_bevel_m: 0.024
+  dumbbell:
+    knurl: true
+    knurl_amp_m: 0.0007
+    knurl_around: 14
+    knurl_along: 22
+
+# Copied into runtime render/garment so existing readers pick them up.
+# Exercise YAML still wins on conflict.
+garment:
+  method: loft
+render:
+  glow_shape: shells
+  hdri_strength: 0.18
+  blender_bloom: 0.36
+  glow_bloom: true
+  glow_opacity: 0.0            # no multiply-on-clay; shells carry the glow
+  glow_tint: 0.0
