@@ -30,7 +30,7 @@ KST = dt.timezone(dt.timedelta(hours=9))
 AIQ = "/home/box/routinizer/ai_queue/fitness_studio.jsonl"
 FITNESS_STUDIO_AGENT = "7c203a21-2233-41e0-92f1-189a01945890"
 STAGES = ["config", "fetch", "pose", "render", "grade", "reel", "qc", "sheet", "deliver"]
-CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py", "tools/rig3d/hand_grip.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
+CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py", "tools/rig3d/hand_grip.py", "tools/rig3d/muscle_regions.py", "tools/rig3d/glow_shader.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
         "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py", "tools/rig3d/posture_qc.py", "tools/rig3d/anatomy_qc.py", "tools/rig3d/hand_grip.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
 PEAK = {"rss_mb": 0}
 
@@ -142,7 +142,7 @@ class Run:
     def s_render(self, rep):
         gate(self.args, "render"); d = self.p("render"); os.makedirs(d, exist_ok=True)
         intent = hsh(self.cfg.get("motion"), self.cfg.get("render"), self.cfg.get("asset"), rep, getattr(self.args, "short", 0),
-                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"))
+                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"), fsha("tools/rig3d/muscle_regions.py"), fsha("tools/rig3d/glow_shader.py"))
         marker = os.path.join(d, "render_intent.txt")
         skip_existing = os.path.exists(marker) and open(marker).read().strip() == intent
         if not skip_existing:
@@ -259,6 +259,8 @@ RULES = {   # qc fix name -> (config path, function old_value -> new value). v6:
     "support_hand_visible": ("motion.support_hand_thigh_frac", lambda v: min(0.92, float(v or 0.75) + 0.12)),
     "foot_level": ("motion.foot_level", lambda v: True),
     "callout_route": ("grade.callout_clear_min_px", lambda v: float(v or 180) + 40),
+    "glow_follow_mesh": ("render.glow_peak_dilate", lambda v: int(v or 4) + 2),
+    "leg_rim": ("render.leg_key_energy", lambda v: float(v or 190) + 40),
 }
 
 def getp(c, path):
