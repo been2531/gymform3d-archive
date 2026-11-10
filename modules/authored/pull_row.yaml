@@ -4,7 +4,7 @@ _doc: "Authored pull_row: eased hang -> peak -> hang cycle, vertical forearm, el
 fps: 30
 breathing_amp_m: 0.006
 db_pendulum_lag_s: 0.05
-db_pendulum_tilt_deg: 4
+db_pendulum_tilt_deg: 2
 phases:
   - {name: concentric, dur_s: 0.80, ease: ease_in_out, u0: 0, u1: 1}
   - {name: squeeze,    dur_s: 0.30, ease: hold,     u0: 1, u1: 1}
@@ -18,8 +18,11 @@ right:
   elbow_tuck_deg: 8         # slight adduction toward the ribs (not through the torso)
   elbow_flare: false
   scapula_retract: true
+  scapula_retract_m: 0.020     # ~15 mm net after upward-rot (measured)
+  scapula_retract_back_m: 0.006
+  scapula_up_rot_deg: 8        # slight upward rotation of the blade
   shrug_m: 0.0
-  depress_m: 0.012          # scapular depression at peak (clavicle / Shoulder)
+  depress_m: 0.008
 wrong:
   torso_start_deg: 40
   torso_peak_deg: 27        # stands up through the yank
@@ -31,6 +34,6 @@ wrong:
   elbow_flare: true
   scapula_retract: false
   shrug_m: 0.022            # clavicle (Shoulder) elevation along chest-up, driven by u
-  depress_m: 0.0
+  depress_m: 0.008
   concentric_dur_s: 0.35
   concentric_ease: yank

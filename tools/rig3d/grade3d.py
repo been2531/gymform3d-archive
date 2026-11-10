@@ -140,8 +140,8 @@ def wrap_glow_to_beauty(graded, base, src_l, hp_form, mus_w, reg_any, shorts):
     graded[..., 2] = np.clip(b + 0.38 * lift, 0, 255)
     return graded
 
-def snap_glow_hsv(rgb, w, target_h=74.0, target_s=196.0, hue_mix=0.90, sat_mix=0.82):
-    """Push glow pixels toward gymform neon green while keeping value (fibre / form)."""
+def snap_glow_hsv(rgb, w, target_h=64.0, target_s=136.0, hue_mix=0.90, sat_mix=0.82):
+    """Push glow pixels toward measured @demicstory green (H~64 S~136 from on-disk lat-raise refs) while keeping value."""
     ww = np.clip(w, 0, 1).astype(np.float32)
     if float(ww.max()) <= 0:
         return rgb
@@ -300,7 +300,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
     flex_min = float(G.get("glow_flex_min", 0.58))
     flex_w = flex_min + (1.0 - flex_min) * flex_v
     is_wrong = G.get("glow", "right") == "wrong"
-    hue = 52.0 if is_wrong else 74.0
+    hue = 52.0 if is_wrong else float(G.get("glow_snap_hue", 64.0))  # 64 = measured demic green; wrong stays amber until H overrides
     is_combo = method == "COMBO"
     if (method == "H" or (is_combo and is_wrong)) and id_im is not None:
         from muscle_activation import COMPENSATORS
@@ -342,7 +342,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         graded = base
         core_w = cv2.GaussianBlur(reg_any, (0, 0), 1.2)
         graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
-                               target_h=hue, target_s=196.0, sat_mix=0.50)
+                               target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.50)
         graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, 0.16 * flex_w)
     elif method == "B":
         # Translucent X-ray: dim the rest of the body, emissive fibres on targets.
@@ -353,7 +353,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", flex_v)
         graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
         graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0], reg_any, shorts)
-        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)), target_h=hue, target_s=196.0, sat_mix=0.78)
+        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)), target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.78)
         graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, 0.28 * flex_w)
     elif method == "C":
         tgt = ((reg_any > 0.35) & (shorts < 0.25)).astype(np.uint8)
@@ -373,7 +373,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         graded_full, core_w = gm.day4_fibre(F, graded, body, shorts, G.get("glow", "right") == "wrong", flex_v)
         graded = graded * (1.0 - fibre_amt) + graded_full * fibre_amt
         graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0] * 0.65, reg_any, shorts)
-        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts) * 0.65), target_h=hue, target_s=200.0, sat_mix=0.70)
+        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts) * 0.65), target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.70)
         graded = graded * (1.0 - 0.88 * outline)[..., None] + neon * (0.88 * outline * (0.75 + 0.25 * flex_w))[..., None]
         graded = muscle_bloom(graded, outline + reg_any * (1.0 - shorts), body, 0.22 * flex_w)
     else:
@@ -383,7 +383,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
         graded = wrap_glow_to_beauty(graded, base, src_l, hp_form, rw[..., 0], reg_any, shorts)
         graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
-                               target_h=hue, target_s=196.0, sat_mix=0.82)
+                               target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.82)
         graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.38)) * flex_w)
     if method in ("G", "X", "COMBO"):
         phase = float(G.get("pulse_phase", flex_v * 6.283185307179586))
@@ -408,7 +408,7 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         # E-floor weights at start are ~0.5; snap with a lifted mask so neon sat still lands in-band.
         ra = np.clip(reg_any * (1.0 - shorts), 0, 1)
         wsnap = np.clip((ra - 0.12) / 0.28, 0, 1)
-        graded = snap_glow_hsv(graded, wsnap, target_h=hue, target_s=196.0, sat_mix=0.90, hue_mix=0.92)
+        graded = snap_glow_hsv(graded, wsnap, target_h=hue, target_s=float(G.get("glow_snap_sat", 136.0)), sat_mix=0.90, hue_mix=0.92)
     if seams is not None:
         graded = _apply_seams(graded, seams, 0.28)
     sm = shorts > 0.45

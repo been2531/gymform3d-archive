@@ -82,7 +82,7 @@ RULE_MAP = {
     "working_elbow_torso_m": "elbow_tuck", "scapula_retract_m": "scapula_retract", "support_hand_near_knee_frac": "support_hand_visible", "ankle_roll_deg": "foot_level", "callout_prop_clearance": "callout_route",
     "joint_ranges_no_hyperextension": "joint_range", "self_intersection_capsule_m": "limb_clearance", "center_of_mass_over_feet_m": "com_balance",
     "proportions_symmetric_and_rigid": "human", "grip_present": "grip_wrap", "grip_finger_wrap_deg": "grip_wrap", "grip_fingertip_gap_mm": "grip_wrap",
-    "grip_thumb_opposing": "grip_wrap", "grip_no_hand_handle_intersection": "grip_wrap", "mesh_no_spikes_edge_ratio": "spine_spread",
+    "grip_thumb_opposing": "grip_wrap", "grip_no_hand_handle_intersection": "grip_wrap", "wrist_flex_ext_deg": "grip_palm", "wrist_deviation_deg": "grip_palm", "palm_normal_medial_deg": "grip_palm", "fingers_on_far_side_of_handle": "grip_palm", "mesh_no_spikes_edge_ratio": "spine_spread",
     "prop_dumbbell_heads_readable": "camera_yaw", "extremities_in_frame_margin_px": "camera_margin",
     "skin_p50": "human", "skin_p75": "human", "skin_p90": "human", "skin_max": "human", "backdrop_rgb_maxdev": "human", "floor_shadow_present": "human", "floor_horizon_edge": "human", "floor_luma_vs_backdrop": "human", "glow_fibre_contrast": "human", "muscle_border_seams_visible": "glow_id", "target_only_glow": "glow_id", "glow_hue_sat_band": "human", "green_glow_frac_of_body": "human",
     "green_only_on_lats_rhomboids_midtrap": "human", "no_red_glow_px": "human", "sharpness_vs_day4": "human", "figure_fully_in_frame": "camera_margin",

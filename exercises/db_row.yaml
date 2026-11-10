@@ -138,8 +138,8 @@ qc:
   floor_horizon_jump_max: 28      # luma step at the floor's upper silhouette (hard horizon fails)
   floor_luma_delta_max: 24        # receding floor median luma minus backdrop (light-grey floor fails)
   glow_fibre_hp_min: 8.0          # high-pass std of green inside eroded glow core (flat mint blob fails)
-  glow_hue: [68, 77]              # OpenCV HSV hue; gymform neon ~74, pale mint ~80
-  glow_sat: [168, 230]            # OpenCV HSV sat; washed/mint sits below 168
+  glow_hue: [58, 72]              # measured @demicstory green (refs H~62-66)
+  glow_sat: [100, 170]            # measured demic green S~130-141
   glow_frac: [0.02, 0.34]     # green body pixels / body pixels
   glow_in_mask_min: 0.9
   sharp_rel_min: 0.35         # body Laplacian variance vs the Day 4 master reference
