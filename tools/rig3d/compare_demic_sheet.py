@@ -150,7 +150,7 @@ def build(ours_path, demic_sheet, out_path):
     row1_h = full_h + 110
     row2_h = hips_h + 110
     row3_h = back_h + 110
-    list_h = 560
+    list_h = 640
     footer_h = 36
     width = pad + full_w + gutter + full_w + pad
     # keep width at least wide enough for two 520 crops
@@ -184,9 +184,9 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours, full_w, full_h,
                "ours weld/attr/cloth  ·  full body  ·  f_0025",
-               "Near-hip hole is closed; hem sits nearer mid-thigh. Fist is "
-               "closed on the handle. Porcelain is brighter than 6c46aa2, but "
-               "the working forearm still clips. Glow halo is milder than demic.",
+               "Same yaw/elev/look as c026ff5, pulled back to 2.62 m so the "
+               "left hip and head stay in frame. Waistband flap and floor hoop "
+               "are gone. Ankle strap and forearm clip remain.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -202,9 +202,9 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours_hips, hips_w, hips_h,
                "ours weld/cloth  ·  hips  3×",
-               "Seat and near hip are covered — no clay island. Slight looseness "
-               "on the thigh and a mid-thigh hem. Still boxier and more faceted "
-               "than demic, with a crotch notch. Hem-gap clay is not a seat hole.",
+               "No waistband flap. Cloth follows the glute (posed gap p90 7.8 mm) "
+               "with slight hem ease — not a diaper. A side fold remains, and "
+               "the cloth is still more faceted than demic.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -220,9 +220,9 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours_back, back_w, back_h,
                "ours attr glow  ·  back  3×",
-               "Peach-orange lats, purple mid-back, pink rear delt on the welded "
-               "body (method unchanged). Clay grooves read through; no seam cracks. "
-               "Emit-pass Fog Glow adds a mild halo, still weaker than demic.",
+               "Method unchanged. Lat is a back-facing V, not a rib-side block, "
+               "with a remaining mid-height waist. Purple diamond and pink rear-delt "
+               "cap. Edges softer than demic; mild halo.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -231,11 +231,13 @@ def build(ours_path, demic_sheet, out_path):
     lines = [
         ("h", "Ranked notes  ·  welded body, attribute glow, closed cloth tube"),
         ("sub", "Gates are a backstop only. See docs/specs/ROOTCAUSE_LOOK.md and docs/specs/KIT.md."),
-        ("n", "1  Drawers — hole closed, not a demic match. Tube sized from waist/hip/mid-thigh cross-sections (ease 10/15/14 mm), rest-pose cloth (5 mm collision, self-collision, shrink 0.010, max_disp 76 mm), stubs collapsed, then 10 mm seat-only inflate after armature. Garment and waistband boundary 0. No clay island in the seat. clay-in-mask 3035 px / 2.15% is the hem gap and inner-leg opening, not a poke-through. Shape is still boxier and more faceted than demic, with a crotch notch."),
-        ("n", "2  Fist — restored. Shapekey transfer now mixes Key blocks (Blender 5 Object.to_mesh was returning basis; max_delta 11.78 local). Working hand is a closed grip on the DB handle."),
-        ("n", "3  Glow — method held (accepted in 6c46aa2). Continuous peach / purple / pink on the welded body, clay grooves visible, no UV-seam cracks. Emit-pass Fog Glow (bloom 0.70) adds a mild halo; still less luminous and less painted than demic. Morph-close gate 2.8% is soft edges and clay between hues."),
-        ("n", "4  Light/clay — partial. Fill raised 28 to 40 and exposure left at 0 (Standard; +0.12 EV clipped highlights). Torso midtones are brighter than 6c46aa2 (body V p50 ~176) but the peak working forearm still blows (~14.5k px at V=255). Not as warm or soft as demic, and not clip-free."),
-        ("n", "5  Equipment — held. Padded bench and knurled handle are unchanged."),
+        ("n", "1  Shorts — waistband flap gone (separate loft skipped; the tube's own 7 cm band is the waist). Closed cloth tube + subdiv 2 + ABOVE_SURFACE shrinkwrap at 3.5 mm; no 10 mm seat inflate. Posed hip gap p50 4.3 mm / p90 7.8 mm, boundary 0. Follows the glute with slight hem ease. A side fold remains; still more faceted than demic."),
+        ("n", "2  Glow — method held. Posterior + lateral cap removed the rib-side block; a back-only geodesic bridge reconnects upper and lower lat into more of a V. A mid-height waist remains. Purple mid-scapular diamond, pink rear-delt cap. fade 18 mm, bloom 0.32. Edges softer than demic."),
+        ("n", "3  Floor ring — gone. The padded-bench piping torus (major 0.58 m) was foreshortened into a hoop; it is no longer created."),
+        ("n", "4  Ankle — still fails. Shin-window flatten moves ~2000 standing-leg verts (mean ~21 mm) without tearing the foot, and cuff_mask fades the baked normal. The sculpted retinaculum still reads as a raised rectangular strap. A bone-centered origin tore a heel flap and was reverted."),
+        ("n", "5  Framing — same yaw 18 / elev 25 / look as c026ff5; dist 2.62 m and shift_x -0.04 so the left hip and head both stay in frame with the bench."),
+        ("n", "6  Forearm — partial. Key 5 / fill 2 / rim 4, key more overhead and off-camera, exposure 0.0. Clay-ish V p99 is still ~252 (target <=245). A highlight streak remains on the working forearm."),
+        ("n", "7  Grip — improved, not a clearly closed wrap from this camera. min_wrap 265 deg, logged finger wrap 218-242 deg, thumb flex -97 deg. Fingers follow the cylinder more than a pinch; the far-side fingertips stay hidden in this 3/4 view."),
     ]
     _text_block(d, (pad + 18, y + 16), lines, fonts, width=84)
 

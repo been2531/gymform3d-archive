@@ -851,8 +851,8 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
         z_mid = 0.5 * (z_wb_bot + crotch_z)
         z_seat = crotch_z + 0.018
         torso_spec = [
-            (z_wb_top, ease_waist + wb_extra),
-            (z_wb_bot, ease_waist + wb_extra),
+            (z_wb_top, ease_waist),
+            (z_wb_bot, ease_waist),
         ]
         for z, e in ((z_mid, ease_hip), (z_wide, ease_hip), (z_seat, ease_hip)):
             if all(abs(z - z0) > 0.018 for z0, _e in torso_spec):
@@ -934,7 +934,7 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
             cxy = xy.mean(0)
             rad = xy - cxy
             rn = rad / (np.linalg.norm(rad, axis=1, keepdims=True) + 1e-9)
-            vco[hem, 0:2] = xy + rn * 0.003
+            vco[hem, 0:2] = xy + rn * 0.001
             garm.data.vertices.foreach_set("co", vco.ravel())
             garm.data.update()
 
@@ -958,9 +958,12 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
         for p in garm.data.polygons:
             p.use_smooth = True
 
-        # separate thicker elastic waistband ring
+        # separate thicker elastic waistband ring (off by default: it reads as
+        # a folded flap / ridge on the hip)
         waist = None
         try:
+            if not bool(gcfg.get("separate_waistband", False)):
+                raise RuntimeError("skipped separate waistband ring")
             wb_rings = [
                 _slice_hull(pts, z_wb_top, half, n=n, ease=ease + wb_extra),
                 _slice_hull(pts, z_wb_bot, half, n=n, ease=ease + wb_extra),
@@ -990,7 +993,10 @@ def build_boxer_shorts(body, arm, cfg, log=print, col=None, collider=None):
                 p.use_smooth = True
             _bind_to_body(waist, body, arm, log)
         except Exception as e:
-            log(f"kit waistband failed: {e}")
+            if "skipped separate" in str(e):
+                log("kit waistband: using the tube's own wide band")
+            else:
+                log(f"kit waistband failed: {e}")
             waist = None
 
         inf_grp = garm.vertex_groups.new(name="pose_inflate")
