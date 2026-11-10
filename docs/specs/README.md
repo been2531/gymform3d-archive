@@ -10,6 +10,7 @@ Do not commit third-party reference photos — link them with licence and credit
 
 Look post-mortem for the clay mannequin: [`ROOTCAUSE_LOOK.md`](ROOTCAUSE_LOOK.md) (drawers, glow cracks, paler glow, and the reusable base asset kit).
 Implemented kit: [`KIT.md`](KIT.md) (`modules/kit.yaml`, `tools/rig3d/kit/`).
+Grab3D char1 was declared a failure; replacement search (none adopted): [`BASE_MODEL_SEARCH.md`](BASE_MODEL_SEARCH.md).
 
 ## Index
 
