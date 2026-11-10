@@ -43,7 +43,7 @@ RULE_MAP = {
     "proportions_symmetric_and_rigid": "human", "grip_present": "grip_wrap", "grip_finger_wrap_deg": "grip_wrap", "grip_fingertip_gap_mm": "grip_wrap",
     "grip_thumb_opposing": "grip_wrap", "grip_no_hand_handle_intersection": "grip_wrap", "mesh_no_spikes_edge_ratio": "spine_spread",
     "prop_dumbbell_heads_readable": "camera_yaw", "extremities_in_frame_margin_px": "camera_margin",
-    "skin_p50": "human", "skin_p75": "human", "skin_p90": "human", "skin_max": "human", "backdrop_rgb_maxdev": "human", "floor_shadow_present": "human", "floor_horizon_edge": "human", "floor_luma_vs_backdrop": "human", "glow_fibre_contrast": "human", "glow_hue_sat_band": "human", "green_glow_frac_of_body": "human",
+    "skin_p50": "human", "skin_p75": "human", "skin_p90": "human", "skin_max": "human", "backdrop_rgb_maxdev": "human", "floor_shadow_present": "human", "floor_horizon_edge": "human", "floor_luma_vs_backdrop": "human", "glow_fibre_contrast": "human", "muscle_border_seams_visible": "glow_id", "target_only_glow": "glow_id", "glow_hue_sat_band": "human", "green_glow_frac_of_body": "human",
     "green_only_on_lats_rhomboids_midtrap": "human", "no_red_glow_px": "human", "sharpness_vs_day4": "human", "figure_fully_in_frame": "camera_margin",
     "figure_fill_w_h": "camera_tighter", "figure_size_not_below_target": "camera_bigger", "green_area_ratio_cap": "human",
     "glow_area_peak_vs_start": "glow_follow_mesh", "glow_largest_cc_frac": "glow_follow_mesh",
@@ -245,6 +245,16 @@ def run(run_dir, cfg):
         mn = min(vs) if vs else None
         out.append(ck("region_contrast_legs", None if mn is None else round(float(mn), 2),
                       f">= {Q['region_contrast_legs_min']} (p10 legs - backdrop)", bool(vs) and mn >= float(Q["region_contrast_legs_min"]), "leg_rim", "look"))
+    if "muscle_seams_delta_min" in Q:
+        vs = [f.get("seam_delta") for f in L if f.get("seam_delta") is not None]
+        mn = min(vs) if vs else None
+        out.append(ck("muscle_border_seams_visible", None if mn is None else round(float(mn), 2),
+                      f">= {Q['muscle_seams_delta_min']}", mn is not None and mn >= float(Q["muscle_seams_delta_min"]), "glow_id", "look"))
+    if "nontarget_glow_max" in Q:
+        vs = [f.get("nontarget_glow_frac") for f in L if f.get("nontarget_glow_frac") is not None]
+        mx = max(vs) if vs else None
+        out.append(ck("target_only_glow", None if mx is None else round(float(mx), 4),
+                      f"<= {Q['nontarget_glow_max']}", mx is not None and mx <= float(Q["nontarget_glow_max"]), "glow_id", "look"))
     # Day 4 overlay: callout + title + preview pill
     if cfg.get("layout"):
         sz = Q["safe_zone"]; LF = json.load(open(os.path.join(run_dir, "grade/look.json")))

@@ -37,6 +37,9 @@ render:
   glow_peak_dilate: 2             # extra mesh-ring growth at peak (kept small so glow_frac <= 0.18)
   glow_flex_min: 0.58             # emission at start = this x peak (peak is always strongest)
   glow_ab: false                  # if true, also render the Blender-native fibre+compositor path as b_*.png
+  glow_id_pass: true              # v3.3: render palette ID pass (id_*.png) from rest-pose muscle IDs
+  glow_method_d: true             # v3.3: extra beauty with surface tint (d_*.png) for method D A/B
+  sliver_rest_frac: 1.0           # ignore rest edges shorter than this x median when scoring tear_min_ratio
   glow_fibre_scale: 42.0
   blender_bloom: 0.60             # compositor Fog-Glow strength (blender path only)
   crease_smooth: true             # cached weight-smooth of Spine/shoulder groups (the crease fix)
@@ -76,6 +79,7 @@ grade:
   fibre_amount: 0.80             # readable fascicle lines (1.0 = old sticker); mixed with 3D form high-pass
   bloom_amount: 0.38             # edge-weighted bloom (interior fibres preserved; callouts drawn after)
   emission_keep: 0.20            # low: AgX beauty emission is pale mint; form comes from high-pass + fibre
+  glow_method: A                 # A fibre-on-ID / B x-ray / C neon-outline / D surface-tint
 
 qc:
   grip_max_m: 0.03
@@ -115,6 +119,8 @@ qc:
   glow_largest_cc_frac_min: 0.90      # largest connected glow component / glow px at peak
   glow_largest_cc_frac_start_min: 0.85  # start sheet must be continuous (v3.1 start ~0.50)
   region_contrast_legs_min: 26        # p10(leg luma) - backdrop (v3 charcoal ~20.7)
+  muscle_seams_delta_min: 8.0         # interior glow luma - seam luma (borders between muscles)
+  nontarget_glow_max: 0.15            # fraction of green pixels on non-target muscle IDs
   overlay_figure_px_max: 0
   callout_figure_overlap_max: 0.02
   callout_2d_tol_deg: 12

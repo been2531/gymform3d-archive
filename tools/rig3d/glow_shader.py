@@ -151,6 +151,37 @@ def attach_blender_glow(nt, bsdf, mout, em_col, em_str, flex_min=0.58, fibre_sca
     return flex
 
 
+def attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min=0.58, tint_mix=0.58):
+    """Method D: shift target-muscle base colour toward neon and add subtle lit emission."""
+    _purge(nt)
+    at = nt.nodes.new("ShaderNodeAttribute"); at.name = GF + "TGT"; at.attribute_name = "mid_tgt"
+    sep = nt.nodes.new("ShaderNodeSeparateColor"); sep.name = GF + "TSEP"
+    nt.links.new(at.outputs["Color"], sep.inputs["Color"])
+    ash = nt.nodes.new("ShaderNodeAttribute"); ash.name = GF + "SHORTS"; ash.attribute_name = "shorts"
+    inv = nt.nodes.new("ShaderNodeMath"); inv.name = GF + "INV"; inv.operation = "SUBTRACT"; inv.inputs[0].default_value = 1.0
+    nt.links.new(ash.outputs["Fac"], inv.inputs[1])
+    fac = nt.nodes.new("ShaderNodeMath"); fac.name = GF + "FAC"; fac.operation = "MULTIPLY"
+    nt.links.new(sep.outputs["Red"], fac.inputs[0]); nt.links.new(inv.outputs[0], fac.inputs[1])
+    mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"; mix.name = GF + "TINT"
+    facm = nt.nodes.new("ShaderNodeMath"); facm.name = GF + "TFAC"; facm.operation = "MULTIPLY"
+    nt.links.new(fac.outputs[0], facm.inputs[0]); facm.inputs[1].default_value = float(tint_mix)
+    nt.links.new(facm.outputs[0], mix.inputs[0])
+    base_in = bsdf.inputs["Base Color"]
+    if base_in.links:
+        nt.links.new(base_in.links[0].from_socket, mix.inputs[6])
+        nt.links.remove(base_in.links[0])
+    else:
+        mix.inputs[6].default_value = tuple(base_in.default_value)
+    mix.inputs[7].default_value = (float(em_col[0]), float(em_col[1]), float(em_col[2]), 1.0)
+    nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"])
+    flex, stm = _flex_strength(nt, fac.outputs[0], float(em_str) * 0.34, flex_min)
+    em = nt.nodes.new("ShaderNodeEmission"); em.name = GF + "EM"
+    em.inputs["Color"].default_value = tuple(em_col)
+    nt.links.new(stm.outputs[0], em.inputs["Strength"])
+    _hook_add(nt, bsdf, mout, em)
+    return flex
+
+
 def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_scale=42.0):
     """(Re)attach GF_* glow nodes on every body material. Returns flex Value nodes."""
     flex_nodes = []
@@ -160,6 +191,8 @@ def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_sc
         mout = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
         if backend == "blender":
             flex_nodes.append(attach_blender_glow(nt, bsdf, mout, em_col, em_str, flex_min, fibre_scale))
+        elif backend == "tint":
+            flex_nodes.append(attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min))
         else:
             flex_nodes.append(attach_simple_emission(nt, bsdf, mout, em_col, em_str, flex_min))
     return flex_nodes
