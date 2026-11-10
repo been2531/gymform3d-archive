@@ -431,26 +431,109 @@ def _fill_interior_holes(inside, counts, idx, owners, rounds=4, frac=0.66):
     return ins
 
 
-def center_weight(mask, adj, erode_rings=0, power=1.2, fade_rings=4, blur_iters=2):
-    """Soft-edged sheet: graph-distance from the true ID exterior, then a short rim fade.
-
-    Interior holes in the ID (unclassified speckles) are not treated as exterior, so
-    they cannot punch Swiss-cheese gaps. Weight never grows into a neighbour ID.
-    A fixed fade (not per-component max-depth) keeps large bellies filled.
-    """
-    inside0 = np.asarray(mask, dtype=bool)
-    nv = int(inside0.shape[0])
-    w = np.zeros(nv, np.float32)
-    if not inside0.any():
-        return w
+def _pack_adj(adj):
+    nv = len(adj)
     counts = np.array([len(a) for a in adj], np.int32)
     parts = [a for a in adj if len(a)]
     idx = np.concatenate(parts) if parts else np.zeros(0, np.int32)
     owners = np.repeat(np.arange(nv, dtype=np.int32), counts)
-    filled = _fill_interior_holes(inside0, counts, idx, owners)
+    return counts, idx, owners
+
+
+def weld_adj(adj, pos, eps=4e-4):
+    """Connect UV-split copies of the same surface point so a muscle is one sheet."""
+    pos = np.asarray(pos, np.float32)
+    nv = len(adj)
+    keys = np.round(pos / float(eps)).astype(np.int64)
+    # 64-bit spatial hash
+    h = keys[:, 0] * 73856093 + keys[:, 1] * 19349663 + keys[:, 2] * 83492791
+    order = np.argsort(h)
+    hs = h[order]
+    extra = [[] for _ in range(nv)]
+    i = 0
+    while i < nv:
+        j = i + 1
+        while j < nv and hs[j] == hs[i]:
+            j += 1
+        if j - i > 1:
+            grp = order[i:j]
+            for a in grp:
+                for b in grp:
+                    if a != b:
+                        extra[int(a)].append(int(b))
+        i = j
+    out = []
+    for k in range(nv):
+        if extra[k]:
+            out.append(np.unique(np.concatenate([np.asarray(adj[k], np.int32), np.asarray(extra[k], np.int32)])))
+        else:
+            out.append(np.asarray(adj[k], np.int32))
+    return out
+
+
+def _dilate_mask(mask, counts, idx, owners, rings):
+    w = np.asarray(mask, np.float32)
+    for _ in range(int(max(rings, 0))):
+        mx = w.copy()
+        if len(idx):
+            np.maximum.at(mx, owners, w[idx])
+        w = np.maximum(w, mx)
+    return w > 0.5
+
+
+def _erode_mask(mask, counts, idx, owners, rings):
+    return ~_dilate_mask(~np.asarray(mask, dtype=bool), counts, idx, owners, rings)
+
+
+def _laplacian(w, counts, idx, owners, iters, retain=None):
+    w = np.asarray(w, np.float32).copy()
+    nv = int(w.shape[0])
+    for _ in range(int(max(iters, 0))):
+        sums = np.zeros(nv, np.float32)
+        if len(idx):
+            np.add.at(sums, owners, w[idx])
+        nbr = sums / np.maximum(counts.astype(np.float32), 1.0)
+        w = 0.35 * w + 0.65 * nbr
+        if retain is not None:
+            w[~retain] = 0.0
+    return w
+
+
+def _components(mask, adj):
+    inside = np.asarray(mask, dtype=bool)
+    nv = int(inside.shape[0])
+    labels = np.full(nv, -1, np.int32)
+    sizes = []
+    cid = 0
+    for seed in np.flatnonzero(inside):
+        if labels[seed] >= 0:
+            continue
+        stack = [int(seed)]
+        labels[seed] = cid
+        n = 0
+        while stack:
+            i = stack.pop()
+            n += 1
+            for j in adj[i]:
+                j = int(j)
+                if inside[j] and labels[j] < 0:
+                    labels[j] = cid
+                    stack.append(j)
+        sizes.append(n)
+        cid += 1
+    return labels, np.asarray(sizes, np.int32)
+
+
+def _feather_solid(solid, counts, idx, owners, fade_rings=3, power=1.0):
+    """Interior stays 1; only the outer fade_rings hops drop off (short crisp rim)."""
+    filled = np.asarray(solid, dtype=bool)
+    nv = int(filled.shape[0])
+    w = np.zeros(nv, np.float32)
+    if not filled.any():
+        return w
     d = np.zeros(nv, np.int32)
     reached = ~filled
-    for hop in range(1, 120):
+    for hop in range(1, 80):
         flag = np.zeros(nv, np.int8)
         if len(idx):
             np.maximum.at(flag, owners, reached[idx].astype(np.int8))
@@ -460,18 +543,99 @@ def center_weight(mask, adj, erode_rings=0, power=1.2, fade_rings=4, blur_iters=
         d[nxt] = hop
         reached |= nxt
     fade = max(float(fade_rings), 1e-4)
-    raw = (d.astype(np.float32) - float(erode_rings)) / fade
+    raw = d.astype(np.float32) / fade
     w[filled] = np.clip(raw[filled], 0.0, 1.0)
     if float(power) != 1.0:
         pos = w > 0
         w[pos] = np.power(w[pos], float(power))
+    return np.clip(w, 0.0, 1.0)
+
+
+def anatomy_allow(pos, vert_id, names):
+    """Rest-pose metres (scaled to the mesh). Clips purple below the scapular spine."""
+    pos = np.asarray(pos, np.float32)
+    y, x, z = pos[:, 1], pos[:, 0], pos[:, 2]
+    ax = np.abs(x)
+    scale = float(y.max()) / 1.8 if float(y.max()) > 0.5 else 1.0
+    name_i = {n: i for i, n in enumerate(names)}
+    tid = np.asarray(vert_id)
+    ut = tid == name_i["upper_trap"] if "upper_trap" in name_i else np.zeros(len(tid), dtype=bool)
+    rd = tid == name_i["rear_delt"] if "rear_delt" in name_i else np.zeros(len(tid), dtype=bool)
+    spine_y = 1.45 * scale
+    if rd.any():
+        spine_y = float(np.percentile(y[rd], 25))
+    if ut.any():
+        spine_y = min(spine_y, float(np.percentile(y[ut], 5)) - 0.02 * scale)
+    back = z < 0.02 * scale
+    masks = {
+        "lats": back & (y >= 0.97 * scale) & (y <= max(spine_y, 1.43 * scale)) & (ax >= 0.038 * scale) & (ax <= 0.26 * scale),
+        "rhomboids": back & (y >= 1.16 * scale) & (y <= spine_y) & (ax <= 0.145 * scale),
+        "mid_trap": back & (y >= 1.30 * scale) & (y <= spine_y) & (ax <= 0.090 * scale),
+        "rear_delt": (z < 0.040 * scale) & (y >= spine_y - 0.050 * scale) & (y <= spine_y + 0.13 * scale)
+                     & (ax >= 0.095 * scale) & (ax <= 0.240 * scale),
+    }
+    return masks, {"spine_y": round(spine_y, 4), "scale": round(scale, 4)}
+
+
+def clean_muscle_weight(seed, adj, allow, fade_rings=3, smooth_iters=40, thresh=0.32,
+                        close_rings=5, keep=2, min_size=80, power=1.0):
+    """Rebuild one (or L/R) smooth solid region from a jagged ID seed, then short-feather.
+
+    Morphological close fills island holes; Laplacian smoothing rounds torn atlas edges;
+    threshold + largest components give a single anatomical silhouette per side.
+    Weight never leaves `allow` (anatomical bounds + not a neighbour muscle).
+    """
+    seed = np.asarray(seed, dtype=bool)
+    allow = np.asarray(allow, dtype=bool)
+    nv = int(seed.shape[0])
+    w0 = np.zeros(nv, np.float32)
+    seed = seed & allow
+    if not seed.any():
+        return w0, {"solid": 0, "cc": 0}
+    counts, idx, owners = _pack_adj(adj)
+    solid = _fill_interior_holes(seed, counts, idx, owners, rounds=5, frac=0.60)
+    if int(close_rings) > 0:
+        grown = _dilate_mask(solid, counts, idx, owners, close_rings) & allow
+        solid = _erode_mask(grown, counts, idx, owners, close_rings) & allow
+        solid |= seed
+    field = solid.astype(np.float32)
+    field = _laplacian(field, counts, idx, owners, int(smooth_iters), retain=allow)
+    solid = (field >= float(thresh)) & allow
+    labels, sizes = _components(solid, adj)
+    kept = 0
+    if len(sizes):
+        order = np.argsort(-sizes)
+        pick = []
+        for c in order:
+            if sizes[c] < int(min_size):
+                continue
+            pick.append(int(c))
+            if len(pick) >= int(keep):
+                break
+        keep_m = np.isin(labels, np.array(pick, np.int32)) if pick else np.zeros(nv, dtype=bool)
+        kept = len(pick)
+    else:
+        keep_m = np.zeros(nv, dtype=bool)
+    # one extra ring inside allow so the silhouette reaches the visual belly edge
+    keep_m = _dilate_mask(keep_m, counts, idx, owners, 1) & allow
+    w = _feather_solid(keep_m, counts, idx, owners, fade_rings=fade_rings, power=power)
+    return w, {"solid": int(keep_m.sum()), "cc": kept}
+
+
+def center_weight(mask, adj, erode_rings=0, power=1.0, fade_rings=3, blur_iters=2):
+    """Fallback feather: graph-distance from the ID exterior with a short rim fade."""
+    inside0 = np.asarray(mask, dtype=bool)
+    nv = int(inside0.shape[0])
+    w = np.zeros(nv, np.float32)
+    if not inside0.any():
+        return w
+    counts, idx, owners = _pack_adj(adj)
+    filled = _fill_interior_holes(inside0, counts, idx, owners)
+    if int(erode_rings) > 0:
+        filled = _erode_mask(filled, counts, idx, owners, erode_rings)
+    w = _feather_solid(filled, counts, idx, owners, fade_rings=fade_rings, power=power)
     for _ in range(int(blur_iters)):
-        sums = np.zeros(nv, np.float32)
-        if len(idx):
-            np.add.at(sums, owners, w[idx])
-        nbr = sums / np.maximum(counts.astype(np.float32), 1.0)
-        w = 0.45 * w + 0.55 * nbr
-        w[~filled] = 0.0
+        w = _laplacian(w, counts, idx, owners, 1, retain=filled)
     return np.clip(w, 0.0, 1.0)
 
 
@@ -490,8 +654,9 @@ def write_glow_attrs(me, weights, rgb):
 
 
 def bake_target_glow(vert_id, names, targets, hues, strengths, adj, exclude=None, shorts=None,
-                     erode_rings=0, power=1.2, fade_rings=4):
-    """Once-per-mesh bake: per-target-ID centre weight + that ID's linear RGB."""
+                     erode_rings=0, power=1.0, fade_rings=3, pos=None,
+                     smooth_iters=40, solid_thresh=0.28, close_rings=5):
+    """Once-per-mesh bake: clean solid region per hue-group + that group's linear RGB."""
     nv = len(vert_id)
     name_i = {n: i for i, n in enumerate(names)}
     tid = np.asarray(vert_id)
@@ -506,24 +671,67 @@ def bake_target_glow(vert_id, names, targets, hues, strengths, adj, exclude=None
     stats = {}
     hues = hues or {}
     strengths = strengths or {}
+    bounds, meta = ({}, {})
+    if pos is not None:
+        bounds, meta = anatomy_allow(pos, tid, names)
+        stats["_clip"] = meta
+    forbid_ids = [name_i[n] for n in ("upper_trap", "front_delt", "side_delt", "erectors",
+                                      "pecs", "abs", "obliques") if n in name_i]
+    # group targets that share a hue so mid-back (rhomboids+mid_trap) becomes one shape
+    groups = []
+    used = set()
     for name in targets:
-        if name not in name_i:
+        if name in used or name not in name_i:
             continue
-        mask = (tid == name_i[name]) & (~sh) & (~exclude)
-        wt = center_weight(mask, adj, erode_rings=erode_rings, power=power, fade_rings=fade_rings)
         spec = hues.get(name) or DEFAULT_HUES.get(name)
         if not spec:
             continue
-        stren = float(strengths.get(name, spec.get("strength", 1.0) if isinstance(spec, dict) else 1.0))
-        col = hsv_to_lin_rgb(spec["h"], spec["s"], spec["v"])
+        key = (int(spec["h"]), int(spec["s"]), int(spec["v"]))
+        members = []
+        for n2 in targets:
+            if n2 in used or n2 not in name_i:
+                continue
+            s2 = hues.get(n2) or DEFAULT_HUES.get(n2)
+            if s2 and (int(s2["h"]), int(s2["s"]), int(s2["v"])) == key:
+                members.append(n2)
+                used.add(n2)
+        groups.append((members, spec))
+    use_adj = weld_adj(adj, pos, eps=4e-4) if pos is not None else adj
+    for members, spec in groups:
+        seed = np.zeros(nv, dtype=bool)
+        allow = np.zeros(nv, dtype=bool)
+        for name in members:
+            idm = tid == name_i[name]
+            clip = bounds[name] if name in bounds else np.ones(nv, dtype=bool)
+            seed |= idm & clip
+            allow |= clip
+        allow &= ~sh & ~exclude
+        for fid in forbid_ids:
+            allow &= tid != fid
+        for name in targets:
+            if name not in members and name in name_i:
+                allow &= tid != name_i[name]
+        seed &= ~sh & ~exclude & allow
+        stren = float(np.mean([float(strengths.get(n, 1.0)) for n in members]))
+        wt, info = clean_muscle_weight(
+            seed, use_adj, allow,
+            fade_rings=fade_rings, smooth_iters=smooth_iters,
+            thresh=solid_thresh, close_rings=close_rings,
+            keep=2, min_size=80, power=power,
+        )
         wt = wt * stren
+        col = hsv_to_lin_rgb(spec["h"], spec["s"], spec["v"])
         better = wt > gw
         rgb[better] = col
         gw = np.maximum(gw, wt)
-        stats[name] = int((wt > 0.5).sum())
+        for name in members:
+            stats[name] = int(((tid == name_i[name]) & (wt > 0.5)).sum())
+        stats["+".join(members) + "_solid"] = info.get("solid", 0)
+        stats["+".join(members) + "_cc"] = info.get("cc", 0)
     gw[sh] = 0.0
     gw[exclude] = 0.0
     return gw, rgb, stats
+
 
 
 def cache_path(cache_dir, key):

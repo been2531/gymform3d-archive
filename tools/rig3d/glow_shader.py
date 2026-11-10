@@ -185,12 +185,14 @@ def attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min=0.58, tint_mix=
 
 
 
-def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix=0.72):
-    """Tint the clay Principled toward baked `glow_rgb` and add modest emission.
+def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix=0.28,
+                         fibre_bump=0.32, rim=0.35):
+    """Tint the clay Principled slightly toward baked `glow_rgb` and add luminous emission.
 
-    Weight comes from `glow_w` (centre-weighted per muscle ID, shorts cancelled).
-    The BSDF is kept so sculpt normals / lighting / AO still shade the muscle —
-    a Mix-to-pure-Emission read as flat painted skin.
+    Weight comes from `glow_w` (clean solid per muscle, shorts cancelled). The BSDF
+    stays so sculpt normals / lighting / AO still show fibre and form — a Mix-to-pure-
+    Emission read as flat paint or a bruise. A wave bump on glow areas adds striation;
+    a facing rim lifts the silhouette.
     """
     _purge(nt)
     at = nt.nodes.new("ShaderNodeAttribute"); at.name = GF + "GLOWW"; at.attribute_name = "glow_w"
@@ -224,15 +226,47 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     ao = nt.nodes.new("ShaderNodeAmbientOcclusion"); ao.name = GF + "AO"
     ao.inputs["Distance"].default_value = 0.12
     aom = nt.nodes.new("ShaderNodeMix"); aom.data_type = "RGBA"; aom.blend_type = "MULTIPLY"; aom.name = GF + "AOM"
-    aom.inputs[0].default_value = 0.28
+    aom.inputs[0].default_value = 0.18
     nt.links.new(ac.outputs["Color"], aom.inputs[6])
     nt.links.new(ao.outputs["Color"], aom.inputs[7])
     if "Emission Color" in bsdf.inputs:
         nt.links.new(aom.outputs[2], bsdf.inputs["Emission Color"])
     ems = nt.nodes.new("ShaderNodeMath"); ems.name = GF + "EMS"; ems.operation = "MULTIPLY"
     nt.links.new(stm.outputs[0], ems.inputs[0]); ems.inputs[1].default_value = float(em_str)
+    # light rim: grazing angles on the glowing muscle
+    lw = nt.nodes.new("ShaderNodeLayerWeight"); lw.name = GF + "LW"
+    lw.inputs["Blend"].default_value = 0.55
+    one = nt.nodes.new("ShaderNodeMath"); one.name = GF + "R1"; one.operation = "SUBTRACT"
+    one.inputs[0].default_value = 1.0
+    nt.links.new(lw.outputs["Facing"], one.inputs[1])
+    r2 = nt.nodes.new("ShaderNodeMath"); r2.name = GF + "R2"; r2.operation = "MULTIPLY"
+    nt.links.new(one.outputs[0], r2.inputs[0]); nt.links.new(stm.outputs[0], r2.inputs[1])
+    r3 = nt.nodes.new("ShaderNodeMath"); r3.name = GF + "R3"; r3.operation = "MULTIPLY"
+    nt.links.new(r2.outputs[0], r3.inputs[0]); r3.inputs[1].default_value = float(rim)
+    ems2 = nt.nodes.new("ShaderNodeMath"); ems2.name = GF + "EMS2"; ems2.operation = "ADD"
+    nt.links.new(ems.outputs[0], ems2.inputs[0]); nt.links.new(r3.outputs[0], ems2.inputs[1])
     if "Emission Strength" in bsdf.inputs:
-        nt.links.new(ems.outputs[0], bsdf.inputs["Emission Strength"])
+        nt.links.new(ems2.outputs[0], bsdf.inputs["Emission Strength"])
+    # fibre bump on glow areas only, layered on the existing sculpt/asset normal
+    if float(fibre_bump) > 0:
+        tex = nt.nodes.new("ShaderNodeTexCoord"); tex.name = GF + "FCOORD"
+        wv = nt.nodes.new("ShaderNodeTexWave"); wv.name = GF + "FIBRE"
+        wv.wave_type = "BANDS"; wv.bands_direction = "X"; wv.wave_profile = "SIN"
+        wv.inputs["Scale"].default_value = 48.0
+        wv.inputs["Distortion"].default_value = 1.6
+        wv.inputs["Detail"].default_value = 3.0
+        nt.links.new(tex.outputs["Object"], wv.inputs["Vector"])
+        bstr = nt.nodes.new("ShaderNodeMath"); bstr.name = GF + "BSTR"; bstr.operation = "MULTIPLY"
+        nt.links.new(stm.outputs[0], bstr.inputs[0]); bstr.inputs[1].default_value = float(fibre_bump)
+        bump = nt.nodes.new("ShaderNodeBump"); bump.name = GF + "BUMP"
+        nt.links.new(wv.outputs["Fac"], bump.inputs["Height"])
+        nt.links.new(bstr.outputs[0], bump.inputs["Strength"])
+        nrm_in = bsdf.inputs.get("Normal")
+        if nrm_in is not None and nrm_in.links:
+            nt.links.new(nrm_in.links[0].from_socket, bump.inputs["Normal"])
+            nt.links.remove(nrm_in.links[0])
+        if nrm_in is not None:
+            nt.links.new(bump.outputs["Normal"], nrm_in)
     aov = nt.nodes.new("ShaderNodeOutputAOV"); aov.name = GF + "AOV"; aov.aov_name = "glow_mask"
     rgb = nt.nodes.new("ShaderNodeCombineColor"); rgb.name = GF + "AOVRGB"
     nt.links.new(fac.outputs[0], rgb.inputs["Red"])
@@ -242,7 +276,8 @@ def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88, tint_mix
     return _flex
 
 
-def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_scale=42.0, tint_mix=0.72):
+def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_scale=42.0, tint_mix=0.28,
+                     fibre_bump=0.32, rim=0.35):
     """(Re)attach GF_* glow nodes on every body material. Returns flex Value nodes."""
     flex_nodes = []
     for m_ in body_mats:
@@ -254,7 +289,8 @@ def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_sc
         elif backend == "tint":
             flex_nodes.append(attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min))
         elif backend in ("inscene", "native", "clay"):
-            flex_nodes.append(attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min, tint_mix=tint_mix))
+            flex_nodes.append(attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min,
+                                                   tint_mix=tint_mix, fibre_bump=fibre_bump, rim=rim))
         else:
             flex_nodes.append(attach_simple_emission(nt, bsdf, mout, em_col, em_str, flex_min))
     return flex_nodes
@@ -324,11 +360,11 @@ def setup_compositor(sc, bloom_strength=0.60):
         except Exception:
             pass
     try:
-        gl.threshold = 0.18
+        gl.threshold = 0.40
     except Exception:
-        gl.inputs["Threshold"].default_value = 0.18
+        gl.inputs["Threshold"].default_value = 0.40
     try:
-        gl.size = 7
+        gl.size = 8
     except Exception:
         if "Size" in gl.inputs:
             gl.inputs["Size"].default_value = 0.70
