@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Procedural flat bench (warm grey) for barbell bench press. Separate from mannequin charcoal.
+"""Procedural flat bench (bpy primitives, no third-party mesh).
 
-  nice -n 19 /workspace/.bpyenv/bin/python tools/rig3d/props/bench_flat.py --no-still
+Looks:
+  warm_grey       — original bb_bench_press pad (distinct from mannequin charcoal)
+  gunmetal_black  — dark gunmetal frame + black pad (one-arm row / shared default for db_row)
+
+  nice -n 19 blender -b -P tools/rig3d/props/bench_flat.py -- --no-still
 """
 from __future__ import annotations
 import argparse, math, os, json
@@ -9,10 +13,26 @@ import bpy
 import mathutils as mu
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-# warm grey pad (palette A bench), cooler steel frame — NOT mannequin charcoal
-PAD = (0.42, 0.40, 0.38)
-FRAME = (0.55, 0.56, 0.58)
-FEET = (0.25, 0.25, 0.26)
+LOOKS = {
+    "warm_grey": {
+        "pad": (0.42, 0.40, 0.38),
+        "frame": (0.55, 0.56, 0.58),
+        "feet": (0.25, 0.25, 0.26),
+        "pad_metal": 0.0, "pad_rough": 0.78,
+        "frame_metal": 1.0, "frame_rough": 0.40,
+    },
+    "gunmetal_black": {
+        "pad": (0.035, 0.035, 0.038),
+        "frame": (0.11, 0.12, 0.135),
+        "feet": (0.07, 0.07, 0.075),
+        "pad_metal": 0.0, "pad_rough": 0.86,
+        "frame_metal": 0.88, "frame_rough": 0.38,
+    },
+}
+# backwards-compat aliases used by the original builder
+PAD = LOOKS["warm_grey"]["pad"]
+FRAME = LOOKS["warm_grey"]["frame"]
+FEET = LOOKS["warm_grey"]["feet"]
 
 
 def log(m):
@@ -57,21 +77,29 @@ def empty(name, loc):
     return e
 
 
-def build_bench():
-    clear_scene()
-    pad_m = mat("bench_pad_warm_grey", PAD, metal=0.0, rough=0.78)
-    frame_m = mat("bench_frame_steel", FRAME, metal=1.0, rough=0.4)
-    feet_m = mat("bench_feet", FEET, metal=0.2, rough=0.7)
+def build_bench(look="warm_grey", clear=True):
+    """Build (and optionally join) a flat bench. `clear=False` to spawn into an existing scene."""
+    if clear:
+        clear_scene()
+    look = (look or "warm_grey").lower()
+    if look not in LOOKS:
+        look = "warm_grey"
+    L = LOOKS[look]
+    pad_m = mat(f"bench_pad_{look}", L["pad"], metal=L["pad_metal"], rough=L["pad_rough"])
+    frame_m = mat(f"bench_frame_{look}", L["frame"], metal=L["frame_metal"], rough=L["frame_rough"])
+    feet_m = mat(f"bench_feet_{look}", L["feet"], metal=0.25, rough=0.62)
 
-    # dimensions (m): flat bench, pad ~1.25 x 0.30, height ~0.45
+    # dimensions (m): flat bench, pad ~1.25 x 0.30, height ~0.45, pad top 0.49
     pad = box("bench_pad", 1.25, 0.30, 0.08, (0, 0, 0.45), pad_m)
     rail = box("bench_rail", 1.10, 0.06, 0.06, (0, 0, 0.38), frame_m)
+    # extra long rail + modest stretchers so the frame reads as a gym bench
+    rail2 = box("bench_rail2", 1.10, 0.04, 0.04, (0, 0, 0.22), frame_m)
     leg_f = box("leg_F", 0.06, 0.28, 0.38, (0.45, 0, 0.19), frame_m)
     leg_b = box("leg_B", 0.06, 0.28, 0.38, (-0.45, 0, 0.19), frame_m)
-    foot_f = box("foot_F", 0.10, 0.40, 0.04, (0.45, 0, 0.02), feet_m)
-    foot_b = box("foot_B", 0.10, 0.40, 0.04, (-0.45, 0, 0.02), feet_m)
+    foot_f = box("foot_F", 0.12, 0.42, 0.04, (0.45, 0, 0.02), feet_m)
+    foot_b = box("foot_B", 0.12, 0.42, 0.04, (-0.45, 0, 0.02), feet_m)
 
-    parts = [pad, rail, leg_f, leg_b, foot_f, foot_b]
+    parts = [pad, rail, rail2, leg_f, leg_b, foot_f, foot_b]
     bpy.ops.object.select_all(action="DESELECT")
     for o in parts:
         o.select_set(True)
@@ -85,6 +113,8 @@ def build_bench():
         ("pad_center", (0, 0, 0.49)),
         ("head_end", (0.55, 0, 0.49)),
         ("foot_end", (-0.55, 0, 0.49)),
+        ("support_knee", (-0.12, 0.0, 0.49)),
+        ("support_hand", (0.32, 0.0, 0.49)),
         ("floor", (0, 0, 0)),
     ):
         e = empty(name, loc)
@@ -93,24 +123,37 @@ def build_bench():
 
     meta = {
         "name": "bench_flat",
+        "look": look,
         "pad_size_m": [1.25, 0.30, 0.08],
         "pad_top_z_m": 0.49,
-        "pad_rgb_warm_grey": list(PAD),
-        "note": "Warm grey pad — keep distinct from mannequin charcoal (Day 4 skin lock).",
-        "anchors": {k: {"empty": k} for k in anchors},
+        "pad_rgb": list(L["pad"]),
+        "frame_rgb": list(L["frame"]),
+        "note": ("Black pad + dark gunmetal frame." if look == "gunmetal_black"
+                 else "Warm grey pad — keep distinct from mannequin charcoal (Day 4 skin lock)."),
+        "anchors": {k: {"empty": k, "local": list(anchors[k].location)} for k in anchors},
         "licence": "Procedural bpy primitives. No third-party mesh.",
     }
     bench["gymform_prop"] = "bench_flat"
-    log(f"built {bench.name}")
+    bench["gymform_look"] = look
+    log(f"built {bench.name} look={look}")
     return bench, meta
+
+
+def place_bench(bench, origin_xy, yaw_z, origin_z=0.45):
+    """Put the bench so its object origin (pad centre, z=0.45) sits at origin_xy, z=origin_z.
+    Local +X (pad length) aligns with world yaw_z (radians, atan2(fwd.y, fwd.x))."""
+    bench.location = (float(origin_xy[0]), float(origin_xy[1]), float(origin_z))
+    bench.rotation_euler = (0.0, 0.0, float(yaw_z))
+    return bench
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-still", action="store_true")
+    ap.add_argument("--look", default="warm_grey")
     ap.add_argument("--still", default=os.path.join(ROOT, "docs/mission/bench_flat_prop_still.png"))
     args = ap.parse_args()
-    bench, meta = build_bench()
+    bench, meta = build_bench(look=args.look, clear=True)
     meta_path = os.path.join(ROOT, "modules/equipment/bench_flat_build_meta.json")
     os.makedirs(os.path.dirname(meta_path), exist_ok=True)
     json.dump(meta, open(meta_path, "w"), indent=2)

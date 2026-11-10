@@ -1,16 +1,17 @@
 # Primitive: one-arm horizontal pull / row (db_row).
 primitive: pull_row
-_doc: "Hinged torso, working elbow drives to hip, support hand on front thigh."
+_doc: "Bench-supported one-arm row: flat back, support hand+knee on pad, working foot on the floor."
 fault:
   id: elbow_flare_torso_rise
   wrong: "Torso stands up / elbow flares wide — traps and momentum steal the lat."
   right: "Torso stays hinged; elbow tracks to the hip; lats + mid-back squeeze."
 motion_hint:
-  torso_target_deg: 49
-  legs: planted
+  torso_target_deg: 88
+  legs: bench_row
   knee_target_deg: 152
   grip_mode: palm_neutral
-  support_hand: front_thigh
+  support_hand: bench_pad
+  support_knee: bench_pad
   lock_hips: true
   pelvis_yaw: true
   stance_width_m: 0.30
@@ -38,7 +39,7 @@ grade:
 qc:
   anatomy:
     capsule_allowed_pairs: [[LeftHand, LeftUpLeg], [LeftForeArm, LeftUpLeg], [RightHand, RightUpLeg], [RightForeArm, RightUpLeg]]
-  torso_band_deg: [35, 60]
+  torso_band_deg: [78, 98]
   torso_tol_deg: 5
   elbow_rom_min_deg: 40
   callout_prop_clear_min_px: 220

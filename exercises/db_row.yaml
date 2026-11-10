@@ -21,9 +21,11 @@ motion:
   authored:
     enabled: true
     preset: pull_row         # modules/authored/pull_row.yaml (anatomical arm path, eased timing)
+    right:
+      torso_deg: 88            # override standing hinge; back parallel to the floor
   rep: auto                  # auto = the first full rep (bottom -> bottom) of the working elbow
   rep_index: 0
-  torso_target_deg: 49       # forward hinge from vertical; upper body re-aimed per frame, arms keep their world direction
+  torso_target_deg: 88       # flat back roughly parallel to the floor (classic bench-supported row)
   torso_smooth_sigma_f: 4.0
   smooth_sigma_f: 2.5
   lock_feet: true
@@ -31,7 +33,7 @@ motion:
   spine_aim: far             # v4: spine bones aim 3 torso lengths out along hip->shoulder (legacy shmid: chest swung 7-65 deg)
   neck_mode: spine_follow    # v4: neck aimed along the torso line + gaze_ext_deg, Head keeps its rest relation (legacy: ears_track)
   gaze_ext_deg: 6            # head tipped back from the spine line (neutral neck, eyes slightly down-forward)
-  legs: planted              # v4: both feet flat, constant, knees solved per frame from rig lengths (legacy: source)
+  legs: bench_row            # support knee + same-side hand on the pad; working foot on the floor
   knee_target_deg: 152      # athletic soft knee (inherits pull_row construction; was 160 = almost locked)
   balance_knees: true        # v5: each ankle slides fore-aft until its own knee reaches knee_target_deg (no locked rear leg)
   grip_mode: palm_neutral    # v5: handle across the palm (hand-mesh axis) + forearm/hand twisted to a neutral grip (legacy shoulder_line)
@@ -46,7 +48,8 @@ motion:
   support_wrist_neutral: true  # v6: hand continues the forearm onto the thigh (v5: 58 deg wrist bend)
   support_hand_lift_m: 0.075 # support wrist target above the thigh bone line (thigh radius + hand)
   wrist_neutral: true        # v5: working hand not aimed at the index landmark (MediaPipe curled the wrist up to 77 deg)
-  support_hand: front_thigh  # v5: free hand braced on the front thigh above the knee
+  support_hand: bench_pad    # support hand locked to the pad (same side as the support knee)
+  support_knee: bench_pad     # same-side knee locked to the pad
   lock_hips: true            # v5: pelvis static over the rep (upper body follows rigidly), knees steady
   pelvis_yaw: true           # v5: pelvis faces the lean direction before the hinge (no sideways pelvis roll)
   stance_width_m: 0.30       # v5: ankle-to-ankle width (YMove 'legs apart' is ~0.5 m: the wide rear leg could not bend)
@@ -77,6 +80,9 @@ render:
   floor: true
   denoise: true
   look_backend: inscene
+  bench:
+    enabled: true
+    look: gunmetal_black
   body_source: grab3d            # smooth painted glow on the one-piece mannequin (ecorche kept, unused)
   view_transform: Standard
   ambient_strength: 0.38
@@ -94,9 +100,9 @@ render:
   glow_tint: 0.18
   glow_opacity: 0.98
   glow_shape: project
-  glow_proj_tex: tools/rig3d/masks/db_row_glow_uv.png
-  glow_fibre_bump: 0.22
-  glow_fibre_line: 0.55         # thin brighter fibre ridges inside the glow
+  glow_proj_tex: tools/rig3d/masks/db_row_back_paint.png
+  glow_fibre_bump: 0.14
+  glow_fibre_line: 0.28         # subtle fibre ridges inside the glow
   glow_rim: 0.32
   body_rim: 0.30                 # stronger cool Fresnel rim / soft halo
   glow_bloom: true
@@ -106,8 +112,8 @@ render:
   mask_spp: 4
   camera:
     mode: side_tight          # camera on the working-arm side, turned toward the back (Day 4 back-3/4 feel)
-    yaw_back_deg: 48
-    elev_deg: 38
+    yaw_back_deg: 44
+    elev_deg: 34
     lens_mm: 50
     fill_w: 0.90              # figure width / frame width
     feet_y: 0.92              # feet line as a fraction of frame height (title/pill stay above the head)
@@ -151,7 +157,7 @@ caption:
   question: "Where do you feel your dumbbell rows most right now?"
   save: "Save this for your next back day."
 qc:
-  torso_band_deg: [35, 60]
+  torso_band_deg: [78, 98]
   torso_tol_deg: 5
   grip_max_m: 0.03            # dumbbell handle centre vs grip point on the hand bone
   grip_mesh_max_m: 0.06       # nearest hand-mesh vertex to the handle centre
@@ -202,13 +208,13 @@ qc:
     toe_lift_max_m: 0.02            # toe base vs floor, both feet, every frame (heel/toe up = not planted)
     foot_pitch_dev_max_deg: 12      # foot pitch vs the rig's rest (flat-foot) pitch
     foot_drift_max_m: 0.015         # ankle / toe base vs per-rep median
-    knee_range_deg: [140, 178]      # static split/hinge stance: soft knees, never deep lunge or locked hyper-straight
+    knee_range_deg: [70, 178]       # support knee bent on the pad; working knee athletic
     knee_steady_max_deg: 6
     knee_soft_range_deg: [145, 158] # athletic hinge around 152 (v2 160 fails this)
-    knee_lr_diff_max_deg: 20
+    knee_lr_diff_max_deg: 90
     handle_palm_max_deg: 15        # v5: handle vs across-palm axis and vs perpendicular-to-forearm, every frame
     handle_body_forward_max_deg: 24 # tucked-elbow row: handle stays ~front-to-back (v2 flare path was <=20)
-    support_hand_thigh_max_m: 0.12  # v5: wrist to thigh bone line (thigh radius ~0.07 + hand)
+    support_hand_thigh_max_m: 0.55  # bench-supported: hand is on the pad, not the thigh
     thigh_split_max_deg: 35         # sagittal angle between the thighs (running stride ~60+)
   anatomy:                          # v6 generic proactive audit (tools/rig3d/anatomy_qc.py)
     joint_ranges:

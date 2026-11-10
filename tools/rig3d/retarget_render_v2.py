@@ -154,6 +154,90 @@ if LEGS == "planted":
     up_j = [j for j in range(33) if j not in (27, 28, 29, 30, 31, 32)]; B[:, up_j, 2] += raise_z
     log(f"legs planted: hips raised {raise_z:+.3f} m for knee {math.degrees(kt):.0f}, fwd {fwd_h.round(2).tolist()}")
     log(f"legs planted: stance_scale {ss}, ankles {B[0, 27].round(3).tolist()} / {B[0, 28].round(3).tolist()}")
+BENCH_OBJ = None; BENCH_META = None; BENCH_SPEC = None
+if LEGS == "bench_row":
+    # Classic one-arm DB row: support hand + same-side knee on a flat bench, working foot on
+    # the floor, flat back roughly parallel to the floor. Working arm is authored (hang -> row).
+    tv0 = np.mean((B[:, 11] + B[:, 12]) / 2 - (B[:, 23] + B[:, 24]) / 2, axis=0)
+    fwd_h = np.array([tv0[0], tv0[1], 0.0]); fwd_h /= (np.linalg.norm(fwd_h) + 1e-12)
+    lat_h = np.cross([0.0, 0.0, 1.0], fwd_h); lat_h /= (np.linalg.norm(lat_h) + 1e-12)
+    support_left = (int(side) == 12)
+    pad_z = float(MO.get("bench_pad_z_m", 0.49))
+    hip0 = np.median((B[:, 23] + B[:, 24]) / 2, axis=0)
+    hip_w = 0.5 * float(np.linalg.norm(np.median(B[:, 23] - B[:, 24], axis=0))) or 0.09
+    Lt = 0.5 * (rl("LeftUpLeg", "LeftLeg") + rl("RightUpLeg", "RightLeg"))
+    Ls = 0.5 * (rl("LeftLeg", "LeftFoot") + rl("RightLeg", "RightFoot"))
+    lat_sup = lat_h if support_left else -lat_h
+    lat_wrk = -lat_sup
+    kn_z = pad_z + 0.045
+    # Nearly horizontal thigh: hips stay close to pad height so the back reads parallel to the bench.
+    thigh = fwd_h * 0.92 + np.array([0.0, 0.0, 1.0]) * 0.22
+    thigh = thigh / (np.linalg.norm(thigh) + 1e-12) * Lt
+    hip_mid0 = hip0.copy()
+    sknee = hip_mid0 + lat_sup * hip_w - fwd_h * 0.10
+    sknee[2] = kn_z
+    ship = sknee + thigh
+    hip_new = ship - lat_sup * hip_w
+    hip_new[2] = ship[2]
+    lhip = hip_new - lat_h * hip_w
+    rhip = hip_new + lat_h * hip_w
+    ship = lhip if support_left else rhip
+    whip = rhip if support_left else lhip
+    sknee = ship - thigh; sknee[2] = kn_z
+    shin = (-fwd_h * 0.45 + np.array([0.0, 0.0, -1.0]) * 0.89)
+    shin = shin / (np.linalg.norm(shin) + 1e-12) * Ls
+    sank = sknee + shin
+    sank[2] = max(float(sank[2]), 0.10)
+    # Plant the working foot clearly on the floor, outside the pad and slightly back.
+    wank = hip_new + lat_wrk * (hip_w + 0.42) - fwd_h * 0.16
+    wank[2] = 0.07
+    wknee = 0.5 * (whip + wank); wknee[2] = 0.38
+    dhip = hip_new - hip0
+    upper = [j for j in range(33) if j not in (23, 24, 25, 26, 27, 28, 29, 30, 31, 32)]
+    B[:, upper] += dhip
+    B[:, 23] = lhip; B[:, 24] = rhip
+    if support_left:
+        B[:, 25] = sknee; B[:, 27] = sank
+        B[:, 31] = sank - fwd_h * 0.06; B[:, 31, 2] = sank[2]
+        B[:, 29] = sank + fwd_h * 0.03; B[:, 29, 2] = sank[2]
+        B[:, 26] = wknee; B[:, 28] = wank
+        B[:, 32] = wank + fwd_h * 0.18; B[:, 32, 2] = 0.0
+        B[:, 30] = wank - fwd_h * 0.05; B[:, 30, 2] = 0.0
+    else:
+        B[:, 26] = sknee; B[:, 28] = sank
+        B[:, 32] = sank - fwd_h * 0.06; B[:, 32, 2] = sank[2]
+        B[:, 30] = sank + fwd_h * 0.03; B[:, 30, 2] = sank[2]
+        B[:, 25] = wknee; B[:, 27] = wank
+        B[:, 31] = wank + fwd_h * 0.18; B[:, 31, 2] = 0.0
+        B[:, 29] = wank - fwd_h * 0.05; B[:, 29, 2] = 0.0
+    yaw_z = math.atan2(float(fwd_h[1]), float(fwd_h[0]))
+    cz, sz = math.cos(yaw_z), math.sin(yaw_z)
+    loc_kn = np.array([-0.12, 0.0, 0.49])
+    Rkn = np.array([cz * loc_kn[0] - sz * loc_kn[1], sz * loc_kn[0] + cz * loc_kn[1], loc_kn[2]])
+    origin = np.array([sknee[0], sknee[1], 0.45]) - np.array([Rkn[0], Rkn[1], 0.0])
+    loc_hd = np.array([0.32, 0.0, 0.49])
+    hand_w = origin + np.array([cz * loc_hd[0] - sz * loc_hd[1], sz * loc_hd[0] + cz * loc_hd[1], 0.04])
+    hand_w[2] = pad_z + 0.015
+    BENCH_SPEC = {
+        "origin_xy": (float(origin[0]), float(origin[1])),
+        "origin_z": 0.45, "yaw_z": yaw_z,
+        "support_knee": [float(x) for x in sknee],
+        "support_hand": [float(x) for x in hand_w],
+        "support_left": bool(support_left), "fwd": [float(x) for x in fwd_h],
+        "look": "gunmetal_black",
+    }
+    try:
+        import importlib.util
+        _bp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "props", "bench_flat.py")
+        _spec = importlib.util.spec_from_file_location("bench_flat_prop", _bp)
+        _BF = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_BF)
+        _bdict = RC.get("bench") if isinstance(RC.get("bench"), dict) else {}
+        _look = str(_bdict.get("look") or MO.get("bench_look") or "gunmetal_black")
+        BENCH_OBJ, BENCH_META = _BF.build_bench(look=_look, clear=False)
+        _BF.place_bench(BENCH_OBJ, BENCH_SPEC["origin_xy"], BENCH_SPEC["yaw_z"], BENCH_SPEC["origin_z"])
+        log(f"bench_row look={_look} origin={BENCH_SPEC['origin_xy']} yaw={math.degrees(yaw_z):.1f} hip_z={hip_new[2]:.3f} kn={np.asarray(sknee).round(3).tolist()}")
+    except Exception as _be:
+        log(f"bench spawn failed: {_be}")
 AUTH_META = None; AUTH_SPEC = None; AUTH_U = None
 if (MO.get("authored") or {}).get("enabled"):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -268,6 +352,40 @@ if LEGS == "planted":       # per-frame 2-bone knee solve from the evaluated hip
             sc.frame_set(f + 1); H = arm.matrix_world @ pb[s_ + "UpLeg"].head; dv = A - H; d = min(dv.length, 0.999 * (Lt + Ls)); u_ = dv.normalized()
             x_ = (Lt * Lt - Ls * Ls + d * d) / (2 * d); h_ = math.sqrt(max(Lt * Lt - x_ * x_, 0.0)); pp = (pole - pole.dot(u_) * u_).normalized()
             E[p_ + "kn"].location = H + u_ * x_ + pp * h_; E[p_ + "kn"].keyframe_insert("location", frame=f + 1)
+if LEGS == "bench_row" and BENCH_SPEC is not None:
+    # Lock support knee to the pad; solve the working knee toward the floor ankle.
+    support_left = bool(BENCH_SPEC["support_left"])
+    sp_ = "Left" if support_left else "Right"
+    wk_ = "Right" if support_left else "Left"
+    kn_tgt = mu.Vector(BENCH_SPEC["support_knee"])
+    if BENCH_OBJ is not None and "support_knee" in bpy.data.objects:
+        kn_tgt = bpy.data.objects["support_knee"].matrix_world.translation.copy()
+    # COPY_LOCATION so the support knee empty stays glued to the pad anchor
+    ekn = E[sp_[0].lower() + "kn"]
+    if BENCH_OBJ is not None and "support_knee" in bpy.data.objects:
+        cl = ekn.constraints.new("COPY_LOCATION"); cl.target = bpy.data.objects["support_knee"]
+    for f in range(NF):
+        ekn.location = kn_tgt
+        ekn.keyframe_insert("location", frame=f + 1)
+    # working leg 2-bone IK
+    Lt, Ls = rl(wk_ + "UpLeg", wk_ + "Leg"), rl(wk_ + "Leg", wk_ + "Foot")
+    aj = 28 if wk_ == "Right" else 27
+    A = mu.Vector(B[0, aj].tolist())
+    pole = mu.Vector(BENCH_SPEC["fwd"]); pole.z = 0
+    if pole.length < 1e-6: pole = mu.Vector((0.0, -1.0, 0.0))
+    pole.normalize()
+    p_ = wk_[0].lower()
+    for f in range(NF):
+        sc.frame_set(f + 1)
+        H = arm.matrix_world @ pb[wk_ + "UpLeg"].head
+        dv = A - H; d = min(max(dv.length, 1e-4), 0.999 * (Lt + Ls)); u_ = dv.normalized()
+        x_ = (Lt * Lt - Ls * Ls + d * d) / (2 * d); h_ = math.sqrt(max(Lt * Lt - x_ * x_, 0.0))
+        pp = (pole - pole.dot(u_) * u_)
+        if pp.length < 1e-6: pp = mu.Vector((0.0, 0.0, 1.0))
+        pp.normalize()
+        E[p_ + "kn"].location = H + u_ * x_ + pp * h_
+        E[p_ + "kn"].keyframe_insert("location", frame=f + 1)
+    log(f"bench_row IK: {sp_} knee locked to pad, {wk_} foot on floor")
 shrug_m = float(MO.get("shrug_m", 0.0) or 0.0)
 if shrug_m > 0 and (("LeftShoulder" if side == 11 else "RightShoulder") in pb):
     # World-space translate the working Shoulder toward the head (scapular elevation),
@@ -411,6 +529,34 @@ if LEGS == "planted" and MO.get("support_hand", "") == "front_thigh":
         E[pp_ + "el"].location = Sh + u_ * x_ + pole * h_; E[pp_ + "wr"].location = Sh + u_ * d_wr; E[pp_ + "ix"].location = Sh + u_ * d_wr + ((u_ * 0.6 + td_ * 0.4).normalized() if MO.get("support_wrist_neutral") else td_) * 0.09   # v6: wrist ~neutral
         for n_ in ("el", "wr", "ix"): E[pp_ + n_].keyframe_insert("location", frame=f + 1)
     log(f"support hand on the front ({fl}) thigh")
+if MO.get("support_hand", "") == "bench_pad" and BENCH_SPEC is not None:
+    # Support hand locked to the pad (same side as the support knee).
+    sp_ = "Left" if int(side) == 12 else "Right"; pp_ = sp_[0].lower()
+    La, Lf = rl(sp_ + "Arm", sp_ + "ForeArm"), rl(sp_ + "ForeArm", sp_ + "Hand")
+    Wt0 = mu.Vector(BENCH_SPEC["support_hand"])
+    if BENCH_OBJ is not None and "support_hand" in bpy.data.objects:
+        Wt0 = bpy.data.objects["support_hand"].matrix_world.translation.copy()
+        cl = E[pp_ + "wr"].constraints.new("COPY_LOCATION"); cl.target = bpy.data.objects["support_hand"]
+    latv = mu.Vector((lat_h if 'lat_h' in dir() else (1.0, 0.0, 0.0)))
+    if 'lat_h' in dir():
+        latv = mu.Vector(lat_h.tolist()) * (1 if sp_ == "Left" else -1)
+    fwdv = mu.Vector(BENCH_SPEC["fwd"])
+    for f in range(NF):
+        sc.frame_set(f + 1); bpy.context.view_layer.update()
+        Sh = arm.matrix_world @ pb[sp_ + "Arm"].head
+        Wt = Wt0.copy()
+        dv = Wt - Sh; u_ = dv.normalized(); d_wr = min(max(dv.length, 1e-4), 0.999 * (La + Lf)); d = d_wr
+        x_ = (La * La - Lf * Lf + d * d) / (2 * d); h_ = math.sqrt(max(La * La - x_ * x_, 0.0))
+        pv_ = latv * 0.55 - fwdv * 0.35 + mu.Vector((0.0, 0.0, 0.25))
+        pole = (pv_ - pv_.dot(u_) * u_)
+        if pole.length < 1e-6: pole = mu.Vector((0.0, 0.0, 1.0))
+        pole.normalize()
+        E[pp_ + "el"].location = Sh + u_ * x_ + pole * h_
+        E[pp_ + "wr"].location = Wt
+        E[pp_ + "ix"].location = Wt + fwdv.normalized() * 0.07
+        for n_ in ("el", "wr", "ix"):
+            E[pp_ + n_].keyframe_insert("location", frame=f + 1)
+    log(f"support hand locked to bench pad ({sp_})")
 if MO.get("elbow_path", "source") == "tuck_torso":
     # Shared construction: working elbow rebuilt on the 2-bone circle with the pole toward Spine01, so
     # MediaPipe flare cannot occur — the elbow tracks close to the torso toward the hip.
@@ -700,18 +846,23 @@ if USE_MID:
         if _shape == "project":
             import project_paint as PPAINT
             _tex = RC.get("glow_proj_tex") or os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "masks", "db_row_glow_uv.png")
+                os.path.dirname(os.path.abspath(__file__)), "masks", "db_row_back_paint.png")
             _tex = _tex if os.path.isabs(_tex) else os.path.join(os.getcwd(), _tex)
             if not os.path.isfile(_tex):
                 raise FileNotFoundError("glow_proj_tex missing: " + _tex)
+            _ex = np.zeros(nv, dtype=bool)
+            if USE_MID and "forearm" in name_i:
+                _ex |= (tid == name_i["forearm"])
+            _st = PPAINT.write_rest_proj_uvs_obj(body, exclude_mask=_ex)
+            log(f"glow rest-proj UVs {_st}")
             _img = bpy.data.images.load(_tex, check_existing=True)
             _img.name = "glow_proj"
             try:
                 _img.colorspace_settings.name = "sRGB"
             except Exception:
                 pass
-            _gw, _grgb, _gst = PPAINT.sample_uv_texture(me, _img, shorts, EXCLUDE)
-            log(f"glow proj tex={_tex}")
+            _gw, _grgb, _gst = PPAINT.sample_uv_texture(me, _img, shorts, EXCLUDE, uv_name="proj")
+            log(f"glow proj tex={_tex} (rest-camera UVs, no atlas bake)")
         else:
             _gw, _grgb, _gst = MIDS.bake_target_glow(
                 tid, MID["names"], _gw_tgts, _hues, _hstr, ADJ,
@@ -731,17 +882,35 @@ if USE_MID:
         log(f"glow bake failed: {_e}")
 else:
     log(f"muscle IDs unused nv={nv} built={None if not MID else MID.get('nv')}")
-    try:
-        _gw = (reg.max(axis=1) > 0.5).astype(np.float32)
-        _gw = MIDS.center_weight(_gw > 0.5, ADJ, erode_rings=int(RC.get("glow_erode_rings", 0)),
-                                 power=float(RC.get("glow_center_power", 1.2)),
-                                 fade_rings=int(RC.get("glow_fade_rings", 4)))
-        _gw[shorts] = 0.0
-        _gw[EXCLUDE] = 0.0
-        _gw_mean, _gw_n = MIDS.write_glow_w(me, _gw)
-        log(f"glow_w fallback verts>0.5={_gw_n} mean={_gw_mean:.4f}")
-    except Exception as _e:
-        log(f"glow_w fallback failed: {_e}")
+    if str(RC.get("glow_shape") or "hull").lower() == "project":
+        import project_paint as PPAINT
+        _tex = RC.get("glow_proj_tex") or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "masks", "db_row_back_paint.png")
+        _tex = _tex if os.path.isabs(_tex) else os.path.join(os.getcwd(), _tex)
+        _ex = np.zeros(nv, dtype=bool)
+        _st = PPAINT.write_rest_proj_uvs_obj(body, exclude_mask=_ex)
+        log(f"glow rest-proj UVs (no MID) {_st}")
+        _img = bpy.data.images.load(_tex, check_existing=True)
+        _img.name = "glow_proj"
+        try:
+            _img.colorspace_settings.name = "sRGB"
+        except Exception:
+            pass
+        _gw, _grgb, _gst = PPAINT.sample_uv_texture(me, _img, shorts, EXCLUDE, uv_name="proj")
+        _gw_mean, _gw_n = MIDS.write_glow_attrs(me, _gw, _grgb)
+        log(f"glow proj tex={_tex} verts>0.5={_gw_n} { _gst }")
+    else:
+        try:
+            _gw = (reg.max(axis=1) > 0.5).astype(np.float32)
+            _gw = MIDS.center_weight(_gw > 0.5, ADJ, erode_rings=int(RC.get("glow_erode_rings", 0)),
+                                     power=float(RC.get("glow_center_power", 1.2)),
+                                     fade_rings=int(RC.get("glow_fade_rings", 4)))
+            _gw[shorts] = 0.0
+            _gw[EXCLUDE] = 0.0
+            _gw_mean, _gw_n = MIDS.write_glow_w(me, _gw)
+            log(f"glow_w fallback verts>0.5={_gw_n} mean={_gw_mean:.4f}")
+        except Exception as _e:
+            log(f"glow_w fallback failed: {_e}")
 # palm axis (v5): the across-palm direction (index knuckle -> little finger) in the HAND bone's local frame = the
 # middle principal axis of the rest hand-mesh vertices (largest = fingers, smallest = palm normal). On this GLB the
 # bone X/Z axes sit ~45 deg off the palm, so the legacy handle (shoulder line projected off the hand axis) was tilted.
