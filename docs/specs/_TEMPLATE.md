@@ -45,6 +45,15 @@ Optional `proof` camera (usually pure side) for a silhouette check, not the hero
   min: 0                          # optional
   max: 10                         # optional
   equals: true                    # optional, for booleans
+  label: 등이 바닥에 수평이 아님   # optional; owner-facing Telegram text on failure
+  autofix: spec_disable_ref_fit   # optional; pipeline rule name if this gate can self-heal
+  blocking: false                 # optional; scored but ignored by spec_pass (e.g. overlay vs authored pose)
 ```
+
+Also recognized on the spec (applied generically by `apply_spec`):
+
+- `pose.ref_fit`: default false — authored world targets win over an overlay photo.
+- `render.frames: keyframes` — beauty stills for the listed keyframes only (not the full clip).
+- `notify.title` / `notify.task` — short owner-facing Telegram wording.
 
 Missing metrics are reported as FAIL with value `missing` so a new gate cannot silently skip.

@@ -118,8 +118,10 @@ def load_exercise(slug, root=None):
     if os.path.isfile(spec_p):
         cfg["_paths"]["spec"] = spec_p
         try:
-            from spec_load import load_exercise_spec
+            from spec_load import load_exercise_spec, apply_spec
             cfg["spec"] = load_exercise_spec(slug, root)
+            if cfg["spec"]:
+                cfg = apply_spec(cfg)
         except Exception:
-            cfg["spec"] = None
+            cfg["spec"] = cfg.get("spec")
     return cfg

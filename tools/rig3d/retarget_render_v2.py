@@ -21,6 +21,7 @@ ap = argparse.ArgumentParser(); ap.add_argument("--npz", required=True); ap.add_
 ap.add_argument("--frames", default="all"); ap.add_argument("--checks-only", action="store_true"); ap.add_argument("--no-mask", action="store_true")
 ap.add_argument("--mask-only", action="store_true"); ap.add_argument("--res", default=None)
 ap.add_argument("--skip-existing", action="store_true", help="skip frames whose f_/m_ png already exists (crash recovery)")
+ap.add_argument("--camera-sheet", default=None, help="render an 8-camera contact sheet of the peak pose and exit")
 a = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:])
 C = json.load(open(a.cfg)); MO, RC = C["motion"], C["render"]
 def apply_form_offsets(mo):
@@ -171,22 +172,29 @@ if LEGS == "bench_row":
     _tor = ((Wr @ bl["LeftArm"].head_local + Wr @ bl["RightArm"].head_local) / 2 - Wr @ bl["Hips"].head_local).length
     _shw = 0.5 * (Wr @ bl["LeftArm"].head_local - Wr @ bl["RightArm"].head_local).length
     _hpw = 0.5 * (Wr @ bl["LeftUpLeg"].head_local - Wr @ bl["RightUpLeg"].head_local).length
+    _sp = (C.get("spec") or {}).get("pose") or MO.get("spec_pose") or {}
     B, BENCH_SPEC = BRP.build_landmarks(_u, {
         "thigh": _Lt, "shin": _Ls, "upper_arm": _La, "forearm": _Lf,
         "torso": float(_tor), "shoulder_half": float(_shw), "hip_half": float(_hpw),
         "pad_z": float(MO.get("bench_pad_z_m", 0.43)),
         "hand_ahead_m": float(MO.get("support_hand_ahead_m", 0.55)),
+        "spec_pose": _sp,
     }, side=side)
     NF = int(B.shape[0]); AUTH_U = _u
     AUTH_META = {"u": _u, "fps": _fps, "dur_s": _dur, "n": NF, "form": _form,
                  "torso_start_deg": 90.0, "torso_peak_deg": 90.0, "world_targets": True}
     np.save(a.out + "/authored_landmarks_prior.npy", B)
+    _want_fit = bool(MO.get("ref_fit", False))
+    if isinstance(_sp, dict) and "ref_fit" in _sp:
+        _want_fit = bool(_sp["ref_fit"])
     try:
         import ref_match as RM
         _here = os.path.dirname(os.path.abspath(__file__))
         _repo = os.path.dirname(os.path.dirname(_here))
         _ref = os.path.join(_repo, "_scratch", "refs", "db_row")
-        if os.path.isfile(os.path.join(_ref, "lm2d_peak.npy")):
+        if not _want_fit:
+            log("ref-fit skipped (authored world targets win unless pose.ref_fit is true)")
+        elif os.path.isfile(os.path.join(_ref, "lm2d_peak.npy")):
             _res = tuple(RC.get("res") or [540, 960])
             _cam = RM.camera_from_cfg(RC.get("camera_fit") or RC.get("camera") or {})
             _Lfit = {"thigh": float(_Lt), "shin": float(_Ls), "upper_arm": float(_La),
@@ -1295,18 +1303,17 @@ pr = np.array([world_to_camera_view(sc, CAM, mu.Vector(p_.tolist()))[:2] for p_ 
 framing = {"x_min": round(float(pr[:, 0].min()), 3), "x_max": round(float(pr[:, 0].max()), 3), "y_top": round(float(1 - pr[:, 1].max()), 3),
            "y_feet": round(float(1 - pr[:, 1].min()), 3), "dist_m": round(Dd, 2), "lens": camd.lens}
 log(f"camera {framing}")
-if str(CAMC.get("mode") or "").lower() == "fixed":
-    # Locked per-exercise world preset (no auto-frame, no binary-search).
-    look_v = mu.Vector([float(x) for x in (CAMC.get("look") or [0.18, 0.18, 0.78])])
-    dist = float(CAMC.get("dist_m", 2.65))
-    yaw = math.radians(float(CAMC.get("yaw_back_deg", 8)))
-    el = math.radians(float(CAMC.get("elev_deg", 8)))
+def apply_fixed_cam(cfg_cam):
+    look_v = mu.Vector([float(x) for x in (cfg_cam.get("look") or [0.18, 0.18, 0.78])])
+    dist = float(cfg_cam.get("dist_m", 2.65))
+    yaw = math.radians(float(cfg_cam.get("yaw_back_deg", 8)))
+    el = math.radians(float(cfg_cam.get("elev_deg", 8)))
     dirv = mu.Vector((math.cos(yaw) * math.cos(el),
                       -math.sin(yaw) * math.cos(el),
                       math.sin(el))).normalized()
     CAM.location = look_v + dirv * dist
     aim = look_v - CAM.location
-    up_mode = str(CAMC.get("up") or "world").lower()
+    up_mode = str(cfg_cam.get("up") or "world").lower()
     if up_mode in ("head", "head_up", "spine"):
         # Roll so image-up points toward world +Y (the head). Default look-at
         # keeps world +Z as up, which lays a face-down rower sideways in 9:16.
@@ -1322,25 +1329,31 @@ if str(CAMC.get("mode") or "").lower() == "fixed":
         CAM.matrix_world = mu.Matrix.Translation(CAM.location) @ R.to_4x4()
     else:
         CAM.rotation_euler = aim.to_track_quat("-Z", "Y").to_euler()
-    camd.lens = float(CAMC.get("lens_mm", 50))
-    camd.shift_x = float(CAMC.get("shift_x", 0.0))
-    camd.shift_y = float(CAMC.get("shift_y", 0.02))
+    camd.lens = float(cfg_cam.get("lens_mm", 50))
+    camd.shift_x = float(cfg_cam.get("shift_x", 0.0))
+    camd.shift_y = float(cfg_cam.get("shift_y", 0.02))
     bpy.context.view_layer.update()
-    pr = np.array([world_to_camera_view(sc, CAM, mu.Vector(p_.tolist()))[:2] for p_ in P[::5]])
-    framing.update({"mode": "fixed",
-                    "yaw_back_deg": float(CAMC.get("yaw_back_deg", 8)),
-                    "elev_deg": float(CAMC.get("elev_deg", 8)),
-                    "dist_m": round(dist, 2),
-                    "look": [round(float(x), 3) for x in look_v],
-                    "shift_x": camd.shift_x, "shift_y": camd.shift_y,
-                    "x_min": round(float(pr[:, 0].min()), 3), "x_max": round(float(pr[:, 0].max()), 3),
-                    "y_top": round(float(1 - pr[:, 1].max()), 3),
-                    "y_feet": round(float(1 - pr[:, 1].min()), 3)})
+    info = {"mode": "fixed",
+            "yaw_back_deg": float(cfg_cam.get("yaw_back_deg", 8)),
+            "elev_deg": float(cfg_cam.get("elev_deg", 8)),
+            "dist_m": round(dist, 2),
+            "look": [round(float(x), 3) for x in look_v],
+            "shift_x": camd.shift_x, "shift_y": camd.shift_y, "up": up_mode}
+    if len(P):
+        pr_ = np.array([world_to_camera_view(sc, CAM, mu.Vector(p_.tolist()))[:2] for p_ in P[::5]])
+        info.update({"x_min": round(float(pr_[:, 0].min()), 3), "x_max": round(float(pr_[:, 0].max()), 3),
+                     "y_top": round(float(1 - pr_[:, 1].max()), 3),
+                     "y_feet": round(float(1 - pr_[:, 1].min()), 3)})
+    return info
+
+if str(CAMC.get("mode") or "").lower() == "fixed":
+    # Locked per-exercise world preset (no auto-frame, no binary-search).
+    framing.update(apply_fixed_cam(CAMC))
     try:
         json.dump(framing, open(a.out + "/camera_fixed.json", "w"), indent=2)
     except Exception:
         pass
-    log(f"camera FIXED yaw={framing['yaw_back_deg']} elev={framing['elev_deg']} dist={dist:.2f} look={framing['look']} {framing}")
+    log(f"camera FIXED yaw={framing['yaw_back_deg']} elev={framing['elev_deg']} dist={framing['dist_m']:.2f} look={framing['look']} {framing}")
 elif LEGS == "bench_row":
     # Back 3/4 from the working side and slightly above, from the HEAD end
     # so the glowing back fills the upper middle of the 9:16 frame.
@@ -1687,6 +1700,9 @@ if LEGS == "bench_row" and BENCH_SPEC is not None:
             "lkn": _bp("LeftLeg"), "lwr": _bp("LeftHand"), "rank": _bp("RightFoot"),
             "rsh": _bp("RightArm"), "rwr": _bp("RightHand"), "rhip": _bp("RightUpLeg"),
             "rel": _bp("RightForeArm"),
+            "lsh": _bp("LeftArm"), "lel": _bp("LeftForeArm"), "lank": _bp("LeftFoot"),
+            "rkn": _bp("RightLeg"),
+            "rtoe": _bp("RightToeBase") if "RightToeBase" in pb else _bp("RightFoot"),
             "hip": _bp("Hips"), "sh": 0.5 * (_bp("LeftArm") + _bp("RightArm")),
             "head": _bp("Head") if "Head" in pb else _bp("head_end"),
         }
@@ -2064,7 +2080,14 @@ if RC.get("floor", True):
     floor.data.materials.clear(); floor.data.materials.append(fm)
     log(f"cyclorama bowl r_flat={R_flat} r_max={R_max} h={H_wall} z={flz:.3f} (opaque, all views)")
 sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(AUTH_META["fps"]) if AUTH_META else int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
-frames = list(range(1, NF + 1)) if a.frames == "all" else [int(v) for v in a.frames.split(",")]
+if a.frames == "all":
+    frames = list(range(1, NF + 1))
+elif str(a.frames) in ("keyframes", "key", "spec"):
+    _peak = int(np.argmax(AUTH_U)) + 1 if AUTH_U is not None else max(1, NF // 3)
+    frames = sorted({1, _peak})
+    log(f"frames=keyframes -> {frames}")
+else:
+    frames = [int(v) for v in a.frames.split(",")]
 def flex_at(f):
     els = [c["elbow_deg"] for c in chk]
     emin, emax = min(els), max(els)
@@ -2099,6 +2122,119 @@ def update_regions(f):
     GSH.set_flex(flex_nodes, fl)
     return fl, info
 
+
+def _place_sheet_cam(yaw_deg, elev_deg, look, dist, lens=50.0, shift_x=0.0, shift_y=-0.04):
+    """Working-side camera: yaw 0 = pure +X side; +yaw rotates toward the feet (behind the side).
+    Default Z-up roll so a horizontal bench stays horizontal-ish — no head-up roll."""
+    look_v = mu.Vector([float(x) for x in look])
+    yaw, el = math.radians(float(yaw_deg)), math.radians(float(elev_deg))
+    dirv = mu.Vector((math.cos(yaw) * math.cos(el),
+                      -math.sin(yaw) * math.cos(el),
+                      math.sin(el))).normalized()
+    CAM.location = look_v + dirv * float(dist)
+    CAM.rotation_euler = (look_v - CAM.location).to_track_quat("-Z", "Y").to_euler()
+    camd.lens = float(lens)
+    camd.shift_x = float(shift_x)
+    camd.shift_y = float(shift_y)
+    bpy.context.view_layer.update()
+
+
+def render_camera_contact_sheet(out_path):
+    """Cheap 8-view sheet of the peak pose. Does not overwrite beauty frames."""
+    cands = [
+        {"yaw": 35, "elev": 20, "tag": "3/4 back"},
+        {"yaw": 40, "elev": 30, "tag": "3/4 back"},
+        {"yaw": 48, "elev": 40, "tag": "3/4 back"},
+        {"yaw":  0, "elev": 15, "tag": "pure side"},
+        {"yaw": 70, "elev": 35, "tag": "hip-end 3/4"},
+        {"yaw": 50, "elev": 28, "tag": "demic-ish A"},
+        {"yaw": 33, "elev": 36, "tag": "demic-ish B"},
+        {"yaw": 58, "elev": 24, "tag": "wide 3/4"},
+    ]
+    look = [0.18, 0.22, 0.74]
+    dist = 2.50
+    peak_f = int(np.argmax(AUTH_U)) + 1 if AUTH_U is not None else (frames[0] if frames else 1)
+    update_regions(peak_f)
+    sc.frame_set(peak_f)
+    bpy.context.view_layer.update()
+    try:
+        sc.render.use_compositing = False
+    except Exception:
+        pass
+    eng = None
+    for name in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
+        try:
+            sc.render.engine = name
+            eng = name
+            break
+        except Exception:
+            continue
+    if eng is None:
+        sc.render.engine = "CYCLES"
+        eng = "CYCLES"
+        sc.cycles.samples = 8
+        sc.cycles.use_denoising = False
+    else:
+        try:
+            sc.eevee.taa_render_samples = 8
+        except Exception:
+            pass
+        try:
+            sc.eevee.use_raytracing = True
+        except Exception:
+            pass
+    log(f"camera sheet engine={eng} peak_f={peak_f}")
+    tw, th = 270, 480
+    sc.render.resolution_x, sc.render.resolution_y = tw, th
+    sc.render.resolution_percentage = 100
+    tile_dir = os.path.join(a.out, "_cam_sheet")
+    os.makedirs(tile_dir, exist_ok=True)
+    tiles = []
+    for i, c in enumerate(cands):
+        _place_sheet_cam(c["yaw"], c["elev"], look, dist)
+        path = os.path.join(tile_dir, f"c{i:02d}_yaw{c['yaw']}_el{c['elev']}.png")
+        sc.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        tiles.append((path, c))
+        log(f"sheet tile {i+1}/8 yaw={c['yaw']} elev={c['elev']} -> {path}")
+    # composite with a caption bar under each tile
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception as e:
+        log(f"PIL missing, tiles only: {e}")
+        return tile_dir
+    label_h, title_h, pad = 44, 40, 8
+    cols, rows = 4, 2
+    W = pad + cols * (tw + pad)
+    H = title_h + pad + rows * (th + label_h + pad)
+    sheet = Image.new("RGB", (W, H), (18, 18, 20))
+    draw = ImageDraw.Draw(sheet)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        font_b = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
+    except Exception:
+        font = font_b = ImageFont.load_default()
+    draw.text((pad, 10),
+              "peak pose camera options   |   yaw 0 = working-side  +yaw = behind the side (toward feet)",
+              font=font_b, fill=(220, 220, 224))
+    for i, (path, c) in enumerate(tiles):
+        r, col = divmod(i, cols)
+        x = pad + col * (tw + pad)
+        y = title_h + pad + r * (th + label_h + pad)
+        im = Image.open(path).convert("RGB")
+        if im.size != (tw, th):
+            im = im.resize((tw, th), Image.Resampling.LANCZOS)
+        sheet.paste(im, (x, y))
+        cap = f"yaw {c['yaw']}°   elev {c['elev']}°"
+        sub = c["tag"]
+        draw.rectangle((x, y + th, x + tw, y + th + label_h), fill=(24, 24, 26))
+        draw.text((x + 8, y + th + 4), cap, font=font_b, fill=(240, 240, 242))
+        draw.text((x + 8, y + th + 24), sub, font=font, fill=(170, 170, 174))
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    sheet.save(out_path)
+    log(f"camera sheet -> {out_path} ({sheet.size[0]}x{sheet.size[1]})")
+    return out_path
+
 def render_set(prefix):
     skipped = 0
     for f in frames:
@@ -2122,7 +2258,7 @@ if not a.mask_only:
         pass
     if look_inscene:
         log(f"view_transform={sc.view_settings.view_transform} (colors as measured)")
-        if bool(RC.get("glow_bloom", True)):
+        if bool(RC.get("glow_bloom", True)) and not a.camera_sheet:
             try:
                 GSH.setup_compositor(sc, float(RC.get("blender_bloom", 0.22)))
                 log(f"inscene bloom={float(RC.get('blender_bloom', 0.22))}")
@@ -2132,7 +2268,38 @@ if not a.mask_only:
                     sc.render.use_compositing = False
                 except Exception:
                     pass
+    if a.camera_sheet:
+        t = time.time()
+        render_camera_contact_sheet(a.camera_sheet)
+        tim["camera_sheet_s"] = round(time.time() - t, 1)
+        log(f"camera sheet {tim['camera_sheet_s']} s")
+        json.dump({**tim, "frames": 0, "res": [270, 480], "camera_sheet": a.camera_sheet},
+                  open(a.out + "/render_time.json", "w"))
+        print("CAMERA_SHEET_DONE", a.camera_sheet)
+        sys.exit(0)
     t = time.time(); render_set("f"); tim["beauty_s"] = round(time.time() - t, 1); log(f"beauty {tim['beauty_s']} s")
+    _proof = RC.get("camera_proof")
+    if _proof:
+        try:
+            _old_loc, _old_rot = CAM.location.copy(), CAM.rotation_euler.copy()
+            _old_sx, _old_sy, _old_lens = camd.shift_x, camd.shift_y, camd.lens
+            _pinfo = apply_fixed_cam(_proof)
+            _pf = int(np.argmax(AUTH_U)) + 1 if AUTH_U is not None else (frames[-1] if frames else 1)
+            sc.frame_set(_pf); bpy.context.view_layer.update()
+            try:
+                update_regions(_pf)
+            except Exception:
+                pass
+            sc.render.filepath = a.out + "/proof_peak.png"
+            bpy.ops.render.render(write_still=True)
+            json.dump(_pinfo, open(a.out + "/camera_proof.json", "w"), indent=2)
+            CAM.location, CAM.rotation_euler = _old_loc, _old_rot
+            camd.shift_x, camd.shift_y, camd.lens = _old_sx, _old_sy, _old_lens
+            apply_fixed_cam(CAMC) if str(CAMC.get("mode") or "").lower() == "fixed" else None
+            log(f"proof peak f{_pf} yaw={_pinfo.get('yaw_back_deg')} elev={_pinfo.get('elev_deg')}")
+            tim["proof_s"] = round(time.time() - t, 1)
+        except Exception as _pe:
+            log(f"proof camera failed: {_pe}")
     if look_inscene and LEGS == "bench_row" and garm is not None:
         try:
             _pf = int(np.argmax(AUTH_U)) + 1 if AUTH_U is not None else frames[0]

@@ -30,8 +30,8 @@ KST = dt.timezone(dt.timedelta(hours=9))
 AIQ = "/home/box/routinizer/ai_queue/fitness_studio.jsonl"
 FITNESS_STUDIO_AGENT = "7c203a21-2233-41e0-92f1-189a01945890"
 STAGES = ["config", "fetch", "pose", "render", "grade", "reel", "qc", "sheet", "deliver"]
-CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py", "tools/rig3d/hand_grip.py", "tools/rig3d/muscle_regions.py", "tools/rig3d/glow_shader.py", "tools/rig3d/ecorche_bind.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
-        "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py", "tools/rig3d/posture_qc.py", "tools/rig3d/anatomy_qc.py", "tools/rig3d/hand_grip.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
+CODE = {"pose": ["tools/rig3d/clip_pose.py"], "render": ["tools/rig3d/retarget_render_v2.py", "tools/rig3d/hand_grip.py", "tools/rig3d/muscle_regions.py", "tools/rig3d/glow_shader.py", "tools/rig3d/ecorche_bind.py", "tools/rig3d/bench_row_pose.py", "tools/rig3d/spec_load.py"], "grade": ["tools/rig3d/grade3d.py", "tools/rig3d/sharp.py", "gymform/muscle.py", "gymform/layout.py"],
+        "reel": ["gymform/caption.py", "gymform/tts.py"], "qc": ["tools/rig3d/qc3d.py", "tools/rig3d/sharp.py", "tools/rig3d/posture_qc.py", "tools/rig3d/anatomy_qc.py", "tools/rig3d/hand_grip.py", "tools/rig3d/spec_load.py"], "sheet": ["tools/rig3d/sheet.py"], "deliver": ["tools/rig3d/deliver.py"]}
 PEAK = {"rss_mb": 0}
 
 def log(m): print(f"[{dt.datetime.now(KST):%H:%M:%S}] {m}", flush=True)
@@ -141,8 +141,10 @@ class Run:
     # 4/5 ----------------------------------------------------------------------------------------------------------------
     def s_render(self, rep):
         gate(self.args, "render"); d = self.p("render"); os.makedirs(d, exist_ok=True)
+        ensure_authored_sidecars()
         intent = hsh(self.cfg.get("motion"), self.cfg.get("render"), self.cfg.get("asset"), rep, getattr(self.args, "short", 0),
-                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"), fsha("tools/rig3d/muscle_regions.py"), fsha("tools/rig3d/glow_shader.py"), fsha("tools/rig3d/muscle_ids.py"), fsha("tools/rig3d/muscle_activation.py"), fsha("tools/rig3d/ecorche_bind.py"))
+                     self.cfg.get("spec"), fsha(f"exercises/{self.slug}.spec.yaml"),
+                     fsha("tools/rig3d/retarget_render_v2.py"), fsha("tools/rig3d/hand_grip.py"), fsha("tools/rig3d/muscle_regions.py"), fsha("tools/rig3d/glow_shader.py"), fsha("tools/rig3d/muscle_ids.py"), fsha("tools/rig3d/muscle_activation.py"), fsha("tools/rig3d/ecorche_bind.py"), fsha("tools/rig3d/bench_row_pose.py"), fsha("tools/rig3d/spec_load.py"))
         marker = os.path.join(d, "render_intent.txt")
         skip_existing = os.path.exists(marker) and open(marker).read().strip() == intent
         if not skip_existing:
@@ -157,7 +159,12 @@ class Run:
                 rc["asset"]["ecorche_glb"] = os.path.join(ROOT, _ep)
         rc["skip_existing_frames"] = skip_existing; rc["render"] = dict(rc.get("render") or {}); rc["render"]["skip_existing_frames"] = skip_existing
         jdump(rc, os.path.join(d, "cfg.json"))
-        frames = "all" if not self.args.short else ",".join(str(i) for i in range(1, self.args.short + 1))
+        if self.args.short:
+            frames = ",".join(str(i) for i in range(1, self.args.short + 1))
+        elif str((self.cfg.get("render") or {}).get("frames") or "") == "keyframes":
+            frames = "keyframes"
+        else:
+            frames = "all"
         t = time.time()
         peak = run_child([BPY, os.path.join(HERE, "retarget_render_v2.py"), "--npz", self.p("pose", "pose.npz"), "--cfg", os.path.join(d, "cfg.json"), "--out", d, "--frames", frames], logf=os.path.join(d, "log.txt"))
         rt = json.load(open(os.path.join(d, "render_time.json"))); rt.update({"wall_s": round(time.time() - t, 1), "peak_rss_mb": peak})
@@ -222,6 +229,7 @@ class Run:
     def rig_precheck(self, rep):
         """retarget --checks-only into render_pre/ + qc3d.rig_checks (no render, no grade)."""
         d = self.p("render_pre"); os.makedirs(d, exist_ok=True)
+        ensure_authored_sidecars()
         rc = dict(self.cfg); rc["_rep"] = rep; rc["asset"] = dict(rc["asset"]); rc["asset"]["glb"] = os.path.join(ROOT, rc["asset"]["glb"])
         rc["asset"]["hdri"] = dict(rc["asset"]["hdri"]); rc["asset"]["hdri"]["file"] = os.path.join(ROOT, rc["asset"]["hdri"]["file"]); jdump(rc, os.path.join(d, "cfg.json"))
         run_child([BPY, os.path.join(HERE, "retarget_render_v2.py"), "--npz", self.p("pose", "pose.npz"), "--cfg", os.path.join(d, "cfg.json"), "--out", d, "--checks-only"], logf=os.path.join(d, "log.txt"))
@@ -265,6 +273,8 @@ RULES = {   # qc fix name -> (config path, function old_value -> new value). v6:
     "callout_route": ("grade.callout_clear_min_px", lambda v: float(v or 180) + 40),
     "glow_follow_mesh": ("render.glow_peak_dilate", lambda v: int(v or 4) + 2),
     "leg_rim": ("render.leg_key_energy", lambda v: float(v or 190) + 40),
+    "spec_disable_ref_fit": ("motion.ref_fit", lambda v: False),
+    "spec_camera_pullback": ("render.camera.dist_m", lambda v: float(v or 2.45) + 0.15),
 }
 
 def getp(c, path):
@@ -303,11 +313,119 @@ def resolve_ai(slug, run_id, qc):
         tmp = AIQ + ".tmp"; open(tmp, "w", encoding="utf-8").write("\n".join(lines) + "\n"); os.replace(tmp, AIQ)
     return done
 
+def ensure_authored_sidecars():
+    """Write modules/authored/*.json so Blender's bpyenv (no PyYAML) can load presets."""
+    ad = os.path.join(ROOT, "modules", "authored")
+    if not os.path.isdir(ad):
+        return
+    for fn in os.listdir(ad):
+        if not fn.endswith(".yaml"):
+            continue
+        yml = os.path.join(ad, fn)
+        js = yml[:-5] + ".json"
+        if os.path.exists(js) and os.path.getmtime(js) >= os.path.getmtime(yml):
+            continue
+        try:
+            data = yaml.safe_load(open(yml)) or {}
+            json.dump(data, open(js, "w"), indent=2)
+        except Exception as e:
+            log(f"authored sidecar {fn}: {e}")
+
+
+NOTIFY_TG = "/home/box/routinizer/notify_telegram.py"
+TG_BOT = "GymForm/Fitness Studio"
+
+
+def compose_keyframe_strip(render_dir, out_path):
+    """Side-by-side bottom / peak / proof stills when those frames exist."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    files = sorted(f for f in os.listdir(render_dir) if f.startswith("f_") and f.endswith(".png"))
+    if not files:
+        return None
+    peak_name = None
+    up = os.path.join(render_dir, "authored_u.npy")
+    if os.path.exists(up):
+        try:
+            peak_name = f"f_{int(np.argmax(np.load(up))) + 1:04d}.png"
+        except Exception:
+            peak_name = None
+    names = [files[0]]
+    if peak_name and peak_name != files[0]:
+        names.append(peak_name)
+    names.append("proof_peak.png")
+    imgs = []
+    for name in names:
+        fp = os.path.join(render_dir, name)
+        if os.path.exists(fp):
+            imgs.append(Image.open(fp).convert("RGB"))
+    if len(imgs) < 2:
+        return None
+    h = min(im.height for im in imgs)
+    rs = [im.resize((max(1, int(im.width * h / im.height)), h)) for im in imgs]
+    pad = 8
+    canvas = Image.new("RGB", (sum(im.width for im in rs) + pad * (len(rs) + 1), h + 2 * pad), (24, 24, 26))
+    x = pad
+    for im in rs:
+        canvas.paste(im, (x, pad))
+        x += im.width + pad
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    canvas.save(out_path)
+    return out_path
+
+
+def _public_video_link(url):
+    if not url or not isinstance(url, str):
+        return None
+    u = url.strip()
+    low = u.lower()
+    if any(h in low for h in ("youtube.com/watch", "youtube.com/shorts", "youtu.be/", "instagram.com/", "tiktok.com/", "x.com/", "twitter.com/")):
+        return u
+    return None
+
+
+def notify_telegram(args, cfg, qc, pipeline_pass, url=None):
+    """Owner-facing 1-3 line result. Skipped when --no-telegram is set."""
+    if getattr(args, "no_telegram", False):
+        log("telegram skipped (--no-telegram)")
+        return {"skipped": True}
+    spec = (cfg or {}).get("spec") or {}
+    note = spec.get("notify") or {}
+    title = str(note.get("title") or cfg.get("name") or "운동 렌더")
+    task = str(note.get("task") or "기준 검사")
+    if pipeline_pass:
+        status = "✅"
+        result = "자세와 화면 기준을 통과했어요."
+    else:
+        status = "❌"
+        failed = next((c for c in (qc or {}).get("checks") or []
+                       if not c.get("pass") and str(c.get("name") or "").startswith("spec_")), None)
+        if failed is None:
+            failed = next((c for c in (qc or {}).get("checks") or [] if not c.get("pass")), None)
+        label = (failed or {}).get("label") or (failed or {}).get("name") or "기준"
+        result = f"통과하지 못했어요. {label} 확인이 필요해요."
+    cmd = ["python3", NOTIFY_TG, "--bot", TG_BOT, "--immediate",
+           "--status", status, "--title", title, "--task", task, "--result", result]
+    link = _public_video_link(url)
+    if pipeline_pass and link:
+        cmd += ["--link", link]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        log(f"telegram {status} exit={r.returncode}")
+        return {"status": status, "exit": r.returncode}
+    except Exception as e:
+        log(f"telegram notify failed: {e}")
+        return {"error": str(e)}
+
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--exercise", default=None, help="exercise slug under exercises/"); ap.add_argument("--next", action="store_true", help="pick the next ready/ready_proxy slug from playlist.yaml")
     ap.add_argument("--force", choices=STAGES)
     ap.add_argument("--short", type=int, default=0); ap.add_argument("--deliver-dry-run", action="store_true"); ap.add_argument("--no-email", action="store_true", help="real repo commit + alert, but build the owner e-mail without sending it (one e-mail per run budget)"); ap.add_argument("--no-gate", action="store_true"); ap.add_argument("--mail-direct", action="store_true", help="send the owner e-mail now via the Gmail API instead of the batched digest")
     ap.add_argument("--gate-timeout", type=int, default=6 * 3600); ap.add_argument("--no-retry", action="store_true")
+    ap.add_argument("--no-telegram", action="store_true", help="skip the end-of-run Telegram notify (use while testing)")
     ap.add_argument("--max-iter", type=int, default=3, help="self-healing iterations (rig pre-check loop and full render loop, each)")
     args = ap.parse_args()
     if args.next:
@@ -336,30 +454,50 @@ def main():
         return did
     iters = {"rig_precheck": 0, "full": 0}
     for attempt in range(max_iter + 1):
-        cfg = run.stage("config", [open(run.cfg_path).read(), run.overrides], run.s_config, [])
+        _spec_p = os.path.join(ROOT, "exercises", f"{run.slug}.spec.yaml")
+        _spec_txt = open(_spec_p).read() if os.path.isfile(_spec_p) else ""
+        cfg = run.stage("config", [open(run.cfg_path).read(), _spec_txt, run.overrides], run.s_config, [])
         run.cfg = cfg
         run.stage("fetch", [cfg["source"], cfg["asset"]], run.s_fetch, [os.path.join(ROOT, cfg["source"]["file"]), os.path.join(ROOT, cfg["asset"]["hdri"]["file"])])
         pinfo = run.stage("pose", [cfg["source"]["file"], fsha(cfg["source"]["file"])], run.s_pose, [run.p("pose", "pose.npz")])
         # v6 cheap rig pre-check loop (retarget --checks-only, ~5 s): fix every rig/posture/anatomy/grip/prop failure
         # with its rule BEFORE paying for a full render
         if not args.no_retry:
+            has_spec = bool(((cfg.get("spec") or {}).get("qc") or {}).get("checks"))
             for pit in range(max_iter):
                 pq = run.rig_precheck(pinfo["rep"])
                 if pq["pass"]: break
+                if has_spec:
+                    pq = dict(pq)
+                    pq["auto_fixable"] = sorted({c["fix"] for c in pq["checks"]
+                                                 if not c["pass"] and c.get("fix")
+                                                 and str(c.get("name") or "").startswith("spec_")})
                 if not apply_rules(pq, pit + 1, "rig_precheck"): break
                 iters["rig_precheck"] += 1
-                cfg = run.stage("config", [open(run.cfg_path).read(), run.overrides], run.s_config, []); run.cfg = cfg
+                cfg = run.stage("config", [open(run.cfg_path).read(), _spec_txt, run.overrides], run.s_config, []); run.cfg = cfg
         rinfo = run.stage("render", [cfg["motion"], cfg["render"], cfg["asset"], pinfo["rep"], args.short], lambda: run.s_render(pinfo["rep"]), [run.p("render", "checks.json"), run.p("render", "render_time.json")])
         if args.short:
             log(f"short probe done: {json.dumps(rinfo)}"); return
         run.stage("grade", [cfg["grade"], cfg["name"]], run.s_grade, [run.p("grade", "look.json")])
-        reel = run.stage("reel", [cfg["tts"], cfg["caption"], cfg["grade"]], run.s_reel, [run.p("reel", f"{run.slug}_rig3d_v2.mp4")])
+        keyframes_only = str((cfg.get("render") or {}).get("frames") or "") == "keyframes"
+        if keyframes_only:
+            reel = {"mp4": None, "skipped": "keyframes"}
+        else:
+            reel = run.stage("reel", [cfg["tts"], cfg["caption"], cfg["grade"]], run.s_reel, [run.p("reel", f"{run.slug}_rig3d_v2.mp4")])
         qc = run.stage("qc", [cfg["qc"]], run.s_qc, [run.p("qc.json")])
-        if qc["pass"] or args.no_retry or attempt == max_iter: break
-        if not apply_rules(qc, attempt + 1, "full"): break
+        has_spec = bool(((cfg.get("spec") or {}).get("qc") or {}).get("checks"))
+        spec_ok = qc.get("spec_pass") if has_spec and qc.get("spec_pass") is not None else qc["pass"]
+        if spec_ok or args.no_retry or attempt == max_iter: break
+        qc_retry = dict(qc)
+        if has_spec:
+            qc_retry["auto_fixable"] = sorted({c["fix"] for c in qc["checks"]
+                                               if not c["pass"] and c.get("fix") and str(c.get("name") or "").startswith("spec_")})
+        if not apply_rules(qc_retry, attempt + 1, "full"): break
         iters["full"] += 1
+    pipeline_pass = bool(qc.get("spec_pass")) if qc.get("spec_pass") is not None else bool(qc.get("pass"))
     meta = {"run_id": run_id, "slug": run.slug, "code_commit": commit, "stages": run.times, "fixes_applied": fixes, "rep": pinfo["rep"],
-            "render": rinfo, "reel": reel["mp4"], "sheet": run.p("sheet.png"), "qc_pass": qc["pass"],
+            "render": rinfo, "reel": (reel or {}).get("mp4"), "sheet": run.p("sheet.png"), "qc_pass": qc["pass"],
+            "spec_pass": qc.get("spec_pass"), "pipeline_pass": pipeline_pass,
             "auto_iterations": iters, "max_iter": max_iter, "needs_human": [c["name"] for c in qc["checks"] if not c["pass"] and not c.get("fix")]}
     def production():   # real cost of producing THIS output = latest computed run of every stage (cached re-runs don't reset it)
         st = [json.load(open(os.path.join(run.stamps, f + ".json"))) for f in STAGES if os.path.exists(os.path.join(run.stamps, f + ".json"))]
@@ -368,23 +506,33 @@ def main():
     meta["production"] = production(); meta["wall_s_this_invocation"] = round(time.time() - T0, 1)
     meta["wall_s"] = meta["production"]["chain_s"]; meta["peak_rss_mb"] = meta["production"]["peak_rss_mb"]
     jdump(meta, run.p("run.json"))
-    sys.path.insert(0, HERE); import sheet
-    run.stage("sheet", [run_id, qc], lambda: sheet.build(run.work, cfg, run.p("sheet.png")), [run.p("sheet.png")])
-    if not qc["pass"]:
-        meta["ai_queue"] = enqueue_ai(run, qc, meta)
-    else:
+    res, url = [], None
+    if pipeline_pass:
+        sys.path.insert(0, HERE); import sheet
+        run.stage("sheet", [run_id, qc], lambda: sheet.build(run.work, cfg, run.p("sheet.png")), [run.p("sheet.png")])
+        strip = compose_keyframe_strip(run.p("render"), run.p("render", "spec_strip.png"))
+        if strip:
+            meta["strip"] = strip
         meta["ai_queue_resolved"] = resolve_ai(run.slug, run_id, qc)
-    meta["production"] = production(); meta["wall_s"] = meta["production"]["chain_s"]; meta["wall_s_this_invocation"] = round(time.time() - T0, 1); jdump(meta, run.p("run.json"))
-    import deliver
-    cfg_d = dict(cfg); cfg_d["_no_email"] = bool(args.no_email); cfg_d["_mail_direct"] = bool(args.mail_direct) and not args.no_email; jdump(cfg_d, run.p("cfg.json"))
-    res = [deliver.backend_repo(run.work, cfg_d, args.deliver_dry_run)]
-    url = res[0].get("url")
-    res.append(deliver.backend_ntfy(run.work, cfg_d, args.deliver_dry_run, url)); res.append(deliver.backend_smtp(run.work, cfg_d, args.deliver_dry_run or args.no_email, url))
-    meta["delivery"] = res; jdump(meta, run.p("run.json"))
-    if not qc["pass"]:
-        deliver.alert("rig3d_needs_ai", f"{run.slug} rig3d QC FAIL -> AI queue {meta.get('ai_queue')}", {"slug": run.slug, "run_id": run_id}, args.deliver_dry_run, severity="warn")
-    log(f"DONE qc={'PASS' if qc['pass'] else 'FAIL'} {qc['n_pass']}/{qc['n']} chain {meta['wall_s']} s (this invocation {meta['wall_s_this_invocation']} s) peak RSS {meta['peak_rss_mb']} MB sheet {meta['sheet']}")
-    print(json.dumps({"qc_pass": qc["pass"], "sheet": meta["sheet"], "delivery": res}, ensure_ascii=False))
+        meta["production"] = production(); meta["wall_s"] = meta["production"]["chain_s"]; meta["wall_s_this_invocation"] = round(time.time() - T0, 1); jdump(meta, run.p("run.json"))
+        import deliver
+        cfg_d = dict(cfg); cfg_d["_no_email"] = bool(args.no_email); cfg_d["_mail_direct"] = bool(args.mail_direct) and not args.no_email; jdump(cfg_d, run.p("cfg.json"))
+        res = [deliver.backend_repo(run.work, cfg_d, args.deliver_dry_run)]
+        url = res[0].get("url")
+        res.append(deliver.backend_ntfy(run.work, cfg_d, args.deliver_dry_run, url)); res.append(deliver.backend_smtp(run.work, cfg_d, args.deliver_dry_run or args.no_email, url))
+        meta["delivery"] = res; jdump(meta, run.p("run.json"))
+    else:
+        log("gates failed after retries: not publishing outputs")
+        meta["ai_queue"] = enqueue_ai(run, qc, meta)
+        meta["production"] = production(); meta["wall_s"] = meta["production"]["chain_s"]; meta["wall_s_this_invocation"] = round(time.time() - T0, 1); jdump(meta, run.p("run.json"))
+        try:
+            import deliver
+            deliver.alert("rig3d_needs_ai", f"{run.slug} rig3d QC FAIL -> AI queue {meta.get('ai_queue')}", {"slug": run.slug, "run_id": run_id}, args.deliver_dry_run, severity="warn")
+        except Exception as _ae:
+            log(f"alert skipped: {_ae}")
+    notify_telegram(args, cfg, qc, pipeline_pass, url)
+    log(f"DONE qc={'PASS' if qc['pass'] else 'FAIL'} spec={qc.get('spec_pass')} {qc['n_pass']}/{qc['n']} chain {meta['wall_s']} s (this invocation {meta['wall_s_this_invocation']} s) peak RSS {meta['peak_rss_mb']} MB sheet {meta['sheet']}")
+    print(json.dumps({"qc_pass": qc["pass"], "spec_pass": qc.get("spec_pass"), "pipeline_pass": pipeline_pass, "sheet": meta["sheet"], "delivery": res}, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()
