@@ -186,6 +186,7 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
     lkn = rec_pts["lkn"]; lwr = rec_pts["lwr"]; rank = rec_pts["rank"]
     rsh = rec_pts["rsh"]; rwr = rec_pts["rwr"]; rhip = rec_pts["rhip"]
     hip = rec_pts["hip"]; sh = rec_pts["sh"]; head = rec_pts.get("head", sh)
+    rel = rec_pts.get("rel")
     tv = sh - hip
     torso_from_vert = math.degrees(math.atan2(math.hypot(tv[0], tv[1]), tv[2]))
     torso_from_horiz = abs(90.0 - torso_from_vert)
@@ -193,11 +194,25 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
     head_dir = _n(head - sh)
     head_spine = math.degrees(math.acos(float(np.clip(np.dot(spine, head_dir), -1, 1))))
 
+    elbow_deg = None
+    if rel is not None:
+        ue = rsh - rel; ve = rwr - rel
+        nu, nv = float(np.linalg.norm(ue)), float(np.linalg.norm(ve))
+        if nu > 1e-6 and nv > 1e-6:
+            elbow_deg = math.degrees(math.acos(float(np.clip(np.dot(ue, ve) / (nu * nv), -1, 1))))
+    ua = (rel - rsh) if rel is not None else (rwr - rsh)
+    over_head = bool(np.dot(ua, spine) > 0.12 and ua[2] > 0.12)
+    tn = spine
+    wrel = rwr - hip
+    tt = float(np.clip(np.dot(wrel, tn), 0.0, float(np.linalg.norm(tv))))
+    near = hip + tn * tt
+    clear = float(np.linalg.norm(rwr - near))
+
     hand_on_pad = pad_contains(lwr, spec) and abs(lwr[2] - pad_z) < 0.06
     knee_on_pad = pad_contains(lkn, spec) and abs(lkn[2] - pad_z) < 0.08
     foot_on_floor = rank[2] < 0.16 and rank[0] > spec["origin_xy"][0] + spec["pad_half_xy"][0] - 0.02
     below = (rsh[2] - rwr[2]) > 0.22
-    near_hip = float(np.linalg.norm(rwr - rhip)) < 0.22
+    near_hip = float(np.linalg.norm(rwr - rhip)) < 0.28
 
     out = {
         "torso_from_horizontal_deg": round(torso_from_horiz, 2),
@@ -213,6 +228,9 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
         "working_hand_drop_m": round(float(rsh[2] - rwr[2]), 4),
         "working_hand_near_hip": bool(near_hip),
         "working_hand_hip_m": round(float(np.linalg.norm(rwr - rhip)), 4),
+        "working_elbow_deg": None if elbow_deg is None else round(float(elbow_deg), 1),
+        "shoulder_over_head": bool(over_head),
+        "arm_torso_clear_m": round(clear, 4),
         "u": round(float(u), 3),
     }
     if cam_ndc_db is not None:
@@ -231,6 +249,9 @@ def qc_from_bones(rec_pts, spec, u, cam_ndc_db=None, db_visible_frac=None, db_co
         "support_hand_on_pad": bool(hand_on_pad),
         "knee_on_pad": bool(knee_on_pad),
         "foot_on_floor": bool(foot_on_floor),
+        "elbow_rom": True if elbow_deg is None else bool(40.0 <= elbow_deg <= 170.0),
+        "shoulder_rom": bool(not over_head),
+        "no_arm_torso_penetration": bool(clear >= 0.12 and rwr[0] >= hip[0] - 0.02),
     }
     if float(u) < 0.15:
         gates["working_hand_below_shoulder"] = bool(below)

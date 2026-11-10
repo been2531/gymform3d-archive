@@ -8,6 +8,14 @@ source:
   url: https://ymove.app/api/free/d3fece95-c7e2-4794-ba8f-65a5b3e30a28
   file: _scratch/motion_src/ymove_sa_row.mp4     # gitignored: third-party clip never committed
   licence: "YMove free licence: commercial use incl. social media OK, no resale/redistribution of the videos; we use only the extracted pose"
+reference:
+  page: https://commons.wikimedia.org/wiki/File:DumbbellBentOverRow.JPG
+  image_url: https://upload.wikimedia.org/wikipedia/commons/6/67/DumbbellBentOverRow.JPG
+  license: CC BY-SA 3.0
+  license_url: https://creativecommons.org/licenses/by-sa/3.0/
+  author: GeorgeStepanek
+  credit: "GeorgeStepanek / Wikimedia Commons / CC BY-SA 3.0 (model: Emily)"
+  note: "Side-view diptych of a bench-supported one-arm DB row (left=hang, right=peak). Linked only; the image is not committed."
   min_bytes: 200000
 asset:
   glb: _scratch/assets_probe/human-muscles-rigged.glb   # Grab3D Human Muscles, CC0 1.0 (rig + garment donor)
@@ -112,13 +120,15 @@ render:
   base_color: [0.26, 0.27, 0.30]  # sampled demic row-ref clay (sRGB V~144 → lin ~0.27, cool tint)
   mask_spp: 4
   camera:
-    mode: side_tight          # camera on the working-arm side, turned toward the back (Day 4 back-3/4 feel)
-    yaw_back_deg: 44
-    elev_deg: 34
+    mode: fixed               # locked world preset matching the licensed side-view reference (no auto-frame / no search)
+    yaw_back_deg: 6           # 0 = pure +X working-side; +yaw rotates toward the feet (−Y)
+    elev_deg: 8
+    dist_m: 2.45
+    look: [0.18, 0.18, 0.66]
     lens_mm: 50
-    fill_w: 0.90              # figure width / frame width
-    feet_y: 0.92              # feet line as a fraction of frame height (title/pill stay above the head)
-    top_y: 0.27               # highest figure point: below the Day 4 title box (y 429-491 px = 0.256), v5 (v4 0.22 put the head under the title)
+    shift_x: 0.0
+    shift_y: -0.08
+    search: false
 grade:
   out_res: [1080, 1920]
   fps: 30
@@ -167,10 +177,15 @@ qc:
     knee_on_pad: true
     foot_on_floor: true
     working_hand_drop_min_m: 0.22   # bottom of the rep: hand below the shoulder
-    working_hand_hip_max_m: 0.22    # peak: hand near the hip
+    working_hand_hip_max_m: 0.28    # peak: hand near the hip (photo-matched; was 0.22)
     db_in_frame: true
     db_visible_frac_min: 0.35
     db_contrast_v_min: 12
+    sil_iou_min: 0.35         # vs letterboxed reference silhouette (different physique)
+    joint_mae_max: 0.08       # mean joint error / frame diagonal
+    elbow_rom_deg: [40, 170]
+    shoulder_over_head: false
+    arm_torso_clear_min_m: 0.12
   grip_max_m: 0.03            # dumbbell handle centre vs grip point on the hand bone
   grip_mesh_max_m: 0.06       # nearest hand-mesh vertex to the handle centre
   tear_ratio_max: 3.0         # max deformed/rest edge length
