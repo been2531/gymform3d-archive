@@ -168,10 +168,11 @@ if (MO.get("authored") or {}).get("enabled"):
     # authored landmarks already place the working elbow; don't let tuck/flare rebuild it
     MO["elbow_path"] = "source"
     MO["shrug_m"] = 0.0   # clavicle offset applied below from AUTH_U (not the reserved matrix shrug)
-    MO["grip_twist_forearm_share"] = 0.0  # no forearm roll; wrist stays in line with the vertical forearm
+    MO["grip_twist_forearm_share"] = 1.0  # radioulnar (forearm) sets palm facing; hand stays rest-relative so the fist shapekey + handle stay aligned (share=0 sheared the wrap ~100 deg at the wrist)
     _prof = AM.deep_merge(AUTH_SPEC.get("right") or {}, AUTH_SPEC.get(_form) or {} if _form != "right" else {})
-    if "scapula_retract" in _prof:
-        MO["scapula_retract"] = bool(_prof["scapula_retract"])
+    # Real scapula retract is applied in the authored clavicle block (medial translation +
+    # slight upward rotation). Skip the old 6° local-axis probe (score ~0, invisible).
+    MO["scapula_retract"] = False
     np.save(a.out + "/authored_u.npy", AUTH_U)
     json.dump({k: AUTH_META[k] for k in AUTH_META if k != "u"}, open(a.out + "/authored_meta.json", "w"), default=float)
     log(f"authored {_form} {NF} frames {AUTH_META['dur_s']:.2f}s fps {AUTH_META['fps']}")
@@ -499,33 +500,71 @@ if MO.get("scapula_retract", False) and (("LeftShoulder" if side == 11 else "Rig
         amt = 0.0 if amax - amin < 1e-3 else (amax - ang) / (amax - amin)
         sb.rotation_quaternion = mu.Quaternion(best_axis, math.radians(max_deg * amt)); sb.keyframe_insert("rotation_quaternion", frame=f + 1)
     log(f"scapula_retract {wh_} axis {best_axis} score {best_score:.3f} max {max_deg:.1f} deg")
-# Authored clavicle: small u-driven Shoulder translation along chest-up (depression on right, shrug on yank).
-# Apply from the rest location each frame — adding to sb.location accumulates as frame_set reads the previous key.
+# Authored clavicle / scapula: apply from rest each frame (adding to sb.location accumulates).
+# Retraction is a real medial translation toward the spine (15-25 mm) plus a slight upward
+# rotation at peak — visible from a 3/4 camera. Depression/shrug stay along chest-up.
 if AUTH_U is not None and AUTH_SPEC is not None:
     _form = AUTH_META["form"]
     _prof = __import__("authored_motion", fromlist=["x"]).deep_merge(
         AUTH_SPEC.get("right") or {}, AUTH_SPEC.get(_form) or {} if _form != "right" else {})
     shrug_m = float(_prof.get("shrug_m") or 0)
     depress_m = float(_prof.get("depress_m") or 0)
+    do_retract = bool(_prof.get("scapula_retract", False))
+    retract_m = float(_prof.get("scapula_retract_m") or 0.020) if do_retract else 0.0
+    retract_back = float(_prof.get("scapula_retract_back_m") or 0.006) if do_retract else 0.0
+    up_rot = float(_prof.get("scapula_up_rot_deg") or 8.0) if do_retract else 0.0
     whc = "Left" if side == 11 else "Right"
-    if (shrug_m or depress_m) and (whc + "Shoulder") in pb:
+    if (whc + "Shoulder") in pb and (shrug_m or depress_m or retract_m or retract_back or up_rot):
         sb = pb[whc + "Shoulder"]
         sc.frame_set(1); bpy.context.view_layer.update()
         base_loc = sb.location.copy()
+        base_q = sb.rotation_quaternion.copy()
+        sh0 = arm.matrix_world @ pb[whc + "Arm"].head
+        sp0 = arm.matrix_world @ pb["Spine01"].head
+        toward = sp0 - sh0; toward.z = 0.0
+        if toward.length < 1e-6: toward = mu.Vector((1.0, 0.0, 0.0))
+        toward.normalize()
+        tv = np.mean((B[:, 11] + B[:, 12]) / 2 - (B[:, 23] + B[:, 24]) / 2, axis=0)
+        fw = mu.Vector((float(tv[0]), float(tv[1]), 0.0))
+        if fw.length < 1e-6: fw = mu.Vector((0.0, -1.0, 0.0))
+        fw.normalize()
+        # pick the forward-axis rotation sign that RAISES Arm.head and prefers moving it toward the spine
+        rot_sign = 1.0
+        trans_m = retract_m
+        if up_rot:
+            z0 = float(sh0.z); dxy0 = float(math.hypot(sh0.x - sp0.x, sh0.y - sp0.y))
+            best, rot_sign = -1e9, 1.0
+            rot_medial = 0.0
+            for sgn in (1.0, -1.0):
+                sb.rotation_quaternion = mu.Quaternion(fw, math.radians(sgn * up_rot)) @ base_q
+                bpy.context.view_layer.update()
+                p1 = arm.matrix_world @ pb[whc + "Arm"].head
+                dz = float(p1.z) - z0
+                dxy1 = float(math.hypot(p1.x - sp0.x, p1.y - sp0.y))
+                med = dxy0 - dxy1
+                score = dz + 2.0 * med
+                if score > best: best, rot_sign, rot_medial = score, sgn, med
+            sb.rotation_quaternion = base_q; bpy.context.view_layer.update()
+            # keep net medial travel ≈ retract_m after the rotation's own XY swing
+            trans_m = retract_m - rot_medial
+        log(f"authored scapula rot_sign {rot_sign} trans {trans_m*1000:.1f}mm (target retract {retract_m*1000:.0f}mm)")
         for fi, uu in enumerate(AUTH_U):
             sc.frame_set(fi + 1); bpy.context.view_layer.update()
+            uu = float(uu)
             cu = (arm.matrix_world @ pb["neck"].head) - (arm.matrix_world @ pb["Spine01"].head)
-            if cu.length < 1e-6: continue
-            cu.normalize()
-            delta = cu * (shrug_m * float(uu) - depress_m * float(uu))
+            if cu.length < 1e-6: cu = mu.Vector((0.0, 0.0, 1.0))
+            else: cu.normalize()
+            delta = toward * (trans_m * uu) - fw * (retract_back * uu) + cu * (shrug_m * uu - depress_m * uu)
             if sb.parent:
                 parent_mw = arm.matrix_world @ sb.parent.matrix
                 delta_local = parent_mw.to_3x3().inverted() @ delta
             else:
                 delta_local = arm.matrix_world.to_3x3().inverted() @ delta
             sb.location = base_loc + delta_local
+            sb.rotation_quaternion = mu.Quaternion(fw, math.radians(rot_sign * up_rot * uu)) @ base_q
             sb.keyframe_insert("location", frame=fi + 1)
-        log(f"authored clavicle shrug {shrug_m} depress {depress_m} on {whc}Shoulder")
+            sb.keyframe_insert("rotation_quaternion", frame=fi + 1)
+        log(f"authored scapula retract {retract_m*1000:.0f}mm medial, back {retract_back*1000:.0f}mm, up-rot {up_rot:.1f}deg, depress {depress_m} shrug {shrug_m} on {whc}Shoulder")
     # Snap working-arm empties to the EVALUATED shoulder so DAMPED_TRACK preserves authored
     # angles (the rig shoulder is placed by the spine chain, not by landmark 11/12).
     ppw = whc[0].lower(); La_a, Lf_a = rl(whc + "Arm", whc + "ForeArm"), rl(whc + "ForeArm", whc + "Hand")
@@ -666,28 +705,42 @@ tvg = np.mean((B[:, 11] + B[:, 12]) / 2 - (B[:, 23] + B[:, 24]) / 2, axis=0); FW
 def palm_world(bn):
     R_ = (arm.matrix_world @ pb[bn].matrix).to_3x3().normalized(); return (R_ @ mu.Vector(PALM[bn].tolist())).normalized(), (R_ @ mu.Vector((0, 1, 0))).normalized()
 if GRIP_MODE == "palm_neutral":
-    # neutral grip: twist the working forearm (share) + hand about their own axes per frame so the across-palm axis
-    # lines up with the body's horizontal forward axis (palm toward the torso, handle front-to-back)
+    # Neutral one-arm-row grip from rig axes + the mesh palmar normal (not nearest-of-± handle).
+    # The old period-π "handle has no direction" branch flipped the palm 180° whenever the rest
+    # across-palm axis was closer to −forward than +forward: wrist looked inverted on the handle.
+    # Construction: palmar normal (HG, out of the palm) points MEDIAL (toward Spine01, perp to the
+    # forearm). That uniquely sets roll so the palm faces the torso, thumb/radial side points
+    # forward, fingers wrap from the outside, knuckles face away from the body. Wrist stays in
+    # line with the forearm (WRIST_NEUTRAL already skips Hand DAMPED_TRACK).
     fa_b = hand.replace("Hand", "ForeArm"); share = float(MO.get("grip_twist_forearm_share", 0.6)); TH = np.zeros(NF)
+    n_loc = mu.Vector(list(HG["handle_local"]["n"]))
     def _resid(f):
-        sc.frame_set(f); pa, u_ = palm_world(hand); want = FWH - FWH.dot(u_) * u_
-        if want.length < 1e-3: return 0.0
-        want.normalize()
-        if pa.dot(want) < 0: want = -want                                         # the handle has no direction: nearest of +-
-        return math.atan2(pa.cross(want).dot(u_), pa.dot(want))
-    # a twist about the bone's own axis survives DAMPED_TRACK, so the palm turns about the hand axis by ~theta; pass 1
-    # with no twist keys (frame_set would otherwise re-apply the keys), then 2 residual passes on the keyed rig
+        sc.frame_set(f)
+        R_ = (arm.matrix_world @ pb[hand].matrix).to_3x3().normalized()
+        u_ = (R_ @ mu.Vector((0, 1, 0))).normalized()
+        pn = (R_ @ n_loc).normalized()
+        Sp = arm.matrix_world @ pb["Spine01"].head
+        Hd = arm.matrix_world @ pb[hand].head
+        medial = Sp - Hd
+        medial = medial - medial.dot(u_) * u_
+        if medial.length < 1e-4:
+            other = "LeftArm" if hand.startswith("Right") else "RightArm"
+            medial = (arm.matrix_world @ pb[other].head) - (arm.matrix_world @ pb[hand.replace("Hand", "Arm")].head)
+            medial = medial - medial.dot(u_) * u_
+        if medial.length < 1e-4:
+            return 0.0
+        medial.normalize()
+        return math.atan2(pn.cross(medial).dot(u_), pn.dot(medial))
     for ps in range(3):
         for f in range(1, NF + 1): TH[f - 1] += _resid(f)
         if ps == 0:
-            TH = np.unwrap(2 * TH) / 2                                             # the handle has no direction: period pi, continuous
-            TH -= np.pi * np.round(np.median(TH) / np.pi)                          # branch nearest zero twist
-            TH = gsmooth(TH[:, None], 1.5)[:, 0]                                   # radians, smooth over the rep
+            TH = np.unwrap(TH)                                                     # palm normal has a direction: period 2π
+            TH = gsmooth(TH[:, None], 1.5)[:, 0]
         for f in range(1, NF + 1):
             pb[fa_b].rotation_quaternion = mu.Quaternion((0, 1, 0), share * TH[f - 1]); pb[hand].rotation_quaternion = mu.Quaternion((0, 1, 0), (1 - share) * TH[f - 1])
             pb[fa_b].keyframe_insert("rotation_quaternion", frame=f); pb[hand].keyframe_insert("rotation_quaternion", frame=f)
     TW = np.degrees(TH).tolist()
-    region_counts_twist = [round(min(TW), 1), round(max(TW), 1)]; log(f"neutral grip twist {region_counts_twist} deg (forearm share {share})")
+    region_counts_twist = [round(min(TW), 1), round(max(TW), 1)]; log(f"neutral grip twist {region_counts_twist} deg (forearm share {share}, palm->medial)")
 ev = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ev); ev = ev.reshape(-1, 2)
 rest_len = np.linalg.norm(co[ev[:, 0]] - co[ev[:, 1]], axis=1); ok_e = rest_len > 1e-4; MED_E = float(np.median(rest_len[ok_e]))
 region_counts = {"lats": int(lats.sum()), "rhomboids": int(rhomb.sum()), "mid_trap": int(mid_trap.sum()), "rear_delt": int(rinfo.get("rear_delt", 0)), "shorts": int(shorts.sum()), "hand_verts": int(len(hand_vi))}
@@ -878,7 +931,15 @@ Wm = arm.matrix_world
 tv_ = np.mean((B[:, 11] + B[:, 12]) / 2 - (B[:, 23] + B[:, 24]) / 2, axis=0); fw = mu.Vector((tv_[0], tv_[1], 0)).normalized()
 lv_ = np.mean((B[:, 23] - B[:, 24]) + (B[:, 11] - B[:, 12]), axis=0); lat = mu.Vector((lv_[0], lv_[1], 0)); lat = (lat - lat.dot(fw) * fw).normalized()
 side_dir = -lat if side == 12 else lat
-yaw, el = math.radians(CAMC.get("yaw_back_deg", 35)), math.radians(CAMC.get("elev_deg", 14))
+# yaw_back_deg is "how far from a pure working-side view toward the back":
+# 0 = true lateral (camera on the working side, perpendicular to the sagittal plane),
+# 90 = straight behind the figure. Production 3/4 is ~48. elev 0 = horizon level.
+_view = str(CAMC.get("view") or "").lower()
+if _view in ("lateral", "side", "side_profile", "true_side"):
+    yaw = el = 0.0
+    log("camera view=lateral: yaw_back 0 elev 0 (perp to sagittal, working side, horizon level)")
+else:
+    yaw, el = math.radians(CAMC.get("yaw_back_deg", 35)), math.radians(CAMC.get("elev_deg", 14))
 dh = (side_dir * math.cos(yaw) - fw * math.sin(yaw)).normalized(); dirv = (dh * math.cos(el) + mu.Vector((0, 0, 1)) * math.sin(el)).normalized()
 P = np.concatenate(frame_pts); ctr = mu.Vector(((P.min(0) + P.max(0)) / 2).tolist())
 rx, ry = map(int, a.res.split("x")) if a.res else map(int, RC["res"]); sc.render.resolution_x, sc.render.resolution_y = rx, ry
@@ -898,6 +959,8 @@ for _ in range(60):
     else: hi = mid
 Dd = hi
 _h = float(CAMC.get("height_m", 0.0)); _s = float(CAMC.get("shift_m", 0.0))
+if _view in ("lateral", "side", "side_profile", "true_side"):
+    _h = _s = 0.0
 CAM.location = ctr - fwd * Dd + side_dir * _s + mu.Vector((0.0, 0.0, _h))
 CAM.rotation_euler = (ctr - CAM.location).to_track_quat("-Z", "Y").to_euler()
 ny = py / (Dd + pz) * kf; nx = px / (Dd + pz) * kf * asp
@@ -1184,7 +1247,8 @@ np.savez_compressed(a.out + "/hand.npz", frames=np.array(HANDF), P=np.array(HAND
                     handle_r=float(GW.get("handle_r_m", 0.016)), wrap=bool(GW.get("enabled", False)), info=json.dumps(HG["info"]))
 np.savez_compressed(a.out + "/bones.npz", names=np.array(BN), rest=BREST, pose=BPOSE, neck_mode=NECK_MODE, legs=LEGS, dumbbell=DBM,
                     capsule_names=np.array(list(CAPR)), capsule_r=np.array(list(CAPR.values())),
-                    handle_axis_local=np.array(DB_AX), working_hand=hand, palm_left=PALM["LeftHand"], palm_right=PALM["RightHand"], grip_mode=GRIP_MODE)
+                    handle_axis_local=np.array(DB_AX), working_hand=hand, palm_left=PALM["LeftHand"], palm_right=PALM["RightHand"], grip_mode=GRIP_MODE,
+                    handle_n_local=np.array(HG["handle_local"]["n"]))
 log("checks done")
 if a.checks_only: sys.exit(0)
 
@@ -1231,13 +1295,33 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import glow_shad
 _flex_min = float(RC.get("glow_flex_min", 0.58))
 flex_nodes = GSH.switch_materials(body_mats, "post", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
 
-sc.render.engine = "CYCLES"; sc.cycles.device = "CPU"; sc.render.film_transparent = True
+sc.render.engine = "CYCLES"; sc.cycles.device = "CPU"; sc.render.film_transparent = False
 wd = bpy.data.worlds.new("w"); sc.world = wd; wd.use_nodes = True; bg = wd.node_tree.nodes["Background"]
 hdri = C["asset"]["hdri"]; envn = wd.node_tree.nodes.new("ShaderNodeTexEnvironment"); envn.image = bpy.data.images.load(hdri["file"])
 wd.node_tree.links.new(envn.outputs["Color"], bg.inputs["Color"])
 bg.inputs["Strength"].default_value = float(RC.get("hdri_strength", hdri.get("strength", 0.35)))
-if hasattr(wd, "cycles_visibility") and hasattr(wd.cycles_visibility, "camera"):
-    wd.cycles_visibility.camera = False                                          # HDRI lights the figure, never shows as a photographed studio
+# Camera rays see dark charcoal (never a black void / photographed HDRI). Lighting rays still use the HDRI.
+try:
+    nt_w = wd.node_tree
+    lp = nt_w.nodes.new("ShaderNodeLightPath")
+    bg_cam = nt_w.nodes.new("ShaderNodeBackground")
+    bg_cam.inputs["Color"].default_value = (0.022, 0.023, 0.025, 1)
+    bg_cam.inputs["Strength"].default_value = 1.0
+    mx = nt_w.nodes.new("ShaderNodeMixShader")
+    out_w = [n for n in nt_w.nodes if n.type == "OUTPUT_WORLD"][0]
+    nt_w.links.new(lp.outputs["Is Camera Ray"], mx.inputs["Fac"])
+    nt_w.links.new(bg.outputs["Background"], mx.inputs[1])
+    nt_w.links.new(bg_cam.outputs["Background"], mx.inputs[2])
+    for _l in list(out_w.inputs["Surface"].links):
+        nt_w.links.remove(_l)
+    nt_w.links.new(mx.outputs[0], out_w.inputs["Surface"])
+    if hasattr(wd, "cycles_visibility") and hasattr(wd.cycles_visibility, "camera"):
+        wd.cycles_visibility.camera = True
+    log("world: HDRI lights, camera rays charcoal")
+except Exception as e:
+    if hasattr(wd, "cycles_visibility") and hasattr(wd.cycles_visibility, "camera"):
+        wd.cycles_visibility.camera = False
+    log(f"world charcoal fallback: {e}")
 key_from = (CAM.location - ctr); key_from.z = 0; key_from.normalize()
 upv = mu.Vector((0.0, 0.0, 1.0)); sidev = key_from.cross(upv)
 sidev = (sidev if sidev.length > 1e-4 else mu.Vector((1.0, 0.0, 0.0))).normalized()
@@ -1262,63 +1346,59 @@ add_area_aim("leg_rim", leg_aim - key_from * 2.3 + upv * 0.70, RC.get("leg_rim_e
 floor = None
 if RC.get("floor", True):
     import bmesh
-    flz = float(RC.get("floor_z", 0.0))
-    flsz = float(RC.get("floor_size_m", 8.0))
-    bpy.ops.mesh.primitive_plane_add(size=flsz, location=(ctr.x, ctr.y, flz))
-    floor = bpy.context.object; floor.name = "studio_floor"
-    me = floor.data
-    bm = bmesh.new(); bm.from_mesh(me)
-    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=22)
+    flz = float(RC.get("floor_z") or 0.0)
+    try:
+        sc.frame_set(1); bpy.context.view_layer.update()
+        _ft = [(arm.matrix_world @ pb[n].head).z for n in ("LeftFoot", "RightFoot", "LeftToeBase", "RightToeBase") if n in pb]
+        if _ft and RC.get("floor_z") in (None, ""):
+            flz = float(min(_ft)) - 0.008
+    except Exception:
+        pass
+    # Enclosing cyclorama: rotationally symmetric bowl (flat floor + quadratic cove) so lateral,
+    # 3/4, and front cameras all see the same seamless charcoal interior — no camera-relative
+    # "far-half" ramp, no hard slab edges, no transparent fade (that ghosted the legs and left a
+    # black void at the top of the true-side view).
+    R_max = float(RC.get("cyc_radius_m", 12.0))
+    R_flat = float(RC.get("cyc_flat_radius_m", 2.4))
+    H_wall = float(RC.get("cyc_height_m", 10.0))
+    segs = int(RC.get("cyc_segments", 72))
+    rings = int(RC.get("cyc_rings", 28))
+    bm = bmesh.new()
+    v0 = bm.verts.new((0.0, 0.0, 0.0))
+    rings_v = []
+    for i in range(1, rings + 1):
+        r = R_max * (i / rings)
+        tt = 0.0 if r <= R_flat else (r - R_flat) / max(R_max - R_flat, 1e-6)
+        z = H_wall * (tt * tt)
+        ring = [bm.verts.new((r * math.cos(2.0 * math.pi * j / segs), r * math.sin(2.0 * math.pi * j / segs), z)) for j in range(segs)]
+        rings_v.append(ring)
+    bm.verts.ensure_lookup_table()
+    r1 = rings_v[0]
+    for j in range(segs):
+        bm.faces.new((v0, r1[j], r1[(j + 1) % segs]))
+    for i in range(len(rings_v) - 1):
+        ra, rb = rings_v[i], rings_v[i + 1]
+        for j in range(segs):
+            jn = (j + 1) % segs
+            bm.faces.new((ra[j], rb[j], rb[jn], ra[jn]))
+    me = bpy.data.meshes.new("studio_cyc")
     bm.to_mesh(me); bm.free(); me.update()
-    away = (ctr - CAM.location); away.z = 0
-    away = (away if away.length > 1e-6 else mu.Vector((0.0, 1.0, 0.0))).normalized()
-    for v in me.vertices:                                          # cyclorama: far half curves up into a wall
-        w = floor.matrix_world @ v.co
-        d = (w.x - ctr.x) * away.x + (w.y - ctr.y) * away.y
-        t = min(max((d - 0.45) / 2.6, 0.0), 1.0)
-        v.co.z = (t * t) * 3.4
-    me.update()
-    fm = bpy.data.materials.new("studio_floor"); fm.use_nodes = True
-    nt = fm.node_tree; fb = nt.nodes["Principled BSDF"]; mout = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
-    fb.inputs["Base Color"].default_value = (0.008, 0.009, 0.010, 1)
-    fb.inputs["Roughness"].default_value = 0.55
-    if "Specular IOR Level" in fb.inputs:
-        fb.inputs["Specular IOR Level"].default_value = 0.28
-    if "Emission Color" in fb.inputs:
-        fb.inputs["Emission Color"].default_value = (0.011, 0.012, 0.014, 1)
-        if "Emission Strength" in fb.inputs:
-            fb.inputs["Emission Strength"].default_value = 0.12
-    tex = nt.nodes.new("ShaderNodeTexCoord")
-    ln = nt.nodes.new("ShaderNodeVectorMath"); ln.operation = "LENGTH"
-    nt.links.new(tex.outputs["Object"], ln.inputs[0])
-    fade_xy = nt.nodes.new("ShaderNodeMapRange")
-    fade_xy.clamp = True
-    fade_xy.inputs["From Min"].default_value = 1.05
-    fade_xy.inputs["From Max"].default_value = 2.85
-    fade_xy.inputs["To Min"].default_value = 1.0
-    fade_xy.inputs["To Max"].default_value = 0.0
-    nt.links.new(ln.outputs["Value"], fade_xy.inputs["Value"])
-    sep = nt.nodes.new("ShaderNodeSeparateXYZ"); nt.links.new(tex.outputs["Object"], sep.inputs[0])
-    fade_z = nt.nodes.new("ShaderNodeMapRange")
-    fade_z.clamp = True
-    fade_z.inputs["From Min"].default_value = 0.25
-    fade_z.inputs["From Max"].default_value = 2.2
-    fade_z.inputs["To Min"].default_value = 1.0
-    fade_z.inputs["To Max"].default_value = 0.0
-    nt.links.new(sep.outputs["Z"], fade_z.inputs["Value"])
-    fac_a = nt.nodes.new("ShaderNodeMath"); fac_a.operation = "MULTIPLY"
-    nt.links.new(fade_xy.outputs["Result"], fac_a.inputs[0]); nt.links.new(fade_z.outputs["Result"], fac_a.inputs[1])
-    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
-    mix = nt.nodes.new("ShaderNodeMixShader")
-    inv = nt.nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"; inv.inputs[0].default_value = 1.0
-    nt.links.new(fac_a.outputs[0], inv.inputs[1])
-    nt.links.new(inv.outputs[0], mix.inputs["Fac"])
-    nt.links.new(fb.outputs[0], mix.inputs[1]); nt.links.new(tr.outputs[0], mix.inputs[2])
-    for l in list(mout.inputs["Surface"].links): nt.links.remove(l)
-    nt.links.new(mix.outputs[0], mout.inputs["Surface"])
-    floor.data.materials.clear(); floor.data.materials.append(fm)
+    floor = bpy.data.objects.new("studio_floor", me)
+    floor.location = (ctr.x, ctr.y, flz)
     try: col.objects.link(floor)
     except RuntimeError: pass
+    fm = bpy.data.materials.new("studio_floor"); fm.use_nodes = True
+    nt = fm.node_tree; fb = nt.nodes["Principled BSDF"]
+    fb.inputs["Base Color"].default_value = (0.014, 0.015, 0.016, 1)
+    fb.inputs["Roughness"].default_value = 0.62
+    if "Specular IOR Level" in fb.inputs:
+        fb.inputs["Specular IOR Level"].default_value = 0.22
+    if "Emission Color" in fb.inputs:
+        fb.inputs["Emission Color"].default_value = (0.022, 0.023, 0.025, 1)
+        if "Emission Strength" in fb.inputs:
+            fb.inputs["Emission Strength"].default_value = 0.32
+    floor.data.materials.clear(); floor.data.materials.append(fm)
+    log(f"cyclorama bowl r_flat={R_flat} r_max={R_max} h={H_wall} z={flz:.3f} (opaque, all views)")
 sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(AUTH_META["fps"]) if AUTH_META else int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
 frames = list(range(1, NF + 1)) if a.frames == "all" else [int(v) for v in a.frames.split(",")]
 def flex_at(f):

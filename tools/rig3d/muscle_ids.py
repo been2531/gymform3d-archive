@@ -52,7 +52,7 @@ def asset_key(glb_path):
         if st.st_size > (2 << 20):
             f.seek(-1 << 20, 2)
             h.update(f.read())
-    h.update(b"muscle_ids_v4")
+    h.update(b"muscle_ids_v5")
     return h.hexdigest()[:20]
 
 
@@ -128,14 +128,24 @@ def _classify_vertex(y, x, z, nz, ny, bone):
         if back and y >= 0.86 and ax >= 0.04:
             return "glutes"
         return "hams" if back else "quads"
-    # Proximal Arm weights paint the lat insertion / armpit — those fall through to torso.
+    # Proximal Arm weights paint the lat insertion / armpit — keep those as lats (teres
+    # major rides with the lat insertion; it has no separate ID). Distal/posterior arm = tri/bi.
     if "arm" in b and "fore" not in b and "shoulder" not in b and "upleg" not in b:
-        if ax >= 0.22 or y < 1.16:
+        if ax >= 0.20 or y < 1.28:
             return "triceps" if back else "biceps"
-    if "shoulder" in b or (1.30 <= y <= 1.58 and ax >= 0.14):
-        if back and ax >= 0.11: return "rear_delt"
-        if front and ax >= 0.11: return "front_delt"
-        if ax >= 0.11: return "side_delt"
+        if back:
+            return "lats"
+    if "shoulder" in b or (1.28 <= y <= 1.58 and ax >= 0.13):
+        # side delt is the lateral cap; the old "any back-facing → rear_delt" swallowed it
+        # (only 25 verts survived as side_delt).
+        if 1.32 <= y <= 1.55 and ax >= 0.155 and abs(nz) <= 0.45:
+            return "side_delt"
+        if back and ax >= 0.14 and y >= 1.42:
+            return "rear_delt"
+        if front and ax >= 0.12:
+            return "front_delt"
+        if ax >= 0.15:
+            return "side_delt"
     # Exclusive back-torso partition so target muscles (lats/rhomb/mid-trap/rear-delt) meet.
     if back and 0.80 <= y <= 1.68:
         if 0.80 <= y < 1.00 and ax >= 0.045:
@@ -145,11 +155,12 @@ def _classify_vertex(y, x, z, nz, ny, bone):
             if y < 1.54: return "mid_trap"
             return "upper_trap"
         if ax < 0.128:
-            if y < 1.16: return "lats"
+            if y < 1.18: return "lats"
             if y < 1.50: return "rhomboids"
             return "upper_trap"
-        # lateral back
-        if y < 1.34: return "lats"
+        # lateral back: y < 1.42 includes teres major / lat insertion with the lats
+        # (both are primary row targets). Rear delt stays on the shoulder cap (y >= 1.42).
+        if y < 1.42: return "lats"
         if y < 1.58: return "rear_delt"
         return "upper_trap"
     if front:

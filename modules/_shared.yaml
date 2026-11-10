@@ -130,8 +130,8 @@ qc:
   floor_horizon_jump_max: 28      # luma step at the floor's upper silhouette (hard horizon fails)
   floor_luma_delta_max: 24        # receding floor median luma minus backdrop (light-grey floor fails)
   glow_fibre_hp_min: 8.0          # high-pass std of green inside eroded glow core (flat mint blob fails)
-  glow_hue: [68, 77]              # OpenCV HSV hue; gymform neon ~74, pale mint ~80
-  glow_sat: [168, 230]            # OpenCV HSV sat; washed/mint sits below 168
+  glow_hue: [58, 72]              # measured @demicstory green (refs H~62-66); old gymform neon was 74
+  glow_sat: [100, 170]            # measured demic green S~130-141 (not the old snap target 196)
   glow_frac: [0.02, 0.34]
   glow_in_mask_min: 0.9
   sharp_rel_min: 0.35
@@ -179,6 +179,10 @@ qc:
       tip_gap_mm: [-1.5, 5]
       thumb_gap_max_mm: 6
       thumb_opposition_min_deg: 90
+      wrist_flex_ext_max_deg: 15
+      wrist_deviation_max_deg: 15
+      palm_medial_max_deg: 30
+      fingers_far_side_min: 0.6
     edge_ratio_max: 3.5
     edge_ratio_min: 0.01
     db_head_visible_min: 0.5

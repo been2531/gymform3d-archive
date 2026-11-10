@@ -124,6 +124,66 @@ def run(rdir, A, cfg):
                            tg.max() <= G["thumb_gap_max_mm"] and tg.min() >= -1.0 and to_.min() >= G["thumb_opposition_min_deg"], "grip_wrap", "grip"))
             iv = max(m_["handle_intersect_verts"] for m_ in M)
             out.append(_ck("grip_no_hand_handle_intersection", iv, 0, iv == 0, "grip_wrap", "grip"))
+            # Wrist / palm orientation for a one-arm row: straight wrist, palm medial, fingers on the far side.
+            # Defaults apply even on older cfg snapshots so a current inverted take fail-verifies.
+            wh = str(D["working_hand"]) if "working_hand" in D.files else "RightHand"
+            s = "Right" if str(wh).startswith("Right") else "Left"
+            if wh in ix and (s + "ForeArm") in ix and "Spine01" in ix:
+                fa = _u(H(wh) - H(s + "ForeArm"))
+                hd = _u(Rot(wh)[:, :, 1])
+                pk = "palm_right" if s == "Right" else "palm_left"
+                if pk in D.files:
+                    across = _u(np.einsum("nij,j->ni", Rot(wh), np.asarray(D[pk], float)))
+                else:
+                    across = _u(np.cross(fa, np.array([0.0, 0.0, 1.0])))
+                across = _u(across - (across * fa).sum(1, keepdims=True) * fa)
+                pn_axis = _u(np.cross(fa, across))
+                def _plane_ang(u, v, axis):
+                    up = _u(u - (u * axis).sum(1, keepdims=True) * axis)
+                    vp = _u(v - (v * axis).sum(1, keepdims=True) * axis)
+                    return np.degrees(np.arctan2((np.cross(up, vp) * axis).sum(1), (up * vp).sum(1)))
+                flex = _plane_ang(fa, hd, across)
+                dev = _plane_ang(fa, hd, pn_axis)
+                flex_lim = float(G.get("wrist_flex_ext_max_deg", 15))
+                dev_lim = float(G.get("wrist_deviation_max_deg", 15))
+                out.append(_ck("wrist_flex_ext_deg", {"min": r(flex.min()), "max": r(flex.max())}, f"within ±{flex_lim}",
+                               float(np.nanmax(np.abs(flex))) <= flex_lim, "grip_palm", "grip"))
+                out.append(_ck("wrist_deviation_deg", {"min": r(dev.min()), "max": r(dev.max())}, f"within ±{dev_lim}",
+                               float(np.nanmax(np.abs(dev))) <= dev_lim, "grip_palm", "grip"))
+                medial = H("Spine01") - H(wh)
+                medial = _u(medial - (medial * fa).sum(1, keepdims=True) * fa)
+                if "handle_n_local" in D.files:
+                    pn = _u(np.einsum("nij,j->ni", Rot(wh), np.asarray(D["handle_n_local"], float)))
+                else:
+                    pn = pn_axis
+                    # pick the sign that matches palm-to-handle if we have sampled hand verts
+                    if os.path.exists(hz):
+                        Hn2 = np.load(hz, allow_pickle=True); fr2 = list(Hn2["frames"]); lab2 = Hn2["labels"]
+                        i0 = 0; f0 = int(fr2[i0]) - 1
+                        C0 = D["dumbbell"][f0, :3, 3] if "dumbbell" in D.files else H(wh)[f0]
+                        palm_v = Hn2["P"][i0][lab2 == 5]
+                        if len(palm_v):
+                            n_est = _u((C0 - palm_v.mean(0))[None])[0]
+                            if float(n_est @ pn[f0]) < 0: pn = -pn
+                ang = np.degrees(np.arccos(np.clip((pn * medial).sum(1), -1, 1)))
+                med_lim = float(G.get("palm_medial_max_deg", 30))
+                out.append(_ck("palm_normal_medial_deg", {"min": r(ang.min()), "max": r(ang.max()), "median": r(np.median(ang))},
+                               f"<= {med_lim} (palm faces torso)", float(np.nanmax(ang)) <= med_lim, "grip_palm", "grip"))
+                far_lim = float(G.get("fingers_far_side_min", 0.6))
+                far_fracs = []
+                if os.path.exists(hz) and "dumbbell" in D.files:
+                    Hn2 = np.load(hz, allow_pickle=True); fr2 = list(Hn2["frames"]); lab2 = np.asarray(Hn2["labels"])
+                    for i, f in enumerate(fr2):
+                        C = D["dumbbell"][int(f) - 1, :3, 3]; med_f = medial[int(f) - 1]
+                        Pw = Hn2["P"][i]
+                        palm = Pw[lab2 == 5]
+                        if len(palm) < 8: continue
+                        side = (palm - C) @ med_f   # + = toward torso from handle
+                        far_fracs.append(float((side < 0).mean()))
+                if far_fracs:
+                    fv = float(min(far_fracs))
+                    out.append(_ck("fingers_on_far_side_of_handle", {"min_frac": r(fv, 2), "n": len(far_fracs)},
+                                   f">= {far_lim} (palm/fingers outside the handle)", fv >= far_lim, "grip_palm", "grip"))
     # ---- mesh spikes (checks.json) + prop readability + extremities -----------------------------------------------
     C = json.load(open(os.path.join(rdir, "checks.json")))["frames"]; T = [f for f in C if "tear_max_ratio" in f]
     if "edge_ratio_max" in A:
