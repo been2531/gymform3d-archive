@@ -184,8 +184,8 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours, full_w, full_h,
                "ours kit  ·  full body  ·  f_0025",
-               "Warmer grey clay, duller cracked glow, shrink-wrapped briefs "
-               "with no real waistband, simpler bench and dumbbell.",
+               "Cooler porcelain clay and studio lighting. Vivid peach overlay "
+               "glow, but torn. Black shorts cover the seat, but they are tattered.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -201,8 +201,8 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours_hips, hips_w, hips_h,
                "ours kit  ·  hips  3×",
-               "Offset of the Grab3D pelvis: every glute groove reads as cloth. "
-               "No waistband, high-cut hem, pale clay spot at the seat/cleft, clay peeking at the waist.",
+               "The cleft is covered (no white spot) but the cloth is ripped, "
+               "with clay showing through. Not a clean mid-thigh boxer or wide elastic waistband.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -218,8 +218,8 @@ def build(ours_path, demic_sheet, out_path):
     sheet.paste(p, (x0, y))
     p = _panel(ours_back, back_w, back_h,
                "ours kit  ·  back glow  3×",
-               "Lower-value salmon (glow V ~0.74 vs demic ~0.95) because colour is "
-               "multiplied onto sculpted clay. UV/groove valleys read as dark cracks.",
+               "Vivid peach-orange overlay (right hue, high V) on the back, "
+               "but holey and ragged. Not demic's smooth anatomical sheet.",
                fonts)
     sheet.paste(p, (x1, y))
 
@@ -228,10 +228,10 @@ def build(ours_path, demic_sheet, out_path):
     lines = [
         ("h", "Ranked improvements  ·  fix the base assets once, do not patch the current methods"),
         ("sub", "Look defects should not be caught by gates after the fact. They should not exist, because the kit starts from well-made meshes and a studio light rig. See docs/specs/ROOTCAUSE_LOOK.md."),
-        ("n", "1  Drawers — author a real boxer-brief garment (waistband, crotch gusset, hem to upper-mid thigh) that bridges the gluteal cleft. This removes the white spot, the shrink-wrap grooves, the missing waistband and the short cut, by construction."),
-        ("n", "2  Glow — stop projecting paint onto the Grab3D single mesh. Overlay separate seamless muscle meshes (BodyParts3D CC BY 4.0, or four shells we sculpt ourselves as CC0) with opaque emissive materials. This removes the cracks and the pale multiply-on-clay look together."),
-        ("n", "3  Light — a studio HDRI (Poly Haven, CC0) plus an authored three-point area-light rig and a floor that holds contact shadows, so the clay reads porcelain and the glow can bloom like demic."),
-        ("n", "4  Equipment — a padded commercial flat bench (black pad, gunmetal frame) and a dumbbell with a knurled handle. The current primitives read as placeholders next to demic."),
+        ("n", "1  Drawers — still worse than demic. The lofted black shorts now cover the cleft (white spot gone) but shrinkwrap tearing leaves holes and a ragged hem. Need a clean mid-thigh boxer with a wide elastic waistband and no clay show-through."),
+        ("n", "2  Glow — still worse than demic. Overlay emission is the right vivid peach-orange and the right region, but the copied/smoothed shells are torn. Need a watertight smooth sheet (weld seams, no remesh shards) with a soft bloom edge."),
+        ("n", "3  Light/clay — closer. Porcelain is cooler and brighter; HDRI plus three-point and a contact floor are in. Still not as even or as softly bloomed as demic."),
+        ("n", "4  Equipment — closer. Padded bench and a knurled handle are in. They still read simpler than demic's commercial props."),
     ]
     _text_block(d, (pad + 18, y + 16), lines, fonts, width=84)
 
