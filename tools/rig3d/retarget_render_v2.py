@@ -13,15 +13,17 @@ v2 vs v1 (retarget_render.py, kept unchanged):
     (deformed/rest edge-length ratio), working-elbow range
 usage: python -m bpy-env tools/rig3d/retarget_render_v2.py --npz P.npz --cfg run_cfg.json --out DIR
        [--frames all|N,M (render only those 1-based frames)] [--checks-only] [--no-mask] [--mask-only]"""
-import sys, json, math, time, argparse, numpy as np, bpy, mathutils as mu
+import sys, os, json, math, time, argparse, numpy as np, bpy, mathutils as mu
 from bpy_extras.object_utils import world_to_camera_view
 T0 = time.time()
 def log(m): print(f"[{time.time() - T0:6.1f}s] {m}", flush=True)
 ap = argparse.ArgumentParser(); ap.add_argument("--npz", required=True); ap.add_argument("--cfg", required=True); ap.add_argument("--out", required=True)
 ap.add_argument("--frames", default="all"); ap.add_argument("--checks-only", action="store_true"); ap.add_argument("--no-mask", action="store_true")
 ap.add_argument("--mask-only", action="store_true"); ap.add_argument("--res", default=None)
+ap.add_argument("--skip-existing", action="store_true", help="skip frames whose f_/m_ png already exists (crash recovery)")
 a = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:])
 C = json.load(open(a.cfg)); MO, RC = C["motion"], C["render"]
+if a.skip_existing: RC["skip_existing_frames"] = True
 D = np.load(a.npz); P3 = D["P3"].copy(); side = int(D["side"]); f0, f1 = int(C["_rep"][0]), int(C["_rep"][1])
 NF = f1 - f0
 
@@ -237,17 +239,121 @@ if LEGS == "planted" and MO.get("support_hand", "") == "front_thigh":
         sc.frame_set(f + 1); Hh = arm.matrix_world @ pb[fl + "UpLeg"].head; Kk = E[fl[0].lower() + "kn"].location.copy()
         td_ = (Kk - Hh).normalized(); upn_ = mu.Vector((0, 0, 1)); upn_ = (upn_ - upn_.dot(td_) * td_).normalized()
         Sh = arm.matrix_world @ pb[sp_ + "Arm"].head
-        cand = [Hh + (Kk - Hh) * t_ + upn_ * float(MO.get("support_hand_lift_m", 0.075)) for t_ in np.linspace(0.35, float(MO.get("support_hand_thigh_frac", 0.75)), 9)]
-        Wt = min(cand, key=lambda c_: max((c_ - Sh).length - 0.97 * (La + Lf), 0.0) - 0.001 * (c_ - Hh).length)   # lowest reachable point
-        Sh = arm.matrix_world @ pb[sp_ + "Arm"].head; dv = Wt - Sh; d = min(dv.length, 0.995 * (La + Lf)); u_ = dv.normalized()
+        lift = float(MO.get("support_hand_lift_m", 0.075))
+        t0 = float(MO.get("support_hand_thigh_t0", 0.35)); t1 = float(MO.get("support_hand_thigh_frac", 0.75))
+        if t1 < t0: t0, t1 = t1, t0
+        lat_off = latv.normalized() * float(MO.get("support_hand_lateral_m", 0.0))
+        back_off = -mu.Vector(fwd_h.tolist()) * float(MO.get("support_hand_back_m", 0.0))
+        reach_s = float(MO.get("support_hand_reach_scale", 0.97))
+        cand = [Hh + (Kk - Hh) * t_ + upn_ * lift + lat_off + back_off for t_ in np.linspace(t0, t1, 9)]
+        if MO.get("support_hand_shoulder_reach", True):
+            Wt = cand[-1]   # commit to the distal target; the support Shoulder then reaches so the arm can land on it
+        else:
+            Wt = min(cand, key=lambda c_: max((c_ - Sh).length - reach_s * (La + Lf), 0.0) - 0.05 * (c_ - Hh).length)
+        Sh = arm.matrix_world @ pb[sp_ + "Arm"].head
+        if MO.get("support_hand_shoulder_reach", True) and (sp_ + "Shoulder") in pb:
+            sb = pb[sp_ + "Shoulder"]; base_q = mu.Quaternion((1, 0, 0, 0))
+            toward = np.array(Wt - Sh); toward = toward / max(float(np.linalg.norm(toward)), 1e-9)
+            arm0 = np.array(Sh); best_axis, best_score = (1, 0, 0), -1e9
+            for axis in ((1, 0, 0), (0, 1, 0), (0, 0, 1)):
+                sb.rotation_quaternion = mu.Quaternion(axis, math.radians(6.0)); bpy.context.view_layer.update()
+                arm1 = np.array(arm.matrix_world @ pb[sp_ + "Arm"].head); score = float((arm1 - arm0) @ toward)
+                if score > best_score: best_axis, best_score = axis, score
+            sb.rotation_quaternion = base_q
+            if best_score < 0: best_axis = tuple(-x for x in best_axis)
+            lo, hi = 0.0, float(MO.get("support_hand_shoulder_reach_max_deg", 50.0))
+            if (Wt - Sh).length <= 0.985 * (La + Lf): hi = 0.0
+            else:
+                for _ in range(9):
+                    mid = 0.5 * (lo + hi); sb.rotation_quaternion = mu.Quaternion(best_axis, math.radians(mid)); bpy.context.view_layer.update()
+                    if (Wt - (arm.matrix_world @ pb[sp_ + "Arm"].head)).length <= 0.985 * (La + Lf): hi = mid
+                    else: lo = mid
+            sb.rotation_quaternion = mu.Quaternion(best_axis, math.radians(hi))
+            bpy.context.view_layer.update(); Sh2 = arm.matrix_world @ pb[sp_ + "Arm"].head
+            if (Wt - Sh2).length > 0.985 * (La + Lf):
+                sb.rotation_quaternion = base_q   # unused max wind-up jams the support arm into the ribs
+            sb.keyframe_insert("rotation_quaternion", frame=f + 1)
+            bpy.context.view_layer.update(); Sh = arm.matrix_world @ pb[sp_ + "Arm"].head
+            if (Wt - Sh).length > 0.985 * (La + Lf):
+                walk = [Hh + (Kk - Hh) * t_ + upn_ * lift + lat_off + back_off for t_ in np.linspace(0.35, t1, 13)]
+                landed = False
+                for Wt2 in reversed(walk):
+                    if (Wt2 - Sh).length <= 0.985 * (La + Lf):
+                        Wt = Wt2; landed = True; break
+                if not landed: Wt = walk[0]
+        dv = Wt - Sh; u_ = dv.normalized(); d_wr = min(max(dv.length, 1e-4), 0.999 * (La + Lf)); d = d_wr
         x_ = (La * La - Lf * Lf + d * d) / (2 * d); h_ = math.sqrt(max(La * La - x_ * x_, 0.0))
         if MO.get("support_elbow_mode", "lateral") == "back_out":                 # v6: elbow points back/out (no hyperextension)
             pv_ = latv * float(MO.get("support_elbow_out", 0.5)) - mu.Vector(fwd_h.tolist()) * float(MO.get("support_elbow_back", 1.0))
         else: pv_ = latv                                                            # v5 legacy
         pole = (pv_ - pv_.dot(u_) * u_).normalized()
-        E[pp_ + "el"].location = Sh + u_ * x_ + pole * h_; E[pp_ + "wr"].location = Sh + u_ * d; E[pp_ + "ix"].location = Sh + u_ * d + ((u_ * 0.6 + td_ * 0.4).normalized() if MO.get("support_wrist_neutral") else td_) * 0.09   # v6: wrist ~neutral
+        E[pp_ + "el"].location = Sh + u_ * x_ + pole * h_; E[pp_ + "wr"].location = Sh + u_ * d_wr; E[pp_ + "ix"].location = Sh + u_ * d_wr + ((u_ * 0.6 + td_ * 0.4).normalized() if MO.get("support_wrist_neutral") else td_) * 0.09   # v6: wrist ~neutral
         for n_ in ("el", "wr", "ix"): E[pp_ + n_].keyframe_insert("location", frame=f + 1)
     log(f"support hand on the front ({fl}) thigh")
+if MO.get("elbow_path", "source") == "tuck_torso":
+    # Shared construction: working elbow rebuilt on the 2-bone circle with the pole toward Spine01, so
+    # MediaPipe flare cannot occur — the elbow tracks close to the torso toward the hip.
+    wh_ = "Left" if side == 11 else "Right"; ppw = wh_[0].lower()
+    La_w, Lf_w = rl(wh_ + "Arm", wh_ + "ForeArm"), rl(wh_ + "ForeArm", wh_ + "Hand")
+    min_torso = float(MO.get("elbow_torso_min_m", 0.25))
+    for f in range(NF):
+        sc.frame_set(f + 1); Sh = arm.matrix_world @ pb[wh_ + "Arm"].head; Wt = E[ppw + "wr"].location.copy()
+        dv = Wt - Sh; d = min(max(dv.length, 1e-4), 0.995 * (La_w + Lf_w)); u_ = dv.normalized()
+        x_ = (La_w * La_w - Lf_w * Lf_w + d * d) / (2 * d); h_ = math.sqrt(max(La_w * La_w - x_ * x_, 0.0))
+        mid = Sh + u_ * x_; Sp = arm.matrix_world @ pb["Spine01"].head
+        raw = Sp - mid; pole_tuck = raw - raw.dot(u_) * u_
+        if pole_tuck.length < 1e-5: pole_tuck = mu.Vector((0.0, 0.0, 1.0))
+        pole_tuck.normalize()
+        El_src = E[ppw + "el"].location.copy(); src_pole = El_src - mid; src_pole = src_pole - src_pole.dot(u_) * u_
+        if src_pole.length < 1e-5: src_pole = pole_tuck
+        src_pole.normalize()
+        # walk source -> full-tuck and keep the most tucked elbow that stays outside the torso
+        best = mid + src_pole * h_
+        for a_ in np.linspace(0.0, 1.0, 12):
+            p_ = (src_pole * (1.0 - a_) + pole_tuck * a_); p_ = p_ - p_.dot(u_) * u_
+            if p_.length < 1e-5: continue
+            p_.normalize(); El = mid + p_ * h_
+            if (El - Sp).length >= min_torso: best = El
+            else: break
+        E[ppw + "el"].location = best; E[ppw + "el"].keyframe_insert("location", frame=f + 1)
+    log(f"elbow_path tuck_torso on {wh_}")
+if MO.get("scapula_retract", False) and (("LeftShoulder" if side == 11 else "RightShoulder") in pb):
+    # Shared construction: rotate the working Shoulder so the arm-head moves toward Spine01 in XY,
+    # proportional to working-arm flexion (retracts at the peak, rest at the start). Axis chosen by a
+    # 6 deg probe so we never guess Mixamo rest Euler axes.
+    wh_ = "Left" if side == 11 else "Right"; sb = pb[wh_ + "Shoulder"]; ppw = wh_[0].lower()
+    sc.frame_set(1); bpy.context.view_layer.update()
+    arm0 = np.array(arm.matrix_world @ pb[wh_ + "Arm"].head); sp0 = np.array(arm.matrix_world @ pb["Spine01"].head)
+    toward = sp0 - arm0; toward[2] = 0.0; toward = toward / max(float(np.linalg.norm(toward)), 1e-9)
+    base_q = sb.rotation_quaternion.copy(); best_axis, best_score = (0, 0, 1), -1e9
+    for axis in ((1, 0, 0), (0, 1, 0), (0, 0, 1)):
+        sb.rotation_quaternion = mu.Quaternion(axis, math.radians(6.0)) @ base_q; bpy.context.view_layer.update()
+        arm1 = np.array(arm.matrix_world @ pb[wh_ + "Arm"].head); sb.rotation_quaternion = base_q
+        score = float((arm1 - arm0) @ toward)
+        if score > best_score: best_axis, best_score = axis, score
+    if best_score < 0: best_axis = tuple(-x for x in best_axis); best_score = -best_score
+    angs = []
+    for f in range(NF):
+        sc.frame_set(f + 1); S = arm.matrix_world @ pb[wh_ + "Arm"].head; El = E[ppw + "el"].location; Wr = E[ppw + "wr"].location
+        angs.append(math.degrees((S - El).angle(Wr - El)) if (S - El).length > 1e-6 and (Wr - El).length > 1e-6 else 180.0)
+    amin, amax = min(angs), max(angs); max_deg = float(MO.get("scapula_retract_deg", 9.0))
+    for f, ang in enumerate(angs):
+        amt = 0.0 if amax - amin < 1e-3 else (amax - ang) / (amax - amin)
+        sb.rotation_quaternion = mu.Quaternion(best_axis, math.radians(max_deg * amt)); sb.keyframe_insert("rotation_quaternion", frame=f + 1)
+    log(f"scapula_retract {wh_} axis {best_axis} score {best_score:.3f} max {max_deg:.1f} deg")
+if LEGS == "planted" and MO.get("foot_level", True):
+    # Shared construction: DAMPED_TRACK aims the foot Y at the toes (unconstrained roll = sickle). LOCKED_TRACK
+    # the sole-up axis (whichever of local X/Z is closest to world +Z) at a world-up empty, lock Y.
+    up_e = empty("T_world_up"); up_e.location = mu.Vector((0.0, 0.0, 80.0))
+    sc.frame_set(1); bpy.context.view_layer.update(); used = None
+    for s_ in ("Left", "Right"):
+        R = np.array((arm.matrix_world @ pb[s_ + "Foot"].matrix).to_3x3()); R = R / (np.linalg.norm(R, axis=0, keepdims=True) + 1e-12)
+        upness = [abs(R[2, 0]), 0.0, abs(R[2, 2])]; ai = int(np.argmax(upness))
+        if upness[ai] < 0.15: continue
+        names_pos, names_neg = ("TRACK_X", "TRACK_Y", "TRACK_Z"), ("TRACK_NEGATIVE_X", "TRACK_NEGATIVE_Y", "TRACK_NEGATIVE_Z")
+        track_ax = names_pos[ai] if R[2, ai] >= 0 else names_neg[ai]
+        c = pb[s_ + "Foot"].constraints.new("LOCKED_TRACK"); c.target = up_e; c.track_axis = track_ax; c.lock_axis = "LOCK_Y"; used = track_ax
+    log(f"foot_level LOCKED_TRACK {used} lock Y" if used else "foot_level: no clear sole-up axis, skip")
 log("rig constrained")
 
 # ---- rest geometry: muscle regions, shorts, hand vertices, edges ----------------------------------------------------
@@ -531,7 +637,7 @@ for f in range(1, NF + 1):
         _ex[s_ + "_toe"] = Wm @ pb[s_ + "ToeBase"].head
     for k_, hc_ in zip(("db_head_a", "db_head_b"), DBH): _ex[k_] = db.matrix_world @ hc_
     rec["extrem2d"] = {k_: p2(v_) for k_, v_ in _ex.items()}
-    rec["kp2d"] = {"hip": p2(hip), "sh": p2(shc), "sh_w": p2(sh_), "el": p2(el_), "wr": p2(wr_), "kn": p2(kn_), "db": p2(dbp)}
+    rec["kp2d"] = {"hip": p2(hip), "sh": p2(shc), "sh_w": p2(sh_), "el": p2(el_), "wr": p2(wr_), "wr_s": p2(lwr if side == 12 else rwr), "kn": p2(kn_), "db": p2(dbp)}
     if f % 3 == 1 or f == NF:
         dg = bpy.context.evaluated_depsgraph_get(); eb = body.evaluated_get(dg); m_ = eb.to_mesh()
         c2 = np.empty(len(m_.vertices) * 3); m_.vertices.foreach_get("co", c2); Mw = np.array(eb.matrix_world)
@@ -732,9 +838,14 @@ if RC.get("floor", True):
 sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
 frames = list(range(1, NF + 1)) if a.frames == "all" else [int(v) for v in a.frames.split(",")]
 def render_set(prefix):
+    skipped = 0
     for f in frames:
-        sc.frame_set(f); sc.render.filepath = f"{a.out}/{prefix}_{f:04d}.png"; bpy.ops.render.render(write_still=True)
-tim = {}
+        path = f"{a.out}/{prefix}_{f:04d}.png"
+        if RC.get("skip_existing_frames") and os.path.exists(path):
+            skipped += 1; continue
+        sc.frame_set(f); sc.render.filepath = path; bpy.ops.render.render(write_still=True)
+    if skipped: log(f"{prefix}: skipped {skipped} existing frames")
+tim = {"retarget_s": round(time.time() - T0, 1)}
 if not a.mask_only:
     sc.cycles.samples = int(RC.get("spp", 12)); sc.cycles.use_denoising = bool(RC.get("denoise", True))
     try:
@@ -762,5 +873,5 @@ if not a.no_mask:
     for o in bpy.data.objects:
         if o.type == "LIGHT": o.hide_render = True
     t = time.time(); render_set("m"); tim["mask_s"] = round(time.time() - t, 1); log(f"mask {tim['mask_s']} s")
-json.dump({**tim, "frames": len(frames), "res": [rx, ry]}, open(a.out + "/render_time.json", "w"))
+json.dump({**tim, "frames": len(frames), "res": [rx, ry], "skipped_existing": bool(RC.get("skip_existing_frames"))}, open(a.out + "/render_time.json", "w"))
 print("RENDER_DONE", json.dumps(tim))

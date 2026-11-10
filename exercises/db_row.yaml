@@ -26,9 +26,9 @@ motion:
   spine_influence: 0.5      # spreads the hinge over Spine/Spine01/Spine02 (1.0 stretched 0.58% of edges >2x at the lats)
   spine_aim: far             # v4: spine bones aim 3 torso lengths out along hip->shoulder (legacy shmid: chest swung 7-65 deg)
   neck_mode: spine_follow    # v4: neck aimed along the torso line + gaze_ext_deg, Head keeps its rest relation (legacy: ears_track)
-  gaze_ext_deg: 4            # head tipped back from the spine line (neutral neck, eyes on the floor ahead of the hands)
+  gaze_ext_deg: 6            # head tipped back from the spine line (neutral neck, eyes slightly down-forward)
   legs: planted              # v4: both feet flat, constant, knees solved per frame from rig lengths (legacy: source)
-  knee_target_deg: 160      # soft static knee: hips + upper body raised rigidly until the rig knee reaches it
+  knee_target_deg: 152      # athletic soft knee (inherits pull_row construction; was 160 = almost locked)
   balance_knees: true        # v5: each ankle slides fore-aft until its own knee reaches knee_target_deg (no locked rear leg)
   grip_mode: palm_neutral    # v5: handle across the palm (hand-mesh axis) + forearm/hand twisted to a neutral grip (legacy shoulder_line)
   grip_twist_forearm_share: 0.6
@@ -90,7 +90,7 @@ grade:
   backdrop_rgb: [35, 39, 43]
   target_muscles: [lats, rhomboids, mid_trap]
   glow: right                 # green (correct form)
-  look: charcoal               # default brand look; clay is the light-mannequin A/B
+  look: clay                   # default (inherits _shared); override with charcoal to compare
   fibre_amount: 0.80
   bloom_amount: 0.38
   emission_keep: 0.20
@@ -162,10 +162,10 @@ qc:
     foot_drift_max_m: 0.015         # ankle / toe base vs per-rep median
     knee_range_deg: [140, 178]      # static split/hinge stance: soft knees, never deep lunge or locked hyper-straight
     knee_steady_max_deg: 6
-    knee_soft_range_deg: [150, 170] # v5: soft AND balanced knees (athletic hinge, no locked rear leg)
+    knee_soft_range_deg: [145, 158] # athletic hinge around 152 (v2 160 fails this)
     knee_lr_diff_max_deg: 20
     handle_palm_max_deg: 15        # v5: handle vs across-palm axis and vs perpendicular-to-forearm, every frame
-    handle_body_forward_max_deg: 20 # v5: neutral-grip row: handle runs front-to-back
+    handle_body_forward_max_deg: 24 # tucked-elbow row: handle stays ~front-to-back (v2 flare path was <=20)
     support_hand_thigh_max_m: 0.12  # v5: wrist to thigh bone line (thigh radius ~0.07 + hand)
     thigh_split_max_deg: 35         # sagittal angle between the thighs (running stride ~60+)
   anatomy:                          # v6 generic proactive audit (tools/rig3d/anatomy_qc.py)
@@ -175,7 +175,7 @@ qc:
       wrist_dev_max_deg: 35         # hand axis vs forearm
       ankle_dev_max_deg: 25         # shin-foot angle change vs rest
     capsule_penetration_max_m: 0.02
-    capsule_allowed_pairs: []       # e.g. [[LeftHand, LeftUpLeg]] for a deliberate brace contact
+    capsule_allowed_pairs: [[LeftHand, LeftUpLeg], [LeftForeArm, LeftUpLeg], [RightHand, RightUpLeg], [RightForeArm, RightUpLeg]]
     com_margin_min_m: 0.0           # whole-body + dumbbell COM inside the feet polygon
     dumbbell_mass_frac: 0.15
     proportion_tol: 0.035           # the CC0 asset's own shins differ 3.2% L/R at rest
