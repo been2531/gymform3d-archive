@@ -1,0 +1,185 @@
+# Machine-readable standards for the bench-supported one-arm dumbbell row.
+# QC: tools/rig3d/spec_load.py + tools/rig3d/qc3d.py
+# Human template: docs/specs/_TEMPLATE.md
+id: db_row
+name: Bench one-arm dumbbell row
+status: filled
+version: 1
+
+pose:
+  name: textbook bench-supported one-arm dumbbell row
+  side: right_working          # left knee/hand on the pad; right foot on the floor; right arm rows
+  reference:
+    page: https://commons.wikimedia.org/wiki/File:DumbbellBentOverRow.JPG
+    image_url: https://upload.wikimedia.org/wikipedia/commons/6/67/DumbbellBentOverRow.JPG
+    license: CC BY-SA 3.0
+    license_url: https://creativecommons.org/licenses/by-sa/3.0/
+    author: GeorgeStepanek
+    credit: "GeorgeStepanek / Wikimedia Commons / CC BY-SA 3.0 (model: Emily)"
+    note: >-
+      Side-view diptych of a bench-supported one-arm DB row (left = hang, right = peak).
+      Linked only; the image is not committed. Use it for overlay QC, not as a pose
+      oracle — authored world targets win when the photo drifts from textbook form.
+  keyframes:
+    bottom:
+      working_elbow_deg: [150, 178]     # arm hangs nearly straight under the shoulder
+      working_hand_drop_min_m: 0.22     # wrist clearly below the working shoulder
+      support_elbow_deg: [160, 180]     # support arm locked long
+      support_arm_from_vertical_max_deg: 15
+      standing_knee_deg: [140, 170]     # soft, not locked
+    peak:
+      working_elbow_deg: [70, 130]      # elbow driven back, not a biceps curl
+      working_hand_hip_max_m: 0.22      # DB sits beside the hip
+      elbow_past_torso: true            # elbow at or behind the torso line
+      support_elbow_deg: [160, 180]
+      support_arm_from_vertical_max_deg: 15
+      standing_knee_deg: [140, 170]
+  contacts:
+    support_hand_on_pad: true           # same-side hand flat on the pad
+    support_hand_under_shoulder: true   # hand directly under that shoulder
+    support_arm_straight_vertical: true
+    support_knee_on_pad: true           # same-side knee on the pad
+    support_shin_on_pad: true           # shin rests along the pad, not hanging off
+    standing_foot_on_floor: true        # opposite foot planted
+    standing_foot_flat: true            # heel and forefoot down; never points up or at the camera
+    standing_foot_slightly_wide: true
+    standing_knee_soft: true
+  alignment:
+    torso_from_horizontal_max_deg: 10   # back flat, parallel to the floor
+    head_spine_max_deg: 22              # head neutral, in line with the spine (looking at the floor)
+    hips_square: true
+  faults:
+    - rounded or pitched torso (hips stacked above the shoulders)
+    - support arm bent, or the hand reaching ahead of the shoulder
+    - standing foot pointing up or toward the camera
+    - working arm swinging or shrugging; elbow not travelling past the torso at the peak
+    - yanking the torso up to move the dumbbell
+    - hips rotating open off the pad
+
+camera:
+  mode: fixed
+  # Start from the pure side (yaw 0, elev 15) then raise and rotate slightly
+  # toward the back so the glow reads without losing the exercise silhouette.
+  yaw_back_deg: 18            # 0 = pure working-side; +yaw = behind the side (toward the feet)
+  elev_deg: 25
+  dist_m: 2.45
+  look: [0.18, 0.20, 0.70]
+  lens_mm: 50
+  shift_x: 0.0
+  shift_y: -0.05
+  up: world                   # keep the bench horizontal-ish; do not roll head-up
+  search: false
+  proof:                      # pure-side peak frame, for silhouette / textbook comparison
+    yaw_back_deg: 0
+    elev_deg: 15
+    dist_m: 2.45
+    look: [0.18, 0.18, 0.60]
+    lens_mm: 50
+    shift_x: 0.0
+    shift_y: -0.08
+    up: world
+
+look:
+  clay_v: [150, 175]          # body V p50 target (sRGB, Standard view transform)
+  clay_clip_max: 250          # nothing in the still may exceed this
+  groove_shading: true        # AO + optional cavity so separations read as soft shadows
+  muscles:
+    lats:       {h: 8,   s: 205, v: 236}   # peach
+    rhomboids:  {h: 141, s: 200, v: 240}   # purple
+    mid_trap:   {h: 141, s: 200, v: 240}   # purple
+    rear_delt:  {h: 162, s: 210, v: 235}   # magenta-pink
+  drawers:
+    style: black_boxer_briefs
+    holes: false
+    white_body_show_through: false
+  equipment:
+    bench: commercial flat bench, black pad, gunmetal frame, no floating parts
+    dumbbell: visible, gripped, not clipped out of frame
+
+qc:
+  overlay:
+    sil_iou_min: 0.35
+    joint_mae_max: 0.08       # mean joint error / frame diagonal
+  checks:
+    - name: torso_horizontal
+      frames: [bottom, peak]
+      metric: torso_from_horizontal_deg
+      max: 10
+    - name: head_spine
+      frames: [bottom, peak]
+      metric: head_spine_deg
+      max: 22
+    - name: support_hand_on_pad
+      frames: [bottom, peak]
+      metric: support_hand_on_pad
+      equals: true
+    - name: support_hand_under_shoulder
+      frames: [bottom, peak]
+      metric: support_hand_under_shoulder
+      equals: true
+    - name: support_arm_vertical
+      frames: [bottom, peak]
+      metric: support_arm_from_vertical_deg
+      max: 15
+    - name: knee_on_pad
+      frames: [bottom, peak]
+      metric: knee_on_pad
+      equals: true
+    - name: shin_on_pad
+      frames: [bottom, peak]
+      metric: shin_on_pad
+      equals: true
+    - name: foot_on_floor
+      frames: [bottom, peak]
+      metric: foot_on_floor
+      equals: true
+    - name: foot_flat
+      frames: [bottom, peak]
+      metric: standing_foot_flat
+      equals: true
+    - name: working_hand_below_shoulder
+      frames: [bottom]
+      metric: working_hand_drop_m
+      min: 0.22
+    - name: working_hand_near_hip
+      frames: [peak]
+      metric: working_hand_hip_m
+      max: 0.22
+    - name: elbow_past_torso
+      frames: [peak]
+      metric: elbow_past_torso
+      equals: true
+    - name: working_elbow
+      frames: [bottom]
+      metric: working_elbow_deg
+      min: 150
+      max: 178
+    - name: working_elbow
+      frames: [peak]
+      metric: working_elbow_deg
+      min: 70
+      max: 130
+    - name: db_in_frame
+      frames: [bottom, peak]
+      metric: db_in_frame
+      equals: true
+    - name: db_visible
+      frames: [bottom, peak]
+      metric: db_visible_frac
+      min: 0.35
+    - name: sil_iou
+      source: overlay
+      metric: sil_iou
+      min: 0.35
+    - name: joint_mae
+      source: overlay
+      metric: joint_mae_diag
+      max: 0.08
+  eye_checklist:
+    - bench is visible and reads as a horizontal flat bench
+    - head is on screen-left or upper-left in the beauty view, or clearly readable in the side proof
+    - back glow is large (lats / mid-back / rear delt as distinct hues)
+    - dumbbell is visible and gripped
+    - no foot points up or toward the camera
+    - the silhouette reads as a bench one-arm row (not a stretch, sit-up, or standing hinge)
+    - drawers have no white hole; clay V stays in range and nothing exceeds 250

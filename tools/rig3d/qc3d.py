@@ -104,7 +104,10 @@ RULE_MAP = {
 
 def apply_rule_map(out):
     for c in out:
-        m = RULE_MAP.get(c["name"]); c["rule_map"] = m or "unmapped"
+        m = RULE_MAP.get(c["name"])
+        if m is None and str(c.get("name") or "").startswith("spec_"):
+            m = "human"
+        c["rule_map"] = m or "unmapped"
         if not c["pass"]:
             c["fix"] = None if m in (None, "human") else m
     return out
@@ -178,8 +181,48 @@ def look_limits(cfg):
     return {"skin_p50": p.get("skin_p50", Q.get("skin_p50")), "skin_p75": p.get("skin_p75", Q["skin_p75"]),
             "skin_p90": p.get("skin_p90", Q["skin_p90"]), "skin_max": p.get("skin_max", Q["skin_max"]), "look": name}
 
+
+def spec_checks(run_dir, cfg):
+    """Score exercises/<slug>.spec.yaml qc.checks against bench_qc.json + overlay_qc.json."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        from spec_load import load_exercise_spec, find_run_json, eval_check
+    except Exception:
+        return []
+    slug = cfg.get("slug")
+    spec = cfg.get("spec") or load_exercise_spec(slug, ROOT)
+    if not spec:
+        return []
+    checks = ((spec.get("qc") or {}).get("checks")) or []
+    if not checks:
+        return []
+    import json as _json
+    bench, overlay = {}, None
+    bp = find_run_json(run_dir, "bench_qc.json")
+    if bp:
+        try:
+            bench = (_json.load(open(bp)).get("frames")) or {}
+        except Exception:
+            bench = {}
+    op = find_run_json(run_dir, "overlay_qc.json")
+    if op:
+        try:
+            overlay = _json.load(open(op))
+        except Exception:
+            overlay = None
+    out = []
+    for item in checks:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        for r in eval_check(item, bench, overlay):
+            nm = "spec_" + r["name"]
+            out.append(ck(nm, r["value"], r["limit"], r["pass"], None, "spec"))
+    return out
+
+
 def run(run_dir, cfg):
     Q = cfg["qc"]; out, F, med = rig_checks(os.path.join(run_dir, "render"), cfg)
+    out += spec_checks(run_dir, cfg)
     # Day 4 look (skin bands depend on grade.look)
     L = json.load(open(os.path.join(run_dir, "grade/look.json")))["frames"]
     lim = look_limits(cfg)
