@@ -45,7 +45,10 @@ def muscle_bloom(rgb, reg_any, body, amount):
         bloom += wt * cv2.GaussianBlur(glow, (0, 0), sig)
     dil = cv2.dilate((w > 0.12).astype(np.uint8), np.ones((21, 21), np.uint8)).astype(np.float32)
     clamp = cv2.GaussianBlur(dil, (0, 0), 5.0)
-    return np.clip(rgb + bloom * float(amount) * clamp[..., None], 0, 255)
+    inner = cv2.erode((w > 0.18).astype(np.uint8), np.ones((9, 9), np.uint8)).astype(np.float32)
+    inner = cv2.GaussianBlur(inner, (0, 0), 2.0)
+    wtmap = clamp * (0.20 + 0.80 * (1.0 - inner))   # keep interior fibres; bloom the soft muscle edge
+    return np.clip(rgb + bloom * float(amount) * wtmap[..., None], 0, 255)
 
 def studio_floor_mask(fg, body, rgb):
     """Opaque ground-plane pixels connected to the bottom edge. The receding studio floor spans
@@ -62,6 +65,106 @@ def studio_floor_mask(fg, body, rgb):
     if keep.size == 0:
         return np.zeros(fg.shape, dtype=bool)
     return np.isin(labels, keep)
+
+def floor_quality_stats(L, floor_m, far, fy):
+    """Horizon jump (luma step at the top of the floor silhouette) and floor-vs-backdrop delta.
+    A bright studio plane with a hard far edge scores high on both; a dark melted cyclorama scores low."""
+    H, W = L.shape
+    bg_l = float(np.median(L[far])) if far.sum() > 1000 else 38.0
+    yy = np.arange(H)[:, None]
+    recede = floor_m & (yy < fy - 30) if fy is not None else floor_m
+    if recede.sum() > 200:
+        fl = float(np.median(L[recede]))
+    elif floor_m.any():
+        fl = float(np.median(L[floor_m]))
+    else:
+        fl = bg_l
+    has = floor_m.any(0)
+    yscan = np.argmax(floor_m, axis=0)
+    xs = np.arange(W)
+    above = np.clip(yscan - 5, 0, H - 1)
+    below = np.clip(yscan + 5, 0, H - 1)
+    jump = L[below, xs] - L[above, xs]
+    valid = has & (yscan > 30)
+    if fy is not None:
+        valid = valid & (yscan < fy - 60)
+    jmed = float(np.median(jump[valid])) if valid.any() else 0.0
+    return {"floor_bg_delta": round(fl - bg_l, 2), "floor_horizon_jump": round(jmed, 2)}
+
+def glow_quality_stats(o, green):
+    """Fibre texture (high-pass std of the green channel inside an eroded glow core) and HSV band."""
+    if not np.any(green):
+        return {"glow_fibre_hp_std": 0.0, "glow_hue_p50": None, "glow_sat_p50": None}
+    inner = cv2.erode(green.astype(np.uint8), np.ones((11, 11), np.uint8)) > 0
+    if inner.sum() < 200:
+        inner = green
+    gc = o[..., 1]
+    hp = gc - cv2.GaussianBlur(gc, (0, 0), 2.5)
+    bgr = np.clip(o[..., ::-1], 0, 255).astype(np.uint8)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
+    return {
+        "glow_fibre_hp_std": round(float(hp[inner].std()), 2),
+        "glow_hue_p50": round(float(np.percentile(hsv[..., 0][green], 50)), 1),
+        "glow_sat_p50": round(float(np.percentile(hsv[..., 1][green], 50)), 1),
+    }
+
+def snap_glow_hsv(rgb, w, target_h=74.0, target_s=196.0, hue_mix=0.90, sat_mix=0.82):
+    """Push glow pixels toward gymform neon green while keeping value (fibre / form)."""
+    ww = np.clip(w, 0, 1).astype(np.float32)
+    if float(ww.max()) <= 0:
+        return rgb
+    bgr = np.clip(rgb[..., ::-1], 0, 255).astype(np.uint8)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
+    hsv[..., 0] = hsv[..., 0] * (1.0 - hue_mix * ww) + target_h * (hue_mix * ww)
+    s = hsv[..., 1]
+    hsv[..., 1] = np.clip(s + (target_s - s) * sat_mix * ww, 0, 255)
+    out = cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)[..., ::-1].astype(np.float32)
+    return rgb * (1.0 - ww[..., None]) + out * ww[..., None]
+
+def studio_surface_mask(fg, body, rgb):
+    """Any non-body, non-dumbbell studio pixel, including faint fade-zone ghosts."""
+    R, Gc, B = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    blue = (B > R + 18.0) & (B > Gc + 12.0)
+    return (fg > 0.04) & (body < 0.25) & (~blue)
+
+def melt_studio_floor(out, surface, backdrop, fy, xs_b):
+    """Replace every studio-surface pixel (including semi-transparent ghosts) with a dark
+    charcoal that is indistinguishable from the backdrop except in a tight patch under the feet."""
+    if not np.any(surface) or fy is None:
+        return out
+    H, W = surface.shape
+    bg = np.asarray(backdrop, np.float32).reshape(3)
+    yy = np.arange(H, dtype=np.float32)[:, None]
+    xx = np.arange(W, dtype=np.float32)[None, :]
+    cx = float(np.mean(xs_b)) if xs_b is not None and len(xs_b) else W * 0.5
+    dist = np.sqrt(((xx - cx) / 150.0) ** 2 + ((yy - fy) / 95.0) ** 2)
+    keep = np.clip(1.0 - dist, 0.0, 1.0) * surface.astype(np.float32)
+    dark = bg + np.array([2.5, 2.5, 3.0], np.float32)
+    target = dark * keep[..., None] + bg * (1.0 - keep)[..., None]
+    mix = np.clip(surface.astype(np.float32), 0, 1)
+    return out * (1.0 - mix[..., None]) + target * mix[..., None]
+
+def add_grounding_reflection(out, body, floor_m, fy):
+    """Faint flipped-leg reflection on the floor just under the feet (grounding, not a mirror)."""
+    if fy is None:
+        return out
+    H, W = floor_m.shape
+    ht = 72
+    dest0 = min(H - 2, fy + 3); dest1 = min(H, dest0 + ht)
+    src_h = dest1 - dest0
+    if src_h < 12:
+        return out
+    y0 = max(0, fy - src_h)
+    src = out[y0:fy][-src_h:].copy()
+    if src.shape[0] != src_h:
+        return out
+    refl = src[::-1] * 0.10 + 4.0
+    src_body = (body[y0:fy][-src_h:] > 0.5).astype(np.float32)[::-1]
+    w = floor_m[dest0:dest1].astype(np.float32) * (body[dest0:dest1] < 0.5).astype(np.float32)
+    w = w * src_body * np.linspace(0.16, 0.02, src_h, dtype=np.float32)[:, None]
+    sl = out[dest0:dest1]
+    sl[:] = sl * (1.0 - w[..., None]) + refl * w[..., None]
+    return out
 
 def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     G = cfg["grade"]; W, H = G["out_res"]
@@ -94,23 +197,22 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     lo, hi = SPEC["mannequin"]["shorts_lum_range"]; tone = tone * (1 - shorts) + np.clip(lum * 0.3 + lo - 2.0, lo, hi) * shorts
     tr, tg, tb = look.get("tint_rgb", SPEC["mannequin"]["skin_lock_all_steps"].get("tint_rgb", [-3, 1, 3]))
     mono = np.stack([tone + tr, tone + tg, tone + tb], -1)
-    # keep 3D emission + sculpt form from the beauty pass on the target muscles
-    emit_keep = float(G.get("emission_keep", 0.78)); rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
-    base = mono * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
-    # AgX beauty emission lands as pale mint: restore gymform green/red while keeping the rendered form
-    cz = float(G.get("muscle_colorize", 0.88))
-    if cz > 0 and float(rw.max()) > 0:
-        src_l = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
-        form = np.clip(src_l / 145.0, 0.38, 1.28)
-        tint = np.array([214.0, 68.0, 48.0] if G.get("glow", "right") == "wrong" else [28.0, 228.0, 88.0], np.float32)
-        colored = np.clip(tint * form[..., None], 0, 255)
-        base = base * (1.0 - cz * rw) + colored * (cz * rw)
-    # Day 4 fibre as fascicle direction only (fibre_amount 1.0 = old sticker look)
-    fibre_amt = float(G.get("fibre_amount", 0.42))
+    # 3D form as luma high-pass from the beauty sculpt (not the pale-mint AgX emission color)
+    rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
+    src_l = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
+    hp_form = src_l - cv2.GaussianBlur(src_l, (0, 0), 2.2)
+    base = np.clip(mono + (float(G.get("form_hp", 0.90)) * hp_form * rw[..., 0])[..., None], 0, 255)
+    emit_keep = float(G.get("emission_keep", 0.20))
+    if emit_keep > 0:
+        base = base * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
+    fibre_amt = float(G.get("fibre_amount", 0.80))
     F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
     graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", fi / max(n, 1))
     graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
-    graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.68)))
+    graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
+                           target_h=52.0 if G.get("glow", "right") == "wrong" else 74.0,
+                           target_s=196.0, sat_mix=0.82)
+    graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.38)))
     sm = shorts > 0.45
     if np.any(sm):                                          # QC: 0 green pixels on the briefs
         graded[sm] = mono[sm]
@@ -121,7 +223,9 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     ys_b, xs_b = np.nonzero(body > 0.5)
     YY = np.arange(H, dtype=np.float32)[:, None]
     floor_m = studio_floor_mask(fg, body, rgb)
-    fig = (fg > 0.5) & ~floor_m
+    surface = studio_surface_mask(fg, body, rgb)
+    floor_m = floor_m | ((fg > 0.5) & surface)          # leftover disc / cove must not enter the figure bbox
+    fig = (fg > 0.5) & ~floor_m & ~surface
     ys, xs = np.nonzero(fig) if fig.any() else (ys_b, xs_b)
     sh = None
     if len(ys_b):                                                          # contact shadow under the BODY feet (also darkens the studio floor)
@@ -129,8 +233,11 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
         YY, XX = np.mgrid[:H, :W].astype(np.float32)
         sh = np.exp(-(((XX - cx) / sw) ** 2 + ((YY - fy - 6) / 18.0) ** 2) * 2.2); bg *= (1 - 0.38 * sh)[..., None]
     out = bg * (1 - fg[..., None]) + fg_rgb * fg[..., None]
+    fy = int(ys_b.max()) if len(ys_b) else None
+    out = melt_studio_floor(out, surface, bg[0, 0], fy, xs_b if len(ys_b) else None)
     if sh is not None:
-        out = out * (1.0 - 0.42 * sh * (body < 0.5))[..., None]
+        out = out * (1.0 - 0.58 * sh * (body < 0.5))[..., None]
+    out = add_grounding_reflection(out, body, surface, fy)
     out8 = np.clip(out, 0, 255).astype(np.uint8)
     base8 = out8                     # look stats are measured on the figure BEFORE the UI (laser/leader/pill have their own QC)
     ui = {}
@@ -177,12 +284,15 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     st["look"] = look_name
     if len(ys_b):
         fy = int(ys_b.max()); x0s, x1s = int(xs_b.min()), int(xs_b.max())
-        floor_pix = (fg > 0.45) & (body < 0.2) & (np.arange(H)[:, None] > fy - 8)
+        foot = ys_b > fy - 40
+        x0f = int(xs_b[foot].min()) - 16; x1f = int(xs_b[foot].max()) + 16
         xx = np.arange(W)[None, :]; yy = np.arange(H)[:, None]
-        under = floor_pix & (xx >= x0s) & (xx <= x1s) & (yy >= fy + 2) & (yy <= fy + 52)
-        side = floor_pix & ~under
-        if under.sum() > 80 and side.sum() > 80:
-            st["floor_shadow_delta"] = round(float(np.median(L[side]) - np.median(L[under])), 2)
+        under = (yy >= fy + 2) & (yy <= fy + 40) & (xx >= x0f) & (xx <= x1f) & (body < 0.4)
+        if under.sum() > 80 and far.sum() > 80:
+            st["floor_shadow_delta"] = round(float(np.median(L[far]) - np.median(L[under])), 2)
+    fy_ = int(ys_b.max()) if len(ys_b) else None
+    st.update(floor_quality_stats(L, floor_m, far, fy_))
+    st.update(glow_quality_stats(o, green))
     # v5: figure pixels under the title text box / preview pill (the figure must never sit under the title)
     st["overlay_fig_px"] = {k: int((fg[ui[k][1]:ui[k][3] + 1, ui[k][0]:ui[k][2] + 1] > 0.5).sum()) for k in ("title", "pill") if k in ui}
     if "callout" in ui:

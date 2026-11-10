@@ -671,11 +671,61 @@ add_area("fill", ctr - key_from * 0.5 + sidev * 2.4 + upv * 2.2, RC.get("fill_en
 add_area("rim", ctr - key_from * 2.6 + upv * 1.9, RC.get("rim_energy", 270), 1.6, (0.65, 0.82, 1.00))
 floor = None
 if RC.get("floor", True):
-    bpy.ops.mesh.primitive_plane_add(size=float(RC.get("floor_size_m", 6.0)), location=(ctr.x, ctr.y, float(RC.get("floor_z", 0.0))))
+    import bmesh
+    flz = float(RC.get("floor_z", 0.0))
+    flsz = float(RC.get("floor_size_m", 8.0))
+    bpy.ops.mesh.primitive_plane_add(size=flsz, location=(ctr.x, ctr.y, flz))
     floor = bpy.context.object; floor.name = "studio_floor"
+    me = floor.data
+    bm = bmesh.new(); bm.from_mesh(me)
+    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=22)
+    bm.to_mesh(me); bm.free(); me.update()
+    away = (ctr - CAM.location); away.z = 0
+    away = (away if away.length > 1e-6 else mu.Vector((0.0, 1.0, 0.0))).normalized()
+    for v in me.vertices:                                          # cyclorama: far half curves up into a wall
+        w = floor.matrix_world @ v.co
+        d = (w.x - ctr.x) * away.x + (w.y - ctr.y) * away.y
+        t = min(max((d - 0.45) / 2.6, 0.0), 1.0)
+        v.co.z = (t * t) * 3.4
+    me.update()
     fm = bpy.data.materials.new("studio_floor"); fm.use_nodes = True
-    fb = fm.node_tree.nodes["Principled BSDF"]
-    fb.inputs["Base Color"].default_value = (0.042, 0.045, 0.050, 1); fb.inputs["Roughness"].default_value = 0.88
+    nt = fm.node_tree; fb = nt.nodes["Principled BSDF"]; mout = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
+    fb.inputs["Base Color"].default_value = (0.008, 0.009, 0.010, 1)
+    fb.inputs["Roughness"].default_value = 0.55
+    if "Specular IOR Level" in fb.inputs:
+        fb.inputs["Specular IOR Level"].default_value = 0.28
+    if "Emission Color" in fb.inputs:
+        fb.inputs["Emission Color"].default_value = (0.011, 0.012, 0.014, 1)
+        if "Emission Strength" in fb.inputs:
+            fb.inputs["Emission Strength"].default_value = 0.12
+    tex = nt.nodes.new("ShaderNodeTexCoord")
+    ln = nt.nodes.new("ShaderNodeVectorMath"); ln.operation = "LENGTH"
+    nt.links.new(tex.outputs["Object"], ln.inputs[0])
+    fade_xy = nt.nodes.new("ShaderNodeMapRange")
+    fade_xy.clamp = True
+    fade_xy.inputs["From Min"].default_value = 1.05
+    fade_xy.inputs["From Max"].default_value = 2.85
+    fade_xy.inputs["To Min"].default_value = 1.0
+    fade_xy.inputs["To Max"].default_value = 0.0
+    nt.links.new(ln.outputs["Value"], fade_xy.inputs["Value"])
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ"); nt.links.new(tex.outputs["Object"], sep.inputs[0])
+    fade_z = nt.nodes.new("ShaderNodeMapRange")
+    fade_z.clamp = True
+    fade_z.inputs["From Min"].default_value = 0.25
+    fade_z.inputs["From Max"].default_value = 2.2
+    fade_z.inputs["To Min"].default_value = 1.0
+    fade_z.inputs["To Max"].default_value = 0.0
+    nt.links.new(sep.outputs["Z"], fade_z.inputs["Value"])
+    fac_a = nt.nodes.new("ShaderNodeMath"); fac_a.operation = "MULTIPLY"
+    nt.links.new(fade_xy.outputs["Result"], fac_a.inputs[0]); nt.links.new(fade_z.outputs["Result"], fac_a.inputs[1])
+    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    inv = nt.nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"; inv.inputs[0].default_value = 1.0
+    nt.links.new(fac_a.outputs[0], inv.inputs[1])
+    nt.links.new(inv.outputs[0], mix.inputs["Fac"])
+    nt.links.new(fb.outputs[0], mix.inputs[1]); nt.links.new(tr.outputs[0], mix.inputs[2])
+    for l in list(mout.inputs["Surface"].links): nt.links.remove(l)
+    nt.links.new(mix.outputs[0], mout.inputs["Surface"])
     floor.data.materials.clear(); floor.data.materials.append(fm)
     try: col.objects.link(floor)
     except RuntimeError: pass
