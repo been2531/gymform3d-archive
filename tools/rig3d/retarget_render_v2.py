@@ -376,16 +376,29 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import muscle_re
 ev0 = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ev0)
 ADJ = MREG.adjacency(nv, ev0.reshape(-1, 2))
 if RC.get("crease_smooth", True):
-    did = MREG.smooth_vertex_groups(body, ("Spine", "Spine01", "Spine02", "LeftShoulder", "RightShoulder", "LeftArm", "RightArm"),
-                                    ADJ, factor=float(RC.get("crease_weight_smooth", 0.5)),
-                                    repeat=int(RC.get("crease_weight_smooth_iter", 6)))
+    _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    _cdir = RC.get("weight_cache_dir") or os.path.join(_root, "output/_rig3d/cache")
+    _gn = ("Spine", "Spine01", "Spine02", "LeftShoulder", "RightShoulder", "LeftArm", "RightArm")
+    did, hit, cpath = MREG.cached_smooth_vertex_groups(
+        body, _gn, ADJ,
+        factor=float(RC.get("crease_weight_smooth", 0.5)),
+        repeat=int(RC.get("crease_weight_smooth_iter", 6)),
+        cache_dir=_cdir, glb_path=C["asset"]["glb"])
     for v in me.vertices:
         best = (0.0, -1)
         for g in v.groups:
             if g.weight > best[0]: best = (g.weight, g.group)
         dom[v.index] = best[1]
-    log(f"crease weight-smooth {did}")
+    log(f"crease weight-smooth {did} cache={hit} {cpath}")
 EXCLUDE = MREG.exclude_mask(dom, GN)
+PRIOR = np.zeros(nv, dtype=bool)
+for _pn in ("Spine", "Spine01", "Spine02", "LeftShoulder", "RightShoulder"):
+    if _pn in body.vertex_groups:
+        _gi = body.vertex_groups[_pn].index
+        for v in me.vertices:
+            for g in v.groups:
+                if g.group == _gi and g.weight > 0.20:
+                    PRIOR[v.index] = True
 def _bone_heads(posed=False):
     out = {}
     for n_ in ("Hips", "Spine", "Spine01", "Spine02", "Neck", "neck", "Head", "head_end", "LeftShoulder", "RightShoulder", "LeftArm", "RightArm", "LeftUpLeg", "RightUpLeg"):
@@ -393,7 +406,8 @@ def _bone_heads(posed=False):
         elif n_ in arm.data.bones: out[n_] = np.array(arm.matrix_world @ arm.data.bones[n_].head_local)
     return out
 _peak_dilate = int(RC.get("glow_peak_dilate", 4))
-reg, rinfo = MREG.assign(co, nr, _bone_heads(False), ADJ, shorts, EXCLUDE, flex=0.0, peak_dilate=_peak_dilate)
+reg, rinfo = MREG.assign(co, nr, _bone_heads(False), ADJ, shorts, EXCLUDE, flex=0.0, peak_dilate=_peak_dilate, prior=PRIOR)
+REST_REG = reg.copy()
 MREG.write_mregion(me, reg)
 lats = reg[:, 0] > 0.5; rhomb = reg[:, 1] > 0.5; mid_trap = reg[:, 2] > 0.5
 # palm axis (v5): the across-palm direction (index knuckle -> little finger) in the HAND bone's local frame = the
@@ -569,29 +583,39 @@ for fc in (db.animation_data.action.fcurves if hasattr(db.animation_data.action,
     for kp in fc.keyframe_points: kp.interpolation = "LINEAR"
 log("dumbbell baked")
 
-# Shared construction: Corrective Smooth on the Spine01 / armpit crease (not a limit relaxation).
-if RC.get("crease_smooth", True):
-    w_sp = np.zeros(nv)
-    if "Spine01" in body.vertex_groups:
-        gi_ = body.vertex_groups["Spine01"].index
-        for v in me.vertices:
-            for g in v.groups:
-                if g.group == gi_: w_sp[v.index] = g.weight
+# Shared construction: mild Corrective Smooth on a tight Spine01 / armpit group.
+# v3.1 used factor 0.7 / 12 iters / LENGTH_WEIGHTED over a broad z-band and collapsed
+# some edges to ratio 0.0. Weight-smooth (cached) does the bulk of the crease fix.
+if RC.get("crease_smooth", True) and float(RC.get("crease_smooth_factor", 0.35)) > 0.01:
+    def _vg_w(name):
+        w = np.zeros(nv)
+        if name in body.vertex_groups:
+            gi_ = body.vertex_groups[name].index
+            for v in me.vertices:
+                for g in v.groups:
+                    if g.group == gi_: w[v.index] = g.weight
+        return w
+    w_sp = _vg_w("Spine01")
+    w_sh = np.maximum(_vg_w("LeftShoulder"), _vg_w("RightShoulder"))
+    w_arm = np.maximum(_vg_w("LeftArm"), _vg_w("RightArm"))
     crease = (w_sp > 0.15) & (z >= 1.15) & (z <= 1.45)
-    crease |= (z >= 1.18) & (z <= 1.42) & (ax_ >= 0.06) & (ax_ <= 0.20)
+    crease |= ((z >= 1.18) & (z <= 1.42) & (ax_ >= 0.06) & (ax_ <= 0.20)
+               & ((w_sp > 0.08) | (w_sh > 0.12) | (w_arm > 0.12)))
     if "crease_smooth" not in body.vertex_groups:
         vg = body.vertex_groups.new(name="crease_smooth")
         idx = np.where(crease)[0]
         if len(idx): vg.add(idx.tolist(), 1.0, "REPLACE")
     if "crease_corrective" not in body.modifiers:
         mod = body.modifiers.new("crease_corrective", "CORRECTIVE_SMOOTH")
-        mod.factor = float(RC.get("crease_smooth_factor", 0.7))
-        mod.iterations = int(RC.get("crease_smooth_iter", 12))
-        try: mod.smooth_type = "LENGTH_WEIGHTED"
+        mod.factor = float(RC.get("crease_smooth_factor", 0.35))
+        mod.iterations = int(RC.get("crease_smooth_iter", 6))
+        try: mod.smooth_type = "SIMPLE"
+        except Exception: pass
+        try: mod.use_pin_boundary = True
         except Exception: pass
         mod.use_only_smooth = False
         mod.vertex_group = "crease_smooth"
-    log(f"crease corrective-smooth verts={int(crease.sum())}")
+    log(f"crease corrective-smooth verts={int(crease.sum())} factor={RC.get('crease_smooth_factor', 0.35)}")
 
 # ---- camera: tight side, working-arm side, turned toward the back -----------------------------------------------------
 CAMC = RC["camera"]; sc.frame_set(1)
@@ -705,7 +729,12 @@ for f in range(1, NF + 1):
         for gi_ in np.unique(dom[e2_[:, 0]]):
             mm_ = (dom[e2_[:, 0]] == gi_) & vis_e; gm_[GN.get(int(gi_), "?")] = round(float(sr_[mm_].max()), 2) if mm_.any() else 0.0
         rec["spike_max_by_group"] = dict(sorted(gm_.items(), key=lambda kv: -kv[1])[:5])
-        rec.update({"db_head_visible": vis_, "db_head_sep_rel": round(float(np.linalg.norm(hp_[0] - hp_[1]) / hd_), 3), "tear_min_ratio": round(float(ratio.min()), 3)})
+        # min-ratio on visible, non-sliver rest edges (same visibility as tear_max_visible).
+        # Raw ratio.min() was dominated by sub-median UV-seam slivers whose rest length is already << MED_E.
+        long_e = rest_len[ok_e] >= 0.35 * MED_E
+        pick = vis_e & long_e
+        rec.update({"db_head_visible": vis_, "db_head_sep_rel": round(float(np.linalg.norm(hp_[0] - hp_[1]) / hd_), 3),
+                    "tear_min_ratio": round(float((ratio[pick] if pick.any() else ratio[vis_e]).min()), 3)})
         rec.update({"tear_max_ratio": round(float(ratio.max()), 3), "tear_frac2x": round(float((ratio > 2.0).mean()), 6),
                     "grip_mesh_m": round(float(np.linalg.norm(c2[hand_vi] - np.array(dbp), axis=1).min()), 4)})
         bad = ev[ok_e][ratio > 2.0][:, 0]
@@ -890,7 +919,13 @@ def update_regions(f):
     eb.to_mesh_clear()
     nuse = min(len(c2), nv)
     fl = flex_at(f)
-    rg, info = MREG.assign(c2[:nuse], n2[:nuse], _bone_heads(True), ADJ, shorts, EXCLUDE, flex=fl, peak_dilate=_peak_dilate)
+    rg, info = MREG.assign(c2[:nuse], n2[:nuse], _bone_heads(True), ADJ, shorts, EXCLUDE, flex=fl, peak_dilate=_peak_dilate, prior=PRIOR[:nuse])
+    # Union rest-pose paint (travels with verts, continuous at the hinged start) with
+    # the per-frame assign (paints surface that scapula retract newly exposes at peak).
+    if bool(RC.get("glow_union_rest", True)):
+        rest = REST_REG[:nuse]
+        rg = np.maximum(rg, rest)
+        info = dict(info, union_rest=True, rest_px=int((rest.max(1) > 0.5).sum()))
     if nuse < nv:
         pad = np.zeros((nv, 3), np.float32); pad[:nuse] = rg; rg = pad
     MREG.write_mregion(body.data, rg)

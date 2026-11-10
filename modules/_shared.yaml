@@ -33,14 +33,15 @@ render:
   sss_scale: 0.05
   glow_emission: 1.35
   glow_follow_mesh: true          # paint mregion in a torso-local frame on the deformed mesh
-  glow_peak_dilate: 4             # extra mesh-ring growth of the glow sheet at peak contraction
+  glow_union_rest: true           # union rest-pose paint (follows verts) with per-frame assign (fills newly visible)
+  glow_peak_dilate: 2             # extra mesh-ring growth at peak (kept small so glow_frac <= 0.18)
   glow_flex_min: 0.58             # emission at start = this x peak (peak is always strongest)
   glow_ab: false                  # if true, also render the Blender-native fibre+compositor path as b_*.png
   glow_fibre_scale: 42.0
   blender_bloom: 0.60             # compositor Fog-Glow strength (blender path only)
-  crease_smooth: true             # weight-smooth + Corrective Smooth at the Spine01 / armpit crease
-  crease_smooth_factor: 0.7
-  crease_smooth_iter: 12
+  crease_smooth: true             # cached weight-smooth of Spine/shoulder groups (the crease fix)
+  crease_smooth_factor: 0.0       # Corrective Smooth off: v3.1 0.7/12 collapsed edges to ratio 0.0
+  crease_smooth_iter: 6
   crease_weight_smooth: 0.5
   crease_weight_smooth_iter: 6
   hdri_strength: 0.35
@@ -111,7 +112,8 @@ qc:
   figure_fill_h_min: 0.62
   glow_frac_max: 0.18
   glow_area_peak_vs_start_min: 1.0    # peak glow px / start glow px (v3 regression: ~0.40)
-  glow_largest_cc_frac_min: 0.90      # largest connected glow component / glow px (v3 peak ~0.84)
+  glow_largest_cc_frac_min: 0.90      # largest connected glow component / glow px at peak
+  glow_largest_cc_frac_start_min: 0.85  # start sheet must be continuous (v3.1 start ~0.50)
   region_contrast_legs_min: 26        # p10(leg luma) - backdrop (v3 charcoal ~20.7)
   overlay_figure_px_max: 0
   callout_figure_overlap_max: 0.02

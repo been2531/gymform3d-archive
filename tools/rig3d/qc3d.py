@@ -47,6 +47,7 @@ RULE_MAP = {
     "green_only_on_lats_rhomboids_midtrap": "human", "no_red_glow_px": "human", "sharpness_vs_day4": "human", "figure_fully_in_frame": "camera_margin",
     "figure_fill_w_h": "camera_tighter", "figure_size_not_below_target": "camera_bigger", "green_area_ratio_cap": "human",
     "glow_area_peak_vs_start": "glow_follow_mesh", "glow_largest_cc_frac": "glow_follow_mesh",
+    "glow_largest_cc_frac_start": "glow_follow_mesh",
     "region_contrast_legs": "leg_rim",
 
     "overlay_in_safe_zone": "human", "overlay_text_no_overlap": "human", "overlay_clear_of_figure_px": "camera_top_margin", "callout_text_clear_of_figure": "human",
@@ -232,6 +233,13 @@ def run(run_dir, cfg):
         frac = L[pi].get("glow_largest_cc_frac") if L else None
         out.append(ck("glow_largest_cc_frac", None if frac is None else {"peak_f": nums[pi] if nums else None, "frac": round(float(frac), 4), "cc": L[pi].get("glow_cc")},
                       f">= {Q['glow_largest_cc_frac_min']} at peak", frac is not None and float(frac) >= float(Q["glow_largest_cc_frac_min"]), "glow_follow_mesh", "look"))
+    if "glow_largest_cc_frac_start_min" in Q:
+        # v3.2: start must be a continuous sheet (weaker intensity than peak, but no holes).
+        nums = [_fnum(f) for f in L]
+        si = int(np.argmin(nums)) if nums else 0
+        frac = L[si].get("glow_largest_cc_frac") if L else None
+        out.append(ck("glow_largest_cc_frac_start", None if frac is None else {"start_f": nums[si] if nums else None, "frac": round(float(frac), 4), "cc": L[si].get("glow_cc")},
+                      f">= {Q['glow_largest_cc_frac_start_min']} at start", frac is not None and float(frac) >= float(Q["glow_largest_cc_frac_start_min"]), "glow_follow_mesh", "look"))
     if "region_contrast_legs_min" in Q:
         vs = [f.get("legs_vs_backdrop") for f in L if f.get("legs_vs_backdrop") is not None]
         mn = min(vs) if vs else None

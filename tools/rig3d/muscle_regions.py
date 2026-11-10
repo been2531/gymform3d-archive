@@ -11,6 +11,7 @@ Channels (match the mask pass): R = lats, G = rhomboids, B = mid-trap | rear del
 the back-facing trunk so peak glow is a larger continuous region than start.
 """
 from __future__ import annotations
+import hashlib, json, os
 import numpy as np
 
 EXCLUDE_SUB = (
@@ -87,7 +88,7 @@ def _dilate(mask, adj, steps, allowed):
     return m
 
 
-def assign(co, nr, bones, adj, shorts, exclude, flex=0.0, peak_dilate=3, base_dilate=4):
+def assign(co, nr, bones, adj, shorts, exclude, flex=0.0, peak_dilate=3, base_dilate=4, prior=None):
     """Paint (N, 3) float32 region weights for the given (possibly deformed) vertex positions.
 
     `shorts` / `exclude` are rest-stable boolean masks (vertex indices do not change).
@@ -107,26 +108,45 @@ def assign(co, nr, bones, adj, shorts, exclude, flex=0.0, peak_dilate=3, base_di
         back = -back; side = -side
         lat = rel @ side; bck = rel @ back; nb = nr @ back
     keep = ~shorts & ~exclude
-    backish = (nb > 0.02) & (bck > -0.06)
+    # Start (flex=0): the hinge tips upper-back normals off the torso "back" axis, so a
+    # tight backish test drops mid-trap / rhomboids (v3.1 start holes). Loosen at low
+    # flex; at peak (flex=1) keep the original tight window so glow_frac stays capped.
+    fx = float(np.clip(flex, 0.0, 1.0))
+    nb_lo = -0.10 + 0.12 * fx
+    bck_lo = -0.14 + 0.08 * fx
+    backish = (nb > nb_lo) & (bck > bck_lo)
     sideish = np.abs(nr @ side) > 0.45
 
-    mid_trap = keep & backish & (t >= 0.52) & (t <= 0.86) & (np.abs(lat) <= 0.145)
+    # mid-trap extends to t=0.94 (upper medial trap near the neck). The previous
+    # t<=0.86 left a gap that only peak-flex dilation filled — that was the start-frame hole.
+    mid_trap = keep & backish & (t >= 0.48) & (t <= 0.94) & (np.abs(lat) <= 0.16)
     rhomb = keep & backish & (t >= 0.38) & (t < 0.74) & (np.abs(lat) >= 0.008) & (np.abs(lat) <= 0.12) & ~mid_trap
     lat_lo = 0.032 + 0.20 * np.clip(t - 0.08, 0.0, 0.60)
     lat_hi = 0.090 + 0.50 * np.clip(t - 0.08, 0.0, 0.60)
     lats = keep & (t >= 0.08) & (t <= 0.68) & (np.abs(lat) >= lat_lo) & (np.abs(lat) <= lat_hi)
     lats &= ((nb > 0.00) | sideish) & (nb > -0.30) & ~mid_trap & ~rhomb
-    rear_delt = keep & backish & (t >= 0.60) & (t <= 0.88) & (np.abs(lat) >= 0.10) & (np.abs(lat) <= 0.22)
-    rear_delt &= (bck > 0.00) & ~mid_trap & ~rhomb
+    rear_delt = keep & backish & (t >= 0.58) & (t <= 0.94) & (np.abs(lat) >= 0.10) & (np.abs(lat) <= 0.22)
+    rear_delt &= (bck > -0.02) & ~mid_trap & ~rhomb
 
-    allowed = keep & (nb > 0.00) & (t >= 0.06) & (t <= 0.90) & (np.abs(lat) < 0.26)
+    # Rig-skinning prior: verts weighted to spine/shoulder groups are anatomically
+    # the back sheet. This does not depend on posed normals, so a hinged start
+    # still covers mid-trap / upper trap that the backish test drops.
+    if prior is not None:
+        pr = np.asarray(prior, dtype=bool)[:nv] & keep
+        sheet = pr & (t >= 0.12) & (t <= 0.96) & (np.abs(lat) < 0.28) & (nb > -0.28)
+        mid_trap = mid_trap | (sheet & (t >= 0.46) & (np.abs(lat) <= 0.18))
+        rhomb = rhomb | (sheet & (t >= 0.36) & (t < 0.74) & (np.abs(lat) >= 0.006) & (np.abs(lat) <= 0.13) & ~mid_trap)
+        rear_delt = rear_delt | (sheet & (t >= 0.56) & (np.abs(lat) >= 0.10) & ~mid_trap & ~rhomb)
+        lats = lats | (sheet & (t <= 0.70) & (np.abs(lat) >= 0.06) & ~mid_trap & ~rhomb & ~rear_delt)
+
+    allowed = keep & (nb > (nb_lo - 0.06)) & (t >= 0.06) & (t <= 0.92) & (np.abs(lat) < 0.28)
     # fill pinholes and connect lats / rhomb / mid-trap / rear-delt into one sheet
-    mid_trap = _dilate(mid_trap, adj, base_dilate, allowed & (t >= 0.50))
+    mid_trap = _dilate(mid_trap, adj, base_dilate, allowed & (t >= 0.46))
     rhomb = _dilate(rhomb, adj, base_dilate, allowed & (t >= 0.34) & (t <= 0.80) & ~mid_trap)
     lats = _dilate(lats, adj, base_dilate, allowed & (t <= 0.72) & ~mid_trap & ~rhomb)
     rear_delt = _dilate(rear_delt, adj, base_dilate, allowed & (t >= 0.52) & ~mid_trap & ~rhomb)
 
-    extra = int(round(float(peak_dilate) * float(np.clip(flex, 0.0, 1.0))))
+    extra = 2 + int(round(float(peak_dilate) * float(np.clip(flex, 0.0, 1.0))))
     if extra > 0:
         any0 = lats | rhomb | mid_trap | rear_delt
         grown = _dilate(any0, adj, extra, allowed)
@@ -187,3 +207,66 @@ def smooth_vertex_groups(body, names, adj, factor=0.5, repeat=6):
                     pass
         did.append(name)
     return did
+
+
+def vertex_group_weights(body, names):
+    """Read named vertex-group weights as {name: (N,) float64}."""
+    nv = len(body.data.vertices)
+    want = {}
+    for name in names:
+        vg = body.vertex_groups.get(name)
+        if vg is not None:
+            want[vg.index] = name
+    out = {n: np.zeros(nv, dtype=np.float64) for n in want.values()}
+    for v in body.data.vertices:
+        for g in v.groups:
+            if g.group in want:
+                out[want[g.group]][v.index] = g.weight
+    return out
+
+
+def apply_vertex_group_weights(body, weights):
+    """Replace named vertex-group weights from a {name: (N,)} mapping."""
+    for name, w in weights.items():
+        vg = body.vertex_groups.get(name)
+        if vg is None:
+            continue
+        w = np.asarray(w, dtype=np.float64)
+        for i, val in enumerate(w):
+            if val > 1e-5:
+                vg.add([i], float(min(val, 1.0)), "REPLACE")
+            else:
+                try:
+                    vg.remove([i])
+                except RuntimeError:
+                    pass
+
+
+def asset_cache_key(glb_path, params):
+    """Stable id: size + head/tail bytes of the GLB plus the smooth params."""
+    st = os.stat(glb_path)
+    h = hashlib.sha256()
+    h.update(str(int(st.st_size)).encode())
+    with open(glb_path, "rb") as f:
+        h.update(f.read(1 << 20))
+        if st.st_size > (2 << 20):
+            f.seek(-1 << 20, 2)
+            h.update(f.read())
+    h.update(json.dumps(params, sort_keys=True, default=str).encode())
+    return h.hexdigest()[:20]
+
+
+def cached_smooth_vertex_groups(body, names, adj, factor, repeat, cache_dir, glb_path):
+    """Laplacian-smooth named groups, cached per asset hash + params (one-time ~21s)."""
+    os.makedirs(cache_dir, exist_ok=True)
+    key = asset_cache_key(glb_path, {"names": list(names), "factor": float(factor), "repeat": int(repeat), "v": 1})
+    path = os.path.join(cache_dir, f"vg_smooth_{key}.npz")
+    if os.path.exists(path):
+        data = {k: np.asarray(v) for k, v in np.load(path).items()}
+        apply_vertex_group_weights(body, data)
+        return list(data.keys()), "hit", path
+    did = smooth_vertex_groups(body, names, adj, factor=factor, repeat=repeat)
+    weights = vertex_group_weights(body, did)
+    if weights:
+        np.savez_compressed(path, **weights)
+    return did, "miss", path
