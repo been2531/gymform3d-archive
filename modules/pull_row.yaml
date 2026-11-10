@@ -34,7 +34,7 @@ render:
   camera:
     yaw_back_deg: 35               # working-side 3/4; more-behind hid a dumbbell head
 grade:
-  target_muscles: [lats, rhomboids, mid_trap]
+  target_muscles: [lats, rhomboids, mid_trap, rear_delt]
 qc:
   anatomy:
     capsule_allowed_pairs: [[LeftHand, LeftUpLeg], [LeftForeArm, LeftUpLeg], [RightHand, RightUpLeg], [RightForeArm, RightUpLeg]]

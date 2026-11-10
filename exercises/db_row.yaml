@@ -76,7 +76,7 @@ render:
   camera:
     mode: side_tight          # camera on the working-arm side, turned toward the back (Day 4 back-3/4 feel)
     yaw_back_deg: 35
-    elev_deg: 14
+    elev_deg: 16
     lens_mm: 50
     fill_w: 0.90              # figure width / frame width
     feet_y: 0.92              # feet line as a fraction of frame height (title/pill stay above the head)

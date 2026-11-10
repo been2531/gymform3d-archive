@@ -46,6 +46,9 @@ RULE_MAP = {
     "skin_p50": "human", "skin_p75": "human", "skin_p90": "human", "skin_max": "human", "backdrop_rgb_maxdev": "human", "floor_shadow_present": "human", "floor_horizon_edge": "human", "floor_luma_vs_backdrop": "human", "glow_fibre_contrast": "human", "glow_hue_sat_band": "human", "green_glow_frac_of_body": "human",
     "green_only_on_lats_rhomboids_midtrap": "human", "no_red_glow_px": "human", "sharpness_vs_day4": "human", "figure_fully_in_frame": "camera_margin",
     "figure_fill_w_h": "camera_tighter", "figure_size_not_below_target": "camera_bigger", "green_area_ratio_cap": "human",
+    "glow_area_peak_vs_start": "glow_follow_mesh", "glow_largest_cc_frac": "glow_follow_mesh",
+    "region_contrast_legs": "leg_rim",
+
     "overlay_in_safe_zone": "human", "overlay_text_no_overlap": "human", "overlay_clear_of_figure_px": "camera_top_margin", "callout_text_clear_of_figure": "human",
     "callout_angle_matches_measured": "human", "briefs_present": "human", "briefs_body_touch_frac": "human", "briefs_no_tearing_frac2x": "human",
     "briefs_no_visible_poke_through": "human", "briefs_coverage_every_frame": "human", "reel_1080x1920_30fps": "human", "reel_has_audio": "human",
@@ -164,6 +167,76 @@ def run(run_dir, cfg):
         mh = float(np.min((bb[:, 3] - bb[:, 1]) / H)); out.append(ck("figure_size_not_below_target", round(mh, 3), f">= {Q['figure_fill_h_min']} (min over frames)", mh >= Q["figure_fill_h_min"], "camera_bigger", "look"))
     if "glow_frac_max" in Q:              # v6: green area cap (fraction of the body that glows), every frame
         gm_ = max(f["glow_frac"] for f in L); out.append(ck("green_area_ratio_cap", round(gm_, 4), f"<= {Q['glow_frac_max']}", gm_ <= Q["glow_frac_max"], "glow_cap", "look"))
+    def _fnum(f):
+        s = f.get("src") or ""
+        if len(s) >= 6 and s[1] == "_":
+            try: return int(s[2:6])
+            except ValueError: pass
+        return int(f.get("f") or 0)
+    def _glow_area(f):
+        if f.get("glow_area_px") is not None: return float(f["glow_area_px"])
+        return float(f.get("glow_frac", 0.0) * f.get("body_px", 0.0))
+    def _fill_glow_metrics(f):
+        if f.get("glow_largest_cc_frac") is not None and f.get("legs_vs_backdrop") is not None:
+            return f
+        src = f.get("src") or ""
+        gdir = os.path.join(run_dir, "grade")
+        name = "g_" + src.split("_", 1)[-1] if "_" in src else None
+        gp = os.path.join(gdir, name) if name else ""
+        im = cv2.imread(gp) if gp and os.path.exists(gp) else None
+        if im is None: return f
+        o = im.astype(np.float32); R, Gc, B = o[..., 2], o[..., 1], o[..., 0]
+        gdom = Gc - np.maximum(R, B); Luma = 0.299 * R + 0.587 * Gc + 0.114 * B
+        green = gdom > 30
+        if f.get("glow_largest_cc_frac") is None:
+            _n, lab = cv2.connectedComponents(green.astype(np.uint8), connectivity=8)
+            sizes = np.bincount(lab.ravel()); sizes = sizes[1:] if len(sizes) > 1 else np.array([0])
+            f = dict(f); f["glow_area_px"] = int(green.sum())
+            f["glow_cc"] = int((sizes >= 12).sum())
+            f["glow_largest_cc_frac"] = round(float(sizes.max() / max(int(green.sum()), 1)), 4)
+        if f.get("legs_vs_backdrop") is None:
+            # backdrop: pixels near [35,39,43]
+            bg = np.array([35.0, 39.0, 43.0], np.float32)
+            far = np.abs(o - bg).max(-1) < 6.0
+            bg_l = float(np.median(Luma[far])) if far.sum() > 1000 else 38.0
+            H = Luma.shape[0]; yy = np.arange(H)[:, None]
+            # hip from matching render frame if present
+            hip_y = None
+            try:
+                fnum = _fnum(f); KP = {r_["f"]: (r_.get("kp2d") or {}) for r_ in F}
+                hip = (KP.get(fnum) or {}).get("hip")
+                if hip: hip_y = float(hip[1])
+            except Exception:
+                hip_y = None
+            if hip_y is None: hip_y = 0.53 * H
+            body_ish = np.abs(o - bg).max(-1) > 10.0
+            legs = body_ish & (yy > hip_y + 24) & (~green)
+            if int(legs.sum()) > 200:
+                f = dict(f); f["legs_vs_backdrop"] = round(float(np.percentile(Luma[legs], 10) - bg_l), 2)
+        return f
+    L = [_fill_glow_metrics(f) for f in L]
+    if "glow_area_peak_vs_start_min" in Q:
+        nums = [_fnum(f) for f in L]
+        pf = F[int(np.argmin([r["elbow_deg"] for r in F]))]["f"] if F else (max(nums) if nums else 0)
+        si = int(np.argmin(nums)) if nums else 0
+        pi = int(np.argmin([abs(n - pf) for n in nums])) if nums else 0
+        a0, a1 = _glow_area(L[si]), _glow_area(L[pi])
+        ratio = a1 / max(a0, 1.0)
+        out.append(ck("glow_area_peak_vs_start", {"ratio": round(ratio, 3), "start_px": int(a0), "peak_px": int(a1), "start_f": nums[si] if nums else None, "peak_f": nums[pi] if nums else None},
+                      f">= {Q['glow_area_peak_vs_start_min']}", ratio >= float(Q["glow_area_peak_vs_start_min"]), "glow_follow_mesh", "look"))
+    if "glow_largest_cc_frac_min" in Q:
+        # Peak is the frame the v3 regression fragmented; start may be smaller by construction.
+        nums = [_fnum(f) for f in L]
+        pf = F[int(np.argmin([r["elbow_deg"] for r in F]))]["f"] if F else (max(nums) if nums else 0)
+        pi = int(np.argmin([abs(n - pf) for n in nums])) if nums else 0
+        frac = L[pi].get("glow_largest_cc_frac") if L else None
+        out.append(ck("glow_largest_cc_frac", None if frac is None else {"peak_f": nums[pi] if nums else None, "frac": round(float(frac), 4), "cc": L[pi].get("glow_cc")},
+                      f">= {Q['glow_largest_cc_frac_min']} at peak", frac is not None and float(frac) >= float(Q["glow_largest_cc_frac_min"]), "glow_follow_mesh", "look"))
+    if "region_contrast_legs_min" in Q:
+        vs = [f.get("legs_vs_backdrop") for f in L if f.get("legs_vs_backdrop") is not None]
+        mn = min(vs) if vs else None
+        out.append(ck("region_contrast_legs", None if mn is None else round(float(mn), 2),
+                      f">= {Q['region_contrast_legs_min']} (p10 legs - backdrop)", bool(vs) and mn >= float(Q["region_contrast_legs_min"]), "leg_rim", "look"))
     # Day 4 overlay: callout + title + preview pill
     if cfg.get("layout"):
         sz = Q["safe_zone"]; LF = json.load(open(os.path.join(run_dir, "grade/look.json")))

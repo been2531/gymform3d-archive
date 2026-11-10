@@ -22,7 +22,7 @@ from sharp import neutral_lapvar   # noqa: E402
 # P0 look presets (t728u). charcoal = Day 4 identity with extra highlight headroom + high-pass so lighting survives.
 # clay = lifted mannequin near luma p50 140-160 (Demic-like volume, gymform green glow kept).
 LOOKS = {
-    "charcoal": {"dst": [50.0, 60.0, 74.0, 90.0, 116.0, 168.0], "contrast": 0.52, "tint_rgb": [-3, 1, 3], "lo": 42.0, "hi": 255.0},
+    "charcoal": {"dst": [64.0, 74.0, 84.0, 102.0, 128.0, 178.0], "contrast": 0.58, "tint_rgb": [-3, 1, 3], "lo": 56.0, "hi": 255.0},
     "clay":     {"dst": [88.0, 122.0, 150.0, 172.0, 198.0, 230.0], "contrast": 0.55, "tint_rgb": [-1, 0, 2], "lo": 70.0, "hi": 248.0},
 }
 
@@ -205,14 +205,27 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     emit_keep = float(G.get("emission_keep", 0.20))
     if emit_keep > 0:
         base = base * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
-    fibre_amt = float(G.get("fibre_amount", 0.80))
-    F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
-    graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", fi / max(n, 1))
-    graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
-    graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
-                           target_h=52.0 if G.get("glow", "right") == "wrong" else 74.0,
-                           target_s=196.0, sat_mix=0.82)
-    graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.38)))
+    glow_src = str(G.get("glow_source", "post")).lower()
+    if glow_src == "blender":
+        # Beauty already has per-muscle fibre emission + compositor bloom. Keep it.
+        fibre_amt = 0.0
+        bloom_amt = 0.0
+        emit_keep = float(G.get("emission_keep_blender", 0.90))
+        base = base * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
+        graded = base
+        core_w = cv2.GaussianBlur(reg_any, (0, 0), 1.2)
+        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
+                               target_h=52.0 if G.get("glow", "right") == "wrong" else 74.0,
+                               target_s=196.0, sat_mix=0.55)
+    else:
+        fibre_amt = float(G.get("fibre_amount", 0.80))
+        F = {"r": rgb[..., 0], "g": rgb[..., 1], "b": rgb[..., 2], "act_dom": cv2.GaussianBlur(reg_any, (0, 0), 1.2) * 105.0}
+        graded_full, core_w = gm.day4_fibre(F, base, body, shorts, G.get("glow", "right") == "wrong", fi / max(n, 1))
+        graded = base * (1.0 - fibre_amt) + graded_full * fibre_amt
+        graded = snap_glow_hsv(graded, (reg_any * (1.0 - shorts)),
+                               target_h=52.0 if G.get("glow", "right") == "wrong" else 74.0,
+                               target_s=196.0, sat_mix=0.82)
+        graded = muscle_bloom(graded, reg_any * (1.0 - shorts), body, float(G.get("bloom_amount", 0.38)))
     sm = shorts > 0.45
     if np.any(sm):                                          # QC: 0 green pixels on the briefs
         graded[sm] = mono[sm]
@@ -293,6 +306,23 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True):
     fy_ = int(ys_b.max()) if len(ys_b) else None
     st.update(floor_quality_stats(L, floor_m, far, fy_))
     st.update(glow_quality_stats(o, green))
+    nlab, lab = cv2.connectedComponents(green.astype(np.uint8), connectivity=8)
+    sizes = np.bincount(lab.ravel())
+    sizes = sizes[1:] if len(sizes) > 1 else np.array([0])
+    st["glow_area_px"] = int(green.sum())
+    st["glow_cc"] = int((sizes >= 12).sum())
+    st["glow_largest_cc_frac"] = round(float(sizes.max() / max(int(green.sum()), 1)), 4)
+    bg_l = float(np.median(L[far])) if far.sum() > 1000 else 38.0
+    hip = (kp or {}).get("hip")
+    if hip is not None and bodyb.any():
+        yy = np.arange(H, dtype=np.float32)[:, None]
+        legs = bodyb & (yy > float(hip[1]) + 24.0) & (~green) & (shorts < 0.45)
+        if int(legs.sum()) > 200:
+            lp = np.percentile(L[legs], [10, 50])
+            st["legs_luma_p10"] = round(float(lp[0]), 1)
+            st["legs_luma_p50"] = round(float(lp[1]), 1)
+            st["legs_vs_backdrop"] = round(float(lp[0] - bg_l), 2)
+            st["legs_vs_backdrop_p50"] = round(float(lp[1] - bg_l), 2)
     # v5: figure pixels under the title text box / preview pill (the figure must never sit under the title)
     st["overlay_fig_px"] = {k: int((fg[ui[k][1]:ui[k][3] + 1, ui[k][0]:ui[k][2] + 1] > 0.5).sum()) for k in ("title", "pill") if k in ui}
     if "callout" in ui:
@@ -355,9 +385,12 @@ def make_icons(graded_rgb, bbox):
 
 def main():
     t0 = time.time()
-    rdir, odir, cfgp = sys.argv[1:4]; cfg = json.load(open(cfgp)); os.makedirs(odir, exist_ok=True)
+    rdir, odir, cfgp = sys.argv[1:4]; prefix = sys.argv[4] if len(sys.argv) > 4 else "f"
+    cfg = json.load(open(cfgp)); os.makedirs(odir, exist_ok=True)
+    if prefix == "b":
+        cfg = dict(cfg); cfg["grade"] = dict(cfg.get("grade") or {}); cfg["grade"]["glow_source"] = "blender"
     cv2.setNumThreads(2)
-    fr = sorted(glob.glob(os.path.join(rdir, "f_*.png"))); stats = []
+    fr = sorted(glob.glob(os.path.join(rdir, f"{prefix}_*.png"))); stats = []
     CH = json.load(open(os.path.join(rdir, "checks.json"))); R = CH["frames"]; KPW = (CH.get("kp_res") or [None])[0]; KP = {r_["f"]: r_.get("kp2d") for r_ in R}
     tor = np.array([r_["torso_deg"] for r_ in R]); shown = int(round(float(np.median(tor))))
     pf = R[int(np.argmin([r_["elbow_deg"] for r_ in R]))]["f"]          # peak frame number (1-based)
@@ -367,7 +400,7 @@ def main():
         fp = fr[peak]; b0 = cv2.imread(fp, cv2.IMREAD_UNCHANGED); g0, st0 = grade_frame(b0, cv2.imread(fp.replace("/f_", "/m_"), cv2.IMREAD_UNCHANGED), cfg, peak, len(fr), ui_on=False)
         icons = make_icons(g0, st0["bbox"])
     for i, fp in enumerate(fr):
-        mp = fp.replace("/f_", "/m_"); fnum = int(os.path.basename(fp)[2:6])
+        mp = fp.replace(f"/{prefix}_", "/m_"); fnum = int(os.path.basename(fp)[2:6])
         kp = dict(KP.get(fnum) or {}); kp = (dict(kp, deg_shown=shown) if kp else None)
         bty = cv2.imread(fp, cv2.IMREAD_UNCHANGED); msk = cv2.imread(mp, cv2.IMREAD_UNCHANGED)
         if kp:   # kp2d is in render pixels; the grade works at out_res

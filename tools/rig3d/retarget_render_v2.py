@@ -362,15 +362,7 @@ co = np.empty(nv * 3); me.vertices.foreach_get("co", co); nr = np.empty(nv * 3);
 M4 = np.array(body.matrix_world); co = co.reshape(-1, 3) @ M4[:3, :3].T + M4[:3, 3]; nr = nr.reshape(-1, 3) @ M4[:3, :3].T
 nr /= np.linalg.norm(nr, axis=1, keepdims=True) + 1e-9
 x, y, z = co[:, 0], co[:, 1], co[:, 2]; ax_ = np.abs(x)
-back = nr[:, 1] > 0.15                                   # glTF import: figure faces -Y, back faces +Y
-trunk = ax_ <= 0.19
-mid_trap = back & (z >= 1.30) & (z <= 1.45) & (ax_ <= 0.13) & (y > 0.0)
-rhomb = back & (z >= 1.20) & (z < 1.34) & (ax_ >= 0.012) & (ax_ <= 0.085) & (y > 0.02) & ~mid_trap
-zl = np.clip(z - 1.0, 0, 0.31)                            # lats: V shape, narrow at the lumbar, wide at the armpit
-lats = trunk & (z >= 1.00) & (z <= 1.31) & (ax_ >= 0.035 + 0.12 * zl) & (ax_ <= 0.085 + 0.33 * zl) & ((nr[:, 1] > 0.05) | (np.abs(nr[:, 0]) > 0.55)) & (nr[:, 1] > -0.25) & ~mid_trap & ~rhomb
 shorts = (z >= 0.80) & (z <= 1.02) & (ax_ <= 0.22)
-reg = np.stack([lats, rhomb, mid_trap], 1).astype(np.float32)
-va = me.color_attributes.new("mregion", "FLOAT_COLOR", "POINT"); va.data.foreach_set("color", np.concatenate([reg, np.ones((nv, 1), np.float32)], 1).ravel())
 vs = me.color_attributes.new("shorts", "FLOAT_COLOR", "POINT"); s4 = np.repeat(shorts.astype(np.float32)[:, None], 4, 1); s4[:, 3] = 1; vs.data.foreach_set("color", s4.ravel())
 gi = body.vertex_groups[hand].index; hand_vi = []; dom = np.full(nv, -1)
 for v in me.vertices:
@@ -380,6 +372,30 @@ for v in me.vertices:
         if g.group == gi and g.weight > 0.5: hand_vi.append(v.index)
     dom[v.index] = best[1]
 hand_vi = np.array(hand_vi); GN = {g.index: g.name for g in body.vertex_groups}
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import muscle_regions as MREG
+ev0 = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ev0)
+ADJ = MREG.adjacency(nv, ev0.reshape(-1, 2))
+if RC.get("crease_smooth", True):
+    did = MREG.smooth_vertex_groups(body, ("Spine", "Spine01", "Spine02", "LeftShoulder", "RightShoulder", "LeftArm", "RightArm"),
+                                    ADJ, factor=float(RC.get("crease_weight_smooth", 0.5)),
+                                    repeat=int(RC.get("crease_weight_smooth_iter", 6)))
+    for v in me.vertices:
+        best = (0.0, -1)
+        for g in v.groups:
+            if g.weight > best[0]: best = (g.weight, g.group)
+        dom[v.index] = best[1]
+    log(f"crease weight-smooth {did}")
+EXCLUDE = MREG.exclude_mask(dom, GN)
+def _bone_heads(posed=False):
+    out = {}
+    for n_ in ("Hips", "Spine", "Spine01", "Spine02", "Neck", "neck", "Head", "head_end", "LeftShoulder", "RightShoulder", "LeftArm", "RightArm", "LeftUpLeg", "RightUpLeg"):
+        if posed and n_ in pb: out[n_] = np.array(arm.matrix_world @ pb[n_].head)
+        elif n_ in arm.data.bones: out[n_] = np.array(arm.matrix_world @ arm.data.bones[n_].head_local)
+    return out
+_peak_dilate = int(RC.get("glow_peak_dilate", 4))
+reg, rinfo = MREG.assign(co, nr, _bone_heads(False), ADJ, shorts, EXCLUDE, flex=0.0, peak_dilate=_peak_dilate)
+MREG.write_mregion(me, reg)
+lats = reg[:, 0] > 0.5; rhomb = reg[:, 1] > 0.5; mid_trap = reg[:, 2] > 0.5
 # palm axis (v5): the across-palm direction (index knuckle -> little finger) in the HAND bone's local frame = the
 # middle principal axis of the rest hand-mesh vertices (largest = fingers, smallest = palm normal). On this GLB the
 # bone X/Z axes sit ~45 deg off the palm, so the legacy handle (shoulder line projected off the hand axis) was tilted.
@@ -431,7 +447,7 @@ if GRIP_MODE == "palm_neutral":
     region_counts_twist = [round(min(TW), 1), round(max(TW), 1)]; log(f"neutral grip twist {region_counts_twist} deg (forearm share {share})")
 ev = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ev); ev = ev.reshape(-1, 2)
 rest_len = np.linalg.norm(co[ev[:, 0]] - co[ev[:, 1]], axis=1); ok_e = rest_len > 1e-4; MED_E = float(np.median(rest_len[ok_e]))
-region_counts = {"lats": int(lats.sum()), "rhomboids": int(rhomb.sum()), "mid_trap": int(mid_trap.sum()), "shorts": int(shorts.sum()), "hand_verts": int(len(hand_vi))}
+region_counts = {"lats": int(lats.sum()), "rhomboids": int(rhomb.sum()), "mid_trap": int(mid_trap.sum()), "rear_delt": int(rinfo.get("rear_delt", 0)), "shorts": int(shorts.sum()), "hand_verts": int(len(hand_vi))}
 log(f"regions {region_counts}")
 
 # ---- black boxer briefs (드로즈): a separate garment mesh copied from the body's own pelvis/upper-thigh faces, pushed out
@@ -552,6 +568,30 @@ for f in range(1, NF + 1):
 for fc in (db.animation_data.action.fcurves if hasattr(db.animation_data.action, "fcurves") else []):
     for kp in fc.keyframe_points: kp.interpolation = "LINEAR"
 log("dumbbell baked")
+
+# Shared construction: Corrective Smooth on the Spine01 / armpit crease (not a limit relaxation).
+if RC.get("crease_smooth", True):
+    w_sp = np.zeros(nv)
+    if "Spine01" in body.vertex_groups:
+        gi_ = body.vertex_groups["Spine01"].index
+        for v in me.vertices:
+            for g in v.groups:
+                if g.group == gi_: w_sp[v.index] = g.weight
+    crease = (w_sp > 0.15) & (z >= 1.15) & (z <= 1.45)
+    crease |= (z >= 1.18) & (z <= 1.42) & (ax_ >= 0.06) & (ax_ <= 0.20)
+    if "crease_smooth" not in body.vertex_groups:
+        vg = body.vertex_groups.new(name="crease_smooth")
+        idx = np.where(crease)[0]
+        if len(idx): vg.add(idx.tolist(), 1.0, "REPLACE")
+    if "crease_corrective" not in body.modifiers:
+        mod = body.modifiers.new("crease_corrective", "CORRECTIVE_SMOOTH")
+        mod.factor = float(RC.get("crease_smooth_factor", 0.7))
+        mod.iterations = int(RC.get("crease_smooth_iter", 12))
+        try: mod.smooth_type = "LENGTH_WEIGHTED"
+        except Exception: pass
+        mod.use_only_smooth = False
+        mod.vertex_group = "crease_smooth"
+    log(f"crease corrective-smooth verts={int(crease.sum())}")
 
 # ---- camera: tight side, working-arm side, turned toward the back -----------------------------------------------------
 CAMC = RC["camera"]; sc.frame_set(1)
@@ -735,26 +775,12 @@ for m_ in body_mats:
         bsdf.inputs["Specular IOR Level"].default_value = 0.35
     for nm in [n for n in nt.nodes if n.type == "NORMAL_MAP"]:
         nm.inputs["Strength"].default_value = float(RC.get("normal_strength", 2.0))
-    # 3D glow: principled + emission driven by mregion (R lats, G rhomboids, B mid trap). Bloom is applied in
-    # grade3d (clamped to the muscle mask) so callout lines, drawn after the grade, never bloom.
+    # 3D glow: shared tools/rig3d/glow_shader.py (simple emission for the 2D-grade path).
     mout = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
-    am = nt.nodes.new("ShaderNodeAttribute"); am.attribute_name = "mregion"
-    sep = nt.nodes.new("ShaderNodeSeparateColor"); nt.links.new(am.outputs["Color"], sep.inputs["Color"])
-    mx1 = nt.nodes.new("ShaderNodeMath"); mx1.operation = "MAXIMUM"
-    nt.links.new(sep.outputs["Red"], mx1.inputs[0]); nt.links.new(sep.outputs["Green"], mx1.inputs[1])
-    mx2 = nt.nodes.new("ShaderNodeMath"); mx2.operation = "MAXIMUM"
-    nt.links.new(mx1.outputs[0], mx2.inputs[0]); nt.links.new(sep.outputs["Blue"], mx2.inputs[1])
-    ash = nt.nodes.new("ShaderNodeAttribute"); ash.attribute_name = "shorts"
-    inv = nt.nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"; inv.inputs[0].default_value = 1.0
-    nt.links.new(ash.outputs["Fac"], inv.inputs[1])
-    fac = nt.nodes.new("ShaderNodeMath"); fac.operation = "MULTIPLY"
-    nt.links.new(mx2.outputs[0], fac.inputs[0]); nt.links.new(inv.outputs[0], fac.inputs[1])
-    em = nt.nodes.new("ShaderNodeEmission"); em.inputs["Color"].default_value = em_col
-    stm = nt.nodes.new("ShaderNodeMath"); stm.operation = "MULTIPLY"; stm.inputs[1].default_value = em_str
-    nt.links.new(fac.outputs[0], stm.inputs[0]); nt.links.new(stm.outputs[0], em.inputs["Strength"])
-    add = nt.nodes.new("ShaderNodeAddShader")
-    for l in list(mout.inputs["Surface"].links): nt.links.remove(l)
-    nt.links.new(bsdf.outputs[0], add.inputs[0]); nt.links.new(em.outputs[0], add.inputs[1]); nt.links.new(add.outputs[0], mout.inputs["Surface"])
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import glow_shader as GSH
+_flex_min = float(RC.get("glow_flex_min", 0.58))
+flex_nodes = GSH.switch_materials(body_mats, "post", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
 
 sc.render.engine = "CYCLES"; sc.cycles.device = "CPU"; sc.render.film_transparent = True
 wd = bpy.data.worlds.new("w"); sc.world = wd; wd.use_nodes = True; bg = wd.node_tree.nodes["Background"]
@@ -775,6 +801,15 @@ def add_area(name, loc, energy, size, color):
 add_area("key", ctr + key_from * 2.8 + upv * 1.8, RC.get("key_energy", 380), 2.2, (1.00, 0.98, 0.94))
 add_area("fill", ctr - key_from * 0.5 + sidev * 2.4 + upv * 2.2, RC.get("fill_energy", 150), 3.4, (0.90, 0.94, 1.00))
 add_area("rim", ctr - key_from * 2.6 + upv * 1.9, RC.get("rim_energy", 270), 1.6, (0.65, 0.82, 1.00))
+# Shared construction: a lower key + rim aimed at the legs so charcoal grade cannot crush
+# the lower body into the backdrop (silhouette separation, charcoal identity kept).
+leg_aim = mu.Vector((ctr.x, ctr.y, 0.48))
+def add_area_aim(name, loc, energy, size, color, aim):
+    Lt = bpy.data.lights.new(name, "AREA"); Lt.energy = float(energy); Lt.size = float(size); Lt.color = color
+    o = bpy.data.objects.new(name, Lt); col.objects.link(o)
+    o.location = loc; o.rotation_euler = (aim - o.location).to_track_quat("-Z", "Y").to_euler(); return o
+add_area_aim("leg_key", leg_aim + key_from * 2.4 + upv * 0.55, RC.get("leg_key_energy", 190), 1.8, (1.00, 0.98, 0.94), leg_aim)
+add_area_aim("leg_rim", leg_aim - key_from * 2.3 + upv * 0.70, RC.get("leg_rim_energy", 170), 1.5, (0.70, 0.84, 1.00), leg_aim)
 floor = None
 if RC.get("floor", True):
     import bmesh
@@ -837,12 +872,38 @@ if RC.get("floor", True):
     except RuntimeError: pass
 sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
 frames = list(range(1, NF + 1)) if a.frames == "all" else [int(v) for v in a.frames.split(",")]
+def flex_at(f):
+    els = [c["elbow_deg"] for c in chk]
+    emin, emax = min(els), max(els)
+    if emax - emin < 1e-3: return 0.0
+    return float((emax - els[f - 1]) / (emax - emin))
+
+def update_regions(f):
+    sc.frame_set(f); bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get(); eb = body.evaluated_get(dg); m_ = eb.to_mesh()
+    c2 = np.empty(len(m_.vertices) * 3); m_.vertices.foreach_get("co", c2)
+    n2 = np.empty(len(m_.vertices) * 3); m_.vertices.foreach_get("normal", n2)
+    Mw = np.array(eb.matrix_world)
+    c2 = c2.reshape(-1, 3) @ Mw[:3, :3].T + Mw[:3, 3]
+    n2 = n2.reshape(-1, 3) @ Mw[:3, :3].T
+    n2 /= np.linalg.norm(n2, axis=1, keepdims=True) + 1e-9
+    eb.to_mesh_clear()
+    nuse = min(len(c2), nv)
+    fl = flex_at(f)
+    rg, info = MREG.assign(c2[:nuse], n2[:nuse], _bone_heads(True), ADJ, shorts, EXCLUDE, flex=fl, peak_dilate=_peak_dilate)
+    if nuse < nv:
+        pad = np.zeros((nv, 3), np.float32); pad[:nuse] = rg; rg = pad
+    MREG.write_mregion(body.data, rg)
+    GSH.set_flex(flex_nodes, fl)
+    return fl, info
+
 def render_set(prefix):
     skipped = 0
     for f in frames:
         path = f"{a.out}/{prefix}_{f:04d}.png"
         if RC.get("skip_existing_frames") and os.path.exists(path):
             skipped += 1; continue
+        update_regions(f)
         sc.frame_set(f); sc.render.filepath = path; bpy.ops.render.render(write_still=True)
     if skipped: log(f"{prefix}: skipped {skipped} existing frames")
 tim = {"retarget_s": round(time.time() - T0, 1)}
@@ -854,9 +915,16 @@ if not a.mask_only:
     except Exception as e: log(f"denoise option: {e}")
     sc.view_settings.view_transform = "AgX"
     t = time.time(); render_set("f"); tim["beauty_s"] = round(time.time() - t, 1); log(f"beauty {tim['beauty_s']} s")
+    want_ab = bool(RC.get("glow_ab") or str(RC.get("glow_backend", "post")).lower() in ("blender", "both"))
+    if want_ab:
+        flex_nodes[:] = GSH.switch_materials(body_mats, "blender", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
+        GSH.setup_compositor(sc, float(RC.get("blender_bloom", 0.60)))
+        t = time.time(); render_set("b"); tim["beauty_blender_s"] = round(time.time() - t, 1); log(f"beauty blender-glow {tim['beauty_blender_s']} s")
+        GSH.teardown_compositor(sc)
 if not a.no_mask:
     if floor is not None:
         floor.hide_render = True                                                 # floor must not leak into the muscle mask
+    GSH.teardown_compositor(sc)
     for m_ in body_mats:
         nt = m_.node_tree; out = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
         at = nt.nodes.new("ShaderNodeAttribute"); at.attribute_name = "mregion"; em = nt.nodes.new("ShaderNodeEmission")
