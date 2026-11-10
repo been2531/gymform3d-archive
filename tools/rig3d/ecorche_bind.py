@@ -1,12 +1,12 @@
-"""Bind Charleeh/ecorche's separated muscle meshes to the Grab3D armature.
+"""Bind Charleeh/ecorche as the FULL visible body on a clean armature.
 
-Route (a) of the mesh-glow look: each target muscle is its own mesh, so the
-silhouette is anatomical rather than a painted region on one-piece skin.
-Non-target superficial muscles are joined into one clay shell and weighted
-the same way. Skeleton and unused deep muscles are discarded.
-
-The Grab3D body stays in the scene as the weight source (and garment/grip
-wrap target) but is hidden from render.
+A scale-1 copy of the Grab3D rig is built with anatomical bone tails
+(head → child head, 8 cm leaves) so heat weighting does not explode.
+That armature is driven from the original posed rig (Copy Location +
+Damped Track to the source joint positions). Superficial muscles are
+the body: targets glow, the rest join into one clay shell. Deep muscles
+and the skeleton are discarded. The Grab3D mesh is hidden (garment and
+dumbbell stay).
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import os
 import time
 
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
 import glow_shader as GSH
 import muscle_ids as MIDS
@@ -219,6 +219,21 @@ def _inflate(dst, mm=4.0):
     except Exception:
         pass
 
+
+
+def _push_verts(obj, dist):
+    """Expand a hole-fill mesh slightly along its rest normals."""
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    bm.normal_update()
+    d = float(dist)
+    for v in bm.verts:
+        v.co += v.normal * d
+    bm.to_mesh(obj.data)
+    obj.data.update()
+    bm.free()
 
 
 def _clip_lat_wing(obj):
@@ -430,15 +445,330 @@ def _classify(new_objs, targets):
         if matched:
             hit[matched].append(o)
             continue
-        # Tiny skeleton pieces (ribs, vertebrae, phalanges) pick up this
-        # rig's multi-metre garbage bone tails and shred the joined clay.
-        # Deep + unused superficial muscles stay as clay; Grab3D is the
-        # hole-filling underlayer.
-        if layer.startswith("skeleton"):
-            discard.append(o)
-        else:
+        # Full-body path: unused superficial muscles are clay. A small
+        # allowlist of deep back muscles fills holes the camera can see
+        # through (triangle of auscultation, lumbar under the lat sheet).
+        # Everything else deep, plus the skeleton, stays hidden.
+        if layer.startswith("superficial") or name in FILL_DEEP:
             clay.append(o)
+        else:
+            discard.append(o)
     return hit, clay, discard
+
+
+
+CONTINUE_CHILD = {
+    "Hips": "Spine02",
+    "Spine": "neck",
+    "Head": "head_end",
+}
+
+# Deep muscles kept only to plug camera-visible holes (not glowed).
+FILL_DEEP = {
+    "left rhomboid major", "left rhomboid minor",
+    "right rhomboid major", "right rhomboid minor",
+    "left scapula", "right scapula",
+    "left iliocostalis lumborum", "left iliocostalis thoracis",
+    "right iliocostalis lumborum", "right iliocostalis thoracis",
+    "left longissimus thoracis", "right longissimus thoracis",
+    "left spinalis thoracis", "right spinalis thoracis",
+    "left supraspinatus", "right supraspinatus",
+    "left serratus posterior inferior", "right serratus posterior inferior",
+}
+
+# No scapula bone: heat splits these between spine and arm and tears a hole
+# in the scapular fossa. Pin each mesh to the shoulder girdle.
+FORCE_RIGID = {
+    "left infraspinatus muscle": "Spine01",
+    "right infraspinatus muscle": "Spine01",
+    "left teres minor": "Spine01",
+    "right teres minor": "Spine01",
+    "left teres major": "Spine01",
+    "right teres major": "Spine01",
+    "left rhomboid major": "Spine01",
+    "left rhomboid minor": "Spine01",
+    "right rhomboid major": "Spine01",
+    "right rhomboid minor": "Spine01",
+    "left scapula": "Spine01",
+    "right scapula": "Spine01",
+    "left levator scapulae": "Spine01",
+    "right levator scapulae": "Spine01",
+    "left supraspinatus": "Spine01",
+    "right supraspinatus": "Spine01",
+    "left serratus anterior": "LeftShoulder",
+    "right serratus anterior": "RightShoulder",
+    "left posterior layer of thoracolumbar fascia": "Spine01",
+    "right posterior layer of thoracolumbar fascia": "Spine01",
+    "left iliocostalis lumborum": "Spine02",
+    "right iliocostalis lumborum": "Spine02",
+    "left iliocostalis thoracis": "Spine01",
+    "right iliocostalis thoracis": "Spine01",
+    "left longissimus thoracis": "Spine01",
+    "right longissimus thoracis": "Spine01",
+    "left spinalis thoracis": "Spine",
+    "right spinalis thoracis": "Spine",
+    "left serratus posterior inferior": "Spine02",
+    "right serratus posterior inferior": "Spine02",
+}
+
+
+def _pick_child(bone):
+    kids = list(bone.children)
+    if not kids:
+        return None
+    prefer = CONTINUE_CHILD.get(bone.name)
+    if prefer:
+        for k in kids:
+            if k.name == prefer:
+                return k
+    return min(kids, key=lambda c: (c.head_local - bone.head_local).length)
+
+
+def make_clean_armature(src_arm, name="EcoArm"):
+    """Scale-1 copy of `src_arm` with tails pointing at the continuation child."""
+    prev = src_arm.data.pose_position
+    src_arm.data.pose_position = "REST"
+    bpy.context.view_layer.update()
+    data = bpy.data.armatures.new(name + "Data")
+    obj = bpy.data.objects.new(name, data)
+    try:
+        bpy.context.scene.collection.objects.link(obj)
+    except RuntimeError:
+        bpy.context.collection.objects.link(obj)
+    obj.matrix_world = Matrix.Identity(4)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    ebones = data.edit_bones
+    src_mw = src_arm.matrix_world
+    info = {}
+    for b in src_arm.data.bones:
+        h = src_mw @ b.head_local
+        child = _pick_child(b)
+        if child is not None:
+            t = src_mw @ child.head_local
+        else:
+            if b.parent:
+                d = h - (src_mw @ b.parent.head_local)
+            else:
+                d = Vector((0.0, 0.0, 0.08))
+            if d.length < 1e-5:
+                d = Vector((0.0, 0.0, 0.08))
+            t = h + d.normalized() * 0.08
+        if (t - h).length < 0.015:
+            t = h + Vector((0.0, 0.0, 0.08))
+        info[b.name] = (h, t, b.parent.name if b.parent else None)
+    created = {}
+
+    def add(n):
+        if n in created:
+            return
+        h, t, pname = info[n]
+        if pname:
+            add(pname)
+        eb = ebones.new(n)
+        eb.head = h
+        eb.tail = t
+        eb.use_connect = False
+        eb.use_deform = True
+        if pname:
+            eb.parent = created[pname]
+        created[n] = eb
+
+    for n in info:
+        add(n)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    src_arm.data.pose_position = prev
+    lengths = [(n, (info[n][1] - info[n][0]).length) for n in info]
+    return obj, lengths
+
+
+def constrain_clean_to_src(clean_arm, src_arm):
+    """Drive the clean armature from Grab3D joint positions, not local poses."""
+    for pb in clean_arm.pose.bones:
+        if pb.name not in src_arm.pose.bones:
+            continue
+        cl = pb.constraints.new("COPY_LOCATION")
+        cl.target = src_arm
+        cl.subtarget = pb.name
+        cl.target_space = "WORLD"
+        cl.owner_space = "WORLD"
+        src_b = src_arm.data.bones[pb.name]
+        child = _pick_child(src_b)
+        if child is not None:
+            dt = pb.constraints.new("DAMPED_TRACK")
+            dt.target = src_arm
+            dt.subtarget = child.name
+            dt.track_axis = "TRACK_Y"
+        else:
+            cr = pb.constraints.new("COPY_ROTATION")
+            cr.target = src_arm
+            cr.subtarget = pb.name
+            cr.target_space = "WORLD"
+            cr.owner_space = "WORLD"
+
+
+def _rigid_bind(dst, arm, bone=None):
+    """Fallback: the whole mesh follows one bone (no intra-muscle tear)."""
+    import numpy as np
+    _clear_bind(dst)
+    n = len(dst.data.vertices)
+    if n == 0:
+        return None
+    best = bone if bone and bone in arm.data.bones else None
+    if best is None:
+        mw = dst.matrix_world
+        co = np.empty(n * 3, dtype=np.float64)
+        dst.data.vertices.foreach_get("co", co)
+        c = co.reshape(-1, 3).mean(0)
+        cw = mw @ Vector((float(c[0]), float(c[1]), float(c[2])))
+        best, best_d = None, 1e9
+        for b in arm.data.bones:
+            h = arm.matrix_world @ b.head_local
+            d = (h - cw).length
+            if d < best_d:
+                best, best_d = b.name, d
+    if not best:
+        return None
+    vg = dst.vertex_groups.new(name=best)
+    vg.add(list(range(n)), 1.0, "REPLACE")
+    _armature_mod(dst, arm)
+    return best
+
+
+def _weight_coverage(obj):
+    n = len(obj.data.vertices)
+    if n == 0:
+        return 0.0
+    hit = 0
+    for v in obj.data.vertices:
+        if v.groups:
+            hit += 1
+    return hit / float(n)
+
+
+def _clear_bind(obj):
+    for vg in list(obj.vertex_groups):
+        obj.vertex_groups.remove(vg)
+    for mod in list(obj.modifiers):
+        if mod.type == "ARMATURE":
+            obj.modifiers.remove(mod)
+    if obj.parent is not None:
+        mw = obj.matrix_world.copy()
+        obj.parent = None
+        obj.matrix_world = mw
+
+
+def _bind_one(obj, arm, log=None):
+    """Heat-bind; if coverage is poor, rigidly parent to the nearest bone."""
+    try:
+        _heat_bind(obj, arm)
+        cov = _weight_coverage(obj)
+        if cov >= 0.90:
+            return "heat", cov, None
+        _log(log, f"heat coverage {cov:.2f} {obj.name} -> rigid")
+    except Exception as e:
+        _log(log, f"heat fail {obj.name}: {e}")
+        cov = 0.0
+    _clear_bind(obj)
+    bn = _rigid_bind(obj, arm)
+    return "rigid", cov, bn
+
+
+def _bind_via_proxy(meshes, arm, log=None):
+    """Transfer weights from a voxel hull so neighbouring muscles share a bind."""
+    if not meshes:
+        return False
+    copies = []
+    for o in meshes:
+        c = o.copy()
+        c.data = o.data.copy()
+        try:
+            bpy.context.scene.collection.objects.link(c)
+        except RuntimeError:
+            bpy.context.collection.objects.link(c)
+        copies.append(c)
+    proxy = _join(copies, "EcoProxy")
+    if proxy is None:
+        return False
+    try:
+        bpy.ops.object.mode_set(mode="OBJECT")
+    except Exception:
+        pass
+    bpy.ops.object.select_all(action="DESELECT")
+    proxy.hide_set(False)
+    proxy.select_set(True)
+    bpy.context.view_layer.objects.active = proxy
+    rmod = proxy.modifiers.new("GF_VOX", "REMESH")
+    rmod.mode = "VOXEL"
+    rmod.voxel_size = 0.016
+    try:
+        bpy.ops.object.modifier_apply(modifier=rmod.name)
+    except Exception as e:
+        _log(log, f"proxy remesh fail: {e}")
+        bpy.data.objects.remove(proxy, do_unlink=True)
+        return False
+    nv = len(proxy.data.vertices)
+    _log(log, f"ecorche proxy verts={nv}")
+    if nv < 500:
+        _log(log, "proxy too empty, skip")
+        mesh = proxy.data
+        bpy.data.objects.remove(proxy, do_unlink=True)
+        if mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+        return False
+    try:
+        _heat_bind(proxy, arm)
+        cov = _weight_coverage(proxy)
+        _log(log, f"ecorche proxy heat coverage={cov:.3f}")
+        if cov < 0.90:
+            raise RuntimeError(f"proxy heat coverage {cov:.3f}")
+    except Exception as e:
+        _log(log, f"proxy heat fail: {e}")
+        mesh = proxy.data
+        bpy.data.objects.remove(proxy, do_unlink=True)
+        if mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+        return False
+    n_ok = n_rigid = 0
+    for o in meshes:
+        try:
+            _clear_bind(o)
+            _transfer_weights(proxy, o)
+            _armature_mod(o, arm)
+            cov = _weight_coverage(o)
+            if cov < 0.85:
+                _log(log, f"transfer coverage {cov:.2f} {o.name} -> rigid")
+                _clear_bind(o)
+                bn = _rigid_bind(o, arm)
+                _log(log, f"rigid fallback {o.name} -> {bn}")
+                n_rigid += 1
+            else:
+                n_ok += 1
+        except Exception as e:
+            _log(log, f"transfer fail {o.name}: {e}")
+            try:
+                _clear_bind(o)
+                bn = _rigid_bind(o, arm)
+                _log(log, f"rigid fallback {o.name} -> {bn}")
+                n_rigid += 1
+            except Exception as e2:
+                _log(log, f"bind fail {o.name}: {e2}")
+    _log(log, f"ecorche proxy transfer ok={n_ok} rigid={n_rigid}")
+    mesh = proxy.data
+    bpy.data.objects.remove(proxy, do_unlink=True)
+    if mesh.users == 0:
+        bpy.data.meshes.remove(mesh)
+    return True
+
+
+def _write_glow_w_ones(obj):
+    me = obj.data
+    n = len(me.vertices)
+    attr = me.color_attributes.get("glow_w")
+    if attr is None:
+        attr = me.color_attributes.new("glow_w", "FLOAT_COLOR", "POINT")
+    attr.data.foreach_set("color", [1.0, 1.0, 1.0, 1.0] * n)
+    me.update()
 
 
 def bind_and_shade(body, arm, path, targets, hues, hue_strength, base_rgb,
@@ -525,15 +855,19 @@ def bind_and_shade(body, arm, path, targets, hues, hue_strength, base_rgb,
     _apply_visual(keep)
     _log(log, f"ecorche unparented {len(keep)} meshes")
 
-    # Only the glowing target muscles are bound and shown. Heat-binding
-    # every other ecorche piece (face, hands, deep slivers) against this
-    # rig's multi-metre bone tails shreds the shell. Grab3D, already
-    # weighted, is the posed clay figure; targets overlay it.
-    clay.clear()
-    keep[:] = [o for vs in hit.values() for o in vs]
-    _log(log, f"ecorche keep {len(keep)} target meshes (clay underlayer = Grab3D)")
+    # Rhomboids glow-target is suppressed when mid_trap is the purple surface,
+    # but the meshes stay as clay so they plug the triangle of auscultation.
+    if hit.get("mid_trap") and hit.get("rhomboids"):
+        for o in hit["rhomboids"]:
+            if o not in clay:
+                clay.append(o)
+        hit["rhomboids"] = []
+        _log(log, "ecorche: rhomboids as clay fill (mid_trap is the glow surface)")
 
-    # Drop unused geometry now (saves Cycles memory).
+    # Superficial clay + visible targets are the full body. Everything else goes.
+    keep[:] = [o for o in clay if o is not None] + [o for vs in hit.values() for o in vs]
+    _log(log, f"ecorche full-body keep {len(keep)} (clay={len(clay)} targets={sum(len(v) for v in hit.values())})")
+
     drop = []
     keep_set = set(keep)
     for o in new:
@@ -556,52 +890,62 @@ def bind_and_shade(body, arm, path, targets, hues, hue_strength, base_rgb,
         except Exception:
             pass
 
-    # Rhomboids lie under trapezius; drawing both tears the purple diamond.
-    # mid_trap (transverse + ascending) is the surface stand-in.
-    if hit.get("mid_trap") and hit.get("rhomboids"):
-        for o in hit["rhomboids"]:
-            try:
-                o.hide_render = True
-                o.hide_viewport = True
-            except Exception:
-                pass
-        hit["rhomboids"] = []
-        _log(log, "ecorche: hide rhomboids (under trapezius; mid_trap is the surface)")
-
-    # Anatomical clip + soft edge before binding (rest pose).
-    for o in list(hit.get("lats") or []):
-        n0, n1 = _clip_lat_wing(o)
-        _log(log, f"lat clip {o.name}: {n0} -> {n1} verts")
-    for tid, objs in hit.items():
-        for o in objs:
-            try:
-                _boundary_fade(o, rings=4)
-            except Exception as e:
-                _log(log, f"fade fail {o.name}: {e}")
+    # Clean bind armature: same joint positions, sane tails.
+    clean_arm, blens = make_clean_armature(arm, name="EcoArm")
+    _log(log, "ecorche clean arm tails " + ", ".join(f"{n}={l:.3f}m" for n, l in blens if l > 0.6 or n in ("LeftArm", "Hips", "Spine", "LeftHand")))
 
     t1 = time.time()
-    # After clipping the arm insertion, lats sit on the torso wall and can
-    # copy Grab3D weights (smoother than heat, same deform as the clay body
-    # so purple/orange no longer tear apart). Heat only the rear delt, which
-    # rides the moving shoulder.
-    HEAT = {"lats", "rear_delt", "mid_trap"}
-    n_heat = n_xfer = n_fail = 0
-    for tid, objs in hit.items():
-        for o in objs:
+    bind_list = list(dict.fromkeys(keep))
+    used_proxy = _bind_via_proxy(bind_list, clean_arm, log=log)
+    if used_proxy:
+        _log(log, f"ecorche bound via proxy in {time.time()-t1:.1f}s")
+    else:
+        n_heat = n_rigid = n_fail = 0
+        for o in bind_list:
             try:
-                if tid in HEAT:
-                    _heat_bind(o, arm)
+                force = FORCE_RIGID.get(_aname(o))
+                if force:
+                    _clear_bind(o)
+                    bn = _rigid_bind(o, clean_arm, bone=force)
+                    n_rigid += 1
+                    _log(log, f"force rigid {o.name} -> {bn}")
+                    continue
+                mode, cov, bn = _bind_one(o, clean_arm, log=log)
+                if mode == "heat":
                     n_heat += 1
                 else:
-                    _transfer_weights(body, o)
-                    _armature_mod(o, arm)
-                    n_xfer += 1
-                _inflate(o, 2.0)
-            except Exception as e:
-                _log(log, f"bind fail {tid}/{o.name}: {e}")
+                    n_rigid += 1
+                    _log(log, f"rigid fallback {o.name} -> {bn} (cov={cov:.2f})")
+            except Exception as e2:
+                _log(log, f"bind fail {o.name}: {e2}")
                 n_fail += 1
-    _log(log, f"ecorche bound heat={n_heat} xfer={n_xfer} fail={n_fail} in {time.time()-t1:.1f}s")
-    clay_obj = None
+        _log(log, f"ecorche bound heat={n_heat} rigid={n_rigid} fail={n_fail} in {time.time()-t1:.1f}s")
+
+    glow_set = {o for vs in hit.values() for o in vs}
+    for o in bind_list:
+        if o in glow_set:
+            continue
+        n = _aname(o)
+        if n in FILL_DEEP or n in FORCE_RIGID:
+            try:
+                _push_verts(o, 0.008)
+            except Exception as e:
+                _log(log, f"push fail {o.name}: {e}")
+
+    t2 = time.time()
+    clay_obj = _join(clay, "EcoClay") if clay else None
+    _log(log, f"ecorche clay joined n={len(clay)} obj={getattr(clay_obj, 'name', None)} in {time.time()-t2:.1f}s")
+
+    constrain_clean_to_src(clean_arm, arm)
+    _log(log, "ecorche EcoArm constrained to Grab3D joint positions")
+
+    # Full-muscle glow: attribute = 1 on every target vert (shader reads glow_w).
+    for objs in hit.values():
+        for o in objs:
+            try:
+                _write_glow_w_ones(o)
+            except Exception as e:
+                _log(log, f"glow_w fail {o.name}: {e}")
 
     # Materials: one clay, one glow mat per target id (L/R share).
     clay_mat = _make_clay("EcoClayMat", base_rgb, ao_distance, ao_amount)
@@ -636,22 +980,8 @@ def bind_and_shade(body, arm, path, targets, hues, hue_strength, base_rgb,
             o.data.materials.clear()
             o.data.materials.append(mat)
 
-    if hide_body:
-        body.hide_render = True
-    else:
-        # Clay underlayer: strip the painted glow_w emission so the donor
-        # body only plugs holes, it does not paint atlas stickers.
-        body.hide_render = False
-        try:
-            for slot in body.material_slots:
-                mat = slot.material
-                if not mat or not mat.node_tree:
-                    continue
-                for n in mat.node_tree.nodes:
-                    if n.name.startswith("GF_") and n.type == "VALUE" and "FLEX" in n.name:
-                        n.outputs[0].default_value = 0.0
-        except Exception:
-            pass
+    body.hide_render = True
+    body.hide_viewport = True
 
     arm.data.pose_position = prev_pose
     bpy.context.view_layer.update()

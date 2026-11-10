@@ -1449,7 +1449,7 @@ if look_inscene and _body_src in ("ecorche", "eco", "mesh") and _eco_path:
             rim=float(RC.get("glow_rim", 0.35)),
             ao_distance=float(RC.get("ao_distance", 0.14)),
             ao_amount=float(RC.get("ao_amount", 0.38)),
-            hide_body=False, log=log,
+            hide_body=True, log=log,
         )
         if _eco_flex:
             # Grab3D flex stays at 0 (underlayer). Only ecorche meshes glow.
