@@ -154,6 +154,27 @@ if LEGS == "planted":
     up_j = [j for j in range(33) if j not in (27, 28, 29, 30, 31, 32)]; B[:, up_j, 2] += raise_z
     log(f"legs planted: hips raised {raise_z:+.3f} m for knee {math.degrees(kt):.0f}, fwd {fwd_h.round(2).tolist()}")
     log(f"legs planted: stance_scale {ss}, ankles {B[0, 27].round(3).tolist()} / {B[0, 28].round(3).tolist()}")
+AUTH_META = None; AUTH_SPEC = None; AUTH_U = None
+if (MO.get("authored") or {}).get("enabled"):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import authored_motion as AM
+    AUTH_SPEC = AM.load_spec(C)
+    _form = str(MO.get("form") or "right").lower()
+    _wh = "Left" if side == 11 else "Right"
+    _la, _lf = rl(_wh + "Arm", _wh + "ForeArm"), rl(_wh + "ForeArm", _wh + "Hand")
+    B, AUTH_META = AM.expand_landmarks(B, AUTH_SPEC, side=side, form=_form, arm_len=(_la, _lf))
+    NF = int(B.shape[0]); AUTH_U = AUTH_META["u"]
+    np.save(a.out + "/authored_landmarks.npy", B)
+    # authored landmarks already place the working elbow; don't let tuck/flare rebuild it
+    MO["elbow_path"] = "source"
+    MO["shrug_m"] = 0.0   # clavicle offset applied below from AUTH_U (not the reserved matrix shrug)
+    MO["grip_twist_forearm_share"] = 0.0  # no forearm roll; wrist stays in line with the vertical forearm
+    _prof = AM.deep_merge(AUTH_SPEC.get("right") or {}, AUTH_SPEC.get(_form) or {} if _form != "right" else {})
+    if "scapula_retract" in _prof:
+        MO["scapula_retract"] = bool(_prof["scapula_retract"])
+    np.save(a.out + "/authored_u.npy", AUTH_U)
+    json.dump({k: AUTH_META[k] for k in AUTH_META if k != "u"}, open(a.out + "/authored_meta.json", "w"), default=float)
+    log(f"authored {_form} {NF} frames {AUTH_META['dur_s']:.2f}s fps {AUTH_META['fps']}")
 def empty(n):
     e = bpy.data.objects.new(n, None); col.objects.link(e); return e
 names = {"hipmid": lambda f: (B[f, 23] + B[f, 24]) / 2, "shmid": lambda f: (B[f, 11] + B[f, 12]) / 2, "nose": lambda f: (B[f, 7] + B[f, 8]) / 2}
@@ -471,13 +492,60 @@ if MO.get("scapula_retract", False) and (("LeftShoulder" if side == 11 else "Rig
     if best_score < 0: best_axis = tuple(-x for x in best_axis); best_score = -best_score
     angs = []
     for f in range(NF):
-        sc.frame_set(f + 1); S = arm.matrix_world @ pb[wh_ + "Arm"].head; El = E[ppw + "el"].location; Wr = E[ppw + "wr"].location
-        angs.append(math.degrees((S - El).angle(Wr - El)) if (S - El).length > 1e-6 and (Wr - El).length > 1e-6 else 180.0)
+        sc.frame_set(f + 1); S = arm.matrix_world @ pb[wh_ + "Arm"].head; El = E[ppw + "el"].location; Wri = E[ppw + "wr"].location
+        angs.append(math.degrees((S - El).angle(Wri - El)) if (S - El).length > 1e-6 and (Wri - El).length > 1e-6 else 180.0)
     amin, amax = min(angs), max(angs); max_deg = float(MO.get("scapula_retract_deg", 9.0))
     for f, ang in enumerate(angs):
         amt = 0.0 if amax - amin < 1e-3 else (amax - ang) / (amax - amin)
         sb.rotation_quaternion = mu.Quaternion(best_axis, math.radians(max_deg * amt)); sb.keyframe_insert("rotation_quaternion", frame=f + 1)
     log(f"scapula_retract {wh_} axis {best_axis} score {best_score:.3f} max {max_deg:.1f} deg")
+# Authored clavicle: small u-driven Shoulder translation along chest-up (depression on right, shrug on yank).
+# Apply from the rest location each frame — adding to sb.location accumulates as frame_set reads the previous key.
+if AUTH_U is not None and AUTH_SPEC is not None:
+    _form = AUTH_META["form"]
+    _prof = __import__("authored_motion", fromlist=["x"]).deep_merge(
+        AUTH_SPEC.get("right") or {}, AUTH_SPEC.get(_form) or {} if _form != "right" else {})
+    shrug_m = float(_prof.get("shrug_m") or 0)
+    depress_m = float(_prof.get("depress_m") or 0)
+    whc = "Left" if side == 11 else "Right"
+    if (shrug_m or depress_m) and (whc + "Shoulder") in pb:
+        sb = pb[whc + "Shoulder"]
+        sc.frame_set(1); bpy.context.view_layer.update()
+        base_loc = sb.location.copy()
+        for fi, uu in enumerate(AUTH_U):
+            sc.frame_set(fi + 1); bpy.context.view_layer.update()
+            cu = (arm.matrix_world @ pb["neck"].head) - (arm.matrix_world @ pb["Spine01"].head)
+            if cu.length < 1e-6: continue
+            cu.normalize()
+            delta = cu * (shrug_m * float(uu) - depress_m * float(uu))
+            if sb.parent:
+                parent_mw = arm.matrix_world @ sb.parent.matrix
+                delta_local = parent_mw.to_3x3().inverted() @ delta
+            else:
+                delta_local = arm.matrix_world.to_3x3().inverted() @ delta
+            sb.location = base_loc + delta_local
+            sb.keyframe_insert("location", frame=fi + 1)
+        log(f"authored clavicle shrug {shrug_m} depress {depress_m} on {whc}Shoulder")
+    # Snap working-arm empties to the EVALUATED shoulder so DAMPED_TRACK preserves authored
+    # angles (the rig shoulder is placed by the spine chain, not by landmark 11/12).
+    ppw = whc[0].lower(); La_a, Lf_a = rl(whc + "Arm", whc + "ForeArm"), rl(whc + "ForeArm", whc + "Hand")
+    w_sh_i, w_el_i, w_wr_i = (11, 13, 15) if side == 11 else (12, 14, 16)
+    for fi in range(NF):
+        sc.frame_set(fi + 1); bpy.context.view_layer.update()
+        sh_w = np.array(arm.matrix_world @ pb[whc + "Arm"].head)
+        hum = B[fi, w_el_i] - B[fi, w_sh_i]
+        hn = np.linalg.norm(hum); hum = hum / hn if hn > 1e-9 else np.array([0.0, 0.0, -1.0])
+        fore = B[fi, w_wr_i] - B[fi, w_el_i]
+        fn = np.linalg.norm(fore); fore = fore / fn if fn > 1e-9 else np.array([0.0, 0.0, -1.0])
+        el_w = sh_w + hum * La_a
+        wr_w = el_w + fore * Lf_a
+        E[ppw + "el"].location = mu.Vector(el_w.tolist()); E[ppw + "el"].keyframe_insert("location", frame=fi + 1)
+        E[ppw + "wr"].location = mu.Vector(wr_w.tolist()); E[ppw + "wr"].keyframe_insert("location", frame=fi + 1)
+    for _en in (ppw + "el", ppw + "wr"):
+        act = E[_en].animation_data.action if E[_en].animation_data else None
+        for fc in (act.fcurves if act is not None and hasattr(act, "fcurves") else []):
+            for kp in fc.keyframe_points: kp.interpolation = "LINEAR"
+    log(f"authored arm snapped to evaluated {whc}Arm head, La {La_a:.3f} Lf {Lf_a:.3f}")
 if LEGS == "planted" and MO.get("foot_level", True):
     # Shared construction: DAMPED_TRACK aims the foot Y at the toes (unconstrained roll = sickle). LOCKED_TRACK
     # the sole-up axis (whichever of local X/Z is closest to world +Z) at a world-up empty, lock Y.
@@ -740,8 +808,32 @@ for f in range(1, NF + 1):
         c2 = np.empty(len(m_.vertices) * 3); m_.vertices.foreach_get("co", c2); c2 = c2.reshape(-1, 3)[samp]
         Mw = np.array(eb.matrix_world); frame_pts.append(c2 @ Mw[:3, :3].T + Mw[:3, 3]); eb.to_mesh_clear()
         frame_pts.append(np.array([g + mu.Vector(d_) for d_ in ((0.15, 0, 0), (-0.15, 0, 0), (0, 0, 0.07), (0, 0, -0.07))]))
+interp = "BEZIER" if AUTH_SPEC is not None else "LINEAR"
 for fc in (db.animation_data.action.fcurves if hasattr(db.animation_data.action, "fcurves") else []):
-    for kp in fc.keyframe_points: kp.interpolation = "LINEAR"
+    for kp in fc.keyframe_points: kp.interpolation = interp
+if AUTH_SPEC is not None:
+    lag = float(AUTH_SPEC.get("db_pendulum_lag_s") or 0)
+    tilt = float(AUTH_SPEC.get("db_pendulum_tilt_deg") or 0)
+    if lag > 0 or tilt > 0:
+        delay = int(round(lag * float(AUTH_META["fps"])))
+        locs, rots = [], []
+        for f in range(1, NF + 1):
+            sc.frame_set(f)
+            locs.append(db.location.copy()); rots.append(db.rotation_quaternion.copy())
+        Lz = np.array([p.z for p in locs], dtype=np.float64)
+        az = np.gradient(np.gradient(Lz)) if len(Lz) > 2 else np.zeros(len(Lz))
+        scale = float(np.percentile(np.abs(az), 90) or 1.0)
+        az = np.clip(az / scale, -1.0, 1.0)
+        for i in range(NF):
+            src = max(0, i - delay)
+            extra = mu.Quaternion(mu.Vector((1, 0, 0)), math.radians(tilt * float(az[i])))
+            db.location = locs[i]
+            db.rotation_quaternion = extra @ rots[src]
+            db.keyframe_insert("location", frame=i + 1)
+            db.keyframe_insert("rotation_quaternion", frame=i + 1)
+        for fc in (db.animation_data.action.fcurves if hasattr(db.animation_data.action, "fcurves") else []):
+            for kp in fc.keyframe_points: kp.interpolation = "BEZIER"
+        log(f"db pendulum lag {lag}s tilt {tilt}deg")
 log("dumbbell baked")
 
 # Shared construction: mild Corrective Smooth on a tight Spine01 / armpit group.
@@ -1227,7 +1319,7 @@ if RC.get("floor", True):
     floor.data.materials.clear(); floor.data.materials.append(fm)
     try: col.objects.link(floor)
     except RuntimeError: pass
-sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
+sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(AUTH_META["fps"]) if AUTH_META else int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
 frames = list(range(1, NF + 1)) if a.frames == "all" else [int(v) for v in a.frames.split(",")]
 def flex_at(f):
     els = [c["elbow_deg"] for c in chk]

@@ -1,0 +1,36 @@
+# Reusable hinged one-arm row. Loaded when motion.authored.preset: pull_row.
+# Keyposes are anatomical (angles + local offsets), not filmed landmarks.
+_doc: "Authored pull_row: eased hang -> peak -> hang cycle, vertical forearm, elbow drives to hip."
+fps: 30
+breathing_amp_m: 0.006
+db_pendulum_lag_s: 0.05
+db_pendulum_tilt_deg: 4
+phases:
+  - {name: concentric, dur_s: 0.80, ease: ease_in_out, u0: 0, u1: 1}
+  - {name: squeeze,    dur_s: 0.30, ease: hold,     u0: 1, u1: 1}
+  - {name: eccentric,  dur_s: 1.40, ease: ease_in_out, u0: 1, u1: 0}
+  - {name: rest,       dur_s: 0.50, ease: hold,     u0: 0, u1: 0}
+right:
+  torso_deg: 49
+  thoracic_rot_deg: 6
+  elbow_flex_start_deg: 10
+  elbow_flex_peak_deg: 95
+  elbow_tuck_deg: 8         # slight adduction toward the ribs (not through the torso)
+  elbow_flare: false
+  scapula_retract: true
+  shrug_m: 0.0
+  depress_m: 0.012          # scapular depression at peak (clavicle / Shoulder)
+wrong:
+  torso_start_deg: 40
+  torso_peak_deg: 27        # stands up through the yank
+  thoracic_rot_deg: 2
+  elbow_flex_start_deg: 10
+  elbow_flex_peak_deg: 85
+  elbow_tuck_deg: -18
+  elbow_flare_deg: -18     # yank flares the elbow out
+  elbow_flare: true
+  scapula_retract: false
+  shrug_m: 0.022            # clavicle (Shoulder) elevation along chest-up, driven by u
+  depress_m: 0.0
+  concentric_dur_s: 0.35
+  concentric_ease: yank
