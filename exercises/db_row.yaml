@@ -62,19 +62,28 @@ garment:                     # black boxer briefs (드로즈): separate skinned 
 render:
   dumbbell_axis_fix: true   # v6: handle long axis = object X (v1-v5 bug: the joined dumbbell kept a 90 deg rotation, handle on the wrong axis)
   res: [1080, 1920]          # render at delivery size (720 + upscale measured 0.18x Day 4 sharpness)
-  spp: 16
+  spp: 24
   denoise_prefilter: ACCURATE # OIDN guided by albedo + normal passes keeps the sculpt texture
-  normal_strength: 2.0
-  albedo_detail: 0.50
-  sss_weight: 0.16
+  normal_strength: 1.0
+  albedo_detail: 0.0
+  sss_weight: 0.0
   sss_scale: 0.05
-  glow_emission: 1.35
-  hdri_strength: 0.35
-  key_energy: 380
-  fill_energy: 150
-  rim_energy: 270
+  glow_emission: 1.0
+  hdri_strength: 0.0
+  key_energy: 75
+  fill_energy: 230
+  rim_energy: 40
   floor: true
   denoise: true
+  look_backend: inscene
+  view_transform: Standard
+  ambient_strength: 0.38
+  top_energy: 50
+  ao_distance: 0.14
+  ao_amount: 0.38
+  glow_blur_iters: 10
+  glow_flex_min: 0.88
+  base_color: [0.13, 0.131, 0.133]
   mask_spp: 4
   camera:
     mode: side_tight          # camera on the working-arm side, turned toward the back (Day 4 back-3/4 feel)

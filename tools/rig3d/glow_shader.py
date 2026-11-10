@@ -1,13 +1,15 @@
-"""Shared 3D glow shaders for rig3d (Blender 5.x).
+"""Shared 3D glow shaders for rig3d (Blender 4.x / 5.x).
 
-Two backends, same mregion attribute (R lats, G rhomboids, B mid-trap|rear-delt):
+Backends:
 
   post     — simple emission (fac * contraction). Fibre striations + bloom stay in
              grade3d.py (the historical 2D path).
-  blender  — per-muscle wave striations aligned to fibre direction, anisotropic
-             tangent on the muscle BSDF, emission strength driven by contraction,
-             and a compositor Fog-Glow whose input is Emission * glow_mask AOV
-             so the bloom cannot leak onto skin, briefs, or the prop.
+  blender  — per-muscle wave striations aligned to fibre direction (legacy).
+  tint     — mid_tgt surface tint (method D).
+  inscene  — Mix Shader of the clay Principled BSDF with a peach (or red) Emission
+             driven by a blurred per-vertex `glow_w` weight. No procedural fibres;
+             sculpt normals carry the remaining detail. Intended for view transform
+             Standard so the emission colour displays as measured.
 
 Node names are prefixed GF_ so a run can switch backends without rebuilding the
 rest of the material (base color, SSS, asset normals).
@@ -182,6 +184,51 @@ def attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min=0.58, tint_mix=
     return flex
 
 
+
+def attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min=0.88):
+    """Mix clay Principled with Emission via blurred `glow_w` (no procedural fibres).
+
+    Mix (not Add) so a weight of 1 displays as the measured peach rather than
+    clay-plus-peach. `glow_w` is a FLOAT_COLOR attribute (R = weight). Shorts
+    cancel the weight. A color-ramp eases the border so the glow feathers.
+    """
+    _purge(nt)
+    at = nt.nodes.new("ShaderNodeAttribute"); at.name = GF + "GLOWW"; at.attribute_name = "glow_w"
+    sep = nt.nodes.new("ShaderNodeSeparateColor"); sep.name = GF + "GWSEP"
+    nt.links.new(at.outputs["Color"], sep.inputs["Color"])
+    ash = nt.nodes.new("ShaderNodeAttribute"); ash.name = GF + "SHORTS"; ash.attribute_name = "shorts"
+    inv = nt.nodes.new("ShaderNodeMath"); inv.name = GF + "INV"; inv.operation = "SUBTRACT"
+    inv.inputs[0].default_value = 1.0
+    nt.links.new(ash.outputs["Fac"], inv.inputs[1])
+    fac = nt.nodes.new("ShaderNodeMath"); fac.name = GF + "FAC"; fac.operation = "MULTIPLY"
+    nt.links.new(sep.outputs["Red"], fac.inputs[0]); nt.links.new(inv.outputs["Value"], fac.inputs[1])
+    ramp = nt.nodes.new("ShaderNodeValToRGB"); ramp.name = GF + "FALL"
+    ramp.color_ramp.interpolation = "EASE"
+    ramp.color_ramp.elements[0].position = 0.02
+    ramp.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+    ramp.color_ramp.elements[1].position = 0.88
+    ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
+    nt.links.new(fac.outputs["Value"], ramp.inputs["Fac"])
+    sep2 = nt.nodes.new("ShaderNodeSeparateColor"); sep2.name = GF + "FALLC"
+    nt.links.new(ramp.outputs["Color"], sep2.inputs["Color"])
+    _flex, stm = _flex_strength(nt, sep2.outputs["Red"], em_str, flex_min)
+    clp = nt.nodes.new("ShaderNodeClamp"); clp.name = GF + "CLP"
+    clp.inputs["Min"].default_value = 0.0
+    clp.inputs["Max"].default_value = 1.0
+    nt.links.new(stm.outputs["Value"], clp.inputs["Value"])
+    em = nt.nodes.new("ShaderNodeEmission"); em.name = GF + "EM"
+    em.inputs["Color"].default_value = tuple(em_col)
+    em.inputs["Strength"].default_value = 1.0
+    mixs = nt.nodes.new("ShaderNodeMixShader"); mixs.name = GF + "MIXS"
+    for lnk in list(mout.inputs["Surface"].links):
+        nt.links.remove(lnk)
+    nt.links.new(bsdf.outputs[0], mixs.inputs[1])
+    nt.links.new(em.outputs[0], mixs.inputs[2])
+    nt.links.new(clp.outputs[0], mixs.inputs[0])
+    nt.links.new(mixs.outputs[0], mout.inputs["Surface"])
+    return _flex
+
+
 def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_scale=42.0):
     """(Re)attach GF_* glow nodes on every body material. Returns flex Value nodes."""
     flex_nodes = []
@@ -193,6 +240,8 @@ def switch_materials(body_mats, backend, em_col, em_str, flex_min=0.58, fibre_sc
             flex_nodes.append(attach_blender_glow(nt, bsdf, mout, em_col, em_str, flex_min, fibre_scale))
         elif backend == "tint":
             flex_nodes.append(attach_surface_tint(nt, bsdf, mout, em_col, em_str, flex_min))
+        elif backend in ("inscene", "native", "clay"):
+            flex_nodes.append(attach_clay_emission(nt, bsdf, mout, em_col, em_str, flex_min))
         else:
             flex_nodes.append(attach_simple_emission(nt, bsdf, mout, em_col, em_str, flex_min))
     return flex_nodes

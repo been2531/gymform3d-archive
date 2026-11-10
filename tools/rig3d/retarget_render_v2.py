@@ -676,8 +676,27 @@ if USE_MID:
     MREG.write_mregion(me, reg); REST_REG = reg.copy()
     lats = reg[:, 0] > 0.5; rhomb = reg[:, 1] > 0.5; mid_trap = reg[:, 2] > 0.5
     log(f"muscle IDs hit={MID.get('hit')} tgt_verts={ntgt} { {k: MID['counts'][k] for k in _tgts if k in MID['counts']} }")
+    _gw_tgts = list(_tgts)
+    if str((C.get("grade") or {}).get("glow") or "right") == "wrong":
+        try:
+            from muscle_activation import COMPENSATORS as _COMP
+            _gw_tgts = list(_COMP)
+        except Exception:
+            pass
+    _gw_ids = [name_i[n] for n in _gw_tgts if n in name_i]
+    _gw = np.isin(tid, _gw_ids).astype(np.float32)
 else:
     log(f"muscle IDs unused nv={nv} built={None if not MID else MID.get('nv')}")
+    _gw = (reg.max(axis=1) > 0.5).astype(np.float32)
+try:
+    _gw = MIDS.blur_mask(_gw, ADJ, iters=int(RC.get("glow_blur_iters", 10)),
+                         dilate=int(RC.get("glow_blur_dilate", 2)))
+    _gw[shorts] = 0.0
+    _gw[EXCLUDE] = 0.0
+    _gw_mean, _gw_n = MIDS.write_glow_w(me, _gw)
+    log(f"glow_w verts>0.5={_gw_n} mean={_gw_mean:.4f} blur_iters={int(RC.get('glow_blur_iters', 7))}")
+except Exception as _e:
+    log(f"glow_w write failed: {_e}")
 # palm axis (v5): the across-palm direction (index knuckle -> little finger) in the HAND bone's local frame = the
 # middle principal axis of the rest hand-mesh vertices (largest = fingers, smallest = palm normal). On this GLB the
 # bone X/Z axes sit ~45 deg off the palm, so the legacy handle (shoulder line projected off the hand axis) was tilted.
@@ -756,7 +775,11 @@ if GC.get("enabled"):
     sel = (z >= gz0) & (z <= gz1) & (ax_ <= gx)
     garm = body.copy(); garm.data = body.data.copy(); garm.name = "briefs"; col.objects.link(garm)
     gm_ = garm.data
-    for at_ in list(gm_.color_attributes): gm_.color_attributes.remove(at_)
+    for at_ in list(gm_.color_attributes):
+        try:
+            gm_.color_attributes.remove(at_)
+        except RuntimeError:
+            pass  # Blender 4.x refuses to drop the last/default colour attribute
     src = gm_.attributes.new("src_vi", "INT", "POINT"); src.data.foreach_set("value", np.arange(nv, dtype=np.int32))
     bm = bmesh.new(); bm.from_mesh(gm_)
     # straight waistband + leg hems: cut the body along the two horizontal planes (rest pose, world z) instead of
@@ -1285,18 +1308,36 @@ if a.checks_only: sys.exit(0)
 
 # ---- materials + lights (P0 quality upgrade) -----------------------------------------------------------------------
 body_mats = [s.material for s in body.material_slots]
-ad = float(RC.get("albedo_detail", 0.50))
-sss_w = float(RC.get("sss_weight", 0.16))
-em_str = float(RC.get("glow_emission", 1.35))
+look_inscene = (
+    str(RC.get("look_backend") or "").lower() in ("inscene", "native", "clay")
+    or str((C.get("grade") or {}).get("glow_method") or "").upper() in ("NATIVE", "INSCENE", "CLAY")
+)
+ad = 0.0 if look_inscene else float(RC.get("albedo_detail", 0.50))
+sss_w = min(float(RC.get("sss_weight", 0.0 if look_inscene else 0.16)), 0.04 if look_inscene else 1.0)
+em_str = float(RC.get("glow_emission", 1.0 if look_inscene else 1.35))
 glow_wrong = C.get("grade", {}).get("glow") == "wrong"
 _pal = str((C.get("grade") or {}).get("palette") or "demic_peach").strip().lower()
+
+def _srgb_to_lin(c):
+    c = float(c)
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+def _hsv_to_lin_rgba(h, s, v):
+    import colorsys
+    r, g, b = colorsys.hsv_to_rgb(float(h) / 180.0, float(s) / 255.0, float(v) / 255.0)
+    return (_srgb_to_lin(r), _srgb_to_lin(g), _srgb_to_lin(b), 1.0)
+
 if glow_wrong:
-    em_col = (1.0, 0.28, 0.10, 1)            # compensators stay red
+    em_col = (0.82, 0.07, 0.07, 1) if look_inscene else (1.0, 0.28, 0.10, 1)
 elif _pal in ("green", "gymform_green", "mint", "neon"):
-    em_col = (0.16, 1.0, 0.42, 1)            # selectable legacy mint
+    em_col = (0.16, 1.0, 0.42, 1)
+elif look_inscene:
+    em_col = _hsv_to_lin_rgba(16, 62, 225)   # demic core: display H16 S62 V225 under Standard
 else:
     em_col = (1.0, 0.62, 0.38, 1)            # demic peach (H~16); COMBO snap finishes H/S/V
-base_rgb = tuple(float(x) for x in RC.get("base_color", [0.22, 0.225, 0.232]))
+base_rgb = tuple(float(x) for x in RC.get("base_color", [0.325, 0.327, 0.332] if look_inscene else [0.22, 0.225, 0.232]))
+if look_inscene:
+    log(f"look_inscene clay albedo={tuple(round(c,3) for c in base_rgb)} em={tuple(round(c,3) for c in em_col[:3])} ad=0 sss={sss_w}")
 
 for m_ in body_mats:
     nt = m_.node_tree; bsdf = [n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"][0]
@@ -1313,7 +1354,25 @@ for m_ in body_mats:
         nt.links.new(mix.outputs[2], mul.inputs[6]); nt.links.new(mr.outputs[0], mul.inputs[7]); nt.links.new(mul.outputs[2], bsdf.inputs["Base Color"])
     else:
         nt.links.new(mix.outputs[2], bsdf.inputs["Base Color"])
-    if not bsdf.inputs["Roughness"].links:          # keep the packed roughness map when the GLB already wired it
+    if look_inscene:
+        for l in list(bsdf.inputs["Roughness"].links):
+            nt.links.remove(l)
+        bsdf.inputs["Roughness"].default_value = 0.62
+        # Soft AO into the clay albedo (display-referred matte, even studio).
+        ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
+        ao.inputs["Distance"].default_value = float(RC.get("ao_distance", 0.14))
+        aom = nt.nodes.new("ShaderNodeMix")
+        aom.data_type = "RGBA"
+        aom.blend_type = "MULTIPLY"
+        aom.inputs[0].default_value = float(RC.get("ao_amount", 0.38))
+        # mix.outputs[2] is the shorts-aware clay colour
+        base_src = bsdf.inputs["Base Color"].links[0].from_socket
+        nt.links.new(base_src, aom.inputs[6])
+        nt.links.new(ao.outputs["Color"], aom.inputs[7])
+        for l in list(bsdf.inputs["Base Color"].links):
+            nt.links.remove(l)
+        nt.links.new(aom.outputs[2], bsdf.inputs["Base Color"])
+    elif not bsdf.inputs["Roughness"].links:          # keep the packed roughness map when the GLB already wired it
         bsdf.inputs["Roughness"].default_value = 0.50
     if "Subsurface Weight" in bsdf.inputs:
         bsdf.inputs["Subsurface Weight"].default_value = sss_w
@@ -1322,27 +1381,41 @@ for m_ in body_mats:
     if "Subsurface Scale" in bsdf.inputs:
         bsdf.inputs["Subsurface Scale"].default_value = float(RC.get("sss_scale", 0.05))
     if "Specular IOR Level" in bsdf.inputs:
-        bsdf.inputs["Specular IOR Level"].default_value = 0.35
+        bsdf.inputs["Specular IOR Level"].default_value = 0.18 if look_inscene else 0.35
+    nstr = float(RC.get("normal_strength", 1.0 if look_inscene else 2.0))
+    if look_inscene and nstr > 1.35:
+        nstr = 1.0
     for nm in [n for n in nt.nodes if n.type == "NORMAL_MAP"]:
-        nm.inputs["Strength"].default_value = float(RC.get("normal_strength", 2.0))
-    # 3D glow: shared tools/rig3d/glow_shader.py (simple emission for the 2D-grade path).
+        nm.inputs["Strength"].default_value = nstr
+    # 3D glow: shared tools/rig3d/glow_shader.py
     mout = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import glow_shader as GSH
-_flex_min = float(RC.get("glow_flex_min", 0.58))
-flex_nodes = GSH.switch_materials(body_mats, "post", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
+_flex_min = float(RC.get("glow_flex_min", 0.88 if look_inscene else 0.58))
+_backend = "inscene" if look_inscene else "post"
+flex_nodes = GSH.switch_materials(body_mats, _backend, em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
+if look_inscene:
+    log(f"glow backend=inscene flex_min={_flex_min} em_str={em_str}")
 
 sc.render.engine = "CYCLES"; sc.cycles.device = "CPU"; sc.render.film_transparent = False
 wd = bpy.data.worlds.new("w"); sc.world = wd; wd.use_nodes = True; bg = wd.node_tree.nodes["Background"]
-hdri = C["asset"]["hdri"]; envn = wd.node_tree.nodes.new("ShaderNodeTexEnvironment"); envn.image = bpy.data.images.load(hdri["file"])
-wd.node_tree.links.new(envn.outputs["Color"], bg.inputs["Color"])
-bg.inputs["Strength"].default_value = float(RC.get("hdri_strength", hdri.get("strength", 0.35)))
-# Camera rays see dark charcoal (never a black void / photographed HDRI). Lighting rays still use the HDRI.
+hdri = C["asset"]["hdri"]
+if look_inscene:
+    # Neutral even ambient — no photographed HDRI hotspots (those dirtied non-targets).
+    bg.inputs["Color"].default_value = (0.82, 0.83, 0.85, 1)
+    bg.inputs["Strength"].default_value = float(RC.get("ambient_strength", 0.28))
+    log(f"world lighting: neutral ambient {bg.inputs['Strength'].default_value}")
+else:
+    envn = wd.node_tree.nodes.new("ShaderNodeTexEnvironment"); envn.image = bpy.data.images.load(hdri["file"])
+    wd.node_tree.links.new(envn.outputs["Color"], bg.inputs["Color"])
+    bg.inputs["Strength"].default_value = float(RC.get("hdri_strength", hdri.get("strength", 0.35)))
+# Camera rays see dark charcoal (never a black void / photographed HDRI). Lighting rays still use HDRI/ambient.
 try:
     nt_w = wd.node_tree
     lp = nt_w.nodes.new("ShaderNodeLightPath")
     bg_cam = nt_w.nodes.new("ShaderNodeBackground")
-    bg_cam.inputs["Color"].default_value = (0.028, 0.028, 0.030, 1)
+    _cam_lin = 0.0185 if look_inscene else 0.028   # Standard display V~38
+    bg_cam.inputs["Color"].default_value = (_cam_lin, _cam_lin, _cam_lin + 0.001, 1)
     bg_cam.inputs["Strength"].default_value = 1.0
     mx = nt_w.nodes.new("ShaderNodeMixShader")
     out_w = [n for n in nt_w.nodes if n.type == "OUTPUT_WORLD"][0]
@@ -1368,9 +1441,18 @@ def add_area(name, loc, energy, size, color):
     o = bpy.data.objects.new(name, Lt); col.objects.link(o)
     o.location = loc; o.rotation_euler = (ctr - o.location).to_track_quat("-Z", "Y").to_euler(); return o
 
-add_area("key", ctr + key_from * 2.8 + upv * 1.8, RC.get("key_energy", 380), 2.2, (1.00, 0.98, 0.94))
-add_area("fill", ctr - key_from * 0.5 + sidev * 2.4 + upv * 2.2, RC.get("fill_energy", 150), 3.4, (0.90, 0.94, 1.00))
-add_area("rim", ctr - key_from * 2.6 + upv * 1.9, RC.get("rim_energy", 270), 1.6, (0.65, 0.82, 1.00))
+if look_inscene:
+    # Large soft studio, front-biased toward the camera (the visible 3/4 surface),
+    # even lighting, soft shadows, no cool-tinted rim. Matches demic's even clay.
+    add_area("key", ctr + key_from * 2.8 + upv * 1.9 + sidev * 0.4, RC.get("key_energy", 100), 6.4, (1.00, 0.99, 0.97))
+    add_area("fill", ctr + key_from * 2.0 + upv * 0.6 - sidev * 2.4, RC.get("fill_energy", 210), 7.2, (0.99, 0.99, 1.00))
+    add_area("rim", ctr - key_from * 2.2 + upv * 1.4 + sidev * 0.5, RC.get("rim_energy", 45), 4.0, (1.00, 1.00, 1.00))
+    add_area("top", ctr + upv * 3.6 + key_from * 0.4, RC.get("top_energy", 55), 6.0, (1.00, 0.99, 0.97))
+    log("studio: large soft key/fill/rim/top (inscene)")
+else:
+    add_area("key", ctr + key_from * 2.8 + upv * 1.8, RC.get("key_energy", 380), 2.2, (1.00, 0.98, 0.94))
+    add_area("fill", ctr - key_from * 0.5 + sidev * 2.4 + upv * 2.2, RC.get("fill_energy", 150), 3.4, (0.90, 0.94, 1.00))
+    add_area("rim", ctr - key_from * 2.6 + upv * 1.9, RC.get("rim_energy", 270), 1.6, (0.65, 0.82, 1.00))
 # Shared construction: a lower key + rim aimed at the legs so charcoal grade cannot crush
 # the lower body into the backdrop (silhouette separation, charcoal identity kept).
 leg_aim = mu.Vector((ctr.x, ctr.y, 0.48))
@@ -1378,8 +1460,13 @@ def add_area_aim(name, loc, energy, size, color, aim):
     Lt = bpy.data.lights.new(name, "AREA"); Lt.energy = float(energy); Lt.size = float(size); Lt.color = color
     o = bpy.data.objects.new(name, Lt); col.objects.link(o)
     o.location = loc; o.rotation_euler = (aim - o.location).to_track_quat("-Z", "Y").to_euler(); return o
-add_area_aim("leg_key", leg_aim + key_from * 2.4 + upv * 0.55, RC.get("leg_key_energy", 190), 1.8, (1.00, 0.98, 0.94), leg_aim)
-add_area_aim("leg_rim", leg_aim - key_from * 2.3 + upv * 0.70, RC.get("leg_rim_energy", 170), 1.5, (0.70, 0.84, 1.00), leg_aim)
+if look_inscene:
+    _lk = float(RC.get("leg_key_energy", 0))
+    if _lk > 1.0:
+        add_area_aim("leg_key", leg_aim + key_from * 2.2 + upv * 0.7, _lk, 4.6, (1.00, 0.99, 0.97), leg_aim)
+else:
+    add_area_aim("leg_key", leg_aim + key_from * 2.4 + upv * 0.55, RC.get("leg_key_energy", 190), 1.8, (1.00, 0.98, 0.94), leg_aim)
+    add_area_aim("leg_rim", leg_aim - key_from * 2.3 + upv * 0.70, RC.get("leg_rim_energy", 170), 1.5, (0.70, 0.84, 1.00), leg_aim)
 floor = None
 if RC.get("floor", True):
     import bmesh
@@ -1426,14 +1513,25 @@ if RC.get("floor", True):
     except RuntimeError: pass
     fm = bpy.data.materials.new("studio_floor"); fm.use_nodes = True
     nt = fm.node_tree; fb = nt.nodes["Principled BSDF"]
-    fb.inputs["Base Color"].default_value = (0.018, 0.018, 0.019, 1)
-    fb.inputs["Roughness"].default_value = 0.62
-    if "Specular IOR Level" in fb.inputs:
-        fb.inputs["Specular IOR Level"].default_value = 0.22
-    if "Emission Color" in fb.inputs:
-        fb.inputs["Emission Color"].default_value = (0.028, 0.028, 0.030, 1)
-        if "Emission Strength" in fb.inputs:
-            fb.inputs["Emission Strength"].default_value = 0.85
+    if look_inscene:
+        # Emission-only charcoal so area lights cannot lift the bowl. Standard display V~38.
+        _cyc = 0.0185
+        emc = nt.nodes.new("ShaderNodeEmission")
+        emc.inputs["Color"].default_value = (_cyc, _cyc, _cyc + 0.0004, 1)
+        emc.inputs["Strength"].default_value = 1.0
+        out_c = [n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"][0]
+        for _l in list(out_c.inputs["Surface"].links):
+            nt.links.remove(_l)
+        nt.links.new(emc.outputs[0], out_c.inputs["Surface"])
+    else:
+        fb.inputs["Base Color"].default_value = (0.018, 0.018, 0.019, 1)
+        fb.inputs["Roughness"].default_value = 0.62
+        if "Specular IOR Level" in fb.inputs:
+            fb.inputs["Specular IOR Level"].default_value = 0.22
+        if "Emission Color" in fb.inputs:
+            fb.inputs["Emission Color"].default_value = (0.028, 0.028, 0.030, 1)
+            if "Emission Strength" in fb.inputs:
+                fb.inputs["Emission Strength"].default_value = 0.85
     floor.data.materials.clear(); floor.data.materials.append(fm)
     log(f"cyclorama bowl r_flat={R_flat} r_max={R_max} h={H_wall} z={flz:.3f} (opaque, all views)")
 sc.frame_start, sc.frame_end = 1, NF; sc.render.fps = int(AUTH_META["fps"]) if AUTH_META else int(D["fps"]); sc.render.image_settings.file_format = "PNG"; sc.render.image_settings.color_mode = "RGBA"
@@ -1488,15 +1586,21 @@ if not a.mask_only:
         sc.cycles.denoiser = "OPENIMAGEDENOISE"; sc.cycles.denoising_prefilter = RC.get("denoise_prefilter", "ACCURATE")
         sc.cycles.denoising_input_passes = "RGB_ALBEDO_NORMAL"
     except Exception as e: log(f"denoise option: {e}")
-    sc.view_settings.view_transform = "AgX"
+    sc.view_settings.view_transform = str(RC.get("view_transform") or ("Standard" if look_inscene else "AgX"))
+    try:
+        sc.view_settings.look = "None"
+    except Exception:
+        pass
+    if look_inscene:
+        log(f"view_transform={sc.view_settings.view_transform} (colors as measured)")
     t = time.time(); render_set("f"); tim["beauty_s"] = round(time.time() - t, 1); log(f"beauty {tim['beauty_s']} s")
-    want_ab = bool(RC.get("glow_ab") or str(RC.get("glow_backend", "post")).lower() in ("blender", "both"))
+    want_ab = (not look_inscene) and bool(RC.get("glow_ab") or str(RC.get("glow_backend", "post")).lower() in ("blender", "both"))
     if want_ab:
         flex_nodes[:] = GSH.switch_materials(body_mats, "blender", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
         GSH.setup_compositor(sc, float(RC.get("blender_bloom", 0.60)))
         t = time.time(); render_set("b"); tim["beauty_blender_s"] = round(time.time() - t, 1); log(f"beauty blender-glow {tim['beauty_blender_s']} s")
         GSH.teardown_compositor(sc)
-    if bool(RC.get("glow_method_d", True)):
+    if (not look_inscene) and bool(RC.get("glow_method_d", True)):
         flex_nodes[:] = GSH.switch_materials(body_mats, "tint", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))
         t = time.time(); render_set("d"); tim["beauty_tint_s"] = round(time.time() - t, 1); log(f"beauty tint {tim['beauty_tint_s']} s")
         flex_nodes[:] = GSH.switch_materials(body_mats, "post", em_col, em_str, _flex_min, float(RC.get("glow_fibre_scale", 42.0)))

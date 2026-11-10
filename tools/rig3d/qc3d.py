@@ -211,7 +211,9 @@ def run(run_dir, cfg):
         mx = max(dv) if dv else None
         out.append(ck("floor_luma_vs_backdrop", None if mx is None else round(float(mx), 2),
                       f"<= {Q['floor_luma_delta_max']}", bool(dv) and mx <= Q["floor_luma_delta_max"], None, "look"))
-    if "glow_fibre_hp_min" in Q:
+    _gm = str((cfg.get("grade") or {}).get("glow_method") or "").upper()
+    _native = _gm in ("NATIVE", "INSCENE", "BLENDER_CLAY", "SCENE", "LOOK")
+    if "glow_fibre_hp_min" in Q and not _native:
         fv = [f.get("glow_fibre_hp_std") for f in L if f.get("glow_fibre_hp_std") is not None]
         mn = min(fv) if fv else None
         out.append(ck("glow_fibre_contrast", None if mn is None else round(float(mn), 2),
@@ -414,7 +416,7 @@ def run(run_dir, cfg):
         mn = min(vs) if vs else None
         out.append(ck("region_contrast_legs", None if mn is None else round(float(mn), 2),
                       f">= {Q['region_contrast_legs_min']} (p10 legs - backdrop)", bool(vs) and mn >= float(Q["region_contrast_legs_min"]), "leg_rim", "look"))
-    if "muscle_seams_delta_min" in Q:
+    if "muscle_seams_delta_min" in Q and not _native:
         vs = [f.get("seam_delta") for f in L if f.get("seam_delta") is not None]
         mn = min(vs) if vs else None
         out.append(ck("muscle_border_seams_visible", None if mn is None else round(float(mn), 2),

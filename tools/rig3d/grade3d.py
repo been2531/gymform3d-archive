@@ -325,8 +325,14 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
             seams = _muscle_seams(id_im, body)
         except Exception as _e:
             print("id decode:", _e); id_im = None
+    glow_src = str(G.get("glow_source", "post")).lower()
+    method = str(G.get("glow_method") or ("D" if glow_src == "blender" else "COMBO")).upper()
+    if method in ("DEFAULT", "COMBO", "X"):
+        method = "COMBO"
+    if method in ("NATIVE", "INSCENE", "BLENDER_CLAY", "SCENE", "LOOK"):
+        method = "NATIVE"
     lum = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
-    da = float(G.get("detail_amount", 0.0))
+    da = 0.0 if method == "NATIVE" else float(G.get("detail_amount", 0.0))
     if da > 0:   # detail pass: unsharp mask of the render's own surface (fibre / sculpt relief), body only
         hp = lum - cv2.GaussianBlur(lum, (0, 0), float(G.get("detail_sigma", 1.6)))
         bm = cv2.erode((body > 0.5).astype(np.uint8), np.ones((5, 5), np.uint8)).astype(np.float32)
@@ -336,28 +342,34 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
     else:
         shorts = ((lum < 28.0) & (body > 0.5) & (reg_any < 0.05)).astype(np.float32)
         shorts = cv2.GaussianBlur(cv2.morphologyEx(shorts, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)), (0, 0), 1.0)
-    skin = (body > 0.9) & (shorts < 0.2) & (reg_any < 0.05)
-    look_name = str(G.get("look", "charcoal")).lower()
-    look = LOOKS.get(look_name, LOOKS["charcoal"]); look_name = look_name if look_name in LOOKS else "charcoal"
-    lut = skin_lock_lut(lum[skin], look) if skin.sum() > 2000 else (lambda L: L)
-    locked = lut(lum)
-    hp = lum - cv2.GaussianBlur(lum.astype(np.float32), (0, 0), 2.5)    # keep key/rim form the lock would otherwise flatten
-    tone = np.clip(locked + float(look["contrast"]) * hp, 0, float(look.get("hi", 255)))
-    lo, hi = SPEC["mannequin"]["shorts_lum_range"]; tone = tone * (1 - shorts) + np.clip(lum * 0.3 + lo - 2.0, lo, hi) * shorts
-    tr, tg, tb = look.get("tint_rgb", SPEC["mannequin"]["skin_lock_all_steps"].get("tint_rgb", [-3, 1, 3]))
-    mono = np.stack([tone + tr, tone + tg, tone + tb], -1)
-    # 3D form as luma high-pass from the beauty sculpt (not the pale-mint AgX emission color)
-    rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
-    src_l = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
-    hp_form = src_l - cv2.GaussianBlur(src_l, (0, 0), 2.2)
-    base = np.clip(mono + (float(G.get("form_hp", 0.90)) * hp_form * rw[..., 0])[..., None], 0, 255)
-    emit_keep = float(G.get("emission_keep", 0.20))
-    if emit_keep > 0:
-        base = base * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
-    glow_src = str(G.get("glow_source", "post")).lower()
-    method = str(G.get("glow_method") or ("D" if glow_src == "blender" else "COMBO")).upper()
-    if method in ("DEFAULT", "COMBO", "X"):
-        method = "COMBO"
+    if method == "NATIVE":
+        look_name = str(G.get("look", "clay")).lower()
+        if look_name not in LOOKS:
+            look_name = "clay"
+        mono = rgb.copy()
+        rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
+        src_l = lum.copy()
+        hp_form = np.zeros_like(lum)
+        base = rgb.copy()
+    else:
+        skin = (body > 0.9) & (shorts < 0.2) & (reg_any < 0.05)
+        look_name = str(G.get("look", "charcoal")).lower()
+        look = LOOKS.get(look_name, LOOKS["charcoal"]); look_name = look_name if look_name in LOOKS else "charcoal"
+        lut = skin_lock_lut(lum[skin], look) if skin.sum() > 2000 else (lambda L: L)
+        locked = lut(lum)
+        hp = lum - cv2.GaussianBlur(lum.astype(np.float32), (0, 0), 2.5)    # keep key/rim form the lock would otherwise flatten
+        tone = np.clip(locked + float(look["contrast"]) * hp, 0, float(look.get("hi", 255)))
+        lo, hi = SPEC["mannequin"]["shorts_lum_range"]; tone = tone * (1 - shorts) + np.clip(lum * 0.3 + lo - 2.0, lo, hi) * shorts
+        tr, tg, tb = look.get("tint_rgb", SPEC["mannequin"]["skin_lock_all_steps"].get("tint_rgb", [-3, 1, 3]))
+        mono = np.stack([tone + tr, tone + tg, tone + tb], -1)
+        # 3D form as luma high-pass from the beauty sculpt (not the pale-mint AgX emission color)
+        rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
+        src_l = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
+        hp_form = src_l - cv2.GaussianBlur(src_l, (0, 0), 2.2)
+        base = np.clip(mono + (float(G.get("form_hp", 0.90)) * hp_form * rw[..., 0])[..., None], 0, 255)
+        emit_keep = float(G.get("emission_keep", 0.20))
+        if emit_keep > 0:
+            base = base * (1.0 - emit_keep * rw) + rgb * (emit_keep * rw)
     flex_v = float(flex) if flex is not None else float(fi / max(n, 1))
     flex_v = float(np.clip(flex_v, 0.0, 1.0))
     flex_min = float(G.get("glow_flex_min", 0.58))
@@ -402,7 +414,10 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         tw = _id_weight_map(id_im, flow_weights(pflow))
         reg_any = np.clip(reg_any * (0.82 + 0.18 * tw), 0, 1)
         rw = np.clip(reg_any, 0, 1)[..., None] * (1.0 - shorts[..., None])
-    if method == "D" or glow_src == "blender":
+    if method == "NATIVE":
+        graded = rgb.copy()
+        core_w = np.zeros(body.shape, np.float32)
+    elif method == "D" or glow_src == "blender":
         fibre_amt = 0.0
         bloom_amt = 0.0
         emit_keep = float(G.get("emission_keep_blender", 0.88))
@@ -479,41 +494,53 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         # targets at residual day4_fibre green (H~45) instead of peach H16.
         wsnap = np.clip(ra / 0.15, 0, 1)
         graded = snap_glow_hsv(graded, wsnap, target_h=hue, target_s=sat, target_v=val, val_mix=vmix, sat_mix=0.92, hue_mix=0.96)
-    if seams is not None:
+    if seams is not None and method != "NATIVE":
         graded = _apply_seams(graded, seams, 0.28, pal=pal)
     # Guarantee the target-ID sheet (not just activation-weighted ra) lands on the
     # palette. ra-gating left rhomboids/mid_trap/rear_delt at residual fibre H~45.
-    if (not is_wrong) and id_im is not None and tids and pal.get("name") not in ("green", "gymform_green", "mint"):
+    if method != "NATIVE" and (not is_wrong) and id_im is not None and tids and pal.get("name") not in ("green", "gymform_green", "mint"):
         tw = np.isin(id_im, tids).astype(np.float32) * (body > 0.45).astype(np.float32) * (1.0 - np.clip(shorts, 0, 1))
         graded = snap_glow_hsv(graded, tw, target_h=hue, target_s=sat, target_v=val, val_mix=vmix,
                                sat_mix=0.92, hue_mix=0.96)
     sm = shorts > 0.45
-    if np.any(sm):                                          # QC: 0 green pixels on the briefs
+    if method != "NATIVE" and np.any(sm):                    # QC: 0 green pixels on the briefs
         graded[sm] = mono[sm]
-    # composite: body = graded, dumbbell + studio floor = beauty (untouched), backdrop flat Day 4
-    bw = np.clip(body / np.maximum(fg, 1e-4), 0, 1)[..., None]
-    fg_rgb = graded * bw + rgb * (1 - bw)
-    bg = np.empty((H, W, 3), np.float32); bg[:] = G.get("backdrop_rgb", SPEC["background"]["grade_to_rgb"])
-    ys_b, xs_b = np.nonzero(body > 0.5)
-    YY = np.arange(H, dtype=np.float32)[:, None]
-    floor_m = studio_floor_mask(fg, body, rgb)
-    surface = studio_surface_mask(fg, body, rgb)
-    floor_m = floor_m | ((fg > 0.5) & surface)          # leftover disc / cove must not enter the figure bbox
-    fig = (fg > 0.5) & ~floor_m & ~surface
-    ys, xs = np.nonzero(fig) if fig.any() else (ys_b, xs_b)
-    sh = None
-    if len(ys_b):                                                          # contact shadow under the BODY feet (also darkens the studio floor)
-        fy = ys_b.max(); sel = ys_b > fy - 40; cx = xs_b[sel].mean(); sw = max(60.0, float(np.ptp(xs_b[sel])) * 0.9 + 60)
-        YY, XX = np.mgrid[:H, :W].astype(np.float32)
-        sh = np.exp(-(((XX - cx) / sw) ** 2 + ((YY - fy - 6) / 18.0) ** 2) * 2.2); bg *= (1 - 0.38 * sh)[..., None]
-    out = bg * (1 - fg[..., None]) + fg_rgb * fg[..., None]
-    fy = int(ys_b.max()) if len(ys_b) else None
-    out = melt_studio_floor(out, surface, bg[0, 0], fy, xs_b if len(ys_b) else None)
-    if sh is not None:
-        out = out * (1.0 - 0.58 * sh * (body < 0.5))[..., None]
-    out = add_grounding_reflection(out, body, surface, fy)
-    out8 = np.clip(out, 0, 255).astype(np.uint8)
-    base8 = out8                     # look stats are measured on the figure BEFORE the UI (laser/leader/pill have their own QC)
+    # composite: NATIVE keeps the in-scene beauty (clay + peach + charcoal studio).
+    # Other methods: body = graded, dumbbell + studio floor = beauty, backdrop flat Day 4.
+    if method == "NATIVE":
+        out8 = np.clip(rgb, 0, 255).astype(np.uint8)
+        occ = body.astype(np.float32)
+        ys_b, xs_b = np.nonzero(body > 0.5)
+        ys, xs = ys_b, xs_b
+        fig = body > 0.5
+        floor_m = np.zeros(body.shape, dtype=bool)
+        bg = np.empty((H, W, 3), np.float32)
+        bg[:] = G.get("backdrop_rgb", [38, 38, 38])
+    else:
+        bw = np.clip(body / np.maximum(fg, 1e-4), 0, 1)[..., None]
+        fg_rgb = graded * bw + rgb * (1 - bw)
+        bg = np.empty((H, W, 3), np.float32); bg[:] = G.get("backdrop_rgb", SPEC["background"]["grade_to_rgb"])
+        ys_b, xs_b = np.nonzero(body > 0.5)
+        YY = np.arange(H, dtype=np.float32)[:, None]
+        floor_m = studio_floor_mask(fg, body, rgb)
+        surface = studio_surface_mask(fg, body, rgb)
+        floor_m = floor_m | ((fg > 0.5) & surface)          # leftover disc / cove must not enter the figure bbox
+        fig = (fg > 0.5) & ~floor_m & ~surface
+        ys, xs = np.nonzero(fig) if fig.any() else (ys_b, xs_b)
+        sh = None
+        if len(ys_b):                                                          # contact shadow under the BODY feet (also darkens the studio floor)
+            fy = ys_b.max(); sel = ys_b > fy - 40; cx = xs_b[sel].mean(); sw = max(60.0, float(np.ptp(xs_b[sel])) * 0.9 + 60)
+            YY, XX = np.mgrid[:H, :W].astype(np.float32)
+            sh = np.exp(-(((XX - cx) / sw) ** 2 + ((YY - fy - 6) / 18.0) ** 2) * 2.2); bg *= (1 - 0.38 * sh)[..., None]
+        out = bg * (1 - fg[..., None]) + fg_rgb * fg[..., None]
+        fy = int(ys_b.max()) if len(ys_b) else None
+        out = melt_studio_floor(out, surface, bg[0, 0], fy, xs_b if len(ys_b) else None)
+        if sh is not None:
+            out = out * (1.0 - 0.58 * sh * (body < 0.5))[..., None]
+        out = add_grounding_reflection(out, body, surface, fy)
+        out8 = np.clip(out, 0, 255).astype(np.uint8)
+        occ = fg.astype(np.float32)
+    base8 = out8.copy()                     # look stats are measured on the figure BEFORE the UI (laser/leader/pill have their own QC)
     ui = {}
     if kp is not None and cfg.get("layout", {}).get("callout"):
         out8, ui["callout"] = draw_torso_callout(out8, shorts, kp, cfg)
@@ -521,11 +548,11 @@ def grade_frame(beauty, mask, cfg, fi, n, kp=None, icons=None, ui_on=True, id_im
         pass
     elif icons is not None:
         gl.LAST_MASKS.pop("eq_front", None)
-        out8 = gl.composite_title_and_preview_v4(out8, fg.astype(np.float32), icons, 0, False, cfg["name"])
+        out8 = gl.composite_title_and_preview_v4(out8, occ, icons, 0, False, cfg["name"])
         ui["pill"] = [449, 248, 631, 410]                                 # 1-slot pill + active slot frame (b4 geometry)
     else:
         a_t, _ = gl.overlap_alpha(); ty0, ty1 = gl.TITLE_ROI; t_rgb, t_a = gl._title_layer(cfg["name"])
-        eff = t_a * (1.0 - fg[ty0:ty1, :, None] * (1.0 - a_t)); o_ = out8.astype(np.float32)
+        eff = t_a * (1.0 - occ[ty0:ty1, :, None] * (1.0 - a_t)); o_ = out8.astype(np.float32)
         o_[ty0:ty1] = o_[ty0:ty1] * (1 - eff) + t_rgb * eff; out8 = np.clip(o_, 0, 255).astype(np.uint8)
     ty0, ty1 = gl.TITLE_ROI; t_rgb, t_a = gl._title_layer(cfg["name"]); ys_, xs_ = np.nonzero(t_a[..., 0] > 0.1)
     ui["title"] = [int(xs_.min()), int(ty0 + ys_.min()), int(xs_.max()), int(ty0 + ys_.max())]
