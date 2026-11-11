@@ -199,6 +199,7 @@ def analyze_rich(arm, bones, f0, f1):
             along = bone_axis(arm, hn)
             if along is not None:
                 rec["head_up_z"] = float(along.z)
+                rec["head_axis"] = [float(along.x), float(along.y), float(along.z)]
                 rec["head_tilt_fwd"] = float(along.dot(Vector((0.0, -1.0, 0.0))))
         for side, fk in (("l", "foot_l"), ("r", "foot_r")):
             fn = bones.get(fk)
