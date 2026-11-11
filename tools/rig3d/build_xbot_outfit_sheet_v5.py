@@ -29,7 +29,7 @@ FOOT_H = 140
 VARIANTS = (
     ("plain", "plain X Bot"),
     ("v4A", "v4 A  ·  ballooned trunks / crop tank"),
-    ("v5A", "v5 A  ·  snug trunks, waist tank, kidney thumb"),
+    ("v5A", "v5 A  ·  burgundy trunks, charcoal tank, kidney thumb"),
 )
 POSES = (
     ("idle", "guard", "Fighting Idle — guard"),
@@ -44,7 +44,7 @@ CLOSE_ROWS = (
         ("close_garments", "v5 tank + trunks  ·  hem covers waistband, delts open"),
     ),
     (
-        ("close_trunks", "v5 trunks close  ·  snug navel band, mid-thigh flare"),
+        ("close_trunks", "v5 trunks close  ·  burgundy satin, snug navel band, mid-thigh flare"),
         ("close_trunks_ref", "CC0 trunks ref  ·  same scale (Nationaal Archief / Anefo, 1951)"),
         ("close_garments", "v5 garments (repeat)  ·  hip rotation still readable"),
     ),
@@ -209,10 +209,10 @@ def compose(stills, notes, out_path):
     sheet = Image.new("RGB", (w, h), BG)
     dr = ImageDraw.Draw(sheet)
     dr.text((PAD + 8, 14),
-            "X Bot outfit v5  —  plain  |  v4 A  |  v5 A   (snug charcoal trunks + waist tank + glossy black gloves)",
+            "X Bot outfit v5  —  plain  |  v4 A  |  v5 A   (burgundy trunks + charcoal tank + glossy black gloves)",
             font=_font(18, True), fill=FG)
     sub = ("Procedural / CC0 geometry (no third-party meshes, no PRO lettering).  "
-           "v5 trunks: snug navel waistband, fabric follows hips/glutes, gentle flare, "
+           "v5 trunks: deep burgundy/wine satin (distinct from purple/gold jab glow), snug navel waistband, fabric follows hips/glutes, gentle flare, "
            "leg opening ~3.5 cm off the thigh, clean hem.  "
            "Tank hem covers the waistband top; armholes stay clear of the delts.  "
            "Glove close-up uses the same studio lighting (no pale card).  "
