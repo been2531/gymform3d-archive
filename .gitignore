@@ -27,3 +27,7 @@ _cache_rig3d/
 
 # third-party base-model search downloads (never commit binaries)
 output/_basemodels/
+
+# third-party outfit candidate downloads (never commit binaries)
+output/_assets/
+output/outfit_candidates_v1.png
