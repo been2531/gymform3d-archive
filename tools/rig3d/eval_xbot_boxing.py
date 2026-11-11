@@ -9,6 +9,9 @@ Reads (gitignored, Mixamo licence — do not commit or redistribute raw):
 Writes (also gitignored):
   output/_basemodels/eval/xbot_*.png
   output/_basemodels/eval/xbot_boxing_facts.json
+
+Optional:
+  blender -b --python tools/rig3d/eval_xbot_boxing.py -- --clips idle,jab --preview-out xbot_jab_preview_v2.mp4
 """
 from __future__ import annotations
 
@@ -28,8 +31,6 @@ if HERE not in sys.path:
 
 from eval_base_model import (  # noqa: E402
     _reset,
-    _setup_world_lights,
-    _world_dims,
 )
 import blob_v2  # noqa: E402
 from eval_boxer_jab import bone_world, bone_tail_world  # noqa: E402
@@ -41,11 +42,18 @@ OUT_DIR = os.path.join(ROOT, "output/_basemodels/eval")
 YAW = 35.0
 ELEV = 10.0
 RES = (540, 960)
-SAMPLES = 16
-EM_STR = 1.50
-CANON_HEIGHT = 1.85
-CANON_LOOK_Z = 0.96
+SAMPLES = 96
+EM_STR = 1.35
+CANON_HEIGHT = 1.72
+CANON_LOOK_Z = 0.90
+FRAME_FILL = 0.72
 ROOT_DRIFT_LOCK_M = 0.40
+CLAY = (0.65, 0.656, 0.664, 1.0)
+KEY_ENERGY = 78.0
+FILL_RATIO = 0.36
+RIM_RATIO = 0.55
+VIEW_TRANSFORM = "AgX"
+EXPOSURE = 0.0
 
 CLIPS = (
     {
@@ -584,34 +592,131 @@ def clear_glow(meshes):
 
 
 def assign_clay(meshes):
+    """Unify every X Bot mesh (body + black joint shells) onto one light-grey clay."""
     mat = blob_v2.punch_material(em_str=EM_STR)
-    # slightly lighter clay so glow pops
     for node in mat.node_tree.nodes:
-        if node.type == "BSDF_PRINCIPLED" and node.inputs["Base Color"].default_value[0] < 0.6:
-            node.inputs["Base Color"].default_value = (0.46, 0.468, 0.478, 1.0)
+        if node.type == "BSDF_PRINCIPLED":
+            node.inputs["Base Color"].default_value = CLAY
+            if "Roughness" in node.inputs:
+                node.inputs["Roughness"].default_value = 0.86
+            if "Specular IOR Level" in node.inputs:
+                node.inputs["Specular IOR Level"].default_value = 0.22
+            elif "Specular" in node.inputs:
+                node.inputs["Specular"].default_value = 0.22
+    leftover = []
     for o in meshes:
         o.data.materials.clear()
         o.data.materials.append(mat)
-        if "joint" in o.name.lower():
-            # joints stay clay — they get an empty mcol
-            n = len(o.data.vertices)
-            va = o.data.color_attributes.get("mcol")
-            if va is None:
-                va = o.data.color_attributes.new("mcol", "FLOAT_COLOR", "POINT")
+        o.active_material = mat
+        n = len(o.data.vertices)
+        if n == 0:
+            continue
+        va = o.data.color_attributes.get("mcol")
+        if va is None:
+            va = o.data.color_attributes.new("mcol", "FLOAT_COLOR", "POINT")
+        # joint shells (and unused slots) start with empty glow → clay, not black
+        if "joint" in o.name.lower() or "alpha_joints" in o.name.lower():
             col = np.zeros((n, 4), np.float32)
             col[:, 3] = 1.0
             va.data.foreach_set("color", col.ravel())
+            leftover.append(o.name)
+        o.data.update()
+    if leftover:
+        print("clay-unified joint meshes:", leftover, flush=True)
+    return mat
 
 
-def setup_fixed_camera():
+def _area_light(name, loc, size, energy, look_at, color=(1.0, 1.0, 1.0)):
+    d = bpy.data.lights.new(name, "AREA")
+    d.size = size
+    d.energy = energy
+    d.spread = 150
+    d.color = color
+    o = bpy.data.objects.new(name, d)
+    bpy.context.scene.collection.objects.link(o)
+    o.location = loc
+    direction = Vector(look_at) - Vector(loc)
+    o.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+    return o
+
+
+def setup_studio(cam, look):
+    """3-point charcoal studio: key + soft camera-side fill + rim, plus a floor."""
+    world = bpy.data.worlds.get("Charcoal") or bpy.data.worlds.new("Charcoal")
+    world.use_nodes = True
+    nt = world.node_tree
+    bg = nt.nodes.get("Background") or nt.nodes.new("ShaderNodeBackground")
+    bg.inputs["Color"].default_value = (0.018, 0.018, 0.020, 1)
+    bg.inputs["Strength"].default_value = 1.0
+    bpy.context.scene.world = world
+
+    right = cam.matrix_world.to_quaternion() @ Vector((1, 0, 0))
+    view = (Vector(look) - cam.location).normalized()
+    up = Vector((0, 0, 1))
+    # key: camera-right, slightly above
+    key_loc = cam.location + right * 0.90 + up * 0.55
+    # fill: from the camera itself (front wrap, 30-40% of key)
+    fill_loc = cam.location + view * 0.25 - right * 0.12 + up * 0.12
+    # rim: behind the figure, opposite the camera, to lift the silhouette
+    rim_loc = Vector(look) - view * 1.85 + up * 1.15 - right * 0.25
+    _area_light("Key", key_loc, 2.5, KEY_ENERGY, look)
+    _area_light("Fill", fill_loc, 3.8, KEY_ENERGY * FILL_RATIO, look)
+    _area_light("Rim", rim_loc, 2.1, KEY_ENERGY * RIM_RATIO, look,
+                color=(0.82, 0.90, 1.0))
+
+    # large dark floor so contact shadows stay, without reading as a lit stage
+    if "StudioFloor" not in bpy.data.objects:
+        mesh = bpy.data.meshes.new("StudioFloor")
+        # 4-vert plane
+        verts = [(-8, -8, 0), (8, -8, 0), (8, 8, 0), (-8, 8, 0)]
+        mesh.from_pydata(verts, [], [(0, 1, 2, 3)])
+        mesh.update()
+        floor = bpy.data.objects.new("StudioFloor", mesh)
+        bpy.context.scene.collection.objects.link(floor)
+        fmat = bpy.data.materials.new("StudioFloorMat")
+        fmat.use_nodes = True
+        bsdf = fmat.node_tree.nodes.get("Principled BSDF")
+        if bsdf:
+            bsdf.inputs["Base Color"].default_value = (0.026, 0.026, 0.029, 1)
+            if "Roughness" in bsdf.inputs:
+                bsdf.inputs["Roughness"].default_value = 0.95
+            if "Specular IOR Level" in bsdf.inputs:
+                bsdf.inputs["Specular IOR Level"].default_value = 0.05
+        floor.data.materials.append(fmat)
+        floor.is_shadow_catcher = True
+        floor.visible_glossy = False
+        floor.visible_diffuse = True
+        floor.visible_shadow = False
+    else:
+        bpy.data.objects["StudioFloor"].is_shadow_catcher = True
+    return cam
+
+
+def setup_fixed_camera(meshes=None):
     for o in list(bpy.data.objects):
         if o.type in {"CAMERA", "LIGHT"}:
             bpy.data.objects.remove(o, do_unlink=True)
-    look = Vector((0.0, 0.0, CANON_LOOK_Z))
     height = CANON_HEIGHT
-    v_ang = 2 * math.atan(12.0 / 50.0)
-    dist = (height * (1 + 2 * 0.08) / 2) / math.tan(v_ang / 2)
-    dist *= 0.92
+    look_z = CANON_LOOK_Z
+    if meshes:
+        deps = bpy.context.evaluated_depsgraph_get()
+        zs = []
+        for o in meshes:
+            ev = o.evaluated_get(deps)
+            me = ev.to_mesh()
+            try:
+                mw = ev.matrix_world
+                for v in me.vertices:
+                    zs.append((mw @ v.co).z)
+            finally:
+                ev.to_mesh_clear()
+        if zs:
+            zmin, zmax = min(zs), max(zs)
+            height = max(1.55, min(1.90, zmax - zmin))
+            look_z = (zmin + zmax) * 0.50
+    look = Vector((0.0, 0.0, look_z))
+    # Vertical sensor fit so a 50 mm lens frames the *tall* 9:16 side,
+    # then place the camera so the figure fills FRAME_FILL of that height.
     yaw_r = math.radians(YAW)
     elev_r = math.radians(ELEV)
     direction = Vector((
@@ -619,18 +724,41 @@ def setup_fixed_camera():
         -math.cos(yaw_r) * math.cos(elev_r),
         math.sin(elev_r),
     ))
-    loc = look + direction.normalized() * dist
     cam_data = bpy.data.cameras.new("Cam")
     cam_data.lens = 50
+    cam_data.sensor_fit = "VERTICAL"
+    cam_data.sensor_height = 24.0
     cam_data.clip_start = 0.05
     cam_data.clip_end = 50
+    v_ang = 2 * math.atan((cam_data.sensor_height * 0.5) / cam_data.lens)
+    dist = (height * 0.5) / (FRAME_FILL * math.tan(v_ang * 0.5))
+    loc = look + direction.normalized() * dist
     cam = bpy.data.objects.new("Cam", cam_data)
     bpy.context.scene.collection.objects.link(cam)
     cam.location = loc
     cam.rotation_euler = (look - loc).to_track_quat("-Z", "Y").to_euler()
     bpy.context.scene.camera = cam
-    _setup_world_lights(cam)
+    setup_studio(cam, look)
+    print(f"camera height={height:.3f} look_z={look_z:.3f} dist={dist:.3f} "
+          f"fill={FRAME_FILL:.2f} v_fov={math.degrees(v_ang):.1f}", flush=True)
     return cam
+
+
+def apply_color_mgmt(sc):
+    # bl_rna enum_items is empty for this dynamic OCIO property in 4.2, so
+    # try the requested transform directly instead of probing the enum.
+    chosen = None
+    for candidate in (VIEW_TRANSFORM, "AgX", "Filmic", "Standard"):
+        try:
+            sc.view_settings.view_transform = candidate
+            chosen = candidate
+            break
+        except Exception:
+            continue
+    print(f"view_transform={chosen}", flush=True)
+    sc.view_settings.look = "None"
+    sc.view_settings.exposure = EXPOSURE
+    sc.view_settings.gamma = 1.0
 
 
 def render_png(path):
@@ -649,10 +777,7 @@ def render_png(path):
     sc.render.image_settings.color_mode = "RGB"
     sc.render.image_settings.color_depth = "8"
     sc.render.filepath = path
-    sc.view_settings.view_transform = "Standard"
-    sc.view_settings.look = "None"
-    sc.view_settings.exposure = -0.12
-    sc.view_settings.gamma = 1.0
+    apply_color_mgmt(sc)
     sc.cycles.filter_width = 1.5
     bpy.ops.render.render(write_still=True)
     return path
@@ -715,7 +840,9 @@ def process_clip(spec, origin_xy=None):
           flush=True)
 
     assign_clay(meshes)
-    setup_fixed_camera()
+    bpy.context.scene.frame_set(int(keys.get("guard", f0)))
+    bpy.context.view_layer.update()
+    setup_fixed_camera(meshes)
 
     stills = {}
     glow_counts = {}
@@ -761,7 +888,7 @@ def process_clip(spec, origin_xy=None):
     }
 
 
-def try_jab_preview(facts):
+def try_jab_preview(facts, preview_name="xbot_jab_preview.mp4"):
     """Low-res EEVEE loop of the jab; skip if it will take more than ~3 min."""
     jab = next((c for c in facts["clips"] if c["key"] == "jab"), None)
     if not jab:
@@ -784,7 +911,7 @@ def try_jab_preview(facts):
     drift = float(math.hypot(max(xs) - min(xs), max(ys) - min(ys))) if xs else 0.0
     lock = drift > ROOT_DRIFT_LOCK_M
     assign_clay(meshes)
-    setup_fixed_camera()
+    setup_fixed_camera(meshes)
 
     n = f1 - f0 + 1
     # target ~2 s at 15 fps = 30 frames. Prefer the full clip if short.
@@ -812,8 +939,7 @@ def try_jab_preview(facts):
     sc.render.resolution_percentage = 100
     sc.render.image_settings.file_format = "PNG"
     sc.render.image_settings.color_mode = "RGB"
-    sc.view_settings.view_transform = "Standard"
-    sc.view_settings.exposure = -0.12
+    apply_color_mgmt(sc)
     if hasattr(sc, "eevee"):
         try:
             sc.eevee.taa_render_samples = 8
@@ -837,7 +963,7 @@ def try_jab_preview(facts):
     if not written:
         return {"skipped": True, "reason": "no frames"}
 
-    mp4 = os.path.join(OUT_DIR, "xbot_jab_preview.mp4")
+    mp4 = preview_name if os.path.isabs(preview_name) else os.path.join(OUT_DIR, preview_name)
     # Loop to ~2s if the clip is short: duplicate the sequence in the concat.
     import subprocess
     pattern = os.path.join(seq_dir, "f_%04d.png")
@@ -873,37 +999,76 @@ def try_jab_preview(facts):
     }
 
 
+def _cli():
+    argv = sys.argv
+    if "--" in argv:
+        argv = argv[argv.index("--") + 1:]
+    keys = None
+    preview_out = "xbot_jab_preview.mp4"
+    do_preview = True
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--clips" and i + 1 < len(argv):
+            keys = [s.strip() for s in argv[i + 1].split(",") if s.strip()]
+            i += 2
+            continue
+        if a == "--preview-out" and i + 1 < len(argv):
+            preview_out = argv[i + 1]
+            i += 2
+            continue
+        if a == "--no-preview":
+            do_preview = False
+            i += 1
+            continue
+        i += 1
+    return keys, preview_out, do_preview
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
+    only, preview_out, do_preview = _cli()
+    wanted = [c for c in CLIPS if only is None or c["key"] in only]
+    if only and not wanted:
+        raise SystemExit(f"no matching clips for {only}")
     facts = {
         "ok": False,
         "yaw": YAW, "elev": ELEV, "samples": SAMPLES, "res": list(RES),
         "em_str": EM_STR,
         "src_dir": SRC_DIR,
+        "clay": list(CLAY),
+        "view_transform": VIEW_TRANSFORM,
+        "exposure": EXPOSURE,
+        "key_energy": KEY_ENERGY,
+        "fill_ratio": FILL_RATIO,
+        "rim_ratio": RIM_RATIO,
+        "frame_fill": FRAME_FILL,
         "clips": [],
     }
     t0 = time.time()
-    for spec in CLIPS:
+    for spec in wanted:
         rec = process_clip(spec)
         facts["clips"].append(rec)
     facts["stills_elapsed_s"] = time.time() - t0
-    # video only if stills left budget
     remaining = 180.0 - (time.time() - t0)
-    if remaining > 60:
-        facts["jab_preview"] = try_jab_preview(facts)
-    else:
+    want_prev = do_preview and any(c["key"] == "jab" for c in facts["clips"])
+    if want_prev and remaining > 40:
+        facts["jab_preview"] = try_jab_preview(facts, preview_out)
+    elif want_prev:
         facts["jab_preview"] = {
             "skipped": True,
             "reason": f"stills used {facts['stills_elapsed_s']:.0f}s; "
                       f"no 3-min budget left for video",
         }
+    else:
+        facts["jab_preview"] = {"skipped": True, "reason": "preview not requested"}
     facts["elapsed_s"] = time.time() - t0
     facts["ok"] = all(
         os.path.isfile(p)
         for c in facts["clips"]
         for p in c.get("stills", {}).values()
     )
-    out_json = os.path.join(OUT_DIR, "xbot_boxing_facts.json")
+    out_json = os.path.join(OUT_DIR, "xbot_lighting_v2_facts.json" if only else "xbot_boxing_facts.json")
     with open(out_json, "w") as fh:
         json.dump(facts, fh, indent=2, default=str)
     print("FACTS", out_json, "ok", facts["ok"], flush=True)
