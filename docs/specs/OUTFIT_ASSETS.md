@@ -166,6 +166,27 @@ Outputs (gitignored): `output/_basemodels/eval/xbot_painted_v1.png`, `xbot_paint
 
 Root cause, not a cue to patch this run: Mixamo bone-local coordinates from `arm.matrix_world @ pose_bone.matrix` are in **centimetres** (the bone matrix carries a 0.01 scale). The imported GLBs and world placements are in **metres**. Glove scale used a world-metre cuff opening against a centimetre wrist radius; beanie scale used `xbot_outfit._head_points()` (already in head-bone centimetres) as if they were world metres. That is a unit-space error in the first placement, not a missing tweak.
 
+
+## X Bot painted v2 (units unified, world metres)
+
+One more attempt, approved 11 Nov 2026 (Asia/Seoul), after v1 failed by mixing Mixamo bone-local centimetres with world-metre GLBs. Pipeline: `tools/rig3d/xbot_painted_outfit_v2.py` and `tools/rig3d/build_xbot_painted_v2.py`.
+
+All measurements and placements are in world metres, using the bone world origin and *normalized* axes from `arm.matrix_world @ pose_bone.matrix`. Bone-local lengths are never used. After sizing, and before any render, the run asserts glove length 0.25–0.35 m, beanie width 0.18–0.24 m, and a head width taken from the X Bot mesh in world metres. Gloves and beanie are then rigid-parented with the world transform kept.
+
+Same four criteria as v1. Outputs (gitignored): `output/_basemodels/eval/xbot_painted_v2.png`, `xbot_painted_v2_jab_preview.mp4`, `xbot_painted_v2_facts.json`.
+
+**Result of the one attempt (20:34 KST, 11 Nov 2026): FAIL. Do not iterate from this pass.** Judged at full size on the contact sheet (1676×3066). Only the cross and uppercut extension stills were rendered; jab, hook, close-ups and the jab preview were skipped because the pre-render size assert failed on those clips.
+
+| Criterion | Result | Why |
+|---|---|---|
+| Size assert before render | **FAIL** on jab and hook | Right glove length was 0.24999997 m, 2.6e-8 m under the 0.25 m floor, after clamping to exactly 0.25 m (floating-point). Head width was a correct 0.176 m (world). Beanie width 0.240 m (top of the band). Cross and uppercut passed the same assert by a similarly tiny margin and were rendered. |
+| (1) Gloves enclose the fist, no floating, no forearm placement | **FAIL** on every frame of all four punches | In the two rendered stills the rear glove floats off the arm (cross) or is missing from the fist (uppercut). Checks: 0 Y-overlap on most clips, hand-to-glove centroids 0.58–1.22 m apart, thousands of hand verts outside the glove AABB. The imported glove was measured at 0.969 m long (it is 0.16 m in a clean scene), then scaled down to 0.25 m — the cuff-to-fist length used for sizing is not the real-world 16 cm span. |
+| (2) Beanie stays on the crown | **FAIL** | In the two stills the cap sits on the skull, but the check flags 7–9 cm of hem drift off the head midline (threshold 7 cm) on many frames of all four punches. It also reads more like a tight skull cap than a rib watch cap down to the brows. |
+| (3) Paint zones clean, symmetric, no tearing | Construction counts **pass**; visual edges do not | Zone counts are non-zero (tank 1348, trunks 2011, band 90) and there is no garment mesh to tear. The rendered stills show a clay gap at the midriff between tank and waistband, a ragged tank hem, and a thin red stripe on the waistband. Glow does composite over the paint. |
+| (4) boxing_qc identical to bare X Bot | **PASS** | Path metrics match bit-for-bit on all four v4 punches. |
+
+Units are now world metres (head width 0.176 m is the known X Bot width). The remaining fails are placement and a hard 0.25 m floor with no epsilon, plus a wrong imported-glove length (0.969 m). Do not treat those as a cue to patch this run.
+
 ## MPFB boxer v1 (character + first fit)
 
 Pipeline: `tools/rig3d/build_mpfb_boxer.py` (Blender 4.2 headless, `--phase body|retarget|qc|outfit|render`). Intermediate blend and stills are gitignored under `output/_basemodels/mpfb/` and `output/_basemodels/eval/mpfb_boxer_v1.png`.
