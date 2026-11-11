@@ -189,6 +189,31 @@ def _boundary_and_islands(me):
                     if (close(a1, a2) and close(b1, b2)) or (close(a1, b2) and close(b1, a2)):
                         union(fi, fj)
         islands = len({find(i) for i in range(len(bm.faces))})
+    # geometric loose parts: faces connected by any shared edge
+    loose_parts = 0
+    isolated_verts = 0
+    if bm.faces:
+        gparent = list(range(len(bm.faces)))
+
+        def gfind(i):
+            while gparent[i] != i:
+                gparent[i] = gparent[gparent[i]]
+                i = gparent[i]
+            return i
+
+        def gunion(a, b):
+            ra, rb = gfind(a), gfind(b)
+            if ra != rb:
+                gparent[rb] = ra
+
+        for e in bm.edges:
+            linked = e.link_faces
+            if len(linked) >= 2:
+                i0 = linked[0].index
+                for f in linked[1:]:
+                    gunion(i0, f.index)
+        loose_parts = len({gfind(i) for i in range(len(bm.faces))})
+    isolated_verts = sum(1 for v in bm.verts if not v.link_faces)
     bm.free()
     return {
         "verts": len(me.vertices),
@@ -198,6 +223,8 @@ def _boundary_and_islands(me):
         "boundary_edges": int(boundary),
         "loose_edges": int(loose),
         "nonmanifold_edges": int(nonman),
+        "loose_parts": int(loose_parts),
+        "isolated_verts": int(isolated_verts),
         "uv_islands": int(islands),
         "has_uv": bool(me.uv_layers),
         "uv_layers": [l.name for l in me.uv_layers],
@@ -394,7 +421,7 @@ def _setup_world_lights(cam):
     area("Rim", rim, 1.2, 16, look)
 
 
-def _render(out_png):
+def _render(out_png, exposure=-0.20):
     sc = bpy.context.scene
     sc.render.engine = "CYCLES"
     sc.cycles.device = "CPU"
@@ -408,7 +435,7 @@ def _render(out_png):
     sc.render.filepath = out_png
     sc.view_settings.view_transform = "Standard"
     sc.view_settings.look = "None"
-    sc.view_settings.exposure = -0.35
+    sc.view_settings.exposure = exposure
     sc.view_settings.gamma = 1.0
     sc.cycles.filter_width = 1.5
     bpy.ops.render.render(write_still=True)
@@ -430,8 +457,8 @@ def measure(meshes, arms):
         m = _boundary_and_islands(o.data)
         m["name"] = o.name
         per.append(m)
-        for k in ("verts", "faces", "tris", "boundary_edges", "uv_islands", "nonmanifold_edges"):
-            tot[k] += m[k]
+        for k in ("verts", "faces", "tris", "boundary_edges", "uv_islands", "nonmanifold_edges", "loose_parts"):
+            tot[k] = tot.get(k, 0) + m[k]
         if m["has_uv"]:
             tot["objects_with_uv"] += 1
     # weld: join a temp copy of all, merge 0.1 mm, measure once
@@ -477,6 +504,12 @@ def main():
     ap.add_argument("--no-hide-plinth", action="store_true")
     ap.add_argument("--hide-name", action="append", default=[],
                     help="hide objects whose name contains this substring")
+    ap.add_argument("--exposure", type=float, default=-0.20,
+                    help="view-transform exposure; proven porcelain clay is -0.20")
+    ap.add_argument("--target-height", type=float, default=0.0,
+                    help="if >0, rescale so current height becomes this many metres before weld")
+    ap.add_argument("--no-render", action="store_true",
+                    help="measure only; do not write a still")
     args = ap.parse_args(_argv())
     os.makedirs(args.out_dir, exist_ok=True)
     _reset()
@@ -487,6 +520,24 @@ def main():
         raise SystemExit("no meshes imported")
     scale_info = _apply_scale_to_metres(meshes)
     print("scale", scale_info, flush=True)
+    if args.target_height and args.target_height > 0:
+        current = max(scale_info.get("height_m") or 0.0, 1e-9)
+        factor = args.target_height / current
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in meshes:
+            o.select_set(True)
+            o.scale = o.scale * factor
+        bpy.context.view_layer.objects.active = meshes[0]
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+        mn, mx, dim = _world_dims(meshes)
+        scale_info["normalized_from_m"] = current
+        scale_info["normalize_factor"] = factor
+        scale_info["target_height_m"] = args.target_height
+        scale_info["height_m"] = max(dim.x, dim.y, dim.z)
+        scale_info["bbox_min"] = list(mn)
+        scale_info["bbox_max"] = list(mx)
+        scale_info["bbox_dim"] = list(dim)
+        print("normalized", scale_info, flush=True)
     metrics = measure(meshes, arms)
     metrics["scale"] = scale_info
     metrics["name"] = args.name
@@ -494,6 +545,28 @@ def main():
     packed = _assign_clay(meshes)
     metrics["source_images"] = packed[:40]
     metrics["source_image_count"] = len(packed)
+    extras = []
+    for o in meshes:
+        me = o.data
+        extras.append({
+            "name": o.name,
+            "has_custom_normals": bool(getattr(me, "has_custom_normals", False)),
+            "vertex_groups": [g.name for g in o.vertex_groups],
+            "shape_keys": ([k.name for k in me.shape_keys.key_blocks] if me.shape_keys else []),
+            "color_attributes": [a.name for a in getattr(me, "color_attributes", [])],
+            "attribute_names": [a.name for a in me.attributes][:40] if hasattr(me, "attributes") else [],
+        })
+    metrics["mesh_extras"] = extras
+    metrics["object_types"] = sorted({o.type for o in bpy.data.objects})
+    metrics["non_mesh_objects"] = [
+        {"name": o.name, "type": o.type} for o in bpy.data.objects if o.type != "MESH"
+    ]
+    # clay render does not need source textures; drop them to free RAM
+    for img in list(bpy.data.images):
+        try:
+            bpy.data.images.remove(img)
+        except Exception:
+            pass
     kept = meshes
     hidden = []
     if args.hide_name:
@@ -506,12 +579,18 @@ def main():
             kept = meshes
     metrics["hidden_objects"] = hidden
     metrics["mesh_names"] = [o.name for o in meshes]
-    cam = _setup_camera(kept, args.yaw, args.elev)
-    _setup_world_lights(cam)
     still = os.path.join(args.out_dir, f"{args.name}_rear34.png")
-    _render(still)
-    metrics["still"] = still
-    metrics["camera"] = {"yaw": args.yaw, "elev": args.elev, "location": list(cam.location)}
+    if args.no_render:
+        metrics["still"] = None
+        metrics["exposure"] = args.exposure
+        metrics["camera"] = None
+    else:
+        cam = _setup_camera(kept, args.yaw, args.elev)
+        _setup_world_lights(cam)
+        _render(still, exposure=args.exposure)
+        metrics["still"] = still
+        metrics["exposure"] = args.exposure
+        metrics["camera"] = {"yaw": args.yaw, "elev": args.elev, "location": list(cam.location)}
     out_json = os.path.join(args.out_dir, f"{args.name}_metrics.json")
     with open(out_json, "w") as f:
         json.dump(metrics, f, indent=2)
@@ -525,6 +604,9 @@ def main():
         "boundary_before": metrics["boundary_edges"],
         "boundary_after_weld": weld.get("boundary_edges"),
         "uv_islands": metrics["uv_islands"],
+        "loose_parts_sum": metrics.get("loose_parts"),
+        "weld_loose_parts": weld.get("loose_parts"),
+        "weld_nonmanifold": weld.get("nonmanifold_edges"),
         "armature_bones": metrics["armature_bones"],
         "height_m": scale_info["height_m"],
     }), flush=True)
