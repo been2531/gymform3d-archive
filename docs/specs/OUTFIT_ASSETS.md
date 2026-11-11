@@ -13,10 +13,11 @@ Binaries live under gitignored `output/_assets/outfit_candidates/<item>/` and
 must not be committed. A clay + textured contact sheet under v2 lighting is at
 `output/outfit_candidates_v1.png` (also copied next to the downloads).
 
-**Next step (not done here):** shrinkwrap / surface-deform the clothes onto the
-chosen body, data-transfer bone weights from the body, and parent the gloves
-and beanie to the hand and head bones. Recolor as needed (glossy black gloves,
-charcoal beanie and tank, burgundy trunks). Remove the trunks wordmark first.
+**Current direction (11 Nov 2026, Asia/Seoul):** MPFB and third-party trunks/tank
+meshes were dropped. Mixamo X Bot keeps the motion. Gloves and beanie are the
+downloaded CC BY meshes, rigid-parented. Trunks and tank are paint zones on the
+X Bot body surface, not garment meshes. Pipeline: `tools/rig3d/xbot_painted_outfit.py`
+and `tools/rig3d/build_xbot_painted_v1.py`.
 
 ## Best pick per item
 
@@ -136,6 +137,34 @@ Grab3D gloves and beanie are CC0 1.0; attribution is optional. If the Grab3D GLB
 `output/outfit_candidates_v1.png` — each downloaded candidate as clay (left) and its own textures (right), v2 lighting (AgX, exposure 0, key 78, fill 36%, cool rim 55%, world 0.018, shadow-catcher floor, 50 mm vertical / 24 mm sensor, yaw 35°, elevation 10°, about 72% fill, 96 spp + OIDN). Assets that imported at extreme scales were normalized to a 0.40 m span for the sheet only.
 
 Helper (uncommitted): `tools/rig3d/build_outfit_candidates_sheet.py`.
+
+
+
+## X Bot painted v1 (gloves + beanie rigid, trunks/tank painted)
+
+Direction decided 11 Nov 2026 (Asia/Seoul): keep Mixamo X Bot (v4 punches:
+jab alt04, cross alt18, hook alt06, uppercut alt05) because the motion is the
+most accurate we have. Do not retarget onto MPFB. Do not fit third-party
+trunks or tank meshes.
+
+- **Gloves.** [Classic Red Boxing Glove (Low Poly)](https://sketchfab.com/3d-models/classic-red-boxing-glove-low-poly-7faefb99c91d484995899b0e4aa6921c) by ARTEL_3D, **CC BY 4.0**. Recoloured glossy black (same AgX-safe leather as the procedural v4/v5 kit), instanced as a pair, rigid-parented to `mixamorig:LeftHand` / `RightHand`. Sized from the clip's hand envelope, the head width (fist front ~0.8×), and the wrist radius, so the cuff covers the wrist and the fist sits inside the leather. No deformation. The clay hand is masked inside the cuff — a rigid glove cannot follow Mixamo finger curl.
+- **Beanie.** [Beanie](https://sketchfab.com/3d-models/beanie-ff6dc83c818c4e2aa722cb89e6ada577) by oluwaphemi, **CC BY 4.0** (38,844 tris, one mesh, 2×2 rib). Recoloured charcoal; the asset's non-colour maps are kept for rib relief. Rigid-parented to `mixamorig:Head`. Hem sits just above the brows and ears; not shrinkwrapped, not a helmet.
+- **Trunks and tank.** No garment meshes. Rest-pose vertex zones on the X Bot surface (`ozone` attribute): burgundy trunks `(0.18, 0.025, 0.04)` from the waist to mid-thigh with a charcoal waistband stripe, and a charcoal sleeveless tank that leaves the deltoids and arms bare so the existing `mcol` glow still composites on top. The paint deforms with the skin, so it cannot tear.
+
+Pass criteria (written to `output/_basemodels/eval/xbot_painted_v1_criteria.json` before any render; one honest attempt, no iteration): (1) gloves enclose the fist on every frame of all four punches, with no floating and no forearm placement; (2) the beanie stays on the crown on every frame; (3) paint zones are clean and symmetric, with no tearing (by construction); (4) `boxing_qc` motion numbers are identical to bare X Bot.
+
+Outputs (gitignored): `output/_basemodels/eval/xbot_painted_v1.png`, `xbot_painted_v1_jab_preview.mp4`, `xbot_painted_v1_facts.json`.
+
+**Result of the one attempt (20:28 KST, 11 Nov 2026): FAIL. Do not iterate from this pass.** Judged at full size on the contact sheet.
+
+| Criterion | Result | Why |
+|---|---|---|
+| (1) Gloves enclose the fist, no floating, no forearm placement | **FAIL** on every frame of all four punches | The gloves were scaled ~22× (a 16 cm glove became a ~3.5 m object). Centroids sit more than a kilometre from the hands in the check's units; the stills show a dark wall, not a fist inside a glove. |
+| (2) Beanie stays on the crown | **FAIL** on almost every frame | The beanie was scaled ~122× (about 19 m tall). It fills the frame and buries the figure. |
+| (3) Paint zones clean, symmetric, no tearing | Construction **PASS** only | Zone counts are non-zero (tank 1348, trunks 2011, band 90) and landmarks are in world metres (mid-thigh 0.76, waistband 1.07–1.11, tank top 1.50). The sheet cannot visually confirm edges or glow-over-paint because the beanie occludes the body. |
+| (4) boxing_qc identical to bare X Bot | **PASS** | Path metrics match bit-for-bit on all four v4 punches (e.g. jab fist_max_dev 0.0111 m, retract 0.1906 m). Rigid parents and paint do not move bones. |
+
+Root cause, not a cue to patch this run: Mixamo bone-local coordinates from `arm.matrix_world @ pose_bone.matrix` are in **centimetres** (the bone matrix carries a 0.01 scale). The imported GLBs and world placements are in **metres**. Glove scale used a world-metre cuff opening against a centimetre wrist radius; beanie scale used `xbot_outfit._head_points()` (already in head-bone centimetres) as if they were world metres. That is a unit-space error in the first placement, not a missing tweak.
 
 ## MPFB boxer v1 (character + first fit)
 
