@@ -3,7 +3,7 @@
 Access date: 2026-11-11 (Asia/Seoul). Grab3D Human Muscles (`char1`) is a
 declared failure (834 UV islands, baked ankle retinaculum, baked
 `rig_normals`). This search evaluates legally reusable replacements
-*before* adopting one. No Grab3D patching and no `db_row` render was done.
+*before* adopting one. No Grab3D patching.
 
 **Verdict: do not adopt a production clay body yet.** First-round
 bodies, Diego, Beatriz, and Gridiron Jumpman stay rejected. The
@@ -27,6 +27,19 @@ one that competes (better delts and a visible biceps, weaker lat
 fan). Coloured lights blow out; painted strokes are sparse; fresnel
 rim is not distinct from the blob.
 
+A later hybrid pass (V-fan blob lats + diamond mid-back + rig-weight
+rear delts/biceps) removed the orange lumbar belt. The lat colour now
+reads as a V from the armpit down the flank, with a gap above the
+shorts; the pink mid-back is still blockier than a true diamond and
+the V is thinner than demic. The same bodybuilder was hand-keyed into
+a textbook barbell bent-over row (hip hinge ~40° from vertical, knees
+22° soft, peak elbows 97°, feet planted). That still is the closest
+3D match yet to the demic elevated-back panel. A first IK attempt at
+the bench-supported one-arm DB row put the torso near horizontal but
+missed pad contacts (hand/knee ~10 cm above the pad) and did not pull
+the working elbow to the hip at the peak — do not treat those stills
+as pose proof.
+
 Comparison sheets (gitignored stills, viewed at full size before this
 write-up):
 
@@ -37,6 +50,7 @@ write-up):
 - Glow methods on the mannequin: `output/_basemodels/eval/blob_glow_methods.png`
 - Symmetric blob v2: `output/_basemodels/eval/blob_glow_v2.png`
 - Simpler alts on the bodybuilder: `output/_basemodels/eval/blob_glow_v2_alts.png`
+- Hybrid colour + barbell row: `output/_basemodels/eval/hybrid_barbell_row_v3.png`
 
 Demic reference: left panel of
 `output/_rig3d/v4_authored/peach34_air/ours_vs_demic_peak.png`
@@ -79,6 +93,13 @@ nice -n 19 /home/box/opt/blender-4.2.3-linux-x64/blender -b \
   --python tools/rig3d/eval_blob_glow.py -- \
   --input <gltf> --out-dir output/_basemodels/eval --name <id>_v2_back \
   --method blob --yaw 180 --elev 8
+
+# hybrid colour + barbell bent-over row (and optional db_row attempt)
+nice -n 19 /home/box/opt/blender-4.2.3-linux-x64/blender -b \
+  --python tools/rig3d/eval_hybrid_row.py -- \
+  --input output/_basemodels/sketchfab/male_mesh_bodybuilder/scene.gltf \
+  --out-dir output/_basemodels/eval --name bodybuilder_v3 \
+  --shots standing,bb_top,bb_bottom
 ```
 
 Sketchfab downloads for the blob round used
@@ -722,6 +743,75 @@ not replace the blob for lats and mid-back. Coloured lights are the
 prettiest accident and the worst teacher. Do not spend more time on
 the fresnel rim unless someone wants that specific look.
 
+
+## Hybrid colour + barbell bent-over row v3 (viewed at full size)
+
+Sheet: `output/_basemodels/eval/hybrid_barbell_row_v3.png`
+(demic + standing back + barbell top + barbell bottom). Scripts:
+`tools/rig3d/blob_v2.py` (`paint_hybrid`), `tools/rig3d/bodybuilder_pose.py`,
+`tools/rig3d/eval_hybrid_row.py`. Reuses the procedural Olympic barbell
+(`tools/rig3d/props/barbell_olympic.py`, `clear=False`) and the flat bench
+(`tools/rig3d/props/bench_flat.py`).
+
+Hybrid colour, painted in rest pose so it follows the rig:
+
+- Lats: tapered capsules along a V-shaped fan (wide at the armpit,
+  narrowing down the flank). A t-dependent lateral gate keeps the
+  lumbar midline dark, and colour fades out ~8–10 cm above the shorts
+  waistband (`smoothstep(0.32, 0.40, t)`). No orange belt.
+- Mid-back: a soft diamond mask centred between the scapulae (still
+  reads as a rounded rectangle more than a pointed diamond).
+- Rear delts + biceps (+ a little posterior upper-arm wrap): smoothed
+  rig weights, the v2 alt that actually made those muscles obvious.
+- Colours more saturated than v2; emission 0.82.
+
+Paint counts on the bodybuilder: lats 8,398 / mid-back 3,319 /
+rear delt 44,648 / biceps 27,776. Grey V p50 = 98 (standing).
+
+Barbell bent-over row (Mixamo-like 25-bone IK: feet planted, Hips
+rotated about the character’s right so the head travels forward,
+hands IK’d to the bar). QC against a textbook hinge, not the
+bench-row spec:
+
+| | top | bottom |
+|---|---|---|
+| torso from vertical | 39.7° | 39.7° |
+| torso from horizontal | 50.3° | 50.3° |
+| head–spine | 14.1° | 14.1° |
+| working elbows | 97° / 97° | ~180° / ~180° |
+| knee flexion | 22° | 22° |
+| feet on floor | yes (ankle z ≈ 0.11 m) | yes |
+| grip half / shoulder half | 0.29 / 0.25 m | same |
+| bar | lower ribs / upper abdomen | below the knees (z ≈ 0.44 m) |
+
+Camera: elevated back, 30° elev / 18° side, framed on the body (not
+the 2.2 m bar) so the still can sit next to the demic panel.
+
+What is still short of demic (coldly):
+
+- The glow is still separate stickers, not a painted-on muscle
+  silhouette. The pink mid-back is blocky; dark gutters sit between
+  it and the lat fans. Saturation and edge discipline stay below the
+  demic clay.
+- The lat V is real now but thinner and shorter than demic’s upper-back
+  glow.
+- Torso is ~40° from vertical (a touch more upright than a 45° hinge).
+- Hands approximate the bar; there is no finger wrap. The near hand at
+  the bottom is an imperfect contact.
+- Sculpted shorts, 33 boundary / 20 non-manifold edges, and some hip
+  stiffness on this 25-bone rig remain.
+
+Bench-supported one-arm DB row (same script, `pose_bench_db_row` via
+`bench_row_pose.build_landmarks`): the torso did reach ~3° from
+horizontal, and the procedural bench is in the scene, but the attempt
+fails the spec. Support hand and knee sat ~10 cm above the pad
+(`lwr_z` 0.53 / `lkn_z` 0.54 vs pad 0.43); the standing foot was not
+flat (`rank_z` 0.18); the working elbow stayed ~180° at the advertised
+peak (hand–hip 0.53 m, gate ≤ 0.34 m); the support shin kicked up.
+Stills `bodybuilder_v3_db_top.png` / `bodybuilder_v3_db_bottom.png`
+exist for the record and are not on the comparison sheet. Do not treat
+them as pose proof.
+
 ## Recommendation
 
 **Adopt none of the measured bodies yet** — not the first-round three,
@@ -742,20 +832,26 @@ or glass X-ray as the production method.
 
 What would actually have a chance, in order:
 
-1. **Hand-key a one-arm dumbbell row on the bodybuilder’s 25-bone
-   rig** (the automatic FK guess failed) and decide whether the
-   shorts and the 20 non-manifold edges are acceptable. That is the
-   cheapest way to learn whether this sculpt can carry an exercise.
-2. **Rigify-test the mannequin** only if the bodybuilder row fails
+1. **Tighten the hybrid glow** (connect the pink diamond to the lat
+   fans, sharpen it into a real diamond, push saturation toward
+   demic) and **nudge the barbell hinge** a few degrees deeper so
+   the back faces the camera more like the demic panel. The barbell
+   row on this rig is now a real candidate motion, not a guess.
+2. **Re-do the bench-supported one-arm DB row** with contacts that
+   work by construction (project the support hand/knee onto the pad,
+   then IK). The first landmark pass got the torso flat and put a
+   bench in the scene, then missed the pad by ~10 cm and never
+   pulled the working arm. Do not ship that attempt.
+3. **Rigify-test the mannequin** only if the bodybuilder row fails
    or the shorts become a hard no. It is still the cleaner skin and
    still a day of bind work.
-3. If both binds fail, **there is still no free drop-in.** The
+4. If both binds fail, **there is still no free drop-in.** The
    method that works by construction is to author our own continuous,
    welded, unstrapped clay body (CC0), using Diego and/or the
    Małopolska sculpt as *reference only*, bind it once, and keep
    per-muscle glow on vertex attributes (the v2 blob). That is
    modeling work, not a download.
-4. A paid athletic écorché would also need 중현 님’s explicit approval
+5. A paid athletic écorché would also need 중현 님’s explicit approval
    (standing rule: no paid assets).
 
 Do not go back to Grab3D char1. Do not ship Z-Anatomy or Charleeh
