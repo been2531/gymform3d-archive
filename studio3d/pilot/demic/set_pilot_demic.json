@@ -1,0 +1,43 @@
+{
+  "_doc": "DEMIC-target pilot (continuous MH body + baked/projected glow masks). Does not replace set_pilot.json.",
+  "version": "pilot-demic-1",
+  "inherits": "../set_pilot.json",
+  "world_srgb": [35, 39, 43],
+  "mannequin": {
+    "skin_srgb": [48, 50, 54],
+    "skin_roughness": 0.68,
+    "skin_specular": 0.1,
+    "fibre_bump_strength": 0.38,
+    "fibre_scale": 62.0,
+    "definition_subsurf": 1,
+    "shorts_srgb": [8, 8, 9]
+  },
+  "glow": {
+    "wrong_srgb": [220, 48, 42],
+    "right_srgb": [32, 210, 120],
+    "emission_strength": 4.2,
+    "mix": 0.55,
+    "contour_boost": 1.35,
+    "fibre_scale_uv": 28.0,
+    "torso_min_frac": 0.04,
+    "torso_max_frac": 0.22
+  },
+  "motion": {
+    "stretch_bar_z_m": 1.78,
+    "right_contract_bar_z_m": 1.12,
+    "wrong_contract_bar_z_m": 0.98,
+    "bar_front_y_m": -0.26,
+    "grip_span_m": 1.05
+  },
+  "mask_cache": "assets3d/demic_glow_masks.npz",
+  "render": {
+    "samples": 16,
+    "seed": 424242,
+    "threads": 6
+  },
+  "attribution": {
+    "makehuman": "CC0 1.0",
+    "bodyparts3d_ecorche_projection": "BodyParts3D-derived écorché (Charleeh CC BY-SA 4.0) used only as mask projection source — isolated in assets3d/",
+    "demic_reference": "External benchmark screenshots only; not redistributed"
+  }
+}

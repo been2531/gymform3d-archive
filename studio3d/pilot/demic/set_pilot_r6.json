@@ -1,0 +1,20 @@
+{
+  "_doc": "Round 6: adopt motion-standards FK + discrete vgroup glow + stack-behind machine.",
+  "version": "pilot-demic-r6",
+  "cameras_r6": {
+    "side": {
+      "yaw_deg": 90,
+      "pitch_deg": 3,
+      "dist_m": 3.55,
+      "lens_mm": 48,
+      "target_offset_m": [0, -0.08, 0.12]
+    }
+  },
+  "attribution": {
+    "motion_pose": "configs/motion_standards.json via studio3d/pilot/pose_seated_lat.py (FK, no custom IK)",
+    "glow_masks": "Hand-authored discrete vertex-group regions (discrete_glow_masks.py); no écorché in beauty pass",
+    "machine": "Procedural layout equipment_r6.py — no CC0 lat GLB with verified licence downloaded",
+    "mixamo": "Not used (requires Adobe ID download; Adobe FAQ: royalty-free commercial embed in video)",
+    "rigify": "Not used this round (addon present in Blender; MPFB2/Rigify path deferred)"
+  }
+}
