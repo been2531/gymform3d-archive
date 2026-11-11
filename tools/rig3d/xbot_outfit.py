@@ -1073,11 +1073,13 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
     zs = [p.z for p in upper]
     cx = 0.0
     cy = (min(ys) + max(ys)) * 0.50
-    cz = (min(zs) * 0.62 + max(zs) * 0.38)  # bias slightly back for slouch
+    # Centre in Z; a back-biased origin plus the face depth turned the
+    # forehead into a visor you could see the skull through.
+    cz = (min(zs) * 0.52 + max(zs) * 0.48)
     rx = max(abs(min(xs)), abs(max(xs))) + clearance + 0.22
     ry = (max(ys) - cy) + clearance + 0.55
-    rz_front = (max(zs) - cz) * 0.92 + clearance
-    rz_back = (cz - min(zs)) + clearance + 0.55  # a little extra at the back
+    rz_front = min((max(zs) - cz) * 0.62 + clearance, rx + 0.6)
+    rz_back = min((cz - min(zs)) + clearance + 0.35, rx + 1.1)
     crown_y = cy + ry
 
     mesh = bpy.data.meshes.new(name + "Mesh")
@@ -1171,7 +1173,9 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
         xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
         if xz.length < 1e-8:
             continue
-        need = _head_r(v.co.y, xz) + clearance + 0.35
+        # Cap the needed radius: _head_r can pick the nose and shove the
+        # forehead brim out into a visor.
+        need = min(_head_r(v.co.y, xz) + clearance + 0.35, rx + 0.9)
         if xz.length < need:
             off = xz.normalized() * need
             v.co.x = cx + off.x
@@ -1203,13 +1207,15 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
         if r > 1e-6:
             cuff_rs.append(r)
     if cuff_rs:
-        cap = sorted(cuff_rs)[int(len(cuff_rs) * 0.72)]
+        cap = min(sorted(cuff_rs)[int(len(cuff_rs) * 0.60)], rx + 1.05)
         for v in obj.data.vertices:
-            if v.co.y > fold_y + 0.3:
+            # Include the lower crown so a visor cannot form just above the fold.
+            if v.co.y > fold_y + 2.2:
                 continue
+            limit = cap if v.co.y <= fold_y + 0.3 else cap + 0.4
             xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
-            if xz.length > cap:
-                off = xz.normalized() * cap
+            if xz.length > limit:
+                off = xz.normalized() * limit
                 v.co.x = cx + off.x
                 v.co.z = cz + off.z
         obj.data.update()
