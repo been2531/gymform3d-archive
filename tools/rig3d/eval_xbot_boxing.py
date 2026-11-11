@@ -470,32 +470,23 @@ def paint_glow(meshes, arm, bones, punch_side, muscles):
             side_out = Vector((1.0, 0.0, 0.0)) if want_right else Vector((-1.0, 0.0, 0.0))
 
         if "front_delt" in muscles and ua is not None and sh is not None:
-            # Anterior deltoid belly only: slightly lateral and clearly in
-            # front of the glenohumeral line — not the pec, not mid/rear delt.
-            # Position-based "anterior" (not vertex-normal front) so a jab
-            # pose still lights the front delt when the shoulder faces the punch.
-            ant = -bk
-            a = sh + (ua - sh) * 0.20 + ant * (0.042 * s) + side_out * (0.026 * s)
-            b = sh + (ua - sh) * 0.82 + ant * (0.048 * s) + side_out * (0.032 * s)
-            gate = np.clip(0.90 * w_sh + 0.65 * w_ua, 0.0, 1.0)
-            gate = gate * (1.0 - 0.70 * np.clip(w_spine, 0.0, 1.0))
+            # Anterior deltoid belly: slightly lateral, in front of the
+            # glenohumeral line. Based on the v2 recipe that actually lit the
+            # muscle; a hard "lateral" multiply previously zeroed every vert
+            # on the jab. Softly fade pec/spine and far-medial chest only.
+            a = sh + (ua - sh) * 0.18 - bk * (0.035 * s) + side_out * (0.022 * s)
+            b = sh + (ua - sh) * 0.75 - bk * (0.045 * s) + side_out * (0.028 * s)
+            raw = np.maximum(
+                cap(a, b, 0.055 * s, 0.045 * s),
+                0.90 * (0.65 * w_sh + 0.50 * w_ua) * front,
+            ) * punch_w
+            raw = raw * (1.0 - 0.55 * np.clip(w_spine, 0.0, 1.0))
             sh_arr = np.array((sh.x, sh.y, sh.z), dtype=np.float32)
             side_arr = np.array((side_out.x, side_out.y, side_out.z), dtype=np.float32)
-            ant_arr = np.array((ant.x, ant.y, ant.z), dtype=np.float32)
-            wld = world.astype(np.float32)
-            lat = (wld - sh_arr) @ side_arr
-            anterior = blob_v2.smoothstep(-0.012 * s, 0.014 * s, (wld - sh_arr) @ ant_arr)
-            # Keep the punching-side half of the shoulder; wrap the anterior
-            # belly evenly. Mix position-front with normal-front so a jab
-            # still lights the muscle when the shoulder faces the punch.
-            lateral = blob_v2.smoothstep(-0.028 * s, 0.008 * s, lat)
-            ant_w = np.maximum(anterior, 0.75 * front)
-            out["front_delt"] = (
-                np.maximum(
-                    cap(a, b, 0.052 * s, 0.044 * s),
-                    0.95 * gate * ant_w,
-                ) * punch_w * lateral
-            )
+            lat = (world.astype(np.float32) - sh_arr) @ side_arr
+            # 1 at the joint and outward; fade toward the sternum, never zero.
+            medial_fade = blob_v2.smoothstep(-0.07 * s, -0.01 * s, lat)
+            out["front_delt"] = raw * (0.30 + 0.70 * medial_fade)
         if "triceps" in muscles and ua is not None and el is not None:
             axis = el - ua
             arm_dir = axis.normalized() if axis.length > 1e-6 else Vector((0.0, 0.0, 1.0))
