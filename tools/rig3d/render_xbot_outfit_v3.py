@@ -107,20 +107,34 @@ def _lower_or_punch_glove(handle, punch_side=None, prefer_lower=True):
     return [min(gloves, key=_cz)]
 
 
-def _thumb_side_yaw_elev(glove):
-    """Camera yaw/elev showing the long axis + attached thumb, not the knuckle face."""
+def _thumb_side_yaw_elev(glove, body_center=None):
+    """3/4 yaw from OUTSIDE the body so the torso does not fill the frame.
+
+    A purely local +Z (thumb) direction previously parked the camera against
+    the hip, leaving only a sliver of glove in the shot.
+    """
     mw = glove.matrix_world.to_3x3()
     thumb = (mw @ Vector((0.0, 0.0, 1.0))).normalized()
-    knuckle = (mw @ Vector((0.0, 1.0, 0.0))).normalized()
-    side = (mw @ Vector((1.0, 0.0, 0.0))).normalized()
-    # Sit on the thumb-and-back quarter, slightly toward the cuff so length reads.
-    view = (thumb * 0.70 + side * 0.42 - knuckle * 0.18 + Vector((0.0, 0.0, 1.0)) * 0.22)
+    pts_guess = glove.location
+    away = None
+    if body_center is not None:
+        away = (pts_guess - body_center)
+        away.z = 0.0
+        if away.length > 1e-6:
+            away.normalize()
+    # Prefer the sheet's outside 3/4 (yaw ~48), biased toward the thumb
+    # and away from the torso.
+    base = Vector((
+        math.sin(math.radians(48.0)) * math.cos(math.radians(16.0)),
+        -math.cos(math.radians(48.0)) * math.cos(math.radians(16.0)),
+        math.sin(math.radians(16.0)),
+    )).normalized()
+    view = base * 0.70 + thumb * 0.25
+    if away is not None:
+        view = view + away * 0.35
     view.normalize()
-    # Horizontal yaw from the thumb-side view; keep a slight downward look
-    # (like a 10–12 oz product photo), never a worm's-eye.
     yaw = math.degrees(math.atan2(view.x, -view.y))
-    elev = math.degrees(math.asin(max(-0.55, min(0.55, view.z))))
-    elev = max(10.0, min(22.0, elev if elev >= 0 else 14.0))
+    elev = 16.0
     return yaw, elev
 
 
@@ -138,7 +152,12 @@ def stage_closeups(state, handle, stills, eevee, samples):
     shots = []
     if gloves:
         pts = v1.evaluated_world_points(gloves)
-        yaw, elev = _thumb_side_yaw_elev(gloves[0])
+        body = v1.evaluated_world_points(list(state["meshes"]))
+        if body:
+            bc = Vector(sum((Vector(p) for p in body), Vector()) / len(body))
+        else:
+            bc = None
+        yaw, elev = _thumb_side_yaw_elev(gloves[0], body_center=bc)
         v1.setup_covering_camera(pts, margin=0.10, yaw=yaw, elev=elev, res=CLOSE_RES)
         path = os.path.join(OUT_DIR, "xbot_outfit_v3_close_glove.png")
         v1.render_still(path, eevee=eevee, samples=samples, res=CLOSE_RES)
