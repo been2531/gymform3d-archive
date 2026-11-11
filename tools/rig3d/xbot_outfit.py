@@ -956,13 +956,13 @@ def _hit_head(pts, origin, direction):
     return best, n
 
 
-def _push_off_surface(obj, pts, clearance, only_inside=True, y_max=None):
+def _push_off_surface(obj, pts, clearance, only_inside=True, y_max=None, y_min=None):
     """Move verts that have sunk *into* the skull back out to `clearance`.
 
     Only the inside case is corrected. Outer pad / cuff volume is left alone
     — a global push flattened the headgear into a skull-cap.
-    `y_max` limits the correction to verts at or below that bone-local Y
-    (used so a beanie crown is not crumpled against the skull).
+    `y_max` / `y_min` limit the correction in bone-local Y (so a beanie crown
+    is not crumpled, and a locked hem is not pushed into a sawtooth).
     """
     if not pts or not obj.data.vertices:
         return 0
@@ -971,6 +971,8 @@ def _push_off_surface(obj, pts, clearance, only_inside=True, y_max=None):
     moved = 0
     for v in obj.data.vertices:
         if y_max is not None and v.co.y > y_max:
+            continue
+        if y_min is not None and v.co.y < y_min:
             continue
         _co, idx, dist = kd.find(v.co)
         if idx is None:
@@ -988,6 +990,40 @@ def _push_off_surface(obj, pts, clearance, only_inside=True, y_max=None):
             moved += 1
     obj.data.update()
     return moved
+
+
+def _lock_beanie_hem(obj, cx, cz, hem_y, band=0.22):
+    """Force the cuff rim to planar circle(s) so ribs/push cannot zigzag it.
+
+    After Solidify there is an inner and outer rim; each is locked to its
+    own mean radius so the cuff thickness is preserved.
+    """
+    items = []
+    for v in obj.data.vertices:
+        if v.co.y > hem_y + band:
+            continue
+        r = math.hypot(v.co.x - cx, v.co.z - cz)
+        if r > 1e-6:
+            items.append((v, r))
+    if not items:
+        return
+    mid = sorted(r for _, r in items)[len(items) // 2]
+    groups = [[], []]
+    for v, r in items:
+        groups[0 if r >= mid else 1].append((v, r))
+    for group in groups:
+        if not group:
+            continue
+        mean_r = sum(r for _, r in group) / len(group)
+        for v, _ in group:
+            xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
+            if xz.length < 1e-6:
+                continue
+            off = xz.normalized() * mean_r
+            v.co.x = cx + off.x
+            v.co.z = cz + off.z
+            v.co.y = hem_y
+    obj.data.update()
 
 
 def _apply_beanie_ribs(obj, cx, cz, fold_y, crown_y, n_ribs=30, cuff_amp=0.42,
@@ -1019,20 +1055,8 @@ def _apply_beanie_ribs(obj, cx, cz, fold_y, crown_y, n_ribs=30, cuff_amp=0.42,
             if t > 0.82:
                 amp = 0.0
         v.co += xz.normalized() * (amp * (rib - 0.35))
-    # Lock the hem to a planar circle so leftover rib/puff cannot zigzag it.
     if hem_y is not None:
-        hem = [v for v in obj.data.vertices if v.co.y <= hem_y + 0.20]
-        radii = [math.hypot(v.co.x - cx, v.co.z - cz) for v in hem if math.hypot(v.co.x - cx, v.co.z - cz) > 1e-6]
-        if radii:
-            mean_r = sum(radii) / len(radii)
-            for v in hem:
-                xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
-                if xz.length < 1e-6:
-                    continue
-                off = xz.normalized() * mean_r
-                v.co.x = cx + off.x
-                v.co.z = cz + off.z
-                v.co.y = hem_y
+        _lock_beanie_hem(obj, cx, cz, hem_y)
     obj.data.update()
 
 
@@ -1164,7 +1188,10 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
     # Push only the cuff / lower cap off the skull. Pushing the crown made
     # hexagonal dents where the icosphere met the head mesh.
     moved = _push_off_surface(obj, head_pts, clearance, only_inside=True,
-                             y_max=fold_y + 1.0)
+                             y_max=fold_y + 1.0, y_min=hem_y + 0.55)
+    # Re-lock the hem after solidify/push — a forehead push previously
+    # zigzagged the rim into sawteeth.
+    _lock_beanie_hem(obj, cx, cz, hem_y, band=0.35)
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     crown_verts = [v for v in bm.verts if v.co.y > fold_y + 1.0]
