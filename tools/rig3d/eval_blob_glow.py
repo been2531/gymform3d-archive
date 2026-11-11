@@ -47,6 +47,7 @@ from eval_muscle_colour import (  # noqa: E402
     measure_grey_v,
     GREY,
 )
+import blob_v2  # noqa: E402
 
 # Distinct warm colours
 COL = {
@@ -385,10 +386,34 @@ def setup_and_import(args):
     print(f"meshes={len(meshes)} armatures={len(arms)}", flush=True)
     if not meshes:
         raise SystemExit("no meshes imported")
+    if arms:
+        blob_v2.clear_to_rest_pose(arms)
+        print("cleared to rest pose", [a.name for a in arms],
+              "bones", sum(len(a.data.bones) for a in arms), flush=True)
+    helpers = []
+    body = []
+    for o in meshes:
+        n = (o.name or "").lower()
+        if n.startswith("icosphere"):
+            o.hide_render = True
+            try:
+                o.hide_set(True)
+            except Exception:
+                pass
+            helpers.append(o.name)
+        else:
+            body.append(o)
+    if body:
+        meshes = body
+        print("hidden helpers", helpers, "body_meshes", len(meshes), flush=True)
     scale_info = _apply_scale_to_metres(meshes)
     if args.target_height > 0:
         scale_info = _normalize_height(meshes, args.target_height, scale_info)
     print("scale", {k: scale_info.get(k) for k in ("height_m", "note", "normalize_factor")}, flush=True)
+    pose_info = {"pose": getattr(args, "pose", "rest")}
+    if getattr(args, "pose", "rest") == "row":
+        pose_info = blob_v2.try_one_arm_row(arms)
+        print("ROW_POSE", pose_info, flush=True)
     yaw = math.radians(args.yaw)
     elev = math.radians(args.elev)
     cam_dir = (
@@ -396,12 +421,31 @@ def setup_and_import(args):
         -math.cos(yaw) * math.cos(elev),
         math.sin(elev),
     )
-    hip, spine, side, back, slen, frame = estimate_torso_frame(meshes, cam_dir)
+    # v2 anatomic frame (PCA shoulders) so mirroring is left-right, not camera-side.
+    hip, spine, side, back, slen, frame = blob_v2.estimate_anatomic_frame(meshes, cam_dir)
     groups = muscle_anchors(hip, spine, side, back, slen)
     kept, hidden = _hide_plinths(meshes)
     if not kept:
         kept = meshes
-    return kept, hidden, scale_info, frame, groups, cam_dir
+    # Drop exporter helpers (this bodybuilder ships a 80-tri Icosphere).
+    still_kept = []
+    for o in kept:
+        n = (o.name or "").lower()
+        if n.startswith("icosphere"):
+            o.hide_render = True
+            try:
+                o.hide_set(True)
+            except Exception:
+                pass
+            hidden.append(o.name)
+        else:
+            still_kept.append(o)
+    if still_kept:
+        kept = still_kept
+    return kept, hidden, scale_info, frame, groups, cam_dir, {
+        "hip": hip, "spine": spine, "side": side, "back": back, "slen": slen,
+        "arms": arms, "pose_info": pose_info,
+    }
 
 
 def render_with_exposure(still, exposure, auto):
@@ -426,26 +470,90 @@ def main():
     ap.add_argument("--input", required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--name", required=True)
-    ap.add_argument("--method", choices=("blob", "idpass", "shells", "xray"), default="blob")
+    ap.add_argument("--method", choices=(
+        "blob", "idpass", "shells", "xray",
+        "rigweight", "lights", "painted", "rim",
+    ), default="blob")
     ap.add_argument("--yaw", type=float, default=135.0)
     ap.add_argument("--elev", type=float, default=14.0)
     ap.add_argument("--exposure", type=float, default=-0.15)
     ap.add_argument("--target-height", type=float, default=1.75)
     ap.add_argument("--no-auto-exposure", action="store_true")
+    ap.add_argument("--pose", choices=("rest", "row"), default="rest",
+                    help="rest = bind pose (cleared). row = best-effort one-arm DB row.")
+    ap.add_argument("--no-bloom", action="store_true")
     args = ap.parse_args(_argv())
     os.makedirs(args.out_dir, exist_ok=True)
-    meshes, hidden, scale_info, frame, groups, cam_dir = setup_and_import(args)
+    meshes, hidden, scale_info, frame, groups, cam_dir, ctx = setup_and_import(args)
+    hip, spine, side, back, slen = ctx["hip"], ctx["spine"], ctx["side"], ctx["back"], ctx["slen"]
 
     still = os.path.join(args.out_dir, f"{args.name}_{args.method}.png")
-    extra = {}
+    extra = {"pose": ctx.get("pose_info"), "frame_mode": frame.get("frame_mode")}
+
 
     if args.method == "blob":
-        totals, per = paint_all(meshes, groups)
-        print("PAINT", totals, flush=True)
-        extra = {"paint_totals": totals, "paint_per_object": per}
-        _assign_colour_mat(meshes)
+        totals, per = blob_v2.paint_blob(meshes, hip, spine, side, back, slen)
+        print("PAINT_V2", totals, flush=True)
+        extra.update({"paint_totals": totals, "paint_per_object": per, "colour_method": "capsule_v2"})
+        blob_v2.assign_mat(meshes, blob_v2.punch_material())
         cam = _setup_camera(meshes, args.yaw, args.elev)
         _setup_world_lights(cam)
+        exposure, stats = render_with_exposure(still, args.exposure, not args.no_auto_exposure)
+        if not args.no_bloom:
+            blob_v2.slight_bloom(still)
+            stats = measure_grey_v(still)
+            print("GREY_BLOOM", stats, flush=True)
+
+    elif args.method == "painted":
+        totals, per = blob_v2.paint_strokes(meshes, hip, spine, side, back, slen)
+        print("PAINT_STROKES", totals, flush=True)
+        extra.update({"paint_totals": totals, "paint_per_object": per, "colour_method": "strokes"})
+        blob_v2.assign_mat(meshes, blob_v2.punch_material())
+        cam = _setup_camera(meshes, args.yaw, args.elev)
+        _setup_world_lights(cam)
+        exposure, stats = render_with_exposure(still, args.exposure, not args.no_auto_exposure)
+        if not args.no_bloom:
+            blob_v2.slight_bloom(still)
+            stats = measure_grey_v(still)
+            print("GREY_BLOOM", stats, flush=True)
+
+    elif args.method == "rim":
+        totals, per = blob_v2.paint_blob(meshes, hip, spine, side, back, slen)
+        print("PAINT_RIMMASK", totals, flush=True)
+        extra.update({"paint_totals": totals, "paint_per_object": per, "colour_method": "rim"})
+        blob_v2.assign_mat(meshes, blob_v2.rim_material())
+        cam = _setup_camera(meshes, args.yaw, args.elev)
+        _setup_world_lights(cam)
+        exposure, stats = render_with_exposure(still, args.exposure, not args.no_auto_exposure)
+        if not args.no_bloom:
+            blob_v2.slight_bloom(still, amount=0.16)
+            stats = measure_grey_v(still)
+            print("GREY_BLOOM", stats, flush=True)
+
+    elif args.method == "rigweight":
+        totals, per, used = blob_v2.paint_rig_weights(meshes, hip, spine, side, back, slen)
+        print("PAINT_RIG", totals, "groups", len(used), flush=True)
+        extra.update({"paint_totals": totals, "paint_per_object": per,
+                      "used_groups": used[:40], "colour_method": "rigweight"})
+        if sum(totals.values()) == 0:
+            raise SystemExit("rigweight: no classified vertex groups on any mesh")
+        blob_v2.assign_mat(meshes, blob_v2.punch_material())
+        cam = _setup_camera(meshes, args.yaw, args.elev)
+        _setup_world_lights(cam)
+        exposure, stats = render_with_exposure(still, args.exposure, not args.no_auto_exposure)
+        if not args.no_bloom:
+            blob_v2.slight_bloom(still)
+            stats = measure_grey_v(still)
+            print("GREY_BLOOM", stats, flush=True)
+
+    elif args.method == "lights":
+        assign_mat(meshes, grey_only_material())
+        cam = _setup_camera(meshes, args.yaw, args.elev)
+        _setup_world_lights(cam)
+        blob_v2.dim_white_lights()
+        spots = blob_v2.add_colored_spots(meshes, hip, spine, side, back, slen)
+        extra.update({"spot_lights": spots, "colour_method": "projected_spots"})
+        print("LIGHTS", len(spots), flush=True)
         exposure, stats = render_with_exposure(still, args.exposure, not args.no_auto_exposure)
 
     elif args.method == "idpass":

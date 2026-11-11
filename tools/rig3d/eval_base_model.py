@@ -36,6 +36,37 @@ def _reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
+
+def _clear_to_rest_pose(arms):
+    """Drop imported actions and reset pose bones to the armature rest pose."""
+    for arm in arms:
+        if getattr(arm, "animation_data", None):
+            arm.animation_data_clear()
+    sc = bpy.context.scene
+    if getattr(sc, "animation_data", None):
+        sc.animation_data_clear()
+    for arm in arms:
+        bpy.ops.object.select_all(action="DESELECT")
+        arm.select_set(True)
+        bpy.context.view_layer.objects.active = arm
+        try:
+            bpy.ops.object.mode_set(mode="POSE")
+            bpy.ops.pose.select_all(action="SELECT")
+            bpy.ops.pose.transforms_clear()
+            bpy.ops.object.mode_set(mode="OBJECT")
+        except Exception as e:
+            print("clear_pose_warn", arm.name, type(e).__name__, flush=True)
+            try:
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except Exception:
+                pass
+    try:
+        bpy.context.scene.frame_set(0)
+    except Exception:
+        pass
+    bpy.context.view_layer.update()
+
+
 def _import(path, objs_glob=None):
     path = os.path.abspath(path)
     ext = os.path.splitext(path)[1].lower()
@@ -62,6 +93,11 @@ def _import(path, objs_glob=None):
     meshes = [o for o in new if o.type == "MESH"]
     arms = [o for o in new if o.type == "ARMATURE"]
     return meshes, arms
+
+
+def _scene_roots():
+    """Top-level objects. Transform these so parented armatures and meshes stay assembled."""
+    return [o for o in bpy.data.objects if o.parent is None]
 
 
 def _world_dims(objs):
@@ -92,15 +128,12 @@ def _apply_scale_to_metres(meshes):
     else:
         note += " treated as metres"
     if scale != 1.0:
-        # scale about origin
-        for o in meshes:
-            o.scale = o.scale * scale
-            bpy.context.view_layer.objects.active = o
-            o.select_set(True)
+        roots = _scene_roots() or list(meshes)
         bpy.ops.object.select_all(action="DESELECT")
-        for o in meshes:
+        for o in roots:
+            o.scale = o.scale * scale
             o.select_set(True)
-        bpy.context.view_layer.objects.active = meshes[0]
+        bpy.context.view_layer.objects.active = roots[0]
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     mn, mx, dim = _world_dims(meshes)
     info = {"scale_applied": scale, "note": note,
@@ -115,32 +148,81 @@ def _apply_scale_to_metres(meshes):
     return info
 
 
+
+def _flip_if_head_down():
+    """If an imported armature has its head below its feet, flip 180 around X."""
+    arms = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    if not arms:
+        return {"head_flip": None}
+    arm = arms[0]
+    mw = arm.matrix_world
+    head_z, foot_z = [], []
+    for b in arm.data.bones:
+        n = b.name.lower()
+        z = float((mw @ b.head_local).z)
+        if "head" in n and "end" not in n and "front" not in n:
+            head_z.append(z)
+        if any(k in n for k in ("foot", "toebase", "toe")):
+            foot_z.append(z)
+    if not head_z or not foot_z:
+        return {"head_flip": None, "head_z": head_z, "foot_z": foot_z}
+    hz, fz = sum(head_z) / len(head_z), sum(foot_z) / len(foot_z)
+    if hz >= fz:
+        return {"head_flip": None, "head_z": hz, "foot_z": fz}
+    roots = _scene_roots() or [arm]
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in roots:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = roots[0]
+    bpy.ops.transform.rotate(value=math.pi, orient_axis="X", orient_type="GLOBAL")
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+    bpy.context.view_layer.update()
+    meshes = [o for o in bpy.data.objects if o.type == "MESH" and not o.hide_render]
+    mn, mx, dim = _world_dims(meshes)
+    for o in roots:
+        o.location.z -= mn.z
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in roots:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = roots[0]
+    bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
+    bpy.context.view_layer.update()
+    return {"head_flip": "180_X", "head_z_before": hz, "foot_z_before": fz}
+
+
 def _stand_upright(meshes):
     """If the longest axis is not Z, rotate so the figure stands on Z and sits on z=0."""
     mn, mx, dim = _world_dims(meshes)
     axes = [(dim.x, "X"), (dim.y, "Y"), (dim.z, "Z")]
     longest = max(axes, key=lambda t: t[0])[1]
     if longest == "Z":
-        return {"upright_rotate": None}
+        info = {"upright_rotate": None}
+        info.update(_flip_if_head_down())
+        return info
+    roots = _scene_roots() or list(meshes)
     bpy.ops.object.select_all(action="DESELECT")
-    for o in meshes:
+    for o in roots:
         o.select_set(True)
-    bpy.context.view_layer.objects.active = meshes[0]
+    bpy.context.view_layer.objects.active = roots[0]
     if longest == "Y":
         bpy.ops.transform.rotate(value=math.radians(90), orient_axis="X", orient_type="GLOBAL")
     elif longest == "X":
         bpy.ops.transform.rotate(value=math.radians(-90), orient_axis="Y", orient_type="GLOBAL")
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+    bpy.context.view_layer.update()
     mn, mx, dim = _world_dims(meshes)
     dz = mn.z
-    for o in meshes:
+    for o in roots:
         o.location.z -= dz
     bpy.ops.object.select_all(action="DESELECT")
-    for o in meshes:
+    for o in roots:
         o.select_set(True)
-    bpy.context.view_layer.objects.active = meshes[0]
+    bpy.context.view_layer.objects.active = roots[0]
     bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
-    return {"upright_rotate": f"{longest}->Z"}
+    bpy.context.view_layer.update()
+    info = {"upright_rotate": f"{longest}->Z", "upright_roots": [o.name for o in roots]}
+    info.update(_flip_if_head_down())
+    return info
 
 
 def _boundary_and_islands(me):
@@ -516,6 +598,12 @@ def main():
     print(f"blender {bpy.app.version_string} import {args.input}", flush=True)
     meshes, arms = _import(args.input, args.objs_glob)
     print(f"meshes={len(meshes)} armatures={len(arms)}", flush=True)
+    if arms:
+        _clear_to_rest_pose(arms)
+        print("cleared to rest pose", [a.name for a in arms], flush=True)
+    if args.hide_name:
+        meshes, early_hidden = _hide_by_name(meshes, args.hide_name)
+        print("early_hidden", early_hidden, "meshes_left", len(meshes), flush=True)
     if not meshes:
         raise SystemExit("no meshes imported")
     scale_info = _apply_scale_to_metres(meshes)
@@ -523,12 +611,14 @@ def main():
     if args.target_height and args.target_height > 0:
         current = max(scale_info.get("height_m") or 0.0, 1e-9)
         factor = args.target_height / current
+        roots = _scene_roots() or list(meshes)
         bpy.ops.object.select_all(action="DESELECT")
-        for o in meshes:
-            o.select_set(True)
+        for o in roots:
             o.scale = o.scale * factor
-        bpy.context.view_layer.objects.active = meshes[0]
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = roots[0]
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+        bpy.context.view_layer.update()
         mn, mx, dim = _world_dims(meshes)
         scale_info["normalized_from_m"] = current
         scale_info["normalize_factor"] = factor
@@ -561,6 +651,11 @@ def main():
     metrics["non_mesh_objects"] = [
         {"name": o.name, "type": o.type} for o in bpy.data.objects if o.type != "MESH"
     ]
+    metrics["actions"] = [a.name for a in bpy.data.actions]
+    metrics["bone_names"] = []
+    for a in arms:
+        metrics["bone_names"].extend([b.name for b in a.data.bones])
+    metrics["rest_pose_cleared"] = bool(arms)
     # clay render does not need source textures; drop them to free RAM
     for img in list(bpy.data.images):
         try:
