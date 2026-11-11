@@ -22,7 +22,9 @@ def f(sz, bold=False):
     return ImageFont.truetype(p, sz) if os.path.isfile(p) else ImageFont.load_default()
 
 
-def main(out_name="xbot_jab_wrongform_v1.png"):
+def main(out_name=None):
+    if out_name is None:
+        out_name = os.environ.get("WRONGFORM_OUT", "xbot_jab_wrongform_v1.png")
     meta = json.load(open(os.path.join(WF, "sheet_meta.json")))
     cols, stages = meta["cols"], meta["stages"]
     first = Image.open(meta["paths"][f"{cols[0]}|{stages[0]}"])
