@@ -535,6 +535,31 @@ def _boolean_union(target, *others, cleanup=True):
     return target
 
 
+def _join_objects(target, *others):
+    """Join mesh objects into `target` (more reliable than EXACT boolean)."""
+    others = [o for o in others if o is not None]
+    if not others:
+        return target
+    try:
+        bpy.ops.object.mode_set(mode="OBJECT")
+    except Exception:
+        pass
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    target.select_set(True)
+    bpy.context.view_layer.objects.active = target
+    for o in others:
+        if o.name not in bpy.context.view_layer.objects:
+            # ensure it's in the view layer so join can see it
+            try:
+                bpy.context.scene.collection.objects.link(o)
+            except Exception:
+                pass
+        o.select_set(True)
+    bpy.ops.object.join()
+    return target
+
+
 def _boolean_difference(target, cutter, cleanup=True):
     mod = target.modifiers.new("BoolDiff", "BOOLEAN")
     mod.operation = "DIFFERENCE"
@@ -924,7 +949,7 @@ def build_glove_mesh_v3(name, collection, hand_env, wrist_radius=None, head_widt
             v.co.z = body_c.z + (v.co.z - body_c.z) * scale
     body.data.update()
 
-    cuff_y_near = y0 + 1.8
+    cuff_y_near = y0 + 3.2
     cuff_y_far = y0 - spec["cuff_len"]
     cuff = _tapered_tube(
         name + "_cuff", collection, cuff_y_near, cuff_y_far,
@@ -939,18 +964,15 @@ def build_glove_mesh_v3(name, collection, hand_env, wrist_radius=None, head_widt
         strap_r, strap_r * 0.99, segments=28, rings=2,
     )
 
-    _boolean_union(body, cuff, strap, cleanup=True)
-    _voxel_remesh(body, voxel=0.18)
-    _smooth_mesh(body, iterations=6, factor=0.30)
-
-    # Attached thumb along +Z, mid-fist, far enough out that remesh keeps a lobe.
-    thumb_c = Vector((0.30, body_c.y + 0.35, rz * 0.58 + 2.55))
+    # Attached thumb along +Z, mid-fist. Base sits inside the fist; the tip
+    # sticks out ~4 cm so the lobe stays after voxel remesh.
+    thumb_c = Vector((0.35, body_c.y + 0.20, rz * 0.42 + 3.10))
     thumb = _ellipsoid(
         name + "_thumb",
-        (spec["thumb_rx"] * 1.08, spec["thumb_len"] * 0.52, spec["thumb_rz"] * 1.12),
+        (spec["thumb_rx"] * 1.10, spec["thumb_len"] * 0.52, spec["thumb_rz"] * 1.18),
         3, collection, location=(0.0, 0.0, 0.0),
     )
-    ang = math.radians(20.0)
+    ang = math.radians(22.0)
     ca, sa = math.cos(ang), math.sin(ang)
     for v in thumb.data.vertices:
         y, z = v.co.y, v.co.z
@@ -959,9 +981,11 @@ def build_glove_mesh_v3(name, collection, hand_env, wrist_radius=None, head_widt
         v.co += thumb_c
     thumb.data.update()
 
-    _boolean_union(body, thumb, cleanup=True)
+    # Join then voxel-remesh: EXACT boolean silently dropped the cuff in v3,
+    # leaving a floating fist egg and a bare clay wrist.
+    _join_objects(body, cuff, strap, thumb)
     _voxel_remesh(body, voxel=0.14)
-    _smooth_mesh(body, iterations=3, factor=0.22)
+    _smooth_mesh(body, iterations=4, factor=0.22)
     _shape_glove_palm_v2(body, y0, y1, rx)
     _smooth_mesh(body, iterations=2, factor=0.14)
     _shade_smooth(body)
@@ -1534,8 +1558,9 @@ def build_beanie_v3(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
     # Re-apply ribs after solidify/push so the crown knit is not lost. Do
     # not smooth the crown (v2's post-smooth flattened it into a helmet).
     _apply_beanie_ribs(obj, cx, cz, fold_y, crown_y,
-                       n_ribs=32, cuff_amp=0.22, crown_amp=0.16, hem_y=hem_y,
+                       n_ribs=32, cuff_amp=0.0, crown_amp=0.18, hem_y=hem_y,
                        crown_to_top=True)
+    _lock_beanie_hem(obj, cx, cz, hem_y, band=0.35)
     obj.data.update()
     _shade_smooth(obj)
     return obj, {

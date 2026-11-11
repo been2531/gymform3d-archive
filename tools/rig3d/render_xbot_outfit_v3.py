@@ -108,14 +108,17 @@ def _lower_or_punch_glove(handle, punch_side=None, prefer_lower=True):
 
 
 def _thumb_side_yaw_elev(glove):
-    """Camera yaw/elev looking at the thumb lobe (hand-local +Z)."""
-    mw = glove.matrix_world
-    thumb = (mw.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
-    knuckle = (mw.to_3x3() @ Vector((0.0, 1.0, 0.0))).normalized()
-    view = (thumb * 0.88 + knuckle * 0.22 + Vector((0.0, 0.0, 0.32))).normalized()
-    elev = math.degrees(math.asin(max(-1.0, min(1.0, view.z))))
+    """Camera yaw/elev showing the long axis + attached thumb, not the knuckle face."""
+    mw = glove.matrix_world.to_3x3()
+    thumb = (mw @ Vector((0.0, 0.0, 1.0))).normalized()
+    knuckle = (mw @ Vector((0.0, 1.0, 0.0))).normalized()
+    side = (mw @ Vector((1.0, 0.0, 0.0))).normalized()
+    # Sit on the thumb-and-back quarter, slightly toward the cuff so length reads.
+    view = (thumb * 0.70 + side * 0.42 - knuckle * 0.18 + Vector((0.0, 0.0, 1.0)) * 0.22)
+    view.normalize()
+    elev = math.degrees(math.asin(max(-0.55, min(0.55, view.z))))
     yaw = math.degrees(math.atan2(view.x, -view.y))
-    return yaw, max(10.0, min(28.0, elev))
+    return yaw, elev
 
 
 def stage_closeups(state, handle, stills, eevee, samples):
