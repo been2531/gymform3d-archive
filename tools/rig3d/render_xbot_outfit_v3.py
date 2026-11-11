@@ -116,8 +116,11 @@ def _thumb_side_yaw_elev(glove):
     # Sit on the thumb-and-back quarter, slightly toward the cuff so length reads.
     view = (thumb * 0.70 + side * 0.42 - knuckle * 0.18 + Vector((0.0, 0.0, 1.0)) * 0.22)
     view.normalize()
-    elev = math.degrees(math.asin(max(-0.55, min(0.55, view.z))))
+    # Horizontal yaw from the thumb-side view; keep a slight downward look
+    # (like a 10–12 oz product photo), never a worm's-eye.
     yaw = math.degrees(math.atan2(view.x, -view.y))
+    elev = math.degrees(math.asin(max(-0.55, min(0.55, view.z))))
+    elev = max(10.0, min(22.0, elev if elev >= 0 else 14.0))
     return yaw, elev
 
 
@@ -223,8 +226,11 @@ def main():
         clear_outfit(probe, state["meshes"])
 
         if pose["clip"] == "jab" and pose["stage"] == "full":
-            xbot.paint_glow(state["meshes"], state["arm"], state["bones"],
-                            state["punch_side"], ("front_delt", "triceps"))
+            totals, per, _info = xbot.paint_glow(
+                state["meshes"], state["arm"], state["bones"],
+                state["punch_side"], ("front_delt", "triceps"))
+            rec["glow_totals"] = totals
+            print(f"GLOW totals={totals} punch_side={state['punch_side']}", flush=True)
         else:
             xbot.clear_glow(state["meshes"])
 

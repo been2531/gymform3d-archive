@@ -484,14 +484,16 @@ def paint_glow(meshes, arm, bones, punch_side, muscles):
             ant_arr = np.array((ant.x, ant.y, ant.z), dtype=np.float32)
             wld = world.astype(np.float32)
             lat = (wld - sh_arr) @ side_arr
-            anterior = blob_v2.smoothstep(-0.006 * s, 0.016 * s, (wld - sh_arr) @ ant_arr)
-            # Keep the punching-side half of the shoulder; start just lateral
-            # of the joint so the patch wraps the belly evenly.
-            lateral = blob_v2.smoothstep(-0.018 * s, 0.012 * s, lat)
+            anterior = blob_v2.smoothstep(-0.012 * s, 0.014 * s, (wld - sh_arr) @ ant_arr)
+            # Keep the punching-side half of the shoulder; wrap the anterior
+            # belly evenly. Mix position-front with normal-front so a jab
+            # still lights the muscle when the shoulder faces the punch.
+            lateral = blob_v2.smoothstep(-0.028 * s, 0.008 * s, lat)
+            ant_w = np.maximum(anterior, 0.75 * front)
             out["front_delt"] = (
                 np.maximum(
-                    cap(a, b, 0.050 * s, 0.042 * s),
-                    0.95 * gate * anterior,
+                    cap(a, b, 0.052 * s, 0.044 * s),
+                    0.95 * gate * ant_w,
                 ) * punch_w * lateral
             )
         if "triceps" in muscles and ua is not None and el is not None:
