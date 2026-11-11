@@ -131,7 +131,7 @@ def evaluated_world_points(objects):
     return pts
 
 
-def setup_covering_camera(points, margin=MARGIN, yaw=None, elev=None):
+def setup_covering_camera(points, margin=MARGIN, yaw=None, elev=None, res=None):
     """50 mm vertical-fit 9:16 camera that keeps every point inside `margin`.
 
     Closed-form: x/y in camera space do not depend on distance (the camera
@@ -166,7 +166,8 @@ def setup_covering_camera(points, margin=MARGIN, yaw=None, elev=None):
 
     sensor_h = 24.0
     lens = 50.0
-    aspect = RES[0] / RES[1]
+    res_wh = res or RES
+    aspect = res_wh[0] / res_wh[1]
     v_ang = 2 * math.atan((sensor_h * 0.5) / lens)
     h_ang = 2 * math.atan(math.tan(v_ang * 0.5) * aspect)
     lim = 1.0 - 2.0 * margin
@@ -214,7 +215,7 @@ def setup_covering_camera(points, margin=MARGIN, yaw=None, elev=None):
           f"({max(xs):.2f},{max(ys):.2f},{max(zs):.2f})", flush=True)
     return cam
 
-def render_still(path, eevee=False, samples=None):
+def render_still(path, eevee=False, samples=None, res=None):
     sc = bpy.context.scene
     if eevee:
         sc.render.engine = "BLENDER_EEVEE_NEXT"
@@ -233,7 +234,7 @@ def render_still(path, eevee=False, samples=None):
         except Exception:
             pass
         sc.cycles.filter_width = 1.5
-    sc.render.resolution_x, sc.render.resolution_y = RES
+    sc.render.resolution_x, sc.render.resolution_y = res or RES
     sc.render.resolution_percentage = 100
     sc.render.image_settings.file_format = "PNG"
     sc.render.image_settings.color_mode = "RGB"
@@ -269,13 +270,13 @@ def compose_sheet(stills, facts, out_path):
 
 
 
-def render_jab_preview(preview_name, colorway="A", items=("gloves", "beanie")):
+def render_jab_preview(preview_name, colorway="A", items=("gloves", "beanie"), version="v1"):
     t0 = time.time()
     path = os.path.join(SRC_DIR, "Lead Jab.fbx")
     state = prepare_clip(path, "punch")
     f = set_pose(state, "guard")
     handle = apply_outfit(state["arm"], state["meshes"], items=items,
-                          colorway=colorway, scan_frames=True)
+                          colorway=colorway, scan_frames=True, version=version)
     # cover the whole clip, including gloves, so the fist stays in frame
     frames_span = list(range(state["f0"], state["f1"] + 1, max(1, (state["f1"] - state["f0"]) // 6)))
     cover_pts = []
@@ -304,7 +305,7 @@ def render_jab_preview(preview_name, colorway="A", items=("gloves", "beanie")):
     if len(frames) > 50:
         return {"skipped": True, "reason": f"too many frames ({len(frames)})"}
 
-    seq_dir = os.path.join(OUT_DIR, "_xbot_outfit_jab_seq")
+    seq_dir = os.path.join(OUT_DIR, f"_xbot_outfit_{version}_jab_seq")
     os.makedirs(seq_dir, exist_ok=True)
     sc = bpy.context.scene
     sc.render.engine = "BLENDER_EEVEE_NEXT"
@@ -408,7 +409,7 @@ def main():
         # once, to compute a shared camera, then clear and render each variant.
         probe = apply_outfit(state["arm"], state["meshes"],
                              items=("gloves", "headgear"), colorway="B",
-                             scan_frames=True)
+                             scan_frames=True, version="v1")
         objs = list(state["meshes"]) + [bpy.data.objects[n] for n in probe["objects"]
                                         if n in bpy.data.objects]
         pts = evaluated_world_points(objs)
@@ -428,7 +429,7 @@ def main():
             if var["items"]:
                 handle = apply_outfit(state["arm"], state["meshes"],
                                       items=var["items"], colorway=var["colorway"],
-                                      scan_frames=True)
+                                      scan_frames=True, version="v1")
                 facts["handles"][f"{pose['clip']}_{var['key']}"] = _handle_public(handle)
                 if handle.get("containment"):
                     for side, c in handle["containment"].items():
