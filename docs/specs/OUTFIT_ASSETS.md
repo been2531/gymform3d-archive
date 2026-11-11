@@ -137,10 +137,35 @@ Grab3D gloves and beanie are CC0 1.0; attribution is optional. If the Grab3D GLB
 
 Helper (uncommitted): `tools/rig3d/build_outfit_candidates_sheet.py`.
 
+## MPFB boxer v1 (character + first fit)
+
+Pipeline: `tools/rig3d/build_mpfb_boxer.py` (Blender 4.2 headless, `--phase body|retarget|qc|outfit|render`). Intermediate blend and stills are gitignored under `output/_basemodels/mpfb/` and `output/_basemodels/eval/mpfb_boxer_v1.png`.
+
+**Body.** MPFB 2.0.18 male, height 1.779 m after targets (macro height 0.532). Macros: gender 1, age 0.5, muscle 0.68, weight 0.48, proportions 0.58, firmness 0.45. Targets: v-taper, shoulder width, waist in, moderate pecs/dorsi/arm muscle, stomach tone, slight hip narrow. Hair off, no face detail, clay v2. Evaluated mesh (helper Mask kept live, first in the stack) is closed: 13,380 verts, 13,378 faces, 0 open edges. Applying the Mask or merging by distance after the Mixamo rig remaps weights and stretches the mesh — do not apply those.
+
+**Rig + jab retarget.** Built-in MPFB `mixamo` rig (52 `mixamorig:*` bones). World-space rotation bake from the v4 jab (`alts/alt04_Jab Cross_BoxingJabCrossMedium.fbx`, guard 9 / extension 14 / return 22) onto the body bones, hips location in world XY/Z. Hand, finger, and toe bones are left at rest relative to the forearm/foot: MPFB's Left/RightHand bones are ~47 cm (X Bot's are ~8 cm) and a world or baked local copy of those channels stretches the hands into spikes. The hand bones are shortened to 8 cm after the rig is fitted. QC vs the same clip on X Bot, all within tolerance and not worse:
+
+| metric | MPFB | X Bot | delta |
+| --- | --- | --- | --- |
+| fist_max_dev_m | 0.0027 | 0.0111 | −0.0084 (straighter) |
+| elbow_above_shoulder_max_m | −0.0539 | −0.0601 | +0.0062 |
+| foot_slide_l_m | 0.368 | 0.375 | −0.007 |
+| root_drift_m | 0.4444 | 0.4444 | 0 |
+
+Open, unsplayed-to-a-fist fingers are a leftover of skipping those bones; gloves are meant to hide them. The bare jab still reads as a boxer, not as X Bot's slimmer default.
+
+**Outfit (honest v1).** Scaled by rewriting mesh data (Sketchfab trunks/tank import at 560–600 m). Logo albedo on the Sutton trunks is replaced with burgundy satin (0.18, 0.025, 0.04) plus a charcoal waistband vertex-color trim. Tank and beanie recolored charcoal; gloves recolored glossy black leather and mirrored. Fit is shrinkwrap + data-transfer weights (body-only deform bones) + live shrinkwrap + corrective smooth.
+
+Known failures at this pass, judged at full size: the beanie sits on the back of the skull rather than as a watch cap; the mirrored Artel gloves do not stay on the fists through the jab (they drift onto the forearm or float); the tank flares into a back sail and is not a usable sleeveless shirt yet (baked-in muscle + shrinkwrap); the trunks read as tight briefs more than boxing trunks and still poke at return. Deltoids stay visible. Treat the outfit as a first contact, not a publishable kit.
+
+## MPFB credits
+
+MPFB 2.0.18 (MakeHuman Plugin For Blender) from [makehumancommunity/mpfb2](https://github.com/makehumancommunity/mpfb2). The add-on is GPL-3.0-or-later; the basemesh, targets, and built-in rig data used here are CC0 (see `LICENSE.ASSETS.md` in that repo). No extra credit is required for the body; keep the CC BY lines above for any outfit mesh that appears in a published still or reel.
+
 ## What is still missing
 
 - A downloaded **pair** of glossy **black** 10–12 oz gloves. The best shape we have is a single salmon-red glove; the best pair (Grab3D, CC0, coral) did not arrive on the box this session.
 - A second boxing-trunks mesh, and a trunks texture **without a wordmark**.
 - A charcoal tank that is a loose garment, not a cloth already sculpted to one male torso.
 - A beanie that is already charcoal/black at the texture level (both good beanies need a recolor; Arkify also needs a remesh).
-- The actual fit onto a Mixamo character — shrinkwrap, weight transfer, and glove/beanie parenting — has not been done yet.
+- A second outfit pass: glove orientation + rigid follow on the fist, beanie seated on the crown, tank without a back sail, trunks with a real boxer cut and less poke-through.
