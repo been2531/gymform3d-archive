@@ -5,23 +5,35 @@ declared failure (834 UV islands, baked ankle retinaculum, baked
 `rig_normals`). This search evaluates legally reusable replacements
 *before* adopting one. No Grab3D patching and no `db_row` render was done.
 
-**Verdict: none of the measured candidates qualifies as the new
-production clay body.** Do not adopt any of them. The first-round
-closest *look* is a historic statue we cannot pose. The closest *muscle
-atlas* is not a watertight skin. The Sketchfab athletic écorché that
-looked most promising on paper (Diego Luján, CC BY 4.0) is now
-measured: the clay still has real muscle form, but it is 16 ZBrush
-subtools / 284 separate shells after a 1.75 m × 0.1 mm weld, not one
-skin. A fourth Sketchfab download, *Gladiator*, was excluded before
-evaluation (For Honor-inspired design and a NoAI tag on the page;
-copyright risk). Its zip and unpacked folder were deleted and it is
-not in either comparison sheet.
+**Verdict: do not adopt a production clay body yet.** First-round
+bodies, Diego, Beatriz, and Gridiron Jumpman stay rejected. A later
+Sketchfab API round (three more CC BY downloads) produced the first
+mesh that survives the weld test: deepkexz’s *Muscular human mannequin
+figure* joins to **1 loose part, 0 boundary, 0 non-manifold** at 1.75 m
+× 0.1 mm. That is not the same as adopting it. It is unrigged, one
+million triangles, has sculpted briefs, carries custom normals, is
+listed as AI-made (Rodin), and has not been posed into a textbook
+row. The shirtless athlete is a lighter runner-up; the basketball
+dummy is a jump-shot and is rejected as a base. *Gladiator* was
+excluded before evaluation (For Honor-inspired design and a NoAI tag).
+Its zip and unpacked folder were deleted and it is not in any sheet.
+
+Large smooth 3D muscle blobs (peach lats, pink mid-back, purple rear
+delt, yellow biceps) read on Diego, the mannequin, and the athlete.
+On the basketball dummy only the jersey lat and upper-back patches
+read. Of four glow methods tested on the mannequin, the 3D blob is
+the clearest for muscle identity and the most reusable; 2D compositing
+is the softest still overlay; cheap overlay shells and glass X-ray
+are not usable.
 
 Comparison sheets (gitignored stills, viewed at full size before this
 write-up):
 
 - First round: `output/_basemodels/eval/basemodels_vs_demic.png`
-- Sketchfab round: `output/_basemodels/eval/sketchfab_vs_demic.png`
+- Sketchfab clay round: `output/_basemodels/eval/sketchfab_vs_demic.png`
+- Precise-mask colour test (superseded): `output/_basemodels/eval/muscle_colour_test.png`
+- Blob glow round: `output/_basemodels/eval/blob_glow_test.png`
+- Glow methods on the mannequin: `output/_basemodels/eval/blob_glow_methods.png`
 
 Demic reference: left panel of
 `output/_rig3d/v4_authored/peach34_air/ours_vs_demic_peak.png`
@@ -43,7 +55,24 @@ nice -n 19 /home/box/opt/blender-4.2.3-linux-x64/blender -b \
   --target-height 1.75 --no-render --exposure -0.20
 python3 tools/rig3d/build_base_model_sheet.py \
   --out output/_basemodels/eval/sketchfab_vs_demic.png ...
+
+# smooth 3D blobs (and --method idpass|shells|xray on one body)
+nice -n 19 /home/box/opt/blender-4.2.3-linux-x64/blender -b \
+  --python tools/rig3d/eval_blob_glow.py -- \
+  --input <gltf> --out-dir output/_basemodels/eval --name <id> \
+  --method blob
+python3 tools/rig3d/build_base_model_sheet.py \
+  --out output/_basemodels/eval/blob_glow_test.png \
+  --title "Blob glow test  |  matte grey + smooth 3D muscle blobs, elevated rear 3/4" ...
+python3 tools/rig3d/build_base_model_sheet.py \
+  --out output/_basemodels/eval/blob_glow_methods.png --no-demic ...
 ```
+
+Sketchfab downloads for the blob round used
+`GET https://api.sketchfab.com/v3/models/<uid>/download` with a token
+kept in `~/.sketchfab/env` (mode 600; never committed or printed) and
+the temporary `gltf.url` from that response. API zips were extracted
+under `output/_basemodels/sketchfab/<slug>/` and then deleted.
 
 Weld test: merge-by-distance at 0.1 mm after applying scale to metres.
 Boundary edges are edges with ≠2 faces. Loose parts are face-connected
@@ -358,35 +387,244 @@ can still be authored later as an original character; this asset is
 not that body.
 **Recommendation: reject.**
 
+## Sketchfab blob-glow round (measured 2026-11-11, Asia/Seoul)
+
+The bar from this round is colour readability, not a demic look-alike.
+Sports concept characters are in scope. Target colours (emission over
+matte grey, body V ≈ 80–110, charcoal backdrop, elevated rear ¾,
+540×960, Cycles 24 spp): peach-orange lats, pink rhomboid/mid-traps,
+purple rear delt, yellow biceps. Blobs are large smooth radial
+falloffs from a few anatomical anchors (`1 − smoothstep(0.4R, R,
+dist)`, winner-takes-most into vertex colour `mcol`), not
+boundary-precise masks. Grey albedo ≈ `[0.22, 0.224, 0.228]`,
+exposure −0.15 with a grey-V auto-tune (except X-ray). Camera yaw 135,
+elev 14. Script: `tools/rig3d/eval_blob_glow.py`.
+
+Three further CC BY models were pulled via the Sketchfab download API
+(UIDs `cd7974ef71b542cc99f93bacea1ecc6c`,
+`163b786c3c65481a822c66eb732b4e4e`,
+`e6281bc9c81c4ce59fc53da74b8bcb8f`) and Diego was re-rendered with
+the same blob method. Sheet (viewed at full size):
+`output/_basemodels/eval/blob_glow_test.png`.
+
+### 4. deepkexz — Muscular human mannequin figure
+
+- Source: <https://sketchfab.com/3d-models/muscular-human-mannequin-figure-cd7974ef71b542cc99f93bacea1ecc6c>
+- Licence: **CC-BY-4.0**. The listing at download time described it as
+  AI-made (Rodin). Required credit line:
+
+  > This work is based on "Muscular human mannequin figure"
+  > (https://sketchfab.com/3d-models/muscular-human-mannequin-figure-cd7974ef71b542cc99f93bacea1ecc6c)
+  > by deepkexz (https://sketchfab.com/deepkexz) licensed under
+  > CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+- File: `output/_basemodels/sketchfab/muscular_human_mannequin/scene.gltf`
+  (10 meshes on the 65,532-vertex glTF split — chunks of one body, not
+  separate muscles; no texture images; no UVs).
+- Import height: **1.8985 m**. Normalized ×0.922 to 1.75 m for the
+  weld and the still.
+- Pose (from the blob still): standing, arms hanging slightly off the
+  sides, not a T-pose. Sculpted boxer-briefs are part of the mesh
+  (there is no texture to hide). Muscle form is a smooth stylized
+  clay athlete — lats, delts and glutes read, without écorché fiber
+  detail.
+- Armature: none. Custom normals on all 10. No vertex groups, no
+  shape keys.
+
+Measured (all 10 meshes):
+
+| | |
+|---|---|
+| Mesh objects | 10 |
+| Verts / tris | 609,466 / 1,000,000 |
+| Boundary edges (unwelded sum) | 212,966 (split seams) |
+| Loose parts (unwelded sum) | 15,229 |
+| UV islands | 0 (no UVs) |
+| Armature | none |
+| After 0.1 mm weld at **1.75 m** | **1 loose part, 0 boundary, 0 non-manifold**, 499,996 verts / 999,988 tris |
+
+This is the first measured candidate that passes the watertight-skin
+test. The 10 objects are exporter chunks; after a join they are one
+closed surface.
+
+Blob (viewed at full size): peach lat wraps the visible flank, pink
+sits on the mid-upper back, purple on the near rear delt, yellow on
+the near upper arm. All four colours read. Paint counts: lats 108,625
+/ mid-back 28,865 / rear delt 6,153 / biceps 8,629. Grey V p50 = 82
+(in range).
+
+**Fails:** bind-ready armature, no clothing (sculpted briefs), clean
+recomputable normals, tractable triangle count, non-AI provenance,
+proven row pose.
+**Keeps as:** the only weld-pass skin so far, and the body used for
+the A/B/C method test.
+**Recommendation: do not adopt yet.** The honest next experiment is
+join + weld + decimate (to roughly 80–150 k tris) + clear custom
+normals + Rigify auto-weights from this standing pose, then a
+one-arm DB-row still. That is about half a day to a day, not a
+download-and-ship. Parenting without weights will not pose it.
+
+### 5. Tulio Portela — Manequin Dummy v0 Basketball Free
+
+- Source: <https://sketchfab.com/3d-models/manequin-dummy-v0-basketball-free-163b786c3c65481a822c66eb732b4e4e>
+- Licence: **CC-BY-4.0**. Required credit line:
+
+  > This work is based on "Manequin Dummy v0 Basketball Free"
+  > (https://sketchfab.com/3d-models/manequin-dummy-v0-basketball-free-163b786c3c65481a822c66eb732b4e4e)
+  > by Tulio Portela (https://sketchfab.com/TulioPortela) licensed
+  > under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+- File: `output/_basemodels/sketchfab/manequin_dummy_basketball/scene.gltf`
+  (3 meshes; Object_4 / Object_5 are 65,532-vertex body splits;
+  Object_6 is 4,646 tris — the basketball. 9 packed images:
+  baseColor / metallicRoughness / normal).
+- Import height: **2.00 m** (jump-pose bounding box). Normalized
+  ×0.875 to 1.75 m. After normalize, bbox width is 1.33 m (arms and
+  ball out).
+- Pose: mid-air jump shot, ball overhead, other arm out. Not a bind
+  pose. Jersey, shorts and shoes. The body is a smooth dummy, not a
+  muscular sculpt.
+- Armature: none. Custom normals on all 3.
+
+Measured (all 3 meshes):
+
+| | |
+|---|---|
+| Mesh objects | 3 |
+| Verts / tris | 135,666 / 235,198 |
+| UV islands | 1,061 before weld / **295 after** |
+| Armature | none |
+| After 0.1 mm weld at **1.75 m** | **1 loose part, 6 boundary, 2 non-manifold** |
+
+Blob (viewed at full size): peach lat and pink upper back read on the
+jersey. Rear delt and biceps do not read — the shooting arm is up and
+only 242 verts painted as biceps. Paint: lats 15,357 / mid-back 6,407
+/ rear delt 1,412 / biceps 242. Grey V p50 = 86.
+
+**Fails:** bind pose, exposed muscle form, clean UVs, riggable without
+a large retarget from a jump.
+**Keeps as:** proof that colour-on-clothes can mark a lat and an
+upper back on a sports dummy.
+**Recommendation: reject as a base.** Same pose class as Gridiron.
+
+### 6. restore50 — Shirtless Athlete in Black Shorts
+
+- Source: <https://sketchfab.com/3d-models/shirtless-athlete-in-black-shorts-e6281bc9c81c4ce59fc53da74b8bcb8f>
+- Licence: **CC-BY-4.0**. The listing at download time described it as
+  AI-made (Meshy). Required credit line:
+
+  > This work is based on "Shirtless Athlete in Black Shorts"
+  > (https://sketchfab.com/3d-models/shirtless-athlete-in-black-shorts-e6281bc9c81c4ce59fc53da74b8bcb8f)
+  > by restore50 (https://sketchfab.com/restore50) licensed under
+  > CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+- File: `output/_basemodels/sketchfab/shirtless_athlete_black_shorts/scene.gltf`
+  (2 meshes on the 65k split; 8 packed 2048² images: emissive,
+  baseColor, metallicRoughness, normal on each).
+- Import height: **1.899 m**. Normalized ×0.922 to 1.75 m. Bbox width
+  0.63 m (arms nearer the sides than the mannequin).
+- Pose: standing, hands near the hips. Shirtless with sculpted black
+  shorts — the closest *concept* to demic of this round. Muscle form
+  is present but smoother than Diego (Meshy clay, not fiber).
+- Armature: none. Custom normals on both meshes.
+
+Measured (all 2 meshes):
+
+| | |
+|---|---|
+| Mesh objects | 2 |
+| Verts / tris | 104,134 / 171,578 |
+| UV islands | 1,244 before weld / **463 after** |
+| Armature | none |
+| After 0.1 mm weld at **1.75 m** | **1 loose part, 6 boundary, 3 non-manifold** |
+
+Blob (viewed at full size): peach lats and pink mid-back read; purple
+rear delt and yellow biceps are small. The lower lat blob spilled
+onto the near hip and hand (hands sit at the waist, inside the large
+lat radius). Paint: lats 23,066 / mid-back 4,724 / rear delt 341 /
+biceps 595. Grey V p50 = 83 after one exposure retune.
+
+**Fails:** leftover orifice-scale boundary / 3 non-manifold edges,
+baked shading (custom normals + normal/emissive maps), 463 UV
+islands, no armature, AI provenance, slightly dirty blob spill.
+**Keeps as:** lighter standing runner-up if the mannequin’s triangle
+count or briefs become a problem.
+**Recommendation: do not adopt yet.** Same class of next experiment
+as the mannequin (join + weld + Rigify), with more leftover topology
+and baked maps to clear.
+
+Diego’s blob still (re-rendered this round, grey V p50 = 81): all
+four colours read on the écorché — peach lat, pink mid-back, purple
+rear delt, yellow upper arm — with soft edges. That does not change
+the 284-shell weld failure. He remains the best sculpt *reference*,
+not a skin.
+
+### Glow methods on the mannequin
+
+One still each, same camera, viewed at full size on
+`output/_basemodels/eval/blob_glow_methods.png`.
+
+| Method | What was tested | What it reads as |
+|---|---|---|
+| 3D blob (baseline) | Vertex-colour radial falloff, winner-takes-most, emission over grey | Four distinct colours; lat wraps the flank |
+| (A) 2D compositing | Grey beauty + projected soft elliptical masks clipped to the silhouette | Softest Day-4 grading bloom; peach spills onto the briefs; ellipses do not wrap a flank |
+| (B) Overlay shells | Keep weight > 0.32, displace 2.5 mm along normals, only shells emit (26 shells) | Ragged hard cutouts and a hole in the lower lat; not shippable |
+| (C) Glass X-ray | Principled glass skin (transmission 0.88, alpha 0.22) + 11 inner emission ellipsoids | Glass mannequin with balloon organs; over-bright primitives blow toward yellow |
+
+**Clearest for muscle identity: the 3D blob.** The four targets stay
+separable and follow the surface.
+**Softest still / closest to old Day-4 grading: (A) 2D compositing.**
+Useful as an optional grade on top of a grey beauty pass, not as the
+base method — it needs per-frame projection of the same 3D anchors,
+and screen-space ellipses foreshorten incorrectly.
+**Most reusable: the 3D blob.** Vertex attributes travel with the
+mesh through posing and any camera. (A) is camera-locked. (B) would
+be reusable only with hand-sculpted or smoothed shells, not this
+extract. (C)’s cheap inner spheres are not muscle volumes.
+
+Do not spend further time polishing automatic shells or X-ray
+ellipsoids unless someone asks for that look specifically.
+
 ## Recommendation
 
-**Adopt none of the measured bodies** — not the first-round three, and
-not Diego, Beatriz, or Gridiron Jumpman. A muscle atlas, a
-Renaissance statuette, a 16-subtool écorché kit, a fragmented anatomy
-study, and a clothed jumping football player are not a demic-style gym
-mannequin. Adopting any of them would be another round of patching.
+**Adopt none of the measured bodies yet** — not the first-round three,
+not Diego, Beatriz, or Gridiron Jumpman, and not the three new API
+downloads as a shipped skin. A muscle atlas, a Renaissance statuette,
+a 16-subtool écorché kit, a fragmented anatomy study, and two jumping
+sports characters are not a production gym mannequin.
 
-Diego is the closest *look* we have now (real geometric muscle, no
-clothes, standing, no plinth) and still fails the skin test that
-killed Grab3D. Do not weld the 16 subtools together and call it a
-base.
+The deepkexz mannequin is the first body that *survives the weld
+test*. That is progress, not a green light. Do not ship a 1 M-tri
+unrigged AI figure with sculpted briefs just because the glow reads.
+If we continue with a download rather than authoring a body, the
+next scoped experiment is: join the 10 chunks, weld, decimate,
+rebuild normals, Rigify-weight the standing pose, and render a
+one-arm DB row. Until that pose still exists, treat it as a
+candidate, not a base. The shirtless athlete is the fallback for
+that same experiment (lighter, more leftover topology, Meshy).
+
+Diego is still the closest *look* (real geometric muscle, no clothes,
+standing, no plinth) and still fails the skin test that killed
+Grab3D. Do not weld the 16 subtools together and call it a base.
+
+For muscle colour, use the **3D blob** method going forward. Optionally
+grade a still with (A) 2D compositing. Do not use the cheap (B) shells
+or (C) X-ray primitives.
 
 What would actually have a chance, in order:
 
-1. **Vet further original concept-character downloads** the same way
-   (weld / UV / strap / clothes / bind-pose / licence, porcelain still,
-   full-size sheet vs demic). CharacterZone’s muscular base
-   (`0954aa04…`, CC BY 4.0, claims “ready for rig”) is still
-   unmeasured if it can be fetched legally. Do not start production
-   on any new file until those checks pass.
-2. If those also fail the watertight-skin test, **there is no free
-   drop-in.** The method that works by construction is to author our
-   own continuous, welded, unstrapped clay body (CC0), using Diego
-   and/or the Małopolska sculpt as *reference only* (credit Diego
-   under CC BY if we derive from that mesh; looking is not deriving),
-   bind it once, and keep per-muscle glow on attributes or on our own
-   overlay shells. That is modeling work, not a download, and it
-   should be scoped honestly before anyone starts it.
+1. **Rigify-test the mannequin** (or the athlete if the briefs or the
+   triangle count get in the way) before downloading more look-alikes.
+   CharacterZone’s muscular base (`0954aa04…`, CC BY 4.0, claims
+   “ready for rig”) is still unmeasured if it can be fetched legally.
+2. If that bind fails, **there is still no free drop-in.** The method
+   that works by construction is to author our own continuous, welded,
+   unstrapped clay body (CC0), using Diego and/or the Małopolska sculpt
+   as *reference only* (credit Diego under CC BY if we derive from that
+   mesh; looking is not deriving), bind it once, and keep per-muscle
+   glow on vertex attributes (the blob method). That is modeling work,
+   not a download, and it should be scoped honestly before anyone
+   starts it.
 3. A paid athletic écorché would also need 중현 님’s explicit approval
    (standing rule: no paid assets).
 
