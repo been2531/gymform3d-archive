@@ -66,25 +66,29 @@ def main():
     ap.add_argument("--candidate", action="append", nargs=2, metavar=("TITLE", "PNG"),
                     dest="candidates", required=True)
     ap.add_argument("--facts", help="json {title: [lines...]}")
+    ap.add_argument("--title", default="Base-model search  |  porcelain clay, rear 3/4, vs demic")
+    ap.add_argument("--no-demic", action="store_true", help="Skip the locked demic reference column")
+    ap.add_argument("--caption-h", type=int, default=220)
     args = ap.parse_args()
     facts = {}
     if args.facts and os.path.isfile(args.facts):
         facts = json.load(open(args.facts))
 
-    demic = Image.open(args.demic).convert("RGB").crop(DEMIC_PANEL)
-    demic = _fit(demic, PANEL)
-
-    cols = [("demic reference", demic, facts.get("demic", [
-        "Demic clay (left panel of the locked comparison sheet).",
-        "Target look only. Do not copy the DEMIC wordmark.",
-    ]))]
+    cols = []
+    if not args.no_demic:
+        demic = Image.open(args.demic).convert("RGB").crop(DEMIC_PANEL)
+        demic = _fit(demic, PANEL)
+        cols.append(("demic reference", demic, facts.get("demic", [
+            "Demic clay (left panel of the locked comparison sheet).",
+            "Target look only. Do not copy the DEMIC wordmark.",
+        ])))
     for title, path in args.candidates:
         im = _fit(Image.open(path).convert("RGB"), PANEL)
         cols.append((title, im, facts.get(title, facts.get(path, []))))
 
     pad = 24
     header_h = 86
-    caption_h = 220
+    caption_h = args.caption_h
     n = len(cols)
     W = pad + n * (PANEL[0] + pad)
     H = pad + header_h + PANEL[1] + pad + caption_h + pad
@@ -93,7 +97,7 @@ def main():
     title_f = _font(28, bold=True)
     sub_f = _font(16, bold=True)
     body_f = _font(15)
-    draw.text((pad, 18), "Base-model search  |  porcelain clay, rear 3/4, vs demic", font=title_f, fill=FG)
+    draw.text((pad, 18), args.title, font=title_f, fill=FG)
 
     for i, (title, im, lines) in enumerate(cols):
         x = pad + i * (PANEL[0] + pad)
