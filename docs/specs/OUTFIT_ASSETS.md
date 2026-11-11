@@ -187,6 +187,57 @@ Same four criteria as v1. Outputs (gitignored): `output/_basemodels/eval/xbot_pa
 
 Units are now world metres (head width 0.176 m is the known X Bot width). The remaining fails are placement and a hard 0.25 m floor with no epsilon, plus a wrong imported-glove length (0.969 m). Do not treat those as a cue to patch this run.
 
+## X Bot painted v3 (gloves grown from the X Bot hand)
+
+One more attempt, approved 11 Nov 2026 (Asia/Seoul), after v2 failed on
+imported-glove placement. The v2 beanie (shape and placement) is kept as-is.
+Paint zones are unchanged. The imported ARTEL glove is not used.
+
+Pipeline: `tools/rig3d/xbot_painted_outfit_v3.py` and
+`tools/rig3d/build_xbot_painted_v3.py`.
+
+**Gloves.** Built from the character's own hand and wrist vertices, selected
+by hand/finger bone weights. In rest pose the fingers are closed into a fist,
+the mesh is inflated to about 1.4–1.6× the hand volume (this run: fist ratio
+~1.42, total volume ratio 1.41–1.54 including the cuff), a cuff is added
+covering the wrist, and the result is voxel-remeshed into one closed mitt.
+The mitt is skinned to the Hand and ForeArm bones only, so it deforms with
+the hand and cannot float by construction; finger bones are zeroed so a later
+fist pose cannot crumple an already-closed volume. The original hand and
+finger geometry is then masked by those same weights, so only the
+hand-derived glove is visible. Gloss is the procedural leather
+(`GLOVE_V4_BLACK`, roughness 0.18), aimed at the Petey21 CC0 reference
+([Pair of boxing gloves](https://commons.wikimedia.org/wiki/File:Pair_of_boxing_gloves.jpg),
+Petey21, Wikimedia Commons, CC0 1.0, 2014). Length in world metres: 0.25–0.26 m.
+
+**Beanie and paint.** Unchanged from v2 (oluwaphemi beanie, CC BY 4.0;
+burgundy trunks, charcoal tank and waistband).
+
+Pass criteria (written to `output/_basemodels/eval/xbot_painted_v3_criteria.json`
+before any render; one honest attempt, no iteration): (1) the glove encloses
+the fist on all frames of all 4 punches; (2) the beanie stays on the crown;
+(3) `boxing_qc` is identical to bare X Bot; (4) the glove reads like the
+Petey21 CC0 reference at full size.
+
+Outputs (gitignored): `output/_basemodels/eval/xbot_painted_v3.png`,
+`xbot_painted_v3_jab_preview.mp4`, `xbot_painted_v3_facts.json`.
+
+**Result of the one attempt (21:20 KST, 11 Nov 2026): FAIL. Do not iterate from this pass.**
+Judged at full size on the contact sheet (1676×3066) and the individual
+540×960 / 540×720 stills.
+
+| Criterion | Result | Why |
+|---|---|---|
+| (1) The glove encloses the fist on all frames of all 4 punches | **PASS** | Enclosure checks pass on jab, cross, hook, and uppercut (hand-to-glove centroid 1–3 cm, Y-overlap ~0.14–0.15 m). In the stills both gloves stay on the hands; the original hand/finger verts are masked and no bare fingers poke through. |
+| (2) The beanie stays on the crown | **FAIL** | Same v2 placement, same fail: the hem drifts 7–9 cm off the head midline (threshold 7 cm) on many frames of all four punches (jab 20/65, cross 13/27, hook 6/60, uppercut 17/64). In the stills the cap is still sitting on the skull. |
+| (3) boxing_qc identical to bare X Bot | **PASS** | Path metrics match bit-for-bit on all four v4 punches. Skinning and the hand mask do not move bones. |
+| (4) The glove reads like the Petey21 CC0 reference at full size | **FAIL** | At full size the close-up is mid-grey leather, not glossy black. The shape is a lumpy inflated fist, not the reference's elongated kidney with a clean separated thumb. A dark cavity reads in the thumb fold; the cuff does not clearly cover ~8 cm of forearm (the clay wrist exits almost immediately). Some angles (jab return, cross extension) read as a C-shape or a pointed smear rather than a closed boxing mitt. |
+
+The construction did what was asked of the rig: the glove is the hand, it
+cannot float, and the original fingers are hidden. It does not yet look like
+the reference, and the kept v2 beanie still fails the midline-drift check.
+Do not treat those as a cue to patch this run.
+
 ## MPFB boxer v1 (character + first fit)
 
 Pipeline: `tools/rig3d/build_mpfb_boxer.py` (Blender 4.2 headless, `--phase body|retarget|qc|outfit|render`). Intermediate blend and stills are gitignored under `output/_basemodels/mpfb/` and `output/_basemodels/eval/mpfb_boxer_v1.png`.
