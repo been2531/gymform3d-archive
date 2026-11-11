@@ -142,8 +142,9 @@ def clear_scene():
         bpy.data.materials.remove(m)
 
 
-def build_barbell(n_plates_each=2):
-    clear_scene()
+def build_barbell(n_plates_each=2, clear=True):
+    if clear:
+        clear_scene()
     cobalt = mat("paletteA_cobalt", COBALT, metal=0.05, rough=0.72)
     gold = mat("paletteA_gold_ring", GOLD, metal=1.0, rough=0.28)
     steel = mat_knurled_steel()

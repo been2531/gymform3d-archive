@@ -37,7 +37,7 @@ SPEC = 0.06
 
 
 def smoothstep(edge0, edge1, x):
-    t = np.clip((x - edge0) / max(edge1 - edge0, 1e-8), 0.0, 1.0)
+    t = np.clip((x - edge0) / np.maximum(edge1 - edge0, 1e-8), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
 
 
@@ -382,12 +382,13 @@ def weights_from_strokes(world, normals, strokes, hip, spine, side, back, slen, 
         w[:, i] = acc * gates[name]
     return w, gates
 
-def write_mcol_soft(obj, weights):
+def write_mcol_soft(obj, weights, colours=None):
     """Blend overlapping muscles instead of winner-takes-most hard seams."""
+    pal = colours or COL
     n = len(weights)
     acc = np.zeros((n, 3), np.float32)
     for i, name in enumerate(MUSCLE_ORDER):
-        acc += weights[:, i:i + 1] * COL[name]
+        acc += weights[:, i:i + 1] * pal[name]
     total = weights.sum(axis=1, keepdims=True)
     col = np.zeros((n, 4), np.float32)
     col[:, 3] = 1.0
@@ -600,7 +601,7 @@ def paint_rig_weights(meshes, hip, spine, side, back, slen):
     return totals, per, used
 
 
-def punch_material():
+def punch_material(em_str=None):
     mat = bpy.data.materials.new("MuscleBlobV2")
     mat.use_nodes = True
     nt = mat.node_tree
@@ -634,7 +635,7 @@ def punch_material():
     stm = nt.nodes.new("ShaderNodeMath")
     stm.operation = "MULTIPLY"
     nt.links.new(mx2.outputs[0], stm.inputs[0])
-    stm.inputs[1].default_value = EM_STR
+    stm.inputs[1].default_value = float(EM_STR if em_str is None else em_str)
     nt.links.new(stm.outputs[0], em.inputs["Strength"])
     add = nt.nodes.new("ShaderNodeAddShader")
     nt.links.new(tint.outputs[0], add.inputs[0])
@@ -872,3 +873,165 @@ def try_one_arm_row(arms):
             "spine": None if spine is None else spine.name,
         },
     }
+
+
+# --- hybrid v3: V-fan lats + diamond mid-back (blob) and rig-weight delts/biceps ---
+
+COL_HYBRID = {
+    "lats": np.array([1.00, 0.26, 0.03], np.float32),
+    "mid_back": np.array([1.00, 0.16, 0.46], np.float32),
+    "rear_delt": np.array([0.64, 0.10, 1.00], np.float32),
+    "biceps": np.array([1.00, 0.66, 0.00], np.float32),
+}
+EM_STR_HYBRID = 0.82
+
+
+def lat_fan_capsules(hip, spine, side, back, slen, ext=None):
+    """V-shaped lat fans: wide at the armpit, tapering down the flank.
+
+    Bottom ends well above the waist so left and right never meet as a lumbar belt.
+    Centres sit near the back surface so the capsules actually reach the skin.
+    """
+    s = float(slen / 0.55)
+    ss = min(float((ext or {}).get("side_surf", 0.22)), 0.23)
+    bs = max(float((ext or {}).get("back_surf", 0.14)), 0.10)
+
+    def pt(t, lat_frac, bck_frac):
+        return hip + (t * slen) * spine + (lat_frac * ss) * side + (bck_frac * bs) * back
+
+    segs = [
+        # upper fan (armpit / teres -> mid flank), on the back surface
+        dict(a=pt(0.80, 0.88, 0.82), b=pt(0.60, 0.82, 0.90),
+             r_maj_a=0.11 * s, r_maj_b=0.090 * s,
+             r_min_a=0.055 * s, r_min_b=0.048 * s),
+        # lower taper (mid flank -> above iliac, still lateral)
+        dict(a=pt(0.60, 0.82, 0.90), b=pt(0.46, 0.62, 0.84),
+             r_maj_a=0.090 * s, r_maj_b=0.055 * s,
+             r_min_a=0.048 * s, r_min_b=0.032 * s),
+    ]
+    caps = []
+    for seg in segs:
+        seg = dict(seg)
+        seg["thick"] = back
+        caps.append(seg)
+        mir = {
+            "a": mirror_across_midline(seg["a"], hip, side),
+            "b": mirror_across_midline(seg["b"], hip, side),
+            "r_maj_a": seg["r_maj_a"], "r_maj_b": seg["r_maj_b"],
+            "r_min_a": seg["r_min_a"], "r_min_b": seg["r_min_b"],
+            "thick": back,
+        }
+        caps.append(mir)
+    return caps
+
+
+def diamond_midback_weight(world, hip, spine, side, back, slen):
+    """Pink diamond between the scapulae — pointed top and bottom, not a lumbar smear."""
+    s = float(slen / 0.55)
+    rel = world - hip
+    t = (rel @ spine) / max(slen, 1e-8)
+    abs_lat = np.abs(rel @ side)
+    bck = rel @ back
+    dt = np.abs(t - 0.74)
+    h = 1.0 - smoothstep(0.14, 0.22, dt)
+    half_w = (0.030 * s + 0.115 * s * h)
+    lat_g = 1.0 - smoothstep(half_w * 0.40, half_w, abs_lat)
+    back_g = smoothstep(-0.01 * s, 0.04 * s, bck)
+    return (h * lat_g * back_g).astype(np.float32)
+
+
+def vfan_lat_weight(world, hip, spine, side, back, slen, caps):
+    """Soft V-fan from capsules × anatomical gate that keeps a lumbar midline gap."""
+    s = float(slen / 0.55)
+    rel = world - hip
+    t = (rel @ spine) / max(slen, 1e-8)
+    abs_lat = np.abs(rel @ side)
+    bck = rel @ back
+    acc = np.zeros(len(world), np.float32)
+    for c in caps:
+        acc = np.maximum(acc, tapered_capsule_weight(
+            world, c["a"], c["b"], c["r_maj_a"], c["r_maj_b"],
+            c["r_min_a"], c["r_min_b"], c["thick"], inner=0.58,
+        ))
+    # Fade out ~8–10 cm above the waistband (hip origin ≈ pelvis / shorts top).
+    # 0.09 m / slen ≈ 0.14–0.17 in t; start fading by t~0.34, full by t~0.42.
+    waist_keep = smoothstep(0.32, 0.40, t)
+    t_n = np.clip((t - 0.42) / 0.38, 0.0, 1.0)
+    min_lat = (0.055 - 0.030 * t_n) * s
+    max_lat = (0.160 + 0.105 * t_n) * s
+    margin = 0.028 * s
+    lat_g = smoothstep(min_lat - margin, min_lat, abs_lat) * (1.0 - smoothstep(max_lat, max_lat + margin, abs_lat))
+    back_g = smoothstep(-0.015 * s, 0.025 * s, bck)
+    hand = soft_range(t, -2.0, 0.34, 0.05) * soft_range(abs_lat, 0.20 * s, 8.0, 0.03 * s)
+    return (acc * waist_keep * lat_g * back_g * (1.0 - hand)).astype(np.float32)
+
+
+def _vg_side_boost(obj, working_side):
+    """1.15 on the working side, 0.92 on the other, from Left*/Right* groups."""
+    n = len(obj.data.vertices)
+    if not working_side:
+        return np.ones(n, np.float32)
+    left_i, right_i = [], []
+    for gi, vg in enumerate(obj.vertex_groups):
+        nm = (vg.name or "").lower()
+        if "left" in nm:
+            left_i.append(gi)
+        elif "right" in nm:
+            right_i.append(gi)
+    wl = vg_weight_array(obj, left_i)
+    wr = vg_weight_array(obj, right_i)
+    want_right = str(working_side).lower() in {"right", "r", "+1", "1"}
+    primary, other = (wr, wl) if want_right else (wl, wr)
+    boost = np.ones(n, np.float32)
+    mask_p = primary > other
+    mask_o = other > primary
+    boost[mask_p] = 1.16
+    boost[mask_o] = 0.90
+    return boost
+
+
+def paint_hybrid(meshes, hip, spine, side, back, slen, working_side=None):
+    """Lats + mid-back from a V-fan / diamond blob; rear delts + biceps from rig weights."""
+    ext = surface_extents(meshes, hip, spine, side, back, slen)
+    print("EXTENTS hybrid", ext, "slen", float(slen), flush=True)
+    caps = lat_fan_capsules(hip, spine, side, back, slen, ext)
+    totals = {n: 0 for n in MUSCLE_ORDER}
+    per = []
+    used = []
+    for o in meshes:
+        world, no = _world_co_no(o)
+        if not len(world):
+            continue
+        w_lats = vfan_lat_weight(world, hip, spine, side, back, slen, caps)
+        w_mid = diamond_midback_weight(world, hip, spine, side, back, slen)
+        buckets = {"biceps": [], "rear_delt": [], "torso": []}
+        for gi, vg in enumerate(o.vertex_groups):
+            kind = classify_vertex_group(vg.name)
+            if kind in buckets:
+                buckets[kind].append(gi)
+                used.append({"object": o.name, "group": vg.name, "kind": kind})
+        w_bic = vg_weight_array(o, buckets["biceps"])
+        w_delt = vg_weight_array(o, buckets["rear_delt"])
+        gates = muscle_gates(world, no, hip, spine, side, back, slen, ext)
+        # Rear-delt cap + a little posterior upper-arm wrap (optional rear arm).
+        rear_arm = w_bic * smoothstep(-0.02 * (slen / 0.55), 0.06 * (slen / 0.55), gates["bck"])
+        w_delt = w_delt * np.clip(gates["rear_delt"] + 0.30, 0, 1)
+        w_delt = np.maximum(w_delt, 0.45 * rear_arm * gates["rear_delt"])
+        w_bic = w_bic * np.maximum(gates["biceps"], 0.18 * (1.0 - smoothstep(0.02, 0.10, gates["bck"])))
+        edges = _edges_np(o.data)
+        w_stack = np.stack([
+            w_lats,
+            w_mid,
+            _smooth_field(w_delt, edges, 2),
+            _smooth_field(w_bic, edges, 2),
+        ], 1)
+        w_stack[:, 2] *= np.clip(gates["rear_delt"] + 0.22, 0, 1)
+        w_stack[:, 3] *= np.clip(gates["biceps"] + 0.22, 0, 1)
+        boost = _vg_side_boost(o, working_side)
+        w_stack *= boost[:, None]
+        counts = write_mcol_soft(o, w_stack, colours=COL_HYBRID)
+        for k, v in counts.items():
+            totals[k] += v
+        per.append({"name": o.name, **counts, "verts": int(len(world)),
+                    "groups": {k: len(v) for k, v in buckets.items()}})
+    return totals, per, used
