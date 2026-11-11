@@ -587,6 +587,10 @@ def render_sheet(p, spec, names, report, res=(432, 768), yaw=None, out_name=None
             frames = [int(p["guard"]), int(p["mid"]), int(p["full"]), int(p["ret"])]
             if used_yaw is None:
                 used_yaw = front_three_quarter_yaw(ctx["arm"], ctx["bones"], int(p["full"]))
+                # A bladed jab at yaw≈70 still reads as a side profile. Fall
+                # back to a known front 3/4 (both gloves + chest visible).
+                if abs(used_yaw) > 50:
+                    used_yaw = -25.0
                 print(f"front 3/4 yaw={used_yaw:.1f}", flush=True)
             v3.setup_fitted_camera(ctx["meshes"], frames, ctx["arm"], ctx["bones"],
                                    ctx["start_xy"], ctx["lock"], yaw=used_yaw)
@@ -627,8 +631,15 @@ def render_sheet(p, spec, names, report, res=(432, 768), yaw=None, out_name=None
     # Compose the v2 sheet by default when a name is given; leave v1 as
     # the fallback so an unnamed call still builds the historic filename.
     try:
-        import build_wrongform_sheet as _bws
-        _bws.main(out_name=out_name or "xbot_jab_wrongform_v2.png")
+        import subprocess
+        cmd = [
+            "/usr/bin/python3",
+            os.path.join(HERE, "build_wrongform_sheet.py"),
+        ]
+        # build_wrongform_sheet.main() takes out_name; pass via env
+        env = dict(os.environ)
+        env["WRONGFORM_OUT"] = out_name or "xbot_jab_wrongform_v2.png"
+        subprocess.check_call(cmd, env=env)
     except Exception as exc:
         print(f"SHEET_COMPOSE_FAILED {exc}", flush=True)
 
