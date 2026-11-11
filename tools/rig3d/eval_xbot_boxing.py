@@ -472,21 +472,26 @@ def paint_glow(meshes, arm, bones, punch_side, muscles):
         if "front_delt" in muscles and ua is not None and sh is not None:
             # Anterior deltoid belly only: slightly lateral and clearly in
             # front of the glenohumeral line — not the pec, not mid/rear delt.
-            # The wrap is even around that belly (symmetric on the punching
-            # shoulder), not a blotch on the chest or the opposite side.
-            a = sh + (ua - sh) * 0.28 - bk * (0.048 * s) + side_out * (0.032 * s)
-            b = sh + (ua - sh) * 0.92 - bk * (0.052 * s) + side_out * (0.040 * s)
-            gate = np.clip(0.85 * w_sh + 0.70 * w_ua, 0.0, 1.0)
-            # Drop pec / spine bleed.
-            gate = gate * (1.0 - 0.90 * np.clip(w_spine, 0.0, 1.0))
+            # Position-based "anterior" (not vertex-normal front) so a jab
+            # pose still lights the front delt when the shoulder faces the punch.
+            ant = -bk
+            a = sh + (ua - sh) * 0.20 + ant * (0.042 * s) + side_out * (0.026 * s)
+            b = sh + (ua - sh) * 0.82 + ant * (0.048 * s) + side_out * (0.032 * s)
+            gate = np.clip(0.90 * w_sh + 0.65 * w_ua, 0.0, 1.0)
+            gate = gate * (1.0 - 0.70 * np.clip(w_spine, 0.0, 1.0))
             sh_arr = np.array((sh.x, sh.y, sh.z), dtype=np.float32)
             side_arr = np.array((side_out.x, side_out.y, side_out.z), dtype=np.float32)
-            lat = (world.astype(np.float32) - sh_arr) @ side_arr
-            lateral = blob_v2.smoothstep(-0.008 * s, 0.022 * s, lat)
+            ant_arr = np.array((ant.x, ant.y, ant.z), dtype=np.float32)
+            wld = world.astype(np.float32)
+            lat = (wld - sh_arr) @ side_arr
+            anterior = blob_v2.smoothstep(-0.006 * s, 0.016 * s, (wld - sh_arr) @ ant_arr)
+            # Keep the punching-side half of the shoulder; start just lateral
+            # of the joint so the patch wraps the belly evenly.
+            lateral = blob_v2.smoothstep(-0.018 * s, 0.012 * s, lat)
             out["front_delt"] = (
                 np.maximum(
-                    cap(a, b, 0.046 * s, 0.038 * s),
-                    0.92 * gate * front,
+                    cap(a, b, 0.050 * s, 0.042 * s),
+                    0.95 * gate * anterior,
                 ) * punch_w * lateral
             )
         if "triceps" in muscles and ua is not None and el is not None:
