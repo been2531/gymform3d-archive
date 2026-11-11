@@ -128,9 +128,9 @@ def setup_oriented_camera(points, direction, up, margin=0.10, res=None, look=Non
         look = Vector((sum(xs) / len(xs), sum(ys) / len(ys), sum(zs) / len(zs)))
     direction = direction.normalized()
     cam_z = direction
-    cam_x = cam_z.cross(up)
+    cam_x = up.cross(cam_z)
     if cam_x.length < 1e-6:
-        cam_x = cam_z.cross(Vector((0.0, 0.0, 1.0)))
+        cam_x = Vector((0.0, 0.0, 1.0)).cross(cam_z)
     cam_x.normalize()
     cam_y = cam_z.cross(cam_x).normalized()
 
@@ -249,7 +249,7 @@ def _add_glove_card(look, direction, dist, size=0.28):
     nt.nodes.clear()
     out = nt.nodes.new("ShaderNodeOutputMaterial")
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
-    bsdf.inputs["Base Color"].default_value = (0.42, 0.42, 0.44, 1.0)
+    bsdf.inputs["Base Color"].default_value = (0.18, 0.18, 0.19, 1.0)
     if "Roughness" in bsdf.inputs:
         bsdf.inputs["Roughness"].default_value = 0.72
     nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
@@ -276,8 +276,8 @@ def stage_closeups(state, handle, stills, eevee, samples):
         knuckle = (axes @ Vector((0.0, 1.0, 0.0))).normalized()
         thumb = (axes @ Vector((0.0, 0.0, 1.0))).normalized()
         # Dorsal / slightly above, thumb as a side lobe; cuff toward the top.
-        direction = (dorsal * 0.80 + knuckle * 0.10 + thumb * 0.42).normalized()
-        up = (-knuckle + 0.04 * dorsal).normalized()
+        direction = (dorsal * 0.72 + thumb * 0.58 + knuckle * 0.08).normalized()
+        up = (-knuckle + 0.02 * dorsal).normalized()
         hidden = _hide_for_glove_close(handle, state["meshes"], hide=True)
         cam, look, direction, dist = setup_oriented_camera(
             pts, direction, up, margin=0.12, res=CLOSE_RES, look=look,
