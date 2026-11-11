@@ -1054,7 +1054,8 @@ def _apply_beanie_ribs(obj, cx, cz, fold_y, crown_y, n_ribs=30, cuff_amp=0.42,
                 amp *= 1.0 - (t - 0.55) / 0.45 * 0.85
             if t > 0.82:
                 amp = 0.0
-        v.co += xz.normalized() * (amp * (rib - 0.35))
+        # Only push outward so rib valleys cannot open gaps to the skull.
+        v.co += xz.normalized() * (amp * max(0.0, rib - 0.30))
     if hem_y is not None:
         _lock_beanie_hem(obj, cx, cz, hem_y)
     obj.data.update()
@@ -1118,7 +1119,7 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
             radial = Vector((v.co.x - cx, 0.0, v.co.z - cz))
             if radial.length > 1e-6:
                 radial.normalize()
-            v.co += radial * 0.85
+            v.co += radial * 0.32
             v.co.y = mid_y
         bm.edges.ensure_lookup_table()
         boundary2 = [e for e in bm.edges if e.is_boundary]
@@ -1128,7 +1129,7 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
             radial = Vector((v.co.x - cx, 0.0, v.co.z - cz))
             if radial.length > 1e-6:
                 radial.normalize()
-            v.co += radial * (-0.12)  # slight in-turn at the hem
+            v.co += radial * (-0.04)  # slight in-turn at the hem
             v.co.y = hem_y
         try:
             bm.faces.new(verts2)
@@ -1141,7 +1142,7 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
         if v.co.y > fold_y + 0.25:
             continue
         t = max(0.0, min(1.0, (fold_y - v.co.y) / max(0.2, cuff_h)))
-        puff = math.sin(math.pi * t) * 0.70
+        puff = math.sin(math.pi * t) * 0.32
         xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
         if xz.length < 1e-6:
             continue
@@ -1170,7 +1171,7 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
         xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
         if xz.length < 1e-8:
             continue
-        need = _head_r(v.co.y, xz) + clearance + 0.70
+        need = _head_r(v.co.y, xz) + clearance + 0.35
         if xz.length < need:
             off = xz.normalized() * need
             v.co.x = cx + off.x
@@ -1192,6 +1193,26 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
     # Re-lock the hem after solidify/push — a forehead push previously
     # zigzagged the rim into sawteeth.
     _lock_beanie_hem(obj, cx, cz, hem_y, band=0.35)
+    # Keep the folded cuff close to the head — a stacked flare previously
+    # made a 5–7 cm brim you could see the forehead through.
+    cuff_rs = []
+    for v in obj.data.vertices:
+        if v.co.y > fold_y + 0.3:
+            continue
+        r = math.hypot(v.co.x - cx, v.co.z - cz)
+        if r > 1e-6:
+            cuff_rs.append(r)
+    if cuff_rs:
+        cap = sorted(cuff_rs)[int(len(cuff_rs) * 0.72)]
+        for v in obj.data.vertices:
+            if v.co.y > fold_y + 0.3:
+                continue
+            xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
+            if xz.length > cap:
+                off = xz.normalized() * cap
+                v.co.x = cx + off.x
+                v.co.z = cz + off.z
+        obj.data.update()
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     crown_verts = [v for v in bm.verts if v.co.y > fold_y + 1.0]
