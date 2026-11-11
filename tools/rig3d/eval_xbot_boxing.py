@@ -462,21 +462,55 @@ def paint_glow(meshes, arm, bones, punch_side, muscles):
                 world, a, b, ra, rb, ra * 0.72, rb * 0.72, back)
 
         out = {}
+        # Punching-side lateral axis (shoulder to opposite shoulder, outward).
+        sh_l, sh_r = bhead("sh_l"), bhead("sh_r")
+        if sh_l is not None and sh_r is not None and (sh_r - sh_l).length > 1e-6:
+            side_out = (sh_r - sh_l).normalized() * (1.0 if want_right else -1.0)
+        else:
+            side_out = Vector((1.0, 0.0, 0.0)) if want_right else Vector((-1.0, 0.0, 0.0))
+
         if "front_delt" in muscles and ua is not None and sh is not None:
-            a = sh + (ua - sh) * 0.15 - bk * (0.02 * s)
-            b = ua + ((el - ua) if el is not None else (ua - sh)) * 0.18 - bk * (0.035 * s)
-            out["front_delt"] = np.maximum(
-                cap(a, b, 0.062 * s, 0.050 * s),
-                0.88 * (0.60 * w_sh + 0.55 * w_ua) * front,
-            ) * punch_w
+            # Anterior deltoid belly only: slightly lateral and clearly in
+            # front of the glenohumeral line — not the pec, not mid/rear delt.
+            # The wrap is even around that belly (symmetric on the punching
+            # shoulder), not a blotch on the chest or the opposite side.
+            a = sh + (ua - sh) * 0.28 - bk * (0.048 * s) + side_out * (0.032 * s)
+            b = sh + (ua - sh) * 0.92 - bk * (0.052 * s) + side_out * (0.040 * s)
+            gate = np.clip(0.85 * w_sh + 0.70 * w_ua, 0.0, 1.0)
+            # Drop pec / spine bleed.
+            gate = gate * (1.0 - 0.90 * np.clip(w_spine, 0.0, 1.0))
+            sh_arr = np.array((sh.x, sh.y, sh.z), dtype=np.float32)
+            side_arr = np.array((side_out.x, side_out.y, side_out.z), dtype=np.float32)
+            lat = (world.astype(np.float32) - sh_arr) @ side_arr
+            lateral = blob_v2.smoothstep(-0.008 * s, 0.022 * s, lat)
+            out["front_delt"] = (
+                np.maximum(
+                    cap(a, b, 0.046 * s, 0.038 * s),
+                    0.92 * gate * front,
+                ) * punch_w * lateral
+            )
         if "triceps" in muscles and ua is not None and el is not None:
             axis = el - ua
-            a = ua + axis * 0.18 + bk * (0.032 * s)
-            b = ua + axis * 0.82 + bk * (0.028 * s)
-            out["triceps"] = np.maximum(
-                cap(a, b, 0.050 * s, 0.042 * s),
-                0.95 * w_ua * rear,
-            ) * punch_w
+            arm_dir = axis.normalized() if axis.length > 1e-6 else Vector((0.0, 0.0, 1.0))
+            # Posterior of the *arm*, not world-back (a jab points forward, so
+            # world-back can paint the side of the upper arm).
+            post = bk - arm_dir * bk.dot(arm_dir)
+            if post.length < 1e-6:
+                post = bk
+            post = post.normalized()
+            a = ua + axis * 0.22 + post * (0.038 * s)
+            b = ua + axis * 0.88 + post * (0.032 * s)
+            mid_arm = (ua + el) * 0.5
+            mid_arr = np.array((mid_arm.x, mid_arm.y, mid_arm.z), dtype=np.float32)
+            post_arr = np.array((post.x, post.y, post.z), dtype=np.float32)
+            arm_rear = blob_v2.smoothstep(-0.008 * s, 0.020 * s,
+                                          (world.astype(np.float32) - mid_arr) @ post_arr)
+            out["triceps"] = (
+                np.maximum(
+                    cap(a, b, 0.040 * s, 0.034 * s),
+                    0.95 * w_ua * rear,
+                ) * punch_w * np.maximum(arm_rear, rear)
+            )
         if "biceps" in muscles and ua is not None and el is not None:
             axis = el - ua
             a = ua + axis * 0.22 - bk * (0.028 * s)

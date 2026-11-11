@@ -7,7 +7,7 @@ so the kit is commercially free (public-domain geometry we authored).
 Import from any render script (do not require eval_xbot_boxing.py):
 
     from xbot_outfit import apply_outfit, COLORWAYS, clear_outfit
-    handle = apply_outfit(arm, meshes, items=("gloves", "beanie"), colorway="A", version="v2")
+    handle = apply_outfit(arm, meshes, items=("gloves", "beanie"), colorway="A", version="v3")
 
 Items:
   gloves    — rigid-parented to mixamorig:LeftHand / RightHand
@@ -15,8 +15,11 @@ Items:
   headgear  — open-face amateur pads + chin strap, parented to Head
               (kept for v1 / explicit requests; v2 outfit A drops it)
 
-`version` selects the mesh: "v2" (default) is a compact 10–12 oz glove
-plus a ribbed slouch beanie; "v1" keeps the original long mitten + smooth cap.
+`version` selects the mesh: "v3" (default) is a 10–12 oz glove with the
+fist ~0.8× head width, a longer padded knuckle and a visible side thumb,
+plus a rib-knit slouch beanie whose ridges continue to the crown; "v2" is
+the earlier compact (too-small) kit; "v1" keeps the original long mitten
++ smooth cap.
 
 Gloves and beanie leave the shoulder / chest glow area uncovered.
 Headgear is an alternative to the beanie; do not wear both at once.
@@ -92,6 +95,25 @@ GLOVE_V2 = {
     "thumb_len": 6.4,
     "thumb_rx": 2.25,
     "thumb_rz": 2.35,
+}
+
+# v3 10–12 oz amateur glove. v2's 11.5 cm fist (~0.65× head) read as a
+# toy ball; a real 10–12 oz glove's padded fist is about 0.8× a head.
+# Typical X Bot head width is ~17.61 cm → front_width 14.1. Body is a
+# longer padded knuckle (not a v1 sausage): length/width ≈ 1.30.
+# Cuff stays ~9 cm and is the same crimson as the fist.
+HEAD_WIDTH_REF_CM = 17.61
+GLOVE_V3 = {
+    "front_width": 14.1,
+    "front_thick": 12.4,
+    "body_len": 18.4,
+    "body_y0": -0.8,
+    "cuff_len": 9.0,
+    "cuff_r_near": 5.20,
+    "cuff_r_far": 4.60,
+    "thumb_len": 8.4,
+    "thumb_rx": 3.05,
+    "thumb_rz": 3.45,
 }
 
 BEANIE_CLEARANCE_CM = 0.55
@@ -827,14 +849,159 @@ def build_glove_mesh_v2(name, collection, hand_env, wrist_radius=None):
     }
 
 
-def build_glove_mesh(name, collection, hand_env, wrist_radius=None, version="v2"):
+
+def _glove_v3_spec(head_width=None):
+    """Scale GLOVE_V3 so the fist front is 0.8× the actual head width."""
+    hw = float(head_width) if head_width and head_width > 4.0 else HEAD_WIDTH_REF_CM
+    fw = 0.80 * hw
+    s = fw / GLOVE_V3["front_width"]
+    return {
+        "front_width": fw,
+        "front_thick": GLOVE_V3["front_thick"] * s,
+        "body_len": GLOVE_V3["body_len"] * s,
+        "body_y0": GLOVE_V3["body_y0"],
+        "cuff_len": GLOVE_V3["cuff_len"],  # cuff length stays a real ~9 cm
+        "cuff_r_near": GLOVE_V3["cuff_r_near"] * s,
+        "cuff_r_far": GLOVE_V3["cuff_r_far"] * s,
+        "thumb_len": GLOVE_V3["thumb_len"] * s,
+        "thumb_rx": GLOVE_V3["thumb_rx"] * s,
+        "thumb_rz": GLOVE_V3["thumb_rz"] * s,
+        "head_width": hw,
+        "scale": s,
+    }
+
+
+def _assign_glove_mats_v3(obj, leather, strap_mat, info):
+    """Same-crimson fist and cuff; only a thin slightly darker hook-and-loop seam."""
+    me = obj.data
+    me.materials.clear()
+    me.materials.append(leather)
+    me.materials.append(strap_mat)
+    y_far = float(info.get("cuff_y_far", -10.0))
+    strap_lo = y_far + 2.15
+    strap_hi = y_far + 3.35  # ~1.2 cm band, not a black wrist
+    for poly in me.polygons:
+        y = sum((me.vertices[i].co.y for i in poly.vertices), 0.0) / max(1, len(poly.vertices))
+        poly.material_index = 1 if strap_lo <= y <= strap_hi else 0
+    me.update()
+
+
+def build_glove_mesh_v3(name, collection, hand_env, wrist_radius=None, head_width=None):
+    """10–12 oz glove at real scale: fist ~0.8× head, long padded knuckle, visible thumb.
+
+    Built in hand-bone local centimetres, origin at the bone head.
+    +Y = knuckles, +Z = thumb side, cuff opening toward -Y.
+    The thumb is unioned after the body remesh so the side lobe survives.
+    """
+    wr = float(wrist_radius or 3.35)
+    spec = _glove_v3_spec(head_width)
+    cuff_r_near = max(spec["cuff_r_near"], wr + 1.35)
+    cuff_r_far = max(spec["cuff_r_far"], wr + 0.95)
+    fw, ft, bl = spec["front_width"], spec["front_thick"], spec["body_len"]
+    y0 = spec["body_y0"]
+    y1 = y0 + bl
+    body_c = Vector((0.0, 0.5 * (y0 + y1), 0.12))
+    rx, ry, rz = fw * 0.50, bl * 0.50, ft * 0.50
+
+    body = _ellipsoid(name + "_body", (rx, ry, rz * 0.97), 3, collection, location=body_c)
+    # Bean: blunt padded knuckle face, slight waist into the cuff. Longer
+    # knuckle pad than v2 (more of the front of the fist is padding).
+    for v in body.data.vertices:
+        t = (v.co.y - body_c.y) / max(0.2, ry)
+        if t > 0.12:
+            k = (t - 0.12) / 0.88
+            # Widen into a rounded, slightly flattened knuckle pad.
+            scale = 1.0 + 0.16 * k
+            v.co.x *= scale
+            v.co.z = body_c.z + (v.co.z - body_c.z) * scale
+            if t > 0.62:
+                # Flatten the tip into a padded face, not a ball or sausage.
+                v.co.y = body_c.y + (v.co.y - body_c.y) * (1.0 - 0.14 * (t - 0.62) / 0.38)
+        elif t < -0.08:
+            k = min(1.0, (-0.08 - t) / 0.92)
+            scale = 1.0 - 0.22 * k
+            v.co.x *= scale
+            v.co.z = body_c.z + (v.co.z - body_c.z) * scale
+    body.data.update()
+
+    cuff_y_near = y0 + 1.8
+    cuff_y_far = y0 - spec["cuff_len"]
+    cuff = _tapered_tube(
+        name + "_cuff", collection, cuff_y_near, cuff_y_far,
+        cuff_r_near, cuff_r_far, segments=28, rings=6,
+    )
+    # Thin same-family seam (geometry only slightly proud), not a dark wrist.
+    strap_y_near = cuff_y_far + 3.35
+    strap_y_far = cuff_y_far + 2.15
+    strap_r = 0.5 * (cuff_r_near + cuff_r_far) + 0.16
+    strap = _tapered_tube(
+        name + "_strap", collection, strap_y_near, strap_y_far,
+        strap_r, strap_r * 0.99, segments=28, rings=2,
+    )
+
+    _boolean_union(body, cuff, strap, cleanup=True)
+    _voxel_remesh(body, voxel=0.18)
+    _smooth_mesh(body, iterations=6, factor=0.30)
+
+    # Attached thumb along +Z, mid-fist, far enough out that remesh keeps a lobe.
+    thumb_c = Vector((0.30, body_c.y + 0.35, rz * 0.58 + 2.55))
+    thumb = _ellipsoid(
+        name + "_thumb",
+        (spec["thumb_rx"] * 1.08, spec["thumb_len"] * 0.52, spec["thumb_rz"] * 1.12),
+        3, collection, location=(0.0, 0.0, 0.0),
+    )
+    ang = math.radians(20.0)
+    ca, sa = math.cos(ang), math.sin(ang)
+    for v in thumb.data.vertices:
+        y, z = v.co.y, v.co.z
+        v.co.y = y * ca - z * sa
+        v.co.z = y * sa + z * ca
+        v.co += thumb_c
+    thumb.data.update()
+
+    _boolean_union(body, thumb, cleanup=True)
+    _voxel_remesh(body, voxel=0.14)
+    _smooth_mesh(body, iterations=3, factor=0.22)
+    _shape_glove_palm_v2(body, y0, y1, rx)
+    _smooth_mesh(body, iterations=2, factor=0.14)
+    _shade_smooth(body)
+    body.name = name
+
+    env = {
+        "min": (-rx - 0.65, cuff_y_far - 0.35, -rz - 0.65),
+        "max": (rx + 0.65, y1 + 0.95, thumb_c.z + spec["thumb_rz"] + 0.85),
+    }
+    return body, {
+        "env": env,
+        "cavity_r": None,
+        "cavity_y": None,
+        "version": "v3",
+        "mask_plane_y": cuff_y_far + 2.6,
+        "cuff_rx": cuff_r_near + 0.50,
+        "cuff_rz": cuff_r_near + 0.50,
+        "cuff_y_far": cuff_y_far,
+        "cuff_y_near": cuff_y_near,
+        "body_len": bl,
+        "front_width": fw,
+        "front_thick": ft,
+        "head_width": spec["head_width"],
+        "fist_to_head": fw / max(1e-6, spec["head_width"]),
+    }
+
+
+def build_glove_mesh(name, collection, hand_env, wrist_radius=None, version="v3",
+                     head_width=None):
     """Solid mitten in hand-bone local centimetres, origin at the bone head.
 
     +Y = knuckles, +Z = thumb side, cuff opening toward -Y. The body ellipsoid
     is centred on the full cuff-to-knuckle span so the wrist ring stays
     attached (a knuckle-biased body previously left a detached band mid-forearm).
-    Pass version="v2" (default) for the compact 10–12 oz glove.
+    Pass version="v3" (default) for the 10–12 oz glove at ~0.8× head width,
+    "v2" for the earlier compact kit, "v1" for the long mitten.
     """
+    if version == "v3":
+        return build_glove_mesh_v3(name, collection, hand_env, wrist_radius=wrist_radius,
+                                   head_width=head_width)
     if version == "v2":
         return build_glove_mesh_v2(name, collection, hand_env, wrist_radius=wrist_radius)
     env = _padded_glove_env(hand_env or DEFAULT_HAND_ENV)
@@ -1027,11 +1194,12 @@ def _lock_beanie_hem(obj, cx, cz, hem_y, band=0.22):
 
 
 def _apply_beanie_ribs(obj, cx, cz, fold_y, crown_y, n_ribs=30, cuff_amp=0.42,
-                       crown_amp=0.20, hem_y=None):
+                       crown_amp=0.20, hem_y=None, crown_to_top=False):
     """Vertical knit ridges in real geometry, stronger on the folded cuff.
 
     Amplitude fades to zero at the hem so the rim stays a clean fold, not
-    a sawtooth of displaced boundary verts.
+    a sawtooth of displaced boundary verts. With crown_to_top=True the ribs
+    keep a readable amplitude all the way to the crown (v3).
     """
     for v in obj.data.vertices:
         xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
@@ -1050,10 +1218,16 @@ def _apply_beanie_ribs(obj, cx, cz, fold_y, crown_y, n_ribs=30, cuff_amp=0.42,
             span = max(1.0, crown_y - fold_y)
             t = min(1.0, max(0.0, (v.co.y - fold_y) / span))
             amp = cuff_amp * (1.0 - t) + crown_amp * t
-            if t > 0.55:
-                amp *= 1.0 - (t - 0.55) / 0.45 * 0.85
-            if t > 0.82:
-                amp = 0.0
+            if crown_to_top:
+                # Keep a visible ridge at the crown; only ease the last 12%
+                # so the pole does not burst into a star.
+                if t > 0.88:
+                    amp *= 1.0 - 0.40 * (t - 0.88) / 0.12
+            else:
+                if t > 0.55:
+                    amp *= 1.0 - (t - 0.55) / 0.45 * 0.85
+                if t > 0.82:
+                    amp = 0.0
         # Only push outward so rib valleys cannot open gaps to the skull.
         v.co += xz.normalized() * (amp * max(0.0, rib - 0.30))
     if hem_y is not None:
@@ -1221,8 +1395,170 @@ def build_beanie_v2(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
     }
 
 
-def build_beanie(name, collection, head_pts, brow_y=None, clearance=None, version="v2"):
+
+def build_beanie_v3(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
+                    clearance=BEANIE_V2_CLEARANCE_CM):
+    """Watch-cap with fold-up cuff, rib knit continuing to the crown, slight slouch/fold.
+
+    Same coverage / hem-lock lessons as v2 (no visor, no face-clip clamp). The
+    crown is no longer smoothed flat — ribs stay readable at a distance.
+    """
+    fold_y = brow_y
+    cuff_h = 3.7
+    hem_y = fold_y - cuff_h
+    upper = [p for p in head_pts if p.y >= hem_y - 1.5] or list(head_pts)
+    xs = [p.x for p in upper]
+    ys = [p.y for p in upper]
+    zs = [p.z for p in upper]
+    cx = 0.0
+    cy = (min(ys) + max(ys)) * 0.50
+    cz = (min(zs) * 0.55 + max(zs) * 0.45)
+    rx = max(abs(min(xs)), abs(max(xs))) + clearance + 0.22
+    ry = (max(ys) - cy) + clearance + 0.45
+    rz_front = (max(zs) - cz) * 0.95 + clearance
+    rz_back = (cz - min(zs)) + clearance + 0.25
+    crown_y = cy + ry
+
+    mesh = bpy.data.meshes.new(name + "Mesh")
+    obj = _new_mesh_object(name, mesh, collection)
+    bm = bmesh.new()
+    bmesh.ops.create_icosphere(bm, subdivisions=5, radius=1.0)
+    for v in bm.verts:
+        x, y, z = v.co.x, v.co.y, v.co.z
+        zscale = rz_front if z >= 0.0 else rz_back
+        v.co = Vector((cx + x * rx, cy + y * ry, cz + z * zscale))
+        t = max(0.0, (v.co.y - cy) / max(0.2, ry))
+        back = max(0.0, -(v.co.z - cz) / max(0.2, rz_back))
+        # Slightly stronger slouch than v2, plus a soft back-crown fold.
+        slouch = (t ** 1.25) * (0.40 + 0.75 * back)
+        v.co.z -= 1.50 * slouch
+        v.co.y -= 0.70 * slouch
+        crease_y = crown_y - 1.7
+        band = abs(v.co.y - crease_y)
+        if band < 1.35 and back > 0.18:
+            k = (1.0 - band / 1.35) * back
+            v.co.y -= 0.50 * k
+            v.co.z -= 0.38 * k
+
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    bmesh.ops.bisect_plane(
+        bm,
+        geom=list(bm.verts) + list(bm.edges) + list(bm.faces),
+        dist=0.0001,
+        plane_co=Vector((0.0, fold_y, 0.0)),
+        plane_no=Vector((0.0, 1.0, 0.0)),
+        clear_inner=True,
+    )
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    boundary = [e for e in bm.edges if e.is_boundary]
+    if boundary:
+        mid_y = fold_y - cuff_h * 0.52
+        res = bmesh.ops.extrude_edge_only(bm, edges=boundary)
+        verts = [g for g in res["geom"] if isinstance(g, bmesh.types.BMVert)]
+        for v in verts:
+            radial = Vector((v.co.x - cx, 0.0, v.co.z - cz))
+            if radial.length > 1e-6:
+                radial.normalize()
+            v.co += radial * 0.32
+            v.co.y = mid_y
+        bm.edges.ensure_lookup_table()
+        boundary2 = [e for e in bm.edges if e.is_boundary]
+        res2 = bmesh.ops.extrude_edge_only(bm, edges=boundary2)
+        verts2 = [g for g in res2["geom"] if isinstance(g, bmesh.types.BMVert)]
+        for v in verts2:
+            radial = Vector((v.co.x - cx, 0.0, v.co.z - cz))
+            if radial.length > 1e-6:
+                radial.normalize()
+            v.co += radial * (-0.04)
+            v.co.y = hem_y
+        try:
+            bm.faces.new(verts2)
+        except Exception:
+            pass
+
+    bm.verts.ensure_lookup_table()
+    for v in bm.verts:
+        if v.co.y > fold_y + 0.25:
+            continue
+        t = max(0.0, min(1.0, (fold_y - v.co.y) / max(0.2, cuff_h)))
+        puff = math.sin(math.pi * t) * 0.32
+        xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
+        if xz.length < 1e-6:
+            continue
+        off = xz.normalized() * puff
+        v.co.x += off.x
+        v.co.z += off.z
+
+    def _head_r(y, direc_xz):
+        d = direc_xz.normalized()
+        best = 0.0
+        for p in head_pts:
+            if abs(p.y - y) > 3.0:
+                continue
+            xz = Vector((p.x - cx, 0.0, p.z - cz))
+            if xz.length < 1e-8:
+                continue
+            if xz.normalized().dot(d) < 0.5:
+                continue
+            best = max(best, xz.dot(d))
+        return best
+
+    for v in bm.verts:
+        if v.co.y > fold_y + 0.2:
+            continue
+        xz = Vector((v.co.x - cx, 0.0, v.co.z - cz))
+        if xz.length < 1e-8:
+            continue
+        need = _head_r(v.co.y, xz) + clearance + 0.30
+        if xz.length < need:
+            off = xz.normalized() * need
+            v.co.x = cx + off.x
+            v.co.z = cz + off.z
+
+    bm.to_mesh(mesh)
+    bm.free()
+    # Ribs after the shell exists; stronger crown, continuing to the top.
+    _apply_beanie_ribs(obj, cx, cz, fold_y, crown_y,
+                       n_ribs=32, cuff_amp=0.42, crown_amp=0.26, hem_y=hem_y,
+                       crown_to_top=True)
+    sol = obj.modifiers.new("Thick", "SOLIDIFY")
+    sol.thickness = 0.55
+    sol.offset = 1.0
+    _apply_modifier(obj, sol)
+    moved = _push_off_surface(obj, head_pts, clearance, only_inside=True,
+                             y_max=fold_y + 1.0, y_min=hem_y + 0.55)
+    _lock_beanie_hem(obj, cx, cz, hem_y, band=0.35)
+    # Re-apply ribs after solidify/push so the crown knit is not lost. Do
+    # not smooth the crown (v2's post-smooth flattened it into a helmet).
+    _apply_beanie_ribs(obj, cx, cz, fold_y, crown_y,
+                       n_ribs=32, cuff_amp=0.22, crown_amp=0.16, hem_y=hem_y,
+                       crown_to_top=True)
+    obj.data.update()
+    _shade_smooth(obj)
+    return obj, {
+        "moved": moved,
+        "brow_y": brow_y,
+        "hem_y": hem_y,
+        "rx": rx,
+        "ry": ry,
+        "version": "v3",
+        "slouch": True,
+        "ribs": 32,
+        "crown_to_top": True,
+    }
+
+
+def build_beanie(name, collection, head_pts, brow_y=None, clearance=None, version="v3"):
     """Fitted watch-cap with a clean folded cuff, in head-bone local cm."""
+    if version == "v3":
+        return build_beanie_v3(
+            name, collection, head_pts,
+            brow_y=BROW_Y_V2_CM if brow_y is None else brow_y,
+            clearance=BEANIE_V2_CLEARANCE_CM if clearance is None else clearance,
+        )
     if version == "v2":
         return build_beanie_v2(
             name, collection, head_pts,
@@ -1690,13 +2026,14 @@ def mask_inside_gloves(meshes, handle, margin_cm=0.45):
 
 
 def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
-                 scan_frames=True, collection_name="XBotOutfit", version="v2"):
+                 scan_frames=True, collection_name="XBotOutfit", version="v3"):
     """Build and bone-parent the requested items. Returns a handle dict.
 
     `items` is a subset of {"gloves", "beanie", "headgear", "strap"} ("strap"
     is a wrist band and is implied by gloves). Prefer beanie XOR headgear.
-    `version` is "v2" (default: compact 10–12 oz gloves + ribbed slouch
-    beanie) or "v1" (original long mitten + smooth cap).
+    `version` is "v3" (default: 10–12 oz gloves at ~0.8× head width, visible
+    thumb, same-red cuff, rib-knit slouch beanie to the crown), "v2" (earlier
+    compact kit), or "v1" (original long mitten + smooth cap).
     """
     if colorway not in COLORWAYS:
         raise ValueError(f"unknown colorway {colorway!r}; expected one of {list(COLORWAYS)}")
@@ -1729,27 +2066,51 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
     if both:
         handle["notes"].append("beanie and headgear both requested; they will overlap")
 
+    _v23 = version in ("v2", "v3")
     leather = make_leather_material(
         f"XBotGloveLeather_{colorway}_{version}", colors["glove"],
-        roughness=0.55 if version == "v2" else 0.64,
-        wrinkles=(version == "v2"),
+        roughness=0.55 if _v23 else 0.64,
+        wrinkles=_v23,
     )
-    leather_cuff = make_leather_material(
-        f"XBotGloveCuff_{colorway}_{version}", colors["glove_cuff"],
-        roughness=0.62 if version == "v2" else 0.72,
-        wrinkles=(version == "v2"),
-    )
-    leather_strap = make_leather_material(
-        f"XBotGloveStrap_{colorway}_{version}", colors["glove_strap"],
-        roughness=0.70 if version == "v2" else 0.75,
-        wrinkles=False,
-    )
+    if version == "v3":
+        # Cuff is the same crimson as the fist; only a thin slightly
+        # darker-red hook-and-loop seam (never a black wrist band).
+        cuff_col = colors["glove"]
+        strap_col = tuple(max(0.018, c * 0.78) for c in colors["glove"])
+        leather_cuff = make_leather_material(
+            f"XBotGloveCuff_{colorway}_{version}", cuff_col,
+            roughness=0.58, wrinkles=True,
+        )
+        leather_strap = make_leather_material(
+            f"XBotGloveStrap_{colorway}_{version}", strap_col,
+            roughness=0.64, wrinkles=False,
+        )
+    else:
+        leather_cuff = make_leather_material(
+            f"XBotGloveCuff_{colorway}_{version}", colors["glove_cuff"],
+            roughness=0.62 if version == "v2" else 0.72,
+            wrinkles=(version == "v2"),
+        )
+        leather_strap = make_leather_material(
+            f"XBotGloveStrap_{colorway}_{version}", colors["glove_strap"],
+            roughness=0.70 if version == "v2" else 0.75,
+            wrinkles=False,
+        )
     knit = make_knit_material(
         f"XBotBeanieKnit_{colorway}_{version}", colors["beanie"],
-        strength=0.45 if version == "v2" else 0.22,
+        strength=(0.52 if version == "v3" else 0.45 if version == "v2" else 0.22),
     )
     foam = make_foam_leather_material(f"XBotHeadgear_{colorway}", colors["headgear"], roughness=0.74)
     strap_mat = make_leather_material(f"XBotStrap_{colorway}", colors["strap"], roughness=0.78)
+
+    head_bone = find_bone(arm, "mixamorig:Head", "Head", "head")
+    handle["head_bone"] = head_bone
+    head_pts = _head_points(meshes, arm, head_bone) if head_bone else []
+    head_width = None
+    if head_pts:
+        xs = [p.x for p in head_pts]
+        head_width = max(xs) - min(xs)
+        handle["head_width"] = head_width
 
     if "gloves" in items:
         envs = measure_hand_envelopes(arm, meshes, scan_frames=scan_frames, step=3)
@@ -1761,8 +2122,13 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
             bn = env["bone"]
             wr = _wrist_radius(arm, meshes, bn, side)
             gname = f"XBotGlove_{side}_{colorway}"
-            glove, ginfo = build_glove_mesh(gname, col, env, wrist_radius=wr, version=version)
-            if version == "v2":
+            glove, ginfo = build_glove_mesh(
+                gname, col, env, wrist_radius=wr, version=version,
+                head_width=head_width,
+            )
+            if version == "v3":
+                _assign_glove_mats_v3(glove, leather, leather_strap, ginfo)
+            elif version == "v2":
                 _assign_glove_mats_v2(glove, leather, leather_cuff, leather_strap, ginfo)
             else:
                 _assign_mat(glove, leather)
@@ -1771,7 +2137,15 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
             handle["objects"].append(glove.name)
             handle["bones"][glove.name] = bn
             handle.setdefault("glove_info", {})[side] = {**ginfo, "wrist_r": wr}
-        if version == "v2":
+        if version == "v3":
+            fw = (handle.get("glove_info") or {}).get("R", {}).get("front_width") or                  (handle.get("glove_info") or {}).get("L", {}).get("front_width")
+            handle["notes"].append(
+                "v3 gloves are rigid to the Hand bone (no finger-curl squash). "
+                f"10–12 oz proportions: fist front ~0.8× head width"
+                + (f" ({fw:.1f} cm vs head {head_width:.1f} cm)" if fw and head_width else "")
+                + ", longer padded knuckle, visible attached thumb, same-red 9 cm cuff."
+            )
+        elif version == "v2":
             handle["notes"].append(
                 "v2 gloves are rigid to the Hand bone (no finger-curl squash). "
                 "Compact 10–12 oz proportions: rounded fist ~1.55× knuckle width, "
@@ -1784,10 +2158,6 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
                 "so fingertips should stay inside across the jab."
             )
 
-    head_bone = find_bone(arm, "mixamorig:Head", "Head", "head")
-    handle["head_bone"] = head_bone
-    head_pts = _head_points(meshes, arm, head_bone) if head_bone else []
-
     if "beanie" in items:
         if not head_bone or not head_pts:
             handle["notes"].append("beanie skipped: no Head bone / verts")
@@ -1799,9 +2169,15 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
             handle["objects"].append(cap.name)
             handle["bones"][cap.name] = head_bone
             handle["beanie_info"] = binfo
-            clearance = BEANIE_V2_CLEARANCE_CM if version == "v2" else BEANIE_CLEARANCE_CM
-            extra = ("; v2 has a fold-up cuff, geometric rib knit, slight slouch)."
-                     if version == "v2" else ").")
+            clearance = (BEANIE_V2_CLEARANCE_CM if version in ("v2", "v3")
+                         else BEANIE_CLEARANCE_CM)
+            if version == "v3":
+                extra = ("; v3 has a fold-up cuff, rib knit continuing to the "
+                         "crown, slight slouch/fold).")
+            elif version == "v2":
+                extra = ("; v2 has a fold-up cuff, geometric rib knit, slight slouch).")
+            else:
+                extra = ")."
             handle["notes"].append(
                 f"Beanie hugged to the skull ({binfo['moved']} verts pushed out to "
                 f"{clearance:.2f} cm clearance" + extra
