@@ -920,10 +920,10 @@ def build_glove_mesh_v3(name, collection, hand_env, wrist_radius=None, head_widt
     """
     wr = float(wrist_radius or 3.35)
     spec = _glove_v3_spec(head_width)
+    fw, ft, bl = spec["front_width"], spec["front_thick"], spec["body_len"]
     # Meet the fist waist so the cuff does not form a stepped cylinder.
     cuff_r_near = max(spec["cuff_r_near"] * 1.12, wr + 1.55, fw * 0.42)
     cuff_r_far = max(spec["cuff_r_far"], wr + 1.00)
-    fw, ft, bl = spec["front_width"], spec["front_thick"], spec["body_len"]
     y0 = spec["body_y0"]
     y1 = y0 + bl
     body_c = Vector((0.0, 0.5 * (y0 + y1), 0.12))
