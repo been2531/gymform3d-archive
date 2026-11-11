@@ -7,7 +7,7 @@ so the kit is commercially free (public-domain geometry we authored).
 Import from any render script (do not require eval_xbot_boxing.py):
 
     from xbot_outfit import apply_outfit, COLORWAYS, clear_outfit
-    handle = apply_outfit(arm, meshes, items=("gloves", "beanie", "trunks", "tank"), colorway="A", version="v4")
+    handle = apply_outfit(arm, meshes, items=("gloves", "beanie", "trunks", "tank"), colorway="A", version="v5")
 
 Items:
   gloves    — rigid-parented to mixamorig:LeftHand / RightHand
@@ -15,7 +15,7 @@ Items:
   headgear  — open-face amateur pads + chin strap, parented to Head
               (kept for v1 / explicit requests; v2 outfit A drops it)
 
-`version` selects the mesh: "v4" (default) is a glossy black 10–12 oz
+`version` selects the mesh: "v5" (default) is a glossy black 10–12 oz
 glove matched to a CC0 reference silhouette, a charcoal rib-knit beanie,
 charcoal satin trunks and a fitted charcoal tank; "v3" is the crimson
 0.8×-head kit; "v2" the earlier compact kit; "v1" the long mitten.
@@ -133,6 +133,19 @@ GLOVE_V4 = {
 # Lifted glossy black — AgX crushes anything near 0.02 to a silhouette.
 GLOVE_V4_BLACK = (0.048, 0.044, 0.040)
 TRIM_V4_BLACK = (0.036, 0.033, 0.030)
+
+# v5: slightly longer cuff to cover the wrist on jab extension; thumb is a
+# flattened kidney lobe that hugs the bulb (not a separate egg).
+GLOVE_V5 = {
+    "front_width": 14.1,
+    "front_thick": 13.6,
+    "body_len": 13.6,
+    "cuff_len": 8.6,
+    "cuff_r": 4.35,
+    "thumb_len": 11.6,
+    "thumb_rx": 2.15,
+    "thumb_rz": 3.55,
+}
 
 BEANIE_CLEARANCE_CM = 0.55
 BEANIE_V2_CLEARANCE_CM = 0.65
@@ -1380,16 +1393,19 @@ def build_glove_mesh_v4(name, collection, hand_env, wrist_radius=None, head_widt
     }
 
 
-def build_glove_mesh(name, collection, hand_env, wrist_radius=None, version="v4",
+def build_glove_mesh(name, collection, hand_env, wrist_radius=None, version="v5",
                      head_width=None):
     """Solid mitten in hand-bone local centimetres, origin at the bone head.
 
     +Y = knuckles, +Z = thumb side, cuff opening toward -Y. The body ellipsoid
     is centred on the full cuff-to-knuckle span so the wrist ring stays
     attached (a knuckle-biased body previously left a detached band mid-forearm).
-    Pass version="v4" (default) for the glossy black CC0-matched glove,
+    Pass version="v5" (default) for the kidney-thumb glossy black glove,
     "v3" for the crimson 0.8×-head kit, "v2" compact, "v1" long mitten.
     """
+    if version == "v5":
+        return build_glove_mesh_v5(name, collection, hand_env, wrist_radius=wrist_radius,
+                                   head_width=head_width)
     if version == "v4":
         return build_glove_mesh_v4(name, collection, hand_env, wrist_radius=wrist_radius,
                                    head_width=head_width)
@@ -1946,9 +1962,9 @@ def build_beanie_v3(name, collection, head_pts, brow_y=BROW_Y_V2_CM,
     }
 
 
-def build_beanie(name, collection, head_pts, brow_y=None, clearance=None, version="v4"):
+def build_beanie(name, collection, head_pts, brow_y=None, clearance=None, version="v5"):
     """Fitted watch-cap with a clean folded cuff, in head-bone local cm."""
-    if version in ("v3", "v4"):
+    if version in ("v3", "v4", "v5"):
         return build_beanie_v3(
             name, collection, head_pts,
             brow_y=BROW_Y_V2_CM if brow_y is None else brow_y,
@@ -3157,8 +3173,522 @@ def mask_inside_garment(meshes, garment, vg_name, mod_name, pred, margin=0.002):
 
 
 
+def _torso_landmarks(arm):
+    """World-metre landmarks at the current pose (call while REST)."""
+    hips_bn = find_bone(arm, "mixamorig:Hips", "Hips", "hips")
+    spine_bn = find_bone(arm, "mixamorig:Spine", "Spine", "spine")
+    spine1_bn = find_bone(arm, "mixamorig:Spine1", "Spine1", "spine1")
+    sh_l = find_bone(arm, "mixamorig:LeftShoulder", "LeftShoulder")
+    sh_r = find_bone(arm, "mixamorig:RightShoulder", "RightShoulder")
+    neck_bn = find_bone(arm, "mixamorig:Neck", "Neck", "neck")
+    upleg_l = find_bone(arm, "mixamorig:LeftUpLeg", "LeftUpLeg")
+    leg_l = find_bone(arm, "mixamorig:LeftLeg", "LeftLeg")
+    hips_w = bone_world_matrix(arm, hips_bn).to_translation() if hips_bn else Vector((0, 0, 0.9))
+    spine_w = bone_world_matrix(arm, spine_bn).to_translation() if spine_bn else hips_w + Vector((0, 0, 0.08))
+    spine1_w = bone_world_matrix(arm, spine1_bn).to_translation() if spine1_bn else spine_w + Vector((0, 0, 0.08))
+    neck_w = bone_world_matrix(arm, neck_bn).to_translation() if neck_bn else Vector((0, 0, 1.45))
+    sh_lw = bone_world_matrix(arm, sh_l).to_translation() if sh_l else Vector((0.12, 0, 1.3))
+    sh_rw = bone_world_matrix(arm, sh_r).to_translation() if sh_r else Vector((-0.12, 0, 1.3))
+    navel_z = hips_w.z * 0.25 + spine_w.z * 0.75
+    waist_top = navel_z + 0.018
+    if upleg_l and leg_l:
+        a = bone_world_matrix(arm, upleg_l).to_translation()
+        b = bone_world_matrix(arm, leg_l).to_translation()
+        mid_thigh_z = (a.z + b.z) * 0.50
+    else:
+        mid_thigh_z = hips_w.z - 0.22
+    return {
+        "hips_w": hips_w, "spine_w": spine_w, "spine1_w": spine1_w,
+        "neck_w": neck_w, "sh_lw": sh_lw, "sh_rw": sh_rw,
+        "navel_z": navel_z, "waist_top": waist_top,
+        "band_h": 0.055, "mid_thigh_z": mid_thigh_z,
+        "crotch_z": hips_w.z - 0.09,
+        "armpit_z": min(sh_lw.z, sh_rw.z) - 0.052,
+    }
+
+
+def _resample_ring(ring, n):
+    if len(ring) == n:
+        return list(ring)
+    pts = list(ring) + [ring[0]]
+    segl = [(pts[i + 1] - pts[i]).length for i in range(len(ring))]
+    total = sum(segl) or 1.0
+    out = []
+    for k in range(n):
+        target = total * k / n
+        acc = 0.0
+        for i, L in enumerate(segl):
+            if acc + L >= target or i == len(segl) - 1:
+                t = 0.0 if L < 1e-8 else (target - acc) / L
+                out.append(pts[i].lerp(pts[i + 1], max(0.0, min(1.0, t))))
+                break
+            acc += L
+    return out
+
+
+def _cap_ring_inset(bm, row, inward=0.75, drop_z=0.0):
+    """Close a BMVert loop with a slightly inset cap so the hem stays clean."""
+    if not row:
+        return
+    c = sum((v.co for v in row), Vector()) / len(row)
+    inner = []
+    for v in row:
+        p = c.lerp(v.co, inward)
+        if drop_z:
+            p = Vector((p.x, p.y, p.z + drop_z))
+        inner.append(bm.verts.new(p))
+    bm.verts.ensure_lookup_table()
+    n = min(len(row), len(inner))
+    for i in range(n):
+        j = (i + 1) % n
+        try:
+            bm.faces.new((row[i], row[j], inner[j], inner[i]))
+        except Exception:
+            pass
+    try:
+        bm.faces.new(list(reversed(inner)))
+    except Exception:
+        try:
+            bm.faces.new(inner)
+        except Exception:
+            pass
+
+
+def _circularize_boundaries(obj, iterations=2):
+    """Even, rounded boundary loops (hem / armhole / neck) in object space."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    visited = set()
+    loops = []
+    bverts = [v for v in bm.verts if v.is_boundary]
+    for start in bverts:
+        if start.index in visited:
+            continue
+        loop = []
+        cur, prev = start, None
+        while cur is not None and cur.index not in visited:
+            visited.add(cur.index)
+            loop.append(cur)
+            nxts = [e.other_vert(cur) for e in cur.link_edges if e.other_vert(cur).is_boundary]
+            nxt = None
+            for cand in nxts:
+                if prev is None or cand != prev:
+                    nxt = cand
+                    if cand.index not in visited:
+                        break
+            prev, cur = cur, (None if nxt is None or nxt.index in visited else nxt)
+        if len(loop) >= 8:
+            loops.append(loop)
+    for loop in loops:
+        c = sum((v.co for v in loop), Vector()) / len(loop)
+        # fit a plane normal from Newell's method
+        nrm = Vector((0, 0, 0))
+        for i, v in enumerate(loop):
+            a, b = v.co, loop[(i + 1) % len(loop)].co
+            nrm += (a - c).cross(b - c)
+        if nrm.length < 1e-8:
+            nrm = Vector((0, 0, 1))
+        nrm.normalize()
+        # mean radius in plane
+        rs = []
+        for v in loop:
+            d = v.co - c
+            d = d - nrm * d.dot(nrm)
+            rs.append(d.length)
+        r = sum(rs) / max(1, len(rs))
+        # even angles around an in-plane axis
+        ref = (loop[0].co - c)
+        ref = ref - nrm * ref.dot(nrm)
+        if ref.length < 1e-8:
+            ref = nrm.cross(Vector((0, 0, 1)))
+            if ref.length < 1e-8:
+                ref = Vector((1, 0, 0))
+        ref.normalize()
+        bit = nrm.cross(ref).normalized()
+        # keep existing angular order
+        def ang(v):
+            d = v.co - c
+            d = d - nrm * d.dot(nrm)
+            return math.atan2(d.dot(bit), d.dot(ref))
+        loop_sorted = loop  # already walking order
+        for i, v in enumerate(loop_sorted):
+            a = ang(v)
+            # blend toward the even circle to clean jags but keep oval-ish shape
+            target = c + ref * (r * math.cos(a)) + bit * (r * math.sin(a))
+            # mix with current radial length to keep armholes slightly oval
+            cur_r = (v.co - c - nrm * (v.co - c).dot(nrm)).length
+            use_r = 0.45 * r + 0.55 * cur_r
+            target = c + (target - c).normalized() * use_r if (target - c).length > 1e-8 else target
+            v.co = v.co.lerp(target, 0.85)
+    for _ in range(iterations):
+        bm.verts.ensure_lookup_table()
+        news = {}
+        for v in bm.verts:
+            if not v.is_boundary:
+                continue
+            pts = [e.other_vert(v).co for e in v.link_edges if e.other_vert(v).is_boundary]
+            if len(pts) >= 2:
+                mid = sum(pts, Vector()) / len(pts)
+                news[v] = v.co.lerp(mid, 0.35)
+        for v, co in news.items():
+            v.co = co
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+
+def _glove_v5_spec(head_width=None):
+    hw = float(head_width) if head_width and head_width > 4.0 else HEAD_WIDTH_REF_CM
+    fw = 0.80 * hw
+    s = fw / GLOVE_V5["front_width"]
+    return {
+        "front_width": fw,
+        "front_thick": GLOVE_V5["front_thick"] * s,
+        "body_len": GLOVE_V5["body_len"] * s,
+        "cuff_len": GLOVE_V5["cuff_len"],
+        "cuff_r": GLOVE_V5["cuff_r"] * s,
+        "thumb_len": GLOVE_V5["thumb_len"] * s,
+        "thumb_rx": GLOVE_V5["thumb_rx"] * s,
+        "thumb_rz": GLOVE_V5["thumb_rz"] * s,
+        "head_width": hw,
+        "scale": s,
+    }
+
+
+def build_glove_mesh_v5(name, collection, hand_env, wrist_radius=None, head_width=None):
+    """v5 glove: kidney-hugging thumb, longer cuff, same glossy black."""
+    wr = float(wrist_radius or 3.35)
+    spec = _glove_v5_spec(head_width)
+    fw, ft, bl = spec["front_width"], spec["front_thick"], spec["body_len"]
+    cuff_len = spec["cuff_len"]
+    # Tighter cuff so it sits on the wrist instead of hovering off it.
+    cuff_r = max(spec["cuff_r"], wr + 1.15)
+    rx, rz = fw * 0.50, ft * 0.50
+    y_open = -cuff_len
+    y_tip = bl
+    y_span = y_tip - y_open
+
+    mesh = bpy.data.meshes.new(name + "Mesh")
+    obj = _new_mesh_object(name + "_body", mesh, collection)
+    bm = bmesh.new()
+    n_seg = 36
+    n_rings = 32
+    rows = []
+    for i in range(n_rings + 1):
+        t = i / n_rings
+        if t < 0.06:
+            y = y_open + 0.40 * (1.0 - t / 0.06)
+            lip_s = 0.62 + 0.38 * (t / 0.06)
+            sx, sz = cuff_r * lip_s, cuff_r * 0.97 * lip_s
+        else:
+            tt = (t - 0.06) / 0.94
+            y = y_open + y_span * tt
+            sx, sz = _v4_rxz(tt, rx, rz, cuff_r)
+        row = []
+        for j in range(n_seg):
+            a = 2.0 * math.pi * j / n_seg
+            pal = 0.90 if (math.cos(a) < 0.0 and t > 0.35) else 1.0
+            x = sx * pal * math.cos(a)
+            z = sz * math.sin(a) + 0.06
+            row.append(bm.verts.new((x, y, z)))
+        rows.append(row)
+    bm.verts.ensure_lookup_table()
+    for i in range(n_rings):
+        for j in range(n_seg):
+            k = (j + 1) % n_seg
+            bm.faces.new((rows[i][j], rows[i][k], rows[i + 1][k], rows[i + 1][j]))
+    try:
+        bm.faces.new(list(reversed(rows[0])))
+        bm.faces.new(rows[-1])
+    except Exception:
+        pass
+    bm.to_mesh(mesh)
+    bm.free()
+
+    # Kidney thumb: long, flattened, buried along the +Z side of the bulb.
+    body_mid_y = 0.18 * y_open + 0.82 * y_tip - spec["thumb_len"] * 0.22
+    thumb_c = Vector((0.20, body_mid_y, rz * 0.38 + 0.20))
+    thumb = _ellipsoid(
+        name + "_thumb",
+        (spec["thumb_rx"], spec["thumb_len"] * 0.70, spec["thumb_rz"]),
+        3, collection, location=(0.0, 0.0, 0.0),
+    )
+    ang = math.radians(24.0)
+    ca, sa = math.cos(ang), math.sin(ang)
+    for v in thumb.data.vertices:
+        y, z = v.co.y, v.co.z
+        v.co.y = y * ca - z * sa
+        v.co.z = y * sa + z * ca
+        v.co += thumb_c
+    thumb.data.update()
+    # A second, shorter blend cap at the crotch so the join is a swell, not a seam.
+    crotch = _ellipsoid(
+        name + "_crotch",
+        (spec["thumb_rx"] * 0.85, spec["thumb_len"] * 0.28, spec["thumb_rz"] * 0.70),
+        2, collection, location=(0.0, 0.0, 0.0),
+    )
+    crotch_c = Vector((0.15, body_mid_y - spec["thumb_len"] * 0.18, rz * 0.22))
+    for v in crotch.data.vertices:
+        v.co += crotch_c
+    crotch.data.update()
+
+    _join_objects(obj, thumb, crotch)
+    _voxel_remesh(obj, voxel=0.18)
+    _smooth_mesh(obj, iterations=7, factor=0.30)
+    _add_stitch_grooves_v4(obj, y_open, y_tip, rx, rz, cuff_r, thumb_c, spec["thumb_len"])
+    _smooth_mesh(obj, iterations=2, factor=0.16)
+    _shade_smooth(obj)
+    obj.name = name
+
+    env = {
+        "min": (-rx - 0.8, y_open - 0.4, -rz - 0.8),
+        "max": (rx + 0.8, y_tip + 0.6, thumb_c.z + spec["thumb_rz"] + 1.0),
+    }
+    return obj, {
+        "env": env,
+        "cavity_r": None,
+        "cavity_y": None,
+        "version": "v5",
+        "mask_plane_y": y_open + 1.15,
+        "cuff_rx": cuff_r + 0.35,
+        "cuff_rz": cuff_r + 0.35,
+        "cuff_y_far": y_open,
+        "cuff_y_near": y_open + cuff_len * 0.88,
+        "body_len": bl,
+        "front_width": fw,
+        "front_thick": ft,
+        "head_width": spec["head_width"],
+        "fist_to_head": fw / max(1e-6, spec["head_width"]),
+    }
+
+
+def build_trunks_v5(name, collection, meshes, arm, colors):
+    """Classic boxing trunks: snug navel band, follows seat, gentle mid-thigh flare.
+
+    Clean lofted shell (no voxel remesh) so hems and trim stay sharp. Leg
+    openings sit only ~3.5 cm off the thigh — no balloon / skirt volume.
+    """
+    prev = _rest_context(arm)
+    try:
+        lm = _torso_landmarks(arm)
+        samples = _world_body_samples(meshes, arm)
+        waist_top = lm["waist_top"]
+        band_h = lm["band_h"]
+        waist_bot = waist_top - band_h
+        hips_z = lm["hips_w"].z
+        crotch_z = lm["crotch_z"]
+        hem_z = lm["mid_thigh_z"]
+        n = 40
+
+        def torso_pred(co, no, name, w):
+            if any(k in name for k in ("hand", "arm", "fore", "head", "neck", "foot", "toe", "shoulder")):
+                return False
+            return True
+
+        def leg_pred(side):
+            def pred(co, no, name, w):
+                if any(k in name for k in ("hand", "arm", "fore", "head", "foot", "toe", "shoulder")):
+                    return False
+                if side == "L" and "right" in name:
+                    return False
+                if side == "R" and "left" in name:
+                    return False
+                if "left" in name or "right" in name or "upleg" in name or "leg" in name or "thigh" in name:
+                    return True
+                return (co.x >= 0.01) if side == "L" else (co.x <= -0.01)
+            return pred
+
+        # Clearances in metres: snug waist, follow the seat, flare only at the hem.
+        torso_spec = [
+            (waist_top + 0.001, 0.006, 0.03),
+            (waist_top - band_h * 0.45, 0.006, 0.03),
+            (waist_bot + 0.004, 0.007, 0.035),
+            (hips_z + 0.015, 0.010, 0.04),
+            (hips_z - 0.035, 0.011, 0.045),
+            (crotch_z, 0.013, 0.045),
+        ]
+        rings = []
+        for z, infl, band in torso_spec:
+            r = _loop_at_z(samples, z, band, infl, torso_pred, n=n, min_r=0.07)
+            if r is None:
+                raise RuntimeError(f"trunks v5: no ring at z={z:.3f}")
+            r = _resample_ring(r, n)
+            for p in r:
+                p.z = z
+            rings.append(r)
+
+        mesh = bpy.data.meshes.new(name + "Mesh")
+        obj = _new_mesh_object(name, mesh, collection)
+        bm = bmesh.new()
+        rows = _loft_rings(bm, rings, close_caps=False)
+        crotch = rings[-1]
+        mid_x = sum(p.x for p in crotch) / len(crotch)
+
+        def side_of(p, side):
+            return (p.x if hasattr(p, "x") else p.co.x) >= mid_x if side == "L" else (
+                (p.x if hasattr(p, "x") else p.co.x) <= mid_x)
+
+        # Leg flare only in the lower third: 1.3 cm at the top, 3.5 cm at the hem.
+        leg_spec = [
+            (crotch_z - 0.008, 0.014),
+            (crotch_z * 0.65 + hem_z * 0.35, 0.016),
+            (crotch_z * 0.30 + hem_z * 0.70, 0.024),
+            (hem_z + 0.006, 0.032),
+            (hem_z, 0.035),
+        ]
+        leg_rows = {}
+        for side in ("L", "R"):
+            lrings = []
+            for z, infl in leg_spec:
+                r = _loop_at_z(samples, z, 0.045, infl, leg_pred(side), n=n // 2, min_r=0.045)
+                if r is None:
+                    half = [p.copy() for p in crotch if side_of(p, side)]
+                    if len(half) < 6:
+                        raise RuntimeError(f"trunks v5: no {side} leg at z={z:.3f}")
+                    cx = sum(p.x for p in half) / len(half)
+                    cy = sum(p.y for p in half) / len(half)
+                    r = [Vector((cx + (p.x - cx) * 1.04, cy + (p.y - cy) * 1.04, z)) for p in half]
+                r = _resample_ring(r, n // 2)
+                for p in r:
+                    p.z = z
+                lrings.append(r)
+            leg_rows[side] = _loft_rings(bm, lrings, close_caps=False)
+            _cap_ring_inset(bm, list(reversed(leg_rows[side][-1])), inward=0.78, drop_z=0.0)
+            half = [v for v in rows[-1] if side_of(v, side)]
+            if half and leg_rows[side]:
+                _stitch_loops(bm, half, leg_rows[side][0])
+
+        # Closed, slightly inset waist so the band has a clean lip.
+        _cap_ring_inset(bm, rows[0], inward=0.82, drop_z=0.002)
+
+        bm.to_mesh(mesh)
+        bm.free()
+        # No voxel remesh — keep the lofted hems sharp.
+        _relax_boundaries(obj, iterations=6, factor=0.4)
+        sol = obj.modifiers.new("Thick", "SOLIDIFY")
+        sol.thickness = 0.0045
+        sol.offset = 1.0
+        try:
+            sol.use_even_offset = True
+            sol.use_quality_normals = True
+            sol.use_rim = True
+        except Exception:
+            pass
+        _apply_modifier(obj, sol)
+        _smooth_mesh(obj, iterations=1, factor=0.12)
+        _shade_smooth(obj)
+        srcs = _primary_body_meshes(meshes)
+        if srcs:
+            _bind_like_body(obj, srcs[0], arm)
+
+        zs_local = [v.co.z for v in obj.data.vertices]
+        zmax, zmin = max(zs_local), min(zs_local)
+        zspan = max(1e-6, zmax - zmin)
+        xs = [abs(v.co.x) for v in obj.data.vertices]
+        xside = sorted(xs)[int(0.90 * len(xs))] if xs else 0.1
+
+        def trim_pred(x, y, z, _zmax=zmax, _zmin=zmin, _zspan=zspan, _xside=xside):
+            ttop = (_zmax - z) / _zspan
+            tbot = (z - _zmin) / _zspan
+            # Wide waistband body stays satin; only thin edges + hem + side stripe are black.
+            waist_edge = ttop <= 0.028 or (0.13 <= ttop <= 0.155)
+            hem = tbot <= 0.045
+            stripe = abs(x) >= _xside * 0.97 and 0.08 < tbot and ttop > 0.18
+            return waist_edge or hem or stripe
+
+        satin = make_satin_material(name + "Satin", colors["beanie"], roughness=0.20)
+        trim = make_satin_material(name + "Trim", TRIM_V4_BLACK, roughness=0.28)
+        _assign_region_mats(obj, satin, trim, trim_pred)
+        return obj, {
+            "version": "v5",
+            "waist_top_m": waist_top,
+            "hem_z_m": hem_z,
+            "navel_z_m": lm["navel_z"],
+            "hem_clearance_m": 0.035,
+            "source": "clean-loft",
+        }
+    finally:
+        _restore_pose(arm, prev)
+
+
+def build_tank_v5(name, collection, meshes, arm, colors, clearance=0.007):
+    """Fitted sleeveless tank whose hem covers the trunks waistband top."""
+    prev = _rest_context(arm)
+    try:
+        srcs = _primary_body_meshes(meshes)
+        if not srcs:
+            raise RuntimeError("tank v5: no body mesh")
+        src = srcs[0]
+        lm = _torso_landmarks(arm)
+        waist_top = lm["waist_top"]
+        hem_z = waist_top + 0.010  # cover the top edge of the waistband
+        armpit_z = lm["armpit_z"]
+        neck_w = lm["neck_w"]
+        mid_x = (lm["sh_lw"].x + lm["sh_rw"].x) * 0.5
+        strap_half = 0.040
+
+        obj = _duplicate_body(name, collection, src)
+        gnames = _vert_group_names(obj, 0)
+        mw = obj.matrix_world
+        keep = [False] * len(obj.data.vertices)
+        torso_ok = ("spine", "chest", "abdomen", "torso", "hip", "pelvis")
+        deny = ("arm", "fore", "hand", "head", "leg", "foot", "upleg", "thigh", "toe")
+        for i, v in enumerate(obj.data.vertices):
+            wco = mw @ v.co
+            if wco.z < hem_z - 0.03 or wco.z > neck_w.z + 0.01:
+                continue
+            names = [gnames.get(g.group, "") for g in v.groups if g.weight >= 0.15]
+            if any(any(k in n for k in deny) for n in names):
+                continue
+            is_shoulder = any("shoulder" in n or "clav" in n for n in names)
+            medial = abs(wco.x - mid_x) <= strap_half
+            if is_shoulder:
+                if medial and wco.z >= armpit_z - 0.01:
+                    keep[i] = True
+                continue
+            if wco.z <= armpit_z + 0.01:
+                keep[i] = True
+            elif medial or abs(wco.x - mid_x) <= strap_half * 1.20:
+                keep[i] = True
+        _delete_verts(obj, keep)
+        _bisect_world_z(obj, hem_z, keep_below=False)
+        _bisect_world_z(obj, neck_w.z - 0.018, keep_below=True)
+        _relax_boundaries(obj, iterations=8, factor=0.5)
+        _circularize_boundaries(obj, iterations=2)
+        _world_inflate(obj, lambda wco: clearance * (1.10 if wco.y > 0.0 else 1.0))
+        sol = obj.modifiers.new("Thick", "SOLIDIFY")
+        sol.thickness = 0.0038
+        sol.offset = 1.0
+        try:
+            sol.use_even_offset = True
+            sol.use_quality_normals = True
+            sol.use_rim = True
+        except Exception:
+            pass
+        _apply_modifier(obj, sol)
+        _smooth_mesh(obj, iterations=1, factor=0.12)
+        _shade_smooth(obj)
+        _bind_like_body(obj, src, arm)
+        satin = make_satin_material(name + "Satin", colors["beanie"], roughness=0.20)
+        _assign_mat(obj, satin)
+        return obj, {
+            "version": "v5",
+            "hem_z_m": hem_z,
+            "armpit_z_m": armpit_z,
+            "waist_top_m": waist_top,
+            "clearance_m": clearance,
+            "racerback": True,
+            "source": "body-shell-clean",
+        }
+    finally:
+        _restore_pose(arm, prev)
+
+
+
 def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
-                 scan_frames=True, collection_name="XBotOutfit", version="v4"):
+                 scan_frames=True, collection_name="XBotOutfit", version="v5"):
     """Build and attach the requested items. Returns a handle dict.
 
     `items` is a subset of {"gloves", "beanie", "headgear", "strap",
@@ -3166,8 +3696,8 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
     headgear. Gloves and beanie are rigid-parented to Hand / Head;
     trunks and tank are closed garment shells weight-bound to the armature.
 
-    `version` is "v4" (default: glossy black CC0-matched gloves, charcoal
-    rib-knit beanie, optional charcoal satin trunks + fitted tank), "v3"
+    `version` is "v5" (default: snug boxing trunks, waist-length tank,
+    kidney-thumb glossy black gloves), "v4" (earlier kit), "v3"
     (crimson 0.8×-head kit), "v2" (compact), or "v1" (long mitten + smooth cap).
     """
     if colorway not in COLORWAYS:
@@ -3202,7 +3732,7 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
         handle["notes"].append("beanie and headgear both requested; they will overlap")
 
     _v23 = version in ("v2", "v3")
-    if version == "v4":
+    if version in ("v4", "v5"):
         leather = make_glossy_leather_material(
             f"XBotGloveLeather_{colorway}_{version}", GLOVE_V4_BLACK, roughness=0.30,
         )
@@ -3240,7 +3770,7 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
         )
     knit = make_knit_material(
         f"XBotBeanieKnit_{colorway}_{version}", colors["beanie"],
-        strength=(0.52 if version in ("v3", "v4") else 0.45 if version == "v2" else 0.22),
+        strength=(0.52 if version in ("v3", "v4", "v5") else 0.45 if version == "v2" else 0.22),
     )
     foam = make_foam_leather_material(f"XBotHeadgear_{colorway}", colors["headgear"], roughness=0.74)
     strap_mat = make_leather_material(f"XBotStrap_{colorway}", colors["strap"], roughness=0.78)
@@ -3268,7 +3798,7 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
                 gname, col, env, wrist_radius=wr, version=version,
                 head_width=head_width,
             )
-            if version == "v4":
+            if version in ("v4", "v5"):
                 _assign_mat(glove, leather)
             elif version == "v3":
                 _assign_glove_mats_v3(glove, leather, leather_strap, ginfo)
@@ -3281,7 +3811,17 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
             handle["objects"].append(glove.name)
             handle["bones"][glove.name] = bn
             handle.setdefault("glove_info", {})[side] = {**ginfo, "wrist_r": wr}
-        if version == "v4":
+        if version == "v5":
+            fw = (handle.get("glove_info") or {}).get("R", {}).get("front_width") or                  (handle.get("glove_info") or {}).get("L", {}).get("front_width")
+            handle["notes"].append(
+                "v5 gloves are rigid to the Hand bone (no finger-curl squash). "
+                "Glossy black leather, kidney-shaped thumb hugging the bulb, "
+                "longer cuff to cover the wrist on jab extension"
+                + (f"; fist front {fw:.1f} cm vs head {head_width:.1f} cm"
+                   if fw and head_width else "")
+                + "."
+            )
+        elif version == "v4":
             fw = (handle.get("glove_info") or {}).get("R", {}).get("front_width") or                  (handle.get("glove_info") or {}).get("L", {}).get("front_width")
             handle["notes"].append(
                 "v4 gloves are rigid to the Hand bone (no finger-curl squash). "
@@ -3323,9 +3863,9 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
             handle["objects"].append(cap.name)
             handle["bones"][cap.name] = head_bone
             handle["beanie_info"] = binfo
-            clearance = (BEANIE_V2_CLEARANCE_CM if version in ("v2", "v3", "v4")
+            clearance = (BEANIE_V2_CLEARANCE_CM if version in ("v2", "v3", "v4", "v5")
                          else BEANIE_CLEARANCE_CM)
-            if version in ("v3", "v4"):
+            if version in ("v3", "v4", "v5"):
                 extra = (f"; {version} has a fold-up cuff, rib knit continuing to the "
                          "crown, slight slouch/fold).")
             elif version == "v2":
@@ -3352,7 +3892,8 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
             handle["notes"].append(hinfo["note"])
 
     if "trunks" in items:
-        trunks, tinfo = build_trunks_v4(
+        tbuild = build_trunks_v5 if version == "v5" else build_trunks_v4
+        trunks, tinfo = tbuild(
             f"XBotTrunks_{colorway}", col, meshes, arm, colors,
         )
         handle["objects"].append(trunks.name)
@@ -3366,13 +3907,14 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
         )
         handle.setdefault("garment_masked", {})["trunks"] = hidden
         handle["notes"].append(
-            "v4 trunks: charcoal satin (same as the beanie base), wide navel "
+            f"{version} trunks: charcoal satin (same as the beanie base), wide navel "
             "waistband, mid-thigh legs, thin black waist/hem/side trim; "
             f"armature-bound, {hidden} body verts masked inside."
         )
 
     if "tank" in items:
-        tank, tank_info = build_tank_v4(
+        kbuild = build_tank_v5 if version == "v5" else build_tank_v4
+        tank, tank_info = kbuild(
             f"XBotTank_{colorway}", col, meshes, arm, colors,
         )
         handle["objects"].append(tank.name)
@@ -3389,7 +3931,7 @@ def apply_outfit(arm, meshes, *, items=("gloves", "beanie"), colorway="A",
         )
         handle.setdefault("garment_masked", {})["tank"] = hidden
         handle["notes"].append(
-            "v4 tank: fitted charcoal satin, sleeveless racerback, deltoids "
+            f"{version} tank: fitted charcoal satin, sleeveless racerback, deltoids "
             f"and arms left uncovered so shoulder glow stays visible; "
             f"armature-bound, {hidden} torso verts masked inside."
         )
