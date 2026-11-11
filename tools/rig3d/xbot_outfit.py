@@ -920,8 +920,9 @@ def build_glove_mesh_v3(name, collection, hand_env, wrist_radius=None, head_widt
     """
     wr = float(wrist_radius or 3.35)
     spec = _glove_v3_spec(head_width)
-    cuff_r_near = max(spec["cuff_r_near"], wr + 1.35)
-    cuff_r_far = max(spec["cuff_r_far"], wr + 0.95)
+    # Meet the fist waist so the cuff does not form a stepped cylinder.
+    cuff_r_near = max(spec["cuff_r_near"] * 1.12, wr + 1.55, fw * 0.42)
+    cuff_r_far = max(spec["cuff_r_far"], wr + 1.00)
     fw, ft, bl = spec["front_width"], spec["front_thick"], spec["body_len"]
     y0 = spec["body_y0"]
     y1 = y0 + bl
@@ -964,15 +965,15 @@ def build_glove_mesh_v3(name, collection, hand_env, wrist_radius=None, head_widt
         strap_r, strap_r * 0.99, segments=28, rings=2,
     )
 
-    # Attached thumb along +Z, mid-fist. Base sits inside the fist; the tip
-    # sticks out ~4 cm so the lobe stays after voxel remesh.
-    thumb_c = Vector((0.35, body_c.y + 0.20, rz * 0.42 + 3.10))
+    # Elongated attached thumb (not a cherry sphere). Long axis starts mid-fist
+    # and runs along the side toward the knuckles, base buried in the body.
+    thumb_c = Vector((0.25, body_c.y + 0.10, rz * 0.62 + 1.35))
     thumb = _ellipsoid(
         name + "_thumb",
-        (spec["thumb_rx"] * 1.10, spec["thumb_len"] * 0.52, spec["thumb_rz"] * 1.18),
+        (spec["thumb_rx"] * 0.82, spec["thumb_len"] * 0.62, spec["thumb_rz"] * 0.78),
         3, collection, location=(0.0, 0.0, 0.0),
     )
-    ang = math.radians(22.0)
+    ang = math.radians(28.0)
     ca, sa = math.cos(ang), math.sin(ang)
     for v in thumb.data.vertices:
         y, z = v.co.y, v.co.z
