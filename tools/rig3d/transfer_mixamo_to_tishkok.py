@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
 """Transfer a Mixamo-rigged Tishkok *proxy* onto the original Tishkok shells.
 
-Run AFTER Mixamo auto-rig succeeds on tishkok_proxy_mixamo.fbx and you have
-downloaded the rigged FBX (any animation clip is fine; we only need the
-armature rest + weights on the proxy mesh).
+Run AFTER Mixamo auto-rig succeeds on the uploaded proxy (prefer the T-pose
+proxy tishkok_tpose_proxy_mixamo.fbx) and you have downloaded the rigged FBX
+(any animation clip is fine; we only need the armature rest + weights).
 
   nice -n 19 blender -b --python tools/rig3d/transfer_mixamo_to_tishkok.py -- \
-      --proxy-fbx output/_basemodels/boxer/mixamo_upload/tishkok_proxy_mixamo_rigged.fbx \
+      --proxy-fbx output/_basemodels/boxer/mixamo_upload/tishkok_tpose_proxy_mixamo_rigged.fbx \
       --out-dir output/_basemodels/boxer/mixamo_upload \
       --name tishkok_from_mixamo
+
+By default (--match-tpose) the original A-pose Tishkok is posed into the same
+T-pose via the Rigify A-pose bind and that pose is applied as rest BEFORE
+weight transfer. Transferring a T-pose Mixamo donor onto an A-pose target
+without this step paints garbage arm weights (the v1 failure mode).
+Pass --no-match-tpose only if the Mixamo proxy itself was uploaded in A-pose.
 
 Steps:
   1. Import the Mixamo FBX, stand it up, scale to ~1.79 m, feet on the ground.
   2. Import original Tishkok, 0.1 mm weld, separate shells, classify
      (body / shorts / glove_l/r / shoe_l/r) — same rules as eval_tishkok_jab.
-  3. Align the original to the proxy (height + feet + hip XY).
-  4. Data Transfer weights from the proxy mesh onto body and shorts
+  3. If --match-tpose: fit Rigify, bind shells, pose to T-pose, apply as rest.
+  4. Align the original to the proxy (height + feet + hip XY).
+  5. Data Transfer weights from the proxy mesh onto body and shorts
      (POLYINTERP_NEAREST — nearest face interpolated). Bind those shells
      to the Mixamo armature (modifier, no automatic re-weight).
-  5. Rigid-parent gloves to hand bones and shoes to foot bones.
-  6. Hide the proxy mesh. Export an FBX of armature + original shells and
+  6. Rigid-parent gloves to hand bones and shoes to foot bones.
+  7. Hide the proxy mesh. Export an FBX of armature + original shells and
      write a facts JSON. Does not download or call Mixamo.
 
 Gloves stay closed fists (sculpted); Mixamo 'No Fingers' skeletons are
@@ -49,6 +56,15 @@ from export_tishkok_mixamo import (  # noqa: E402
     mesh_stats,
     reset,
     world_dims_verts,
+)
+from eval_tishkok_jab import (  # noqa: E402
+    auto_weight,
+    fit_metarig,
+    rigid_parent_bone as rigid_parent_rigify,
+)
+from export_tishkok_mixamo_tpose_proxy import (  # noqa: E402
+    apply_visual_shells,
+    pose_metarig_to_tpose,
 )
 
 WELD = 0.0001
@@ -382,6 +398,15 @@ def main():
                     help="Original unrigged Tishkok glTF")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--name", default="tishkok_from_mixamo")
+    ap.add_argument("--match-tpose", dest="match_tpose",
+                    action="store_true", default=True,
+                    help="Pose original Tishkok into T-pose via Rigify "
+                         "before transferring (default; needed for the "
+                         "T-pose Mixamo proxy).")
+    ap.add_argument("--no-match-tpose", dest="match_tpose",
+                    action="store_false",
+                    help="Skip T-pose matching (only if the Mixamo proxy "
+                         "was itself uploaded in A-pose).")
     args = ap.parse_args(argv())
     os.makedirs(args.out_dir, exist_ok=True)
     facts = {"ok": False, "proxy_fbx": args.proxy_fbx, "source": args.source}
@@ -392,6 +417,23 @@ def main():
         facts["proxy"] = proxy_info
         groups = prepare_tishkok_shells(args.source)
         vis = [o for o in groups.values() if o is not None]
+        facts["match_tpose"] = bool(args.match_tpose)
+        if args.match_tpose:
+            # Pose original A-pose shells into the same T-pose as the
+            # uploaded proxy, then apply as rest so Data Transfer sees
+            # overlapping arm/hand geometry.
+            meta = fit_metarig(groups)
+            if groups.get("body") is not None:
+                auto_weight(groups["body"], meta)
+            if groups.get("shorts") is not None:
+                auto_weight(groups["shorts"], meta)
+            for key, bone in (("glove_l", "hand.L"), ("glove_r", "hand.R"),
+                              ("shoe_l", "foot.L"), ("shoe_r", "foot.R")):
+                if groups.get(key) is not None:
+                    rigid_parent_rigify(groups[key], meta, bone)
+            facts["tpose"] = pose_metarig_to_tpose(meta, groups)
+            apply_visual_shells(groups, meta)
+            vis = [o for o in groups.values() if o is not None]
         facts["tishkok_align"] = stand_and_ground(vis)
         facts["shells"] = {
             k: (None if v is None else {
