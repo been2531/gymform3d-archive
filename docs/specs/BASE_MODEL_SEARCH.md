@@ -857,3 +857,107 @@ What would actually have a chance, in order:
 Do not go back to Grab3D char1. Do not ship Z-Anatomy or Charleeh
 meshes. Do not treat BodyParts3D’s missing latissimus as a small fix.
 Do not use the excluded Gladiator (NoAI + For Honor-inspired).
+
+## Boxing bodies (Tishkok + Quaternius jab test)
+
+Access date: 2026-11-11 (Asia/Seoul). After the domain pivot to boxing
+(t839u), two shortlisted bodies were downloaded and given the same jab.
+
+Sheet (gitignored, viewed at full size before this write-up):
+`output/_basemodels/eval/boxer_jab_test.png`.
+
+Replay:
+
+```
+nice -n 19 /home/box/opt/blender-4.2.3-linux-x64/blender -b \
+  --python tools/rig3d/eval_boxer_jab.py -- \
+  --out-dir output/_basemodels/eval --name boxer_jab
+python3 tools/rig3d/build_boxer_jab_sheet.py \
+  --out output/_basemodels/eval/boxer_jab_test.png \
+  --dir output/_basemodels/eval --name boxer_jab \
+  --ref output/_basemodels/eval/ref_jab_usarmy.jpg \
+  --tishkok-rest output/_basemodels/eval/tishkok_rest_y40_rear34.png \
+  --facts output/_basemodels/eval/boxer_jab_facts.json
+```
+
+Motion: Quaternius Universal Animation Library **Standard**
+`Punch_Jab_Rig` (CC0, 21 frames, downloaded from OpenGameArt
+`universal_animation_librarystandard.zip`). It is in the free Standard
+set, not only the paid Pro zip. The clip is a left-hand jab
+(hand-travel L 0.24 m / R 0.06 m; frames guard/mid/full = 3 / 4 / 5).
+Hands stay open — it is closer to a martial-arts palm strike than a
+boxing jab with a fist. ACCAD Male2 `JabRight.bvh` (CC BY 3.0) was
+downloaded as a fallback and not used. Mixamo was not used.
+
+### 1. Tishkok — Stylized Boxer Base Mesh Character
+
+- Source: Sketchfab uid `537003fb4788494fbb48c66412eb5dda`
+- Licence: **CC BY 4.0**. Commercial use allowed; author must be credited:
+  Tishkok, “Stylized Boxer Base Mesh Character”.
+- Unrigged (0 bones, no skins). Rest pose is an **A-pose**, height 1.79 m.
+- 57,905 verts / 83,048 tris. After 0.1 mm weld: **70 parts, 3,106
+  boundary, 66 non-manifold**. The extras are sculpted boxing gloves,
+  shorts and shoes (separate shells), not a single continuous skin.
+- Has a simplified face (not faceless). Lean boxer proportions, real
+  muscle form in the clay. That rest-pose still
+  (`tishkok_rest_y40_rear34.png`) is the better-looking dedicated
+  *boxer* body of the two.
+- Auto-rig: vertex-group transfer from the T-pose Quaternius Superhero
+  (65 groups copied) tore the mesh as soon as the jab posed the arms —
+  the donor T-pose arms do not overlap this A-pose. Automatic weights
+  onto the same T-pose armature would fail for the same reason. A
+  Rigify metarig folded to this A-pose was not done this pass. Do not
+  read the exploded `boxer_jab_tishkok_*.png` stills as the body.
+
+### 2. Quaternius — Superhero Male (Universal Base Characters Standard)
+
+- Source: itch.io Standard zip (122 MB, min price $0, CC0). The free
+  Standard set is only Superhero male + female plus hairstyles — not
+  Regular or Teen.
+- Licence: **CC0 1.0**. Credit not required.
+- Rigged: 65-bone UE-style humanoid (`pelvis`, `spine_01..03`,
+  `upperarm_l/r`, finger bones…). Native weights.
+- Body mesh only (eyes / eyebrows / helper icosphere hidden): after
+  0.1 mm weld **1 part, 0 boundary, 0 non-manifold**, 6,285 verts /
+  12,566 tris. Body height ~1.82 m.
+- Has a stylized face. No gloves. Superhero proportions, not a boxer
+  silhouette. Clay hide of the separate eye/brow meshes leaves empty
+  sockets if you look closely; the body mesh itself still has a face.
+- The same UAL jab retargeted with **rotation-only** `matrix_basis`
+  copies (DEF-* → UE names). Copying locations as well stretched limbs
+  to ~14 m; that was a retarget bug, not the clip.
+- Glow (painted in rest, follows the rig) on the punching-side front
+  delt (purple, 249 verts), triceps (yellow, 148), obliques (orange,
+  251). Viewed at full size: the purple sits on the front shoulder and
+  kisses the pec; the yellow triceps is faint; the orange reads as a
+  hip stripe more than a clean external oblique.
+- Against the US Army public-domain jab photo (Wikimedia,
+  `Flickr_-_The_U.S._Army_-_All-Army_Boxing_jab.jpg`): real boxers
+  keep fists and a tighter guard. This clip’s open palms and
+  palm-forward guard are the bigger teaching miss, not the body.
+
+### Verdict
+
+**Adopt neither as the shipping boxing body tonight.**
+
+Tishkok is the body that *looks like a boxer* and is legally usable
+with credit, but it has no rig, fails the weld on clothing/glove
+shells, and did not take the jab. Quaternius Superhero Male is the
+only body that actually threw the jab (and it survives the weld), but
+it is not a boxer character, the free Standard pack has no more
+athletic male, and the UAL jab’s open hands are a problem next to a
+real jab.
+
+What would actually have a chance, in order:
+
+1. **Fold a Rigify metarig to Tishkok’s A-pose**, bind with automatic
+   weights, and retarget the same UAL jab by world-space bone aim
+   (rest poses will not match). If that holds together, Tishkok plus
+   credit is the stronger boxing silhouette.
+2. Keep Quaternius Superhero Male as the **motion guinea pig** only —
+   it already proves UAL Standard punches retarget onto the UE
+   humanoid. Do not treat it as the show body without a glove/fist
+   solution and a tighter jab clip.
+3. Do not buy the Quaternius Source pack or UAL Pro just to get
+   Regular/Teen bodies or extra punches (standing rule: no paid
+   assets). The jab we needed was already in the free Standard UAL.
