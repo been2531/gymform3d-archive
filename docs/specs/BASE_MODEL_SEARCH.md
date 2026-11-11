@@ -6,25 +6,26 @@ declared failure (834 UV islands, baked ankle retinaculum, baked
 *before* adopting one. No Grab3D patching and no `db_row` render was done.
 
 **Verdict: do not adopt a production clay body yet.** First-round
-bodies, Diego, Beatriz, and Gridiron Jumpman stay rejected. A later
-Sketchfab API round (three more CC BY downloads) produced the first
-mesh that survives the weld test: deepkexz’s *Muscular human mannequin
-figure* joins to **1 loose part, 0 boundary, 0 non-manifold** at 1.75 m
-× 0.1 mm. That is not the same as adopting it. It is unrigged, one
-million triangles, has sculpted briefs, carries custom normals, is
-listed as AI-made (Rodin), and has not been posed into a textbook
-row. The shirtless athlete is a lighter runner-up; the basketball
-dummy is a jump-shot and is rejected as a base. *Gladiator* was
-excluded before evaluation (For Honor-inspired design and a NoAI tag).
-Its zip and unpacked folder were deleted and it is not in any sheet.
+bodies, Diego, Beatriz, and Gridiron Jumpman stay rejected. The
+deepkexz mannequin remains the only mesh that survives the weld test
+at **1 loose part, 0 boundary, 0 non-manifold**. minglanders1’s
+*Male Mesh - Bodybuilder* is the first **rigged** candidate (25 bones,
+walk animation cleared to rest): weld is **1 part, 33 boundary, 20
+non-manifold**, no textures, faceless, real muscle form, sculpted
+shorts. That is progress, not a green light. *Gladiator* stays
+excluded (For Honor-inspired + NoAI).
 
-Large smooth 3D muscle blobs (peach lats, pink mid-back, purple rear
-delt, yellow biceps) read on Diego, the mannequin, and the athlete.
-On the basketball dummy only the jersey lat and upper-back patches
-read. Of four glow methods tested on the mannequin, the 3D blob is
-the clearest for muscle identity and the most reusable; 2D compositing
-is the softest still overlay; cheap overlay shells and glass X-ray
-are not usable.
+The v1 3D blob was lopsided because it mirrored anchors across a
+camera-derived axis, so a rear 3/4 view painted only the near flank.
+v2 mirrors across an anatomic midline (shoulder-band PCA) and blends
+overlapping colours instead of winner-takes-most. Both lats and a
+centred pink mid-back now read on the mannequin and the bodybuilder.
+It is still softer and less saturated than demic; lower lats meet as
+a lumbar belt; rear delts and biceps stay weak on the blob. Of the
+simpler alts tested on the bodybuilder, rig-weight tint is the only
+one that competes (better delts and a visible biceps, weaker lat
+fan). Coloured lights blow out; painted strokes are sparse; fresnel
+rim is not distinct from the blob.
 
 Comparison sheets (gitignored stills, viewed at full size before this
 write-up):
@@ -34,6 +35,8 @@ write-up):
 - Precise-mask colour test (superseded): `output/_basemodels/eval/muscle_colour_test.png`
 - Blob glow round: `output/_basemodels/eval/blob_glow_test.png`
 - Glow methods on the mannequin: `output/_basemodels/eval/blob_glow_methods.png`
+- Symmetric blob v2: `output/_basemodels/eval/blob_glow_v2.png`
+- Simpler alts on the bodybuilder: `output/_basemodels/eval/blob_glow_v2_alts.png`
 
 Demic reference: left panel of
 `output/_rig3d/v4_authored/peach34_air/ours_vs_demic_peak.png`
@@ -66,6 +69,16 @@ python3 tools/rig3d/build_base_model_sheet.py \
   --title "Blob glow test  |  matte grey + smooth 3D muscle blobs, elevated rear 3/4" ...
 python3 tools/rig3d/build_base_model_sheet.py \
   --out output/_basemodels/eval/blob_glow_methods.png --no-demic ...
+
+# symmetric blob v2 + simpler alts (blob|painted|rim|lights|rigweight)
+nice -n 19 /home/box/opt/blender-4.2.3-linux-x64/blender -b \
+  --python tools/rig3d/eval_blob_glow.py -- \
+  --input <gltf> --out-dir output/_basemodels/eval --name <id>_v2_rear34 \
+  --method blob --yaw 135 --elev 14
+nice -n 19 /home/box/opt/blender-4.2.3-linux-x64/blender -b \
+  --python tools/rig3d/eval_blob_glow.py -- \
+  --input <gltf> --out-dir output/_basemodels/eval --name <id>_v2_back \
+  --method blob --yaw 180 --elev 8
 ```
 
 Sketchfab downloads for the blob round used
@@ -585,47 +598,164 @@ extract. (C)’s cheap inner spheres are not muscle volumes.
 Do not spend further time polishing automatic shells or X-ray
 ellipsoids unless someone asks for that look specifically.
 
+
+### 7. minglanders1 — Male Mesh - Bodybuilder
+
+- Source: <https://sketchfab.com/3d-models/male-mesh-bodybuilder-a2f2a1642e074abd8acaf76b1f521aba>
+- Licence: **CC-BY-4.0** (`license.txt` in the glTF zip). Commercial use
+  allowed; author must be credited. Required credit line:
+
+  > This work is based on "Male Mesh - Bodybuilder"
+  > (https://sketchfab.com/3d-models/male-mesh-bodybuilder-a2f2a1642e074abd8acaf76b1f521aba)
+  > by minglanders1 (https://sketchfab.com/minglanders1) licensed
+  > under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+- File: `output/_basemodels/sketchfab/male_mesh_bodybuilder/scene.gltf`
+  (3 body chunks on the 65 k glTF split + a detached 80-tri `Icosphere`
+  helper that was hidden and excluded from measure and paint). No
+  packed images, no textures (`textureCount` 0). One principled
+  material, roughness 0.6, metallic 0.
+- Listing: “Mesh and rig and walk animation - no face feature.”
+  Tags include `rigged` and `animated`. Not listed as AI-made.
+- Import: Y-up, native height **1.70 m**. After rotating roots so Y→Z
+  and flipping 180° around X (the first rotation left the head below
+  the feet — detected from the `Head_021` vs foot bones), normalized
+  ×1.029 to 1.75 m. Rest-pose bbox ≈ 0.92 × 0.35 × 1.75 m (standing,
+  arms hanging, not a T-pose).
+- Pose: walk action `Armature|Armature|walking_man|baselayer` is
+  cleared to the armature rest pose before measure and paint.
+- Armature: **25 bones** (`Hips_00` … `Head_021`, Mixamo-like
+  `LeftArm` / `LeftForeArm` / `LeftShoulder` names). All three body
+  meshes carry the 25 vertex groups. Custom split normals on all
+  three. No shape keys.
+- Face: smooth bald head, no features. Confirmed in the stills.
+- Clothing: sculpted shorts (geometry, not a baked texture).
+
+Measured (3 body meshes, Icosphere excluded, 1.75 m):
+
+| | |
+|---|---|
+| Mesh objects | 3 (65 k exporter splits of one skin) |
+| Verts / tris | 144,330 / 243,383 |
+| After 0.1 mm weld at **1.75 m** | **1 loose part, 33 boundary, 20 non-manifold**, 121,686 verts / 243,383 tris |
+| UV islands | 2,099 before weld / **1 after** |
+| Armature | 25 bones, 1 walk animation (cleared) |
+| Source textures | 0 |
+
+The still (viewed at full size after the head-flip fix) shows a
+faceless muscular figure with real lat, teres and rear-delt form in
+the sculpture — closer to demic’s clay read than the mannequin.
+Blob v2: peach lats on both sides and a centred pink mid-back read
+in rear 3/4 and straight back. Rear delts and biceps are weak on
+the blob. Grey V p50 = 80 (rear 3/4) and 88 (back), both in range.
+Paint: lats 13,890 / mid-back 6,250 / rear delt 2,159 / biceps 1,197.
+
+A best-effort FK one-arm row (`Hips_00` +30°, `Spine_011` +12°,
+`RightArm_017` / `RightForeArm_018` guesses) produced a falling lean,
+not a textbook dumbbell row. That still is not evidence the rig can
+row; it only proves the bones move.
+
+**Fails:** watertight-enough skin (20 non-manifold, 33 boundary), no
+clothing, proven row pose, recomputable normals.
+**Keeps as:** the first rigged, faceless, untextured, muscular
+candidate. Stronger sculpt than the mannequin; dirtier topology.
+**Recommendation: do not adopt yet.** The honest next experiment is a
+hand-keyed one-arm DB row on this 25-bone rig (not the failed FK
+guess), plus a decision on the shorts and the 20 non-manifold edges.
+
+## Symmetric blob v2 (viewed at full size)
+
+Root cause of the v1 “split this way and that” look: `estimate_torso_frame`
+set `back` from the camera direction, so mirroring across `side` was a
+camera flip, not a left-right flip. A rear 3/4 view therefore painted
+only the near flank.
+
+v2 (`tools/rig3d/blob_v2.py`) builds left-right from the shoulder-band
+PCA, orients `back` toward the camera afterwards, recentres the hip on
+that midline, and paints large smooth spheres along each muscle (the
+v1 radii that actually reach this mannequin’s skin) with soft
+overlapping blend instead of winner-takes-most. Hands/forearms (low
+and far lateral) and the hip band are gated out. Colours are warmer
+and more saturated than v1; emission 0.55; a slight chroma bloom is
+applied after the still.
+
+Sheet: `output/_basemodels/eval/blob_glow_v2.png`.
+
+What improved: both lats light up; the pink mid-back sits on the
+midline; the mannequin’s straight-back view is the cleanest symmetry
+proof. Grey V stays in the 80–110 window (mannequin 81 / 90,
+bodybuilder 80 / 88).
+
+What is still short of demic (coldly):
+
+- Colour is a soft cloud, not a sharp muscle silhouette. Saturation
+  and edge discipline are below the demic clay.
+- Lower lats meet across the lumbar as an orange belt and still kiss
+  the waistband of the briefs/shorts.
+- Rear delts are clear on the mannequin’s back view and weak on the
+  bodybuilder blob. Yellow biceps almost never read from the rear.
+- The bodybuilder figure had to be flipped 180° after the first
+  Y→Z rotation (head was below the feet). Any later pose work must
+  keep that correction.
+
+Production colour method remains the **3D blob**, now the symmetric
+v2 version.
+
+## Simpler alternatives (same bodybuilder, same rear 3/4)
+
+Sheet: `output/_basemodels/eval/blob_glow_v2_alts.png`. Judged against
+the symmetric blob and against demic.
+
+| Method | What it is | What it reads as |
+|---|---|---|
+| Blob (baseline) | Anatomic-mirrored spheres, soft blend, emission over grey | Clearest lat + mid-back identity |
+| Painted strokes | Thinner mirrored polylines, one-time vertex paint | Near rear delt pops; lat fan is only a lower patch |
+| Fresnel rim | Same blob mask; fresnel rim + light interior tint | A slightly softer copy of the blob, not a new language |
+| Coloured lights | 14 spots, no mesh edit, white key dimmed | Best purple delts; peach+pink blow to a yellow-white core |
+| Rig-weight tint | Shoulder → purple, upper arm → yellow, spine × gates → lat/mid | Best simpler alt: both delts + a visible biceps; lat wings stay thin |
+
+**Winner overall vs the symmetric blob: the blob still wins** for
+muscle identity and for a filled lat fan. **Best simpler alt:
+rig-weight tint** — zero hand-placed anchors, follows any pose, and
+is the only alt that makes rear delts and biceps obvious. It does
+not replace the blob for lats and mid-back. Coloured lights are the
+prettiest accident and the worst teacher. Do not spend more time on
+the fresnel rim unless someone wants that specific look.
+
 ## Recommendation
 
 **Adopt none of the measured bodies yet** — not the first-round three,
-not Diego, Beatriz, or Gridiron Jumpman, and not the three new API
-downloads as a shipped skin. A muscle atlas, a Renaissance statuette,
-a 16-subtool écorché kit, a fragmented anatomy study, and two jumping
-sports characters are not a production gym mannequin.
+not Diego, Beatriz, or Gridiron Jumpman, not the three earlier API
+downloads as a shipped skin, and not the bodybuilder yet either.
 
-The deepkexz mannequin is the first body that *survives the weld
-test*. That is progress, not a green light. Do not ship a 1 M-tri
-unrigged AI figure with sculpted briefs just because the glow reads.
-If we continue with a download rather than authoring a body, the
-next scoped experiment is: join the 10 chunks, weld, decimate,
-rebuild normals, Rigify-weight the standing pose, and render a
-one-arm DB row. Until that pose still exists, treat it as a
-candidate, not a base. The shirtless athlete is the fallback for
-that same experiment (lighter, more leftover topology, Meshy).
+The deepkexz mannequin is still the only body that *survives the weld
+test* (1 / 0 / 0). The minglanders1 bodybuilder is the more complete
+*candidate*: rigged, faceless, untextured, standing rest pose, real
+muscle form, 243 k tris. It fails the weld on 20 non-manifold edges
+and 33 boundary edges, wears sculpted shorts, and has no proven row.
+Do not ship either one as the base tonight.
 
-Diego is still the closest *look* (real geometric muscle, no clothes,
-standing, no plinth) and still fails the skin test that killed
-Grab3D. Do not weld the 16 subtools together and call it a base.
-
-For muscle colour, use the **3D blob** method going forward. Optionally
-grade a still with (A) 2D compositing. Do not use the cheap (B) shells
-or (C) X-ray primitives.
+For muscle colour, use the **symmetric 3D blob (v2)** going forward.
+The best simpler fallback on a rigged body is **rig-weight tint**.
+Do not use coloured lights, the fresnel rim, cheap overlay shells,
+or glass X-ray as the production method.
 
 What would actually have a chance, in order:
 
-1. **Rigify-test the mannequin** (or the athlete if the briefs or the
-   triangle count get in the way) before downloading more look-alikes.
-   CharacterZone’s muscular base (`0954aa04…`, CC BY 4.0, claims
-   “ready for rig”) is still unmeasured if it can be fetched legally.
-2. If that bind fails, **there is still no free drop-in.** The method
-   that works by construction is to author our own continuous, welded,
-   unstrapped clay body (CC0), using Diego and/or the Małopolska sculpt
-   as *reference only* (credit Diego under CC BY if we derive from that
-   mesh; looking is not deriving), bind it once, and keep per-muscle
-   glow on vertex attributes (the blob method). That is modeling work,
-   not a download, and it should be scoped honestly before anyone
-   starts it.
-3. A paid athletic écorché would also need 중현 님’s explicit approval
+1. **Hand-key a one-arm dumbbell row on the bodybuilder’s 25-bone
+   rig** (the automatic FK guess failed) and decide whether the
+   shorts and the 20 non-manifold edges are acceptable. That is the
+   cheapest way to learn whether this sculpt can carry an exercise.
+2. **Rigify-test the mannequin** only if the bodybuilder row fails
+   or the shorts become a hard no. It is still the cleaner skin and
+   still a day of bind work.
+3. If both binds fail, **there is still no free drop-in.** The
+   method that works by construction is to author our own continuous,
+   welded, unstrapped clay body (CC0), using Diego and/or the
+   Małopolska sculpt as *reference only*, bind it once, and keep
+   per-muscle glow on vertex attributes (the v2 blob). That is
+   modeling work, not a download.
+4. A paid athletic écorché would also need 중현 님’s explicit approval
    (standing rule: no paid assets).
 
 Do not go back to Grab3D char1. Do not ship Z-Anatomy or Charleeh
