@@ -32,7 +32,10 @@ def main(out_name="xbot_jab_wrongform_v1.png"):
     H = title_h + head_h + len(stages) * (ph + 8) + foot_h
     sheet = Image.new("RGB", (W, H), (14, 14, 16))
     d = ImageDraw.Draw(sheet)
-    d.text((16, 14), f"Jab: correct vs procedural wrong forms  ({meta['punch']}, v2 lighting)",
+    view = "front 3/4" if meta.get("view") == "front_3_4" else "v2 lighting"
+    yaw = meta.get("yaw")
+    yaw_s = f", yaw {yaw:.0f}°" if isinstance(yaw, (int, float)) else ""
+    d.text((16, 14), f"Jab: correct vs procedural wrong forms  ({meta['punch']}, {view}{yaw_s})",
            fill=(235, 235, 238), font=f(26, True))
     stage_names = {"mid": "mid-punch", "full": "extension", "ret": "return"}
     for ci, c in enumerate(cols):

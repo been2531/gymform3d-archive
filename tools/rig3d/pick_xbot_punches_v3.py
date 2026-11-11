@@ -532,7 +532,8 @@ def score_punch(p, want):
     return total, parts
 
 
-def setup_fitted_camera(meshes, frames, arm, bones, start_xy, lock):
+def setup_fitted_camera(meshes, frames, arm, bones, start_xy, lock,
+                        yaw=None, elev=None):
     for o in list(bpy.data.objects):
         if o.type in {"CAMERA", "LIGHT"}:
             bpy.data.objects.remove(o, do_unlink=True)
@@ -549,8 +550,8 @@ def setup_fitted_camera(meshes, frames, arm, bones, start_xy, lock):
     mn = Vector((min(xs), min(ys), min(zs)))
     mx = Vector((max(xs), max(ys), max(zs)))
     look = (mn + mx) * 0.5
-    yaw_r = math.radians(xb.YAW)
-    elev_r = math.radians(xb.ELEV)
+    yaw_r = math.radians(xb.YAW if yaw is None else yaw)
+    elev_r = math.radians(xb.ELEV if elev is None else elev)
     direction = Vector((
         math.sin(yaw_r) * math.cos(elev_r),
         -math.cos(yaw_r) * math.cos(elev_r),

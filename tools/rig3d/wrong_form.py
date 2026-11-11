@@ -57,13 +57,17 @@ VARIANTS = {
     "jab_elbow_flare": {
         "type": "jab", "fault": "elbow_flare", "label": "Chicken wing (elbow flare)",
         "env": "bump",
-        "ops": [("roll", "arm_s", "arm_s", "hand_s", 65.0, "out", ["hand_s"])],
+        # v2: 92° roll, elbow allowed just above shoulder so the wing reads
+        # instantly from a front 3/4 (v1 65° + cap z=-0.01 was almost invisible).
+        "ops": [("roll", "arm_s", "arm_s", "hand_s", 92.0, "out", ["hand_s"])],
+        "elbow_cap_z": 0.05,
     },
     "jab_dropped_guard": {
         "type": "jab", "fault": "rear_guard_drop", "label": "Dropped rear guard",
         "env": "hold",
-        "ops": [("toward", "arm_o", "hand_o", "down", 38.0),
-                ("open", "fore_o", 34.0)],
+        "ops": [("toward", "arm_o", "hand_o", "down", 62.0),
+                ("open", "fore_o", 48.0),
+                ("toward", "arm_o", "hand_o", "out", 16.0)],
     },
     "jab_chin_up": {
         "type": "jab", "fault": "chin_up", "label": "Chin up",
@@ -80,8 +84,8 @@ VARIANTS = {
     "jab_no_retraction": {
         "type": "jab", "fault": "no_retraction", "label": "No retraction (fist drops)",
         "env": "after_full",
-        "ops": [("toward", "arm_s", "hand_s", "down", 42.0),
-                ("open", "fore_s", 25.0)],
+        "ops": [("toward", "arm_s", "hand_s", "down", 58.0),
+                ("open", "fore_s", 38.0)],
     },
     # ---- cross
     "cross_no_hip": {
@@ -364,10 +368,11 @@ def apply_variant(ctx, punch, name, strength=1.0):
                 pb = _pb(ctx, _resolve(bk, s, o))
                 keep_pbs = [_pb(ctx, _resolve(k, s, o)) for k in keep]
                 saved = [(kp, _world(ctx, kp).copy()) for kp in keep_pbs]
+                cap_z = spec.get("elbow_cap_z", -0.01 if pk == "out" else None)
                 _op_roll(ctx, pb, _resolve(ak, s, o), _resolve(bk2, s, o), deg * w,
                          dirs.get(pk, dirs["up"]), f"fore_{s}" if "_s" in bk else f"fore_{o}",
                          to_up_w=(w * deg if pk == "to_up" else None),
-                         elbow_cap_z=(-0.01 if pk == "out" else None))
+                         elbow_cap_z=cap_z)
                 for kp, M in saved:  # keep fist orientation (wrist is on the axis)
                     loc = _world(ctx, kp).to_translation()
                     M2 = M.copy()
@@ -452,7 +457,7 @@ def verdict(base_faults, var_faults, intended):
 def _cli():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     a = {"type": "jab", "verify": False, "sheet": False, "variants": None,
-         "punch": None, "facts": None}
+         "punch": None, "facts": None, "yaw": None, "out_name": None}
     i = 0
     while i < len(argv):
         t = argv[i]
@@ -464,6 +469,10 @@ def _cli():
             a["punch"] = argv[i + 1]; i += 2; continue
         if t == "--facts":
             a["facts"] = argv[i + 1]; i += 2; continue
+        if t == "--yaw":
+            a["yaw"] = float(argv[i + 1]); i += 2; continue
+        if t == "--out-name":
+            a["out_name"] = argv[i + 1]; i += 2; continue
         if t == "--verify":
             a["verify"] = True
         if t == "--render-sheet":
@@ -509,18 +518,66 @@ def run(a):
     qc.write_qc_json(out, report)
     print("WROTE", out, flush=True)
     if a["sheet"]:
-        render_sheet(p, spec, [n for n in (a["variants"] or SHEET_JAB)], report)
+        render_sheet(p, spec, [n for n in (a["variants"] or SHEET_JAB)], report,
+                     yaw=a.get("yaw"), out_name=a.get("out_name"))
     return report
 
 
 # ------------------------------------------------------------------ sheet
-def render_sheet(p, spec, names, report, res=(432, 768)):
+def _chest_forward(arm, bones, frame):
+    """Horizontal chest-forward vector at `frame` from the shoulder line."""
+    bpy.context.scene.frame_set(int(frame))
+    bpy.context.view_layer.update()
+    sh_l = xb.bone_world(arm, bones["sh_l"]) if bones.get("sh_l") else None
+    sh_r = xb.bone_world(arm, bones["sh_r"]) if bones.get("sh_r") else None
+    if sh_l is None or sh_r is None:
+        return Vector((0.0, -1.0, 0.0))
+    across = sh_r - sh_l
+    across.z = 0.0
+    if across.length < 1e-6:
+        return Vector((0.0, -1.0, 0.0))
+    # (sh_r - sh_l) × world-up points roughly chest-forward for a Mixamo T-pose
+    # that was turned to face -Y (rest across ≈ +X, +X × +Z = +Y = back), so
+    # flip to get forward.
+    fwd = across.normalized().cross(Vector((0.0, 0.0, 1.0)))
+    if fwd.length < 1e-6:
+        return Vector((0.0, -1.0, 0.0))
+    fwd.normalize()
+    # If this points backward of -Y more than forward, leave it; the sign is
+    # chosen so a rest-facing -Y character has fwd ≈ -Y.
+    rest = Vector((0.0, -1.0, 0.0))
+    if fwd.dot(rest) < 0:
+        fwd = -fwd
+    return fwd
+
+
+def front_three_quarter_yaw(arm, bones, frame, offset_deg=-38.0):
+    """Yaw (degrees) for a front 3/4 of the chest, not a side profile.
+
+    setup_fitted_camera places the camera at (sin yaw, -cos yaw); yaw=0 is
+    world -Y (true front after face_minus_y). A bladed boxing stance turns
+    the chest toward -X, so YAW=35 reads as a side view. Orbit ~38° off the
+    chest-forward so both gloves and the elbow line are readable.
+    """
+    fwd = _chest_forward(arm, bones, frame)
+    # Camera sits in front of the chest: direction look→camera = -fwd, then
+    # orbit `offset_deg` about Z for a 3/4 (negative = toward the lead/left).
+    cam = -fwd
+    ang = math.radians(offset_deg)
+    ca, sa = math.cos(ang), math.sin(ang)
+    x, y = cam.x * ca - cam.y * sa, cam.x * sa + cam.y * ca
+    # direction = (sin yaw, -cos yaw)  =>  yaw = atan2(x, -y)
+    return math.degrees(math.atan2(x, -y))
+
+
+def render_sheet(p, spec, names, report, res=(432, 768), yaw=None, out_name=None):
     stages = [("mid", int(p["mid"])), ("full", int(p["full"])), ("ret", int(p["ret"]))]
     cols = [None] + list(names)
     cam_saved = None
     paths = {}
     old_res = xb.RES
     xb.RES = res
+    used_yaw = yaw
     try:
         for col in cols:
             ctx = v3.load_clip(spec)
@@ -528,8 +585,11 @@ def render_sheet(p, spec, names, report, res=(432, 768)):
                 apply_variant(ctx, p, col)
             xb.assign_clay(ctx["meshes"])
             frames = [int(p["guard"]), int(p["mid"]), int(p["full"]), int(p["ret"])]
+            if used_yaw is None:
+                used_yaw = front_three_quarter_yaw(ctx["arm"], ctx["bones"], int(p["full"]))
+                print(f"front 3/4 yaw={used_yaw:.1f}", flush=True)
             v3.setup_fitted_camera(ctx["meshes"], frames, ctx["arm"], ctx["bones"],
-                                   ctx["start_xy"], ctx["lock"])
+                                   ctx["start_xy"], ctx["lock"], yaw=used_yaw)
             cam = bpy.context.scene.camera
             if cam_saved is None:
                 # widen a touch so every variant fits the correct clip's camera
@@ -558,10 +618,19 @@ def render_sheet(p, spec, names, report, res=(432, 768)):
                            "exact": v["verdict"]["exact"]} for k, v in report["variants"].items()},
             "base": {"faults": report["base"]["ref"].get("faults"),
                      "dist": report["base"]["ref"].get("distance")},
-            "punch": p["id"]}
+            "punch": p["id"],
+            "yaw": used_yaw,
+            "view": "front_3_4"}
     mp = os.path.join(WF_DIR, "sheet_meta.json")
     qc.write_qc_json(mp, meta)
     print("SHEET_META", mp, flush=True)
+    # Compose the v2 sheet by default when a name is given; leave v1 as
+    # the fallback so an unnamed call still builds the historic filename.
+    try:
+        import build_wrongform_sheet as _bws
+        _bws.main(out_name=out_name or "xbot_jab_wrongform_v2.png")
+    except Exception as exc:
+        print(f"SHEET_COMPOSE_FAILED {exc}", flush=True)
 
 
 if __name__ == "__main__":
