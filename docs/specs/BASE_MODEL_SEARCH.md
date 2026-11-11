@@ -961,3 +961,85 @@ What would actually have a chance, in order:
 3. Do not buy the Quaternius Source pack or UAL Pro just to get
    Regular/Teen bodies or extra punches (standing rule: no paid
    assets). The jab we needed was already in the free Standard UAL.
+
+
+## Boxing bodies v2 (Tishkok A-pose Rigify + shortlist)
+
+t845u: fit Rigify to Tishkok’s A-pose and search for a better free-commercial body.
+
+### A — Tishkok bind
+
+After a 0.1 mm weld the mesh is usable shells: body 30424 tris (plus two ears
+joined in), shorts 5508, gloves 3882 each, shoes many islands joined per
+side (~19676 tris). Landmark placement of the human metarig put
+`upper_arm` heads on the delts and `hand` tails on the sculpted-glove
+centroids (0 mm error). Automatic weights on body + shorts, rigid parent of
+gloves → `hand.L/R` and shoes → `foot.L/R`.
+
+Rigify *generate* works once the add-on is enabled with
+`bpy.ops.preferences.addon_enable(module="rigify")` (plain
+`addon_utils.enable` fails to register preferences in background mode, and
+then generate dies on `make_custom_pivot`). The generated DEF bones are
+constraint-driven (ORG/MCH), so keyframing them does nothing. Deformation
+for this test uses the **fitted metarig** itself.
+
+The rest still is a standing A-pose boxer: mesh intact, gloves on the
+wrists, shoes on the feet, sculpted fists already closed. That bind is the
+real progress versus v1.
+
+Glow (em 1.30, punching-side only) at rest: purple front-delt is clearly
+visible but still spills toward the pec as a band; yellow triceps was moved
+onto the upper-arm bone (posterior — weak/unreadable from this 3/4 front);
+orange “obliques” still sit too high (serratus/armpit, not the waist flank
+between ribs and iliac crest).
+
+### A — ACCAD JabRight retarget: stopped
+
+`Male2_E2_JabRight.bvh` (CC BY 3.0, already on disk) does not become a
+boxing jab on this rig with the retargets tried:
+
+1. Rest-relative swing on the full skeleton tips the character onto its
+   back. ACCAD’s bind OFFSETS are not an anatomical T-pose (spine bones
+   point sideways in the file), so “rest → pose” on hips/spine is a huge
+   stand-up swing applied to an already-standing metarig.
+2. Arm-only world-aim keeps the body standing and the bind held together
+   (no spaghetti, gloves stay on) but the arms go **overhead**, not
+   forward at chin/shoulder height. Peak “reach” 1.15 m at frame 2/68,
+   punching hand above the head (hand_z 1.85 m on a 1.79 m figure). Guard
+   and mid collapsed to the same frame. That is not a jab against the
+   U.S. Army public-domain reference (tight guard, horizontal extension,
+   closed fists).
+
+Stopped there rather than keep guessing ACCAD axis conversions. Next
+motion path, if we stay on Tishkok: drive only the punching arm from a
+clip whose rest is a real T/A-pose (UAL Punch_Jab is proven on Quaternius
+but is an open-hand left jab), or author a short jab on the fitted
+metarig. Do not treat the overhead stills as a boxing jab.
+
+### B — Better body search
+
+Sketchfab public search (CC Attribution / CC0 only) plus OpenGameArt,
+itch listings, Quaternius, Kenney. Blend Swap search page was blocked;
+Poly Pizza search API needs a key (not used). OGA “Boxer Game Character”
+and “Mini Boxing Character” are **2D sprite sheets** (CC0), not 3D bodies.
+
+Nothing clearly beats Tishkok under the rules (free commercial, no NC,
+no NoAI, no real-person / game / film IP, lean athletic boxer, ideally
+faceless and rigged, one continuous surface). Excluded on sight: Manny
+Pacquiao likeness, arcade/Street-Fighter-like “boxer”, UFC-branded female
+MMA, photo-derived CrazyTalk head, NSFW “Mr Sexy Man”, cartoon kid, and
+jerlymans’ rigged boxer (closest *look* among rejects — CC BY-SA, internal
+ref only). No extra full-body download and no second jab test.
+
+Sheet: `output/_basemodels/boxer_thumbs/boxer_shortlist_v2.png`.
+
+### Verdict
+
+**Still not a production boxing body+motion pair.**
+
+Tishkok remains the look leader (credit required, CC BY 4.0, Tishkok) and
+now *has* an A-pose Rigify metarig bind that survives posing. It is not
+production-ready: simplified face, glow placement still wrong on
+obliques/triceps/pec spill, and we do not yet have a closed-fist jab that
+matches a real jab. Quaternius Superhero Male stays the motion guinea pig
+only. No new body adopted.
