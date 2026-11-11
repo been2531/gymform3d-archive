@@ -107,35 +107,38 @@ def _lower_or_punch_glove(handle, punch_side=None, prefer_lower=True):
     return [min(gloves, key=_cz)]
 
 
-def _thumb_side_yaw_elev(glove, body_center=None):
-    """3/4 yaw from OUTSIDE the body so the torso does not fill the frame.
+def _thumb_side_yaw_elev(glove, look=None, body_center=None):
+    """Pick a 3/4 where the thumb reads as a side lobe, camera outside the body.
 
-    A purely local +Z (thumb) direction previously parked the camera against
-    the hip, leaving only a sliver of glove in the shot.
+    Looking along the thumb axis hides the lobe (it flattens into the fist).
+    Prefer a view with the thumb ~45° toward the camera and a wide silhouette.
     """
     mw = glove.matrix_world.to_3x3()
     thumb = (mw @ Vector((0.0, 0.0, 1.0))).normalized()
-    pts_guess = glove.location
-    away = None
-    if body_center is not None:
-        away = (pts_guess - body_center)
-        away.z = 0.0
-        if away.length > 1e-6:
-            away.normalize()
-    # Prefer the sheet's outside 3/4 (yaw ~48), biased toward the thumb
-    # and away from the torso.
-    base = Vector((
-        math.sin(math.radians(48.0)) * math.cos(math.radians(16.0)),
-        -math.cos(math.radians(48.0)) * math.cos(math.radians(16.0)),
-        math.sin(math.radians(16.0)),
-    )).normalized()
-    view = base * 0.70 + thumb * 0.25
-    if away is not None:
-        view = view + away * 0.35
-    view.normalize()
-    yaw = math.degrees(math.atan2(view.x, -view.y))
-    elev = 16.0
-    return yaw, elev
+    knuckle = (mw @ Vector((0.0, 1.0, 0.0))).normalized()
+    look = look or glove.location
+    bc = body_center
+    best = None
+    for yaw in range(-150, 181, 15):
+        for elev in (12, 16, 20, 24):
+            direction = Vector((
+                math.sin(math.radians(yaw)) * math.cos(math.radians(elev)),
+                -math.cos(math.radians(yaw)) * math.cos(math.radians(elev)),
+                math.sin(math.radians(elev)),
+            )).normalized()
+            if bc is not None and (look + direction * 0.55 - bc).length < 0.45:
+                continue
+            toward = float(thumb.dot(-direction))
+            if toward < 0.05:
+                continue
+            perp = (thumb - direction * thumb.dot(direction)).length
+            length_across = (knuckle - direction * knuckle.dot(direction)).length
+            score = 1.2 * perp + 0.35 * length_across - 0.8 * abs(toward - 0.45)
+            if best is None or score > best[0]:
+                best = (score, float(yaw), float(elev))
+    if best is None:
+        return 90.0, 16.0
+    return best[1], best[2]
 
 
 def stage_closeups(state, handle, stills, eevee, samples):
@@ -157,7 +160,8 @@ def stage_closeups(state, handle, stills, eevee, samples):
             bc = Vector(sum((Vector(p) for p in body), Vector()) / len(body))
         else:
             bc = None
-        yaw, elev = _thumb_side_yaw_elev(gloves[0], body_center=bc)
+        look = Vector(sum((Vector(p) for p in pts), Vector()) / len(pts)) if pts else None
+        yaw, elev = _thumb_side_yaw_elev(gloves[0], look=look, body_center=bc)
         v1.setup_covering_camera(pts, margin=0.10, yaw=yaw, elev=elev, res=CLOSE_RES)
         path = os.path.join(OUT_DIR, "xbot_outfit_v3_close_glove.png")
         v1.render_still(path, eevee=eevee, samples=samples, res=CLOSE_RES)
