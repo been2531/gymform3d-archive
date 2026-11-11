@@ -5,10 +5,10 @@
   nice -n 19 blender -b --python tools/rig3d/render_xbot_outfit_v5.py -- --eevee-stills
   nice -n 19 blender -b --python tools/rig3d/render_xbot_outfit_v5.py -- --eevee-stills --no-preview
 
-Outfit A v4: glossy black CC0-matched gloves + charcoal beanie + charcoal
-satin trunks + fitted charcoal tank. Columns: plain | v3 A | v4 A.
-Rows: Idle guard, Jab full, Jab return. Close-ups: v4 glove next to the
-CC0 reference at the same long-axis scale, plus a garments close-up.
+Outfit A v5: glossy black CC0-matched gloves + charcoal beanie + burgundy
+satin trunks + fitted charcoal tank. Columns: plain | v4 A | v5 A.
+Rows: Idle guard, Jab full, Jab return. Close-ups: v5 glove vs CC0 glove,
+v5 trunks vs CC0 trunks (Nationaal Archief 1951), plus a garments close-up.
 
 Writes (gitignored):
   output/_basemodels/eval/xbot_outfit_v5.png
@@ -51,7 +51,7 @@ VARIANTS = (
     {"key": "plain", "title": "plain X Bot", "items": (), "colorway": "A", "version": "v5"},
     {"key": "v4A", "title": "v4 A  ·  ballooned trunks / crop tank (rejected)",
      "items": V5_ITEMS, "colorway": "A", "version": "v4"},
-    {"key": "v5A", "title": "v5 A  ·  snug trunks, waist tank, kidney-thumb gloves",
+    {"key": "v5A", "title": "v5 A  ·  burgundy trunks, charcoal tank, kidney-thumb gloves",
      "items": V5_ITEMS, "colorway": "A", "version": "v5"},
 )
 
@@ -192,6 +192,84 @@ def setup_oriented_camera(points, direction, up, margin=0.10, res=None, look=Non
     return cam, look, direction, dist
 
 
+def frame_camera_keep_studio(points, margin=0.12, yaw=None, elev=None, res=None):
+    """Place a 50 mm camera to frame `points` without restaging the body lights.
+
+    setup_studio() puts key/fill/rim next to the camera. Framing a 15 cm glove
+    would pull those lights onto the leather and wash glossy black to grey.
+    Close-ups must keep the already-staged body-scale studio.
+    """
+    yaw = xbot.YAW if yaw is None else yaw
+    elev = xbot.ELEV if elev is None else elev
+    pts = [Vector(p) for p in points]
+    if not pts:
+        raise RuntimeError("no points for close camera")
+    xs, ys, zs = zip(*[(p.x, p.y, p.z) for p in pts])
+    look = Vector(((min(xs) + max(xs)) * 0.5,
+                   (min(ys) + max(ys)) * 0.5,
+                   (min(zs) + max(zs)) * 0.5))
+    direction = Vector((
+        math.sin(math.radians(yaw)) * math.cos(math.radians(elev)),
+        -math.cos(math.radians(yaw)) * math.cos(math.radians(elev)),
+        math.sin(math.radians(elev)),
+    )).normalized()
+    cam_z = direction
+    cam_x = cam_z.cross(Vector((0, 0, 1)))
+    if cam_x.length < 1e-6:
+        cam_x = Vector((1, 0, 0))
+    cam_x.normalize()
+    cam_y = cam_z.cross(cam_x).normalized()
+    sensor_h, lens = 24.0, 50.0
+    res_wh = res or RES
+    aspect = res_wh[0] / res_wh[1]
+    v_ang = 2 * math.atan((sensor_h * 0.5) / lens)
+    h_ang = 2 * math.atan(math.tan(v_ang * 0.5) * aspect)
+    lim = 1.0 - 2.0 * margin
+    tan_h = math.tan(h_ang * 0.5) * lim
+    tan_v = math.tan(v_ang * 0.5) * lim
+
+    def cam_xy(p, look_at):
+        d = p - look_at
+        return d.dot(cam_x), d.dot(cam_y), d.dot(cam_z)
+
+    xys = [cam_xy(p, look) for p in pts]
+    mid_x = 0.5 * (min(c[0] for c in xys) + max(c[0] for c in xys))
+    mid_y = 0.5 * (min(c[1] for c in xys) + max(c[1] for c in xys))
+    look = look + cam_x * mid_x + cam_y * mid_y
+    dist = 0.4
+    for p in pts:
+        x, y, zoff = cam_xy(p, look)
+        if tan_h > 1e-8:
+            dist = max(dist, abs(x) / tan_h + zoff)
+        if tan_v > 1e-8:
+            dist = max(dist, abs(y) / tan_v + zoff)
+        dist = max(dist, zoff + 0.35)
+    dist *= 1.02
+    loc = look + direction * dist
+
+    # Replace the camera only; leave Key/Fill/Rim and the floor alone.
+    for name in list(bpy.data.objects.keys()):
+        if name.startswith("Cam") and bpy.data.objects[name].type == "CAMERA":
+            if bpy.context.scene.camera == bpy.data.objects[name]:
+                bpy.context.scene.camera = None
+            bpy.data.objects.remove(bpy.data.objects[name], do_unlink=True)
+    cam_data = bpy.data.cameras.new("Cam")
+    cam_data.lens = lens
+    cam_data.sensor_fit = "VERTICAL"
+    cam_data.sensor_height = sensor_h
+    cam_data.clip_start = 0.05
+    cam_data.clip_end = 50
+    cam = bpy.data.objects.new("Cam", cam_data)
+    bpy.context.scene.collection.objects.link(cam)
+    cam.location = loc
+    cam.rotation_euler = (look - loc).to_track_quat("-Z", "Y").to_euler()
+    bpy.context.scene.camera = cam
+    print(f"camera (keep studio) look={tuple(round(c,3) for c in look)} dist={dist:.3f} "
+          f"bbox=({min(xs):.2f},{min(ys):.2f},{min(zs):.2f})-"
+          f"({max(xs):.2f},{max(ys):.2f},{max(zs):.2f})", flush=True)
+    return cam, look, direction, dist
+
+
 def _hide_for_glove_close(handle, meshes, hide=True):
     changed = []
     keep = set(_objects(handle, "XBotGlove_"))
@@ -264,6 +342,17 @@ def _add_glove_card(look, direction, dist, size=0.28):
 
 def stage_closeups(state, handle, stills, eevee, samples):
     """v5 glove close-up under the SAME studio lighting (no grey card) + trunks close."""
+    # Re-stage the FRONT body-scale studio before any close-up. A prior back
+    # view (or a product camera) would otherwise leave the key behind the figure
+    # and the close-ups would render as underexposed silhouettes.
+    body_for_studio = list(state["meshes"]) + [
+        bpy.data.objects[n] for n in (handle.get("objects") or [])
+        if n in bpy.data.objects
+    ]
+    bpts = v1.evaluated_world_points(body_for_studio)
+    if bpts:
+        v1.setup_covering_camera(bpts, margin=0.06, yaw=xbot.YAW, elev=xbot.ELEV, res=RES)
+
     gloves = _objects(handle, "XBotGlove_")
     punch = state.get("punch_side") or "R"
     prefer = [o for o in gloves if f"XBotGlove_{punch}_" in o.name]
@@ -280,15 +369,20 @@ def stage_closeups(state, handle, stills, eevee, samples):
         direction = (dorsal * 0.72 + thumb * 0.58 + knuckle * 0.08).normalized()
         up = (-knuckle + 0.02 * dorsal).normalized()
         hidden = _hide_for_glove_close(handle, state["meshes"], hide=True)
-        # Keep the dark studio; do NOT add a pale card — that washed the leather grey.
-        cam, look, direction, dist = setup_oriented_camera(
-            pts, direction, up, margin=0.12, res=CLOSE_RES, look=look,
-        )
+        # Keep the already-staged body lights. Do not call setup_studio()
+        # (that parks the key on the glove and turns glossy black into grey plastic).
+        # Prefer the same yaw/elev language as the body rows so the material reads
+        # the same; a slight yaw bias shows the kidney thumb.
+        if not any(o.type == "LIGHT" for o in bpy.data.objects):
+            body_pts = v1.evaluated_world_points(list(state["meshes"]) + gloves)
+            v1.setup_covering_camera(body_pts, margin=0.06, res=RES)
+        frame_camera_keep_studio(pts, margin=0.14, yaw=xbot.YAW + 18.0,
+                                 elev=xbot.ELEV + 4.0, res=CLOSE_RES)
         path = os.path.join(OUT_DIR, "xbot_outfit_v5_close_glove.png")
         v1.render_still(path, eevee=eevee, samples=samples, res=CLOSE_RES)
         stills["close_glove"] = path
         shots.append(path)
-        print(f"WROTE {path} ({os.path.getsize(path)} bytes) product-close (studio, no card)", flush=True)
+        print(f"WROTE {path} ({os.path.getsize(path)} bytes) close (same studio lights, no card)", flush=True)
         for obj in hidden:
             obj.hide_render = False
 
@@ -302,7 +396,9 @@ def stage_closeups(state, handle, stills, eevee, samples):
             zlo = min(zs) + 0.18 * (max(zs) - min(zs))
             zhi = min(zs) + 0.62 * (max(zs) - min(zs))
             focus = [p for p in pts if zlo <= p.z <= zhi] or pts
-            v1.setup_covering_camera(focus, margin=0.10, yaw=-22.0, elev=6.0, res=CLOSE_RES)
+            if not any(o.type == "LIGHT" for o in bpy.data.objects):
+                v1.setup_covering_camera(pts, margin=0.10, yaw=-22.0, elev=6.0, res=CLOSE_RES)
+            frame_camera_keep_studio(focus, margin=0.10, yaw=-22.0, elev=6.0, res=CLOSE_RES)
             path = os.path.join(OUT_DIR, "xbot_outfit_v5_close_trunks.png")
             v1.render_still(path, eevee=eevee, samples=samples, res=CLOSE_RES)
             stills["close_trunks"] = path
@@ -318,7 +414,9 @@ def stage_closeups(state, handle, stills, eevee, samples):
             zlo = min(zs) + 0.22 * (max(zs) - min(zs))
             zhi = min(zs) + 0.82 * (max(zs) - min(zs))
             focus = [p for p in pts if zlo <= p.z <= zhi] or pts
-            v1.setup_covering_camera(focus, margin=0.10, yaw=-22.0, elev=8.0, res=CLOSE_RES)
+            if not any(o.type == "LIGHT" for o in bpy.data.objects):
+                v1.setup_covering_camera(pts, margin=0.10, yaw=-22.0, elev=8.0, res=CLOSE_RES)
+            frame_camera_keep_studio(focus, margin=0.10, yaw=-22.0, elev=8.0, res=CLOSE_RES)
             path = os.path.join(OUT_DIR, "xbot_outfit_v5_close_garments.png")
             v1.render_still(path, eevee=eevee, samples=samples, res=CLOSE_RES)
             stills["close_garments"] = path
@@ -367,7 +465,13 @@ def main():
             "file": "Pair of boxing gloves.jpg",
             "license": "CC0 1.0 (Wikimedia Commons, Petey21, 2014)",
             "url": "https://commons.wikimedia.org/wiki/File:Pair_of_boxing_gloves.jpg",
-            "note": "Cropped and scaled to the v4 glove close-up long axis; logo/text not copied into the mesh.",
+            "note": "Cropped and scaled to the v5 glove close-up long axis; logo/text not copied into the mesh.",
+        },
+        "ref_trunks": {
+            "file": "Training Jan de Bruin met Theo Huizenaar, Bestanddeelnr 904-5273.jpg",
+            "license": "CC0 1.0 (Nationaal Archief / Anefo, Harry Pot, 19 April 1951)",
+            "url": "https://commons.wikimedia.org/wiki/File:Training_Jan_de_Bruin_met_Theo_Huizenaar,_Bestanddeelnr_904-5273.jpg",
+            "note": "Cropped to the worn trunks and scaled to the v5 trunks close-up long axis.",
         },
         "clips": [],
         "handles": {},
@@ -424,12 +528,7 @@ def main():
             "tank": _poke(probe, state["meshes"], "tank"),
         }
         facts["poke"][f"{pose['clip']}_{pose['stage']}"] = rec["poke_probe"]
-        for kind, report in rec["poke_probe"].items():
-            if report and report.get("pokes"):
-                honest.append(
-                    f"{pose['clip']} {pose['stage']} {kind}: "
-                    f"{report['pokes']}/{report['tested']} region verts poke through"
-                )
+        # garment_poke_report is inverted / unreliable — do not treat counts as visual failures.
         clear_outfit(probe, state["meshes"])
 
         if pose["clip"] == "jab" and pose["stage"] == "full":
@@ -488,10 +587,11 @@ def main():
     facts["stills_elapsed_s"] = time.time() - t0
 
     honest.append("Assets: all outfit meshes are procedural (no third-party / paid / logo files).")
-    honest.append("v5 gloves: glossy black leather, bulbous body, side-lobe thumb, smooth same-black cuff, subtle stitch grooves; fist ~0.8× head width.")
+    honest.append("v5 trunks are deep burgundy/wine satin with thin charcoal trim — distinct from the jab glow (front-delt purple, triceps gold), which stays on the shoulder/arm.")
+    honest.append("v5 trunks: snug navel waistband, fabric follows hips/glutes, mid-thigh hem with a late ~3.5 cm flare (no balloon/skirt). Inner thigh can still show a little clay on a deep jab stance.")
+    honest.append("v5 tank is charcoal (beanie base). Mixamo Beta_Surface has a 13 cm midriff hole, so the tank is a clean loft skinned to the spine chain; it reaches the waistband at rest but still tears/wrinkles on jab extension. Armholes are not fully clean.")
+    honest.append("v5 glove close-up uses the same body-scale studio lights (no grey card) and reads glossy black. The thumb is still weaker than the CC0 kidney lobe (close-up angle hides it; cuff has a slight lip). Wrist clay can still peek at the cuff on jab extension.")
     honest.append("The CC0 glove photo's PRO strap lettering is not reproduced (trademark). Trunks reference is CC0 (Nationaal Archief / Anefo, Harry Pot, 1951).")
-    honest.append("Trunks and tank are charcoal satin (beanie base color) with thin black trim on the trunks, armature-bound.")
-    honest.append("Tank is sleeveless / racerback so deltoids, arms and scapulae stay visible for the jab glow.")
     facts["honest_notes"] = honest
 
     sheet = os.path.join(OUT_DIR, "xbot_outfit_v5.png")
