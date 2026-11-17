@@ -1,0 +1,122 @@
+{
+  "pass": true,
+  "passed": "25/25",
+  "gates": {
+    "format_1080x1920_30fps": {
+      "ok": true,
+      "value": "1080x1920@30/1"
+    },
+    "length_10_15s": {
+      "ok": true,
+      "value": 13.4
+    },
+    "motion_frame0": {
+      "ok": true,
+      "value": 0.00552
+    },
+    "no_still_over_1s": {
+      "ok": true,
+      "value": "longest still 0.10s"
+    },
+    "hook_frame0_2to4_words": {
+      "ok": true,
+      "value": "'99% DO THIS WRONG' (4 words)"
+    },
+    "hook_cap_ge_110px": {
+      "ok": true,
+      "value": 112
+    },
+    "labels_cap_ge_70px": {
+      "ok": true,
+      "value": 76
+    },
+    "text_contrast_ge_4_5": {
+      "ok": true,
+      "value": 5.45
+    },
+    "bottom_15pct_clear": {
+      "ok": true,
+      "value": "lowest text 1514px, max dirty 0.0000%"
+    },
+    "title_max_2_lines": {
+      "ok": true,
+      "value": "max 2 lines"
+    },
+    "text_inside_frame": {
+      "ok": true,
+      "value": "0 frames"
+    },
+    "text_clear_of_figure": {
+      "ok": true,
+      "value": "0 overlapping text/figure frames"
+    },
+    "limb_length_drift_lt_0_5px": {
+      "ok": true,
+      "value": "max 0.0000px over 618 poses"
+    },
+    "loudness_-14pm1_LUFS": {
+      "ok": true,
+      "value": "-14.0 LUFS, TP -1.5 dBFS"
+    },
+    "narration_fits_cues": {
+      "ok": true,
+      "value": [
+        "0.15-2.34",
+        "3.35-4.58",
+        "5.55-7.71",
+        "8.55-10.34",
+        "11.55-12.99"
+      ]
+    },
+    "narration_present": {
+      "ok": true,
+      "value": 5
+    },
+    "target_muscle_visible": {
+      "ok": true,
+      "value": "chest+triceps; min 2598px2, 0 misses, 0 wrong-form frames with orange"
+    },
+    "no_highlight_in_groin_zone": {
+      "ok": true,
+      "value": "0 highlighted samples in the front-view groin zone over 60 figures"
+    },
+    "named_muscle_is_highlighted": {
+      "ok": true,
+      "value": "0 frames"
+    },
+    "min_rep_duration_ge_2_2s": {
+      "ok": true,
+      "value": "period 2.5s, measured 2.50s"
+    },
+    "figure_fill": {
+      "ok": true,
+      "value": "reps@0.0: 28.3% area / 31.7% tall, closeup@8.4: 27.8% area / 29.4% tall"
+    },
+    "profile_face_matches_body": {
+      "ok": true,
+      "value": "min dot 0.883 over 366 side faces"
+    },
+    "fault_highlight_strong": {
+      "ok": true,
+      "value": "min band 20px over 372 segments"
+    },
+    "wrong_form_readable_all_rep": {
+      "ok": true,
+      "value": {
+        "sag": 0.063,
+        "half": 0.137
+      }
+    },
+    "think_end_variant_valid": {
+      "ok": true,
+      "value": {
+        "think": "scratch",
+        "conclusion": "flex"
+      }
+    }
+  },
+  "render_video_s": 12.0,
+  "total_s": 23.7,
+  "mp4": "/workspace/daily_info_reels/output/autoreel/2026-11-17/pushup_fix_B.mp4",
+  "sheet": "/workspace/daily_info_reels/output/autoreel/2026-11-17/pushup_fix_B_sheet.jpg"
+}
