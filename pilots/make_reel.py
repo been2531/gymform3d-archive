@@ -9,6 +9,7 @@ import skia
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pilots import audio, qa  # noqa: E402
+from autoreel.ig_spec import AUDIO_MUX, VIDEO_ENCODE  # noqa: E402
 
 W, H = 1080, 1920
 
@@ -54,8 +55,7 @@ def main():
     t0 = time.time()
     style = load_style(a.style, ep)
     enc = subprocess.Popen(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba",
-                            "-s", f"{W}x{H}", "-r", str(fps), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-                            "-pix_fmt", "yuv420p", "-movflags", "+faststart", silent], stdin=subprocess.PIPE)
+                            "-s", f"{W}x{H}", "-r", str(fps), "-i", "-"] + VIDEO_ENCODE + [silent], stdin=subprocess.PIPE)
     surf = skia.Surface(W, H)
     metas, small, sheet_frames = [], [], {}
     sheet_idx = {int((i + 0.5) * n / 12): i for i in range(12)}
@@ -80,10 +80,8 @@ def main():
     wav = os.path.join(out_dir, f"_{stem}.wav")
     narr = audio.build(sec, ep, style.events(), dur, os.path.join(out_dir, "_tts_cache"), wav,
                        use_bed=sec.get("bed", True))
-    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", silent, "-i", wav, "-c:v", "copy", "-c:a", "aac",
-                    # IG REELS containers reject our earlier mono / moov-at-end files: stereo (-3 dB/ch keeps -14 LUFS) + faststart
-                    "-af", "pan=stereo|c0=0.7071*c0|c1=0.7071*c0", "-ar", "48000",
-                    "-b:a", "192k", "-shortest", "-movflags", "+faststart", mp4], check=True)
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", silent, "-i", wav]
+                    + AUDIO_MUX + [mp4], check=True)
     total_s = time.time() - t0
     # flow sheet
     sheet = os.path.join(out_dir, f"{stem}_sheet.jpg")

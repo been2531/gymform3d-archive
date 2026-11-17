@@ -14,8 +14,13 @@ Dry run of the publish step (reads Instagram only, sends nothing): add `--dry-ru
 - `topics/queue.json` + `topics/episodes/*.json`: the topic queue, used in order. Each entry is used once (tracked in `output/autoreel/state.json`).
 - `autoreel/validate.py`: batch gate for new episodes. Run `python -m autoreel.validate topics/episodes/*.json --render --add`.
   - Static checks first.
-  - With `--render`, a full render plus all 16 QA gates.
+  - With `--render`, a full render plus all QA gates (including `ig_spec`).
   - With `--add`, episodes that pass are appended to the queue.
+- `autoreel/ig_spec.py`: Instagram Reels encode + container spec (single source of truth).
+  - Encode: 1080x1920 30 fps, H.264 High yuv420p, 7 Mbps CBR (VBV 14 Mbps; ABR undershoots on these scenes), AAC-LC 48 kHz stereo 192k, `+faststart`.
+  - Loudness stays -14 LUFS (two-pass loudnorm in `pilots/audio.py`; stereo mux is -3 dB/ch).
+  - Gate `ig_spec` (ffprobe of the final mp4) fails the build if any of: not 1080x1920 9:16, fps not 30, codec not h264/yuv420p, audio not AAC stereo 44.1/48 kHz, moov not before mdat, video bitrate under 4 Mbps, duration outside 3-90 s, file over 300 MB.
+  - `publish_run.py` runs the same gate before upload and refuses (Telegram ❌) on fail.
 - `autoreel/render.py`: render plus QA. If QA fails, it retries once with tweaks; if the retry also fails, the episode is marked failed and the next one is tried (at most 2 per day).
 - `autoreel/caption.py`: builds the caption (3 English lines, no hashtags) and runs the `gymform/caption.py` lint.
 - `autoreel/cover.py`: cover frame.
@@ -32,7 +37,7 @@ Dry run of the publish step (reads Instagram only, sends nothing): add `--dry-ru
 {"pipeline": "autoreel", "episode": "topics/episodes/<id>.json", "exercise": "...", "title": "<caption line 1>",
  "status": "scheduled", "publish_at": "<date>T10:00+09:00",
  "mp4": "output/autoreel/<date>/<id>_B.mp4", "cover": "..._cover.jpg", "caption": "..._caption.txt", "sheet": "..._sheet.jpg",
- "qa": "23/23 PASS", "approved_by": "topic queue (owner standing rule: queue selection = approval)",
+ "qa": "26/26 PASS", "approved_by": "topic queue (owner standing rule: queue selection = approval)",
  "approved_at": "...", "created_at": "..."}
 ```
 After posting, `publish_run.py` adds `media_id`, `permalink`, `published_at` and `container_id`, and sets `status` to `"published"`.
@@ -74,3 +79,4 @@ The routinizer watcher (`gymform_publish_watch.py`) only takes `"approved"` file
   - `wrong_form_readable_all_rep`
   - `think_end_variant_valid`
   - plus the queue variety check in `validate.py`
+- QA gate `ig_spec` (Reels container/encode): 1080x1920 9:16, 30 fps, h264/yuv420p, AAC stereo 44.1/48 kHz, faststart, video at least 4 Mbps, 3-90 s, at most 300 MB. Safe-zone gates (`bottom_15pct_clear`, `text_inside_frame`) are unchanged.

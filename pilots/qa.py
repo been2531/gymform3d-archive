@@ -30,6 +30,8 @@ def run(style, ep, mp4, metas, small, bg, narr, body):
     v = [s for s in pr["streams"] if s["codec_type"] == "video"][0]
     gates["format_1080x1920_30fps"] = (v["width"] == 1080 and v["height"] == 1920 and v["r_frame_rate"] == "30/1", f"{v['width']}x{v['height']}@{v['r_frame_rate']}")
     gates["length_10_15s"] = (10.0 <= dur <= 15.0, round(dur, 2))
+    from autoreel.ig_spec import check_ig_spec  # noqa: E402
+    gates["ig_spec"] = check_ig_spec(mp4)
     # motion
     diffs = [float((np.abs(small[i] - small[i - 1]).max(axis=2) > 6).mean()) for i in range(1, len(small))]
     gates["motion_frame0"] = (diffs[0] > 0.0005, round(diffs[0], 5))

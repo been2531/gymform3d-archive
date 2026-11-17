@@ -5,7 +5,8 @@
   nice -n 19 /workspace/venv-pilots/bin/python /workspace/daily_info_reels/publish_run.py --dry-run  # read-only
 
 Posts the approvals/*.json written by daily_run.py (pipeline "autoreel", status "scheduled", publish_at <= now,
-not older than 6 h). Same prechecks and steps as the routinizer watcher: ffprobe 9:16 5-90 s, caption lint, cover,
+not older than 6 h). Same prechecks and steps as the routinizer watcher: ig_spec (1080x1920 30fps h264/yuv420p,
+AAC stereo 44.1/48k, faststart, video >=4 Mbps, 3-90 s, <=300 MB), caption lint, cover,
 no unrelated staged git changes, duplicate check against the last 25 IG posts, nothing else posted since
 publish_at-3h, never anything referencing DfGabTBjwt8. A claim is written before upload; a claim without a
 media_id is never retried. Publishing reuses tools/ig_publish.py (archive push -> signed URL -> REELS container
@@ -55,15 +56,10 @@ def prechecks(d):
     if not os.path.isfile(mp4):
         errs.append("mp4 missing")
     else:
-        pr = json.loads(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                                        "stream=width,height:format=duration", "-of", "json", mp4],
-                                       capture_output=True, text=True).stdout or "{}")
-        try:
-            w, h = pr["streams"][0]["width"], pr["streams"][0]["height"]; dur = float(pr["format"]["duration"])
-            if abs(w / h - 9 / 16) > 0.01: errs.append("not 9:16")
-            if not 5 <= dur <= 90: errs.append("duration")
-        except (KeyError, IndexError):
-            errs.append("ffprobe failed")
+        from autoreel.ig_spec import check_ig_spec
+        ok, detail = check_ig_spec(mp4)
+        if not ok:
+            errs.append("ig_spec: " + detail)
     cap = os.path.join(common.REPO, d.get("caption", ""))
     if not os.path.isfile(cap):
         errs.append("caption missing")
