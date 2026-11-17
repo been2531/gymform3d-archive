@@ -11,4 +11,4 @@ nice -n 19 /workspace/venv-pilots/bin/python pilots/make_reel.py --style B --epi
 - `audio.py`: Kokoro-82M (Apache-2.0) via kokoro-onnx in `/workspace/venv-kokoro` at speed 1.12; SFX and beat are synthesised here (CC0); two-pass loudnorm to -14 LUFS.
 - `qa.py`: gates (format, 10–12 s, motion from frame 0, no still > 1 s, hook at frame 0, cap heights, contrast, bottom 15% clear, limb drift, loudness, narration fits cues). Output: MP4, 12-frame flow sheet, qa.json in `output/pilots/<date>/` (not committed).
 - venv: `/workspace/venv-pilots` (skia-python, numpy, pillow, soundfile). Model weights are not committed.
-- Only push-up poses exist so far; a squat needs a new pose function in `rig.py`.
+- **B2** (`style_b2.py`, `--style B2`, output `<id>_B_v2.mp4`): expressive faces (strain, shocked, worried, happy, proud), flex ending, props, auto-framing from pose bounding boxes. Exercises: `pushup_pose`, `squat_pose` in `rig.py`; a new exercise = one pose function + one JSON (see `episodes/squat_fix.json`).

@@ -178,5 +178,82 @@
         "face": "happy"
       }
     ]
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Ninety-nine percent of people do this wrong."
+      },
+      {
+        "t": 2.45,
+        "text": "Why does your back hurt?"
+      },
+      {
+        "t": 4.65,
+        "text": "Sagging hips. Make one straight line."
+      },
+      {
+        "t": 7.35,
+        "text": "Squeeze your glutes, brace your core."
+      },
+      {
+        "t": 9.35,
+        "text": "Chest to floor, every rep."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "sag",
+        "title": "99% DO THIS WRONG",
+        "stamp": "bad",
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "BACK PAIN?",
+        "face": "shocked",
+        "bubble": "?"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "sag",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "focus": "hip",
+        "guide": "line",
+        "arrow": "hip",
+        "face": "happy",
+        "title": "SQUEEZE GLUTES",
+        "note": "ONE LINE",
+        "dx": 130
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "CHEST TO FLOOR",
+        "sub": "EVERY REP",
+        "face": "proud"
+      }
+    ]
   }
 }

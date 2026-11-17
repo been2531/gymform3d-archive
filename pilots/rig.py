@@ -55,7 +55,7 @@ class Body:
         }
 
 
-def two_bone(S, W, l1, l2, prefer_left=True):
+def two_bone(S, W, l1, l2, prefer_left=True, pick=None):
     """Elbow position for shoulder S, wrist W. Exact lengths; W is pulled in
     along S->W if out of reach (keeps lengths constant)."""
     dd = dist(S, W)
@@ -68,6 +68,8 @@ def two_bone(S, W, l1, l2, prefer_left=True):
     c2 = (mx + uy * h, my - ux * h)
     score = lambda c: -c[1] - (0.5 * c[0] if prefer_left else -0.5 * c[0])
     E = c1 if score(c1) > score(c2) else c2
+    if pick is not None:
+        E = max((c1, c2), key=pick)
     W2 = (S[0] + ux * dd, S[1] + uy * dd)
     # re-derive wrist so |E-W| == l2 exactly
     v = (W2[0] - E[0], W2[1] - E[1]); n = math.hypot(*v)
@@ -171,3 +173,26 @@ def hand_x_for(body: Body, floor_y: float, ball_x: float, lead: float = 0.0):
     clean rep (forearm near vertical at depth)."""
     J = pushup_pose(body, 1.0, {}, floor_y, ball_x, ball_x + 9999)
     return J["shoulder"][0] + lead * body.H
+
+
+def squat_pose(body: Body, phase: float, form: dict, floor_y: float, ankle_x: float):
+    """Side-view bodyweight squat, facing right. form: depth (0..1 of a full
+    squat), lean (extra forward torso lean in deg at the bottom)."""
+    L = body.L
+    dpt = form.get("depth", 1.0) * phase
+    ankle = (ankle_x, floor_y - 0.04 * body.H)
+    ball = add(ankle, d(-22.0), L["foot"])
+    knee = add(ankle, d(90.0 - 38.0 * dpt), L["shin"])
+    hip = add(knee, d(90.0 + 106.0 * dpt), L["thigh"])
+    lean = 42.0 * dpt + form.get("lean", 0.0) * phase
+    t_ang = 90.0 - lean
+    sh = add(hip, d(t_ang), L["torso"])
+    neck = add(sh, d(t_ang + 6.0), L["neck"])
+    h_ang = t_ang + 0.55 * lean - form.get("head", 0.0) * phase
+    head = add(neck, d(h_ang), L["head"])
+    arm = -70.0 + 72.0 * min(dpt * 1.4, 1.0)
+    elbow = add(sh, d(arm), L["upper_arm"])
+    wrist = add(elbow, d(arm + 4.0), L["forearm"])
+    fingers = add(wrist, d(arm + 4.0), L["hand"])
+    return {"ball": ball, "ankle": ankle, "knee": knee, "hip": hip, "shoulder": sh, "neck": neck, "head": head,
+            "elbow": elbow, "wrist": wrist, "fingers": fingers, "_torso_ang": t_ang, "_head_ang": h_ang}

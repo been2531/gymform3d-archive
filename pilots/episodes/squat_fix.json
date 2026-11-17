@@ -1,0 +1,97 @@
+{
+  "id": "squat_fix",
+  "exercise": "squat",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 2.0,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {
+      "depth": 1.0,
+      "lean": 0,
+      "head": 0
+    },
+    "lean": {
+      "depth": 0.6,
+      "lean": 30,
+      "head": 12
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Stop squatting like this."
+      },
+      {
+        "t": 2.45,
+        "text": "Knees or back hurting?"
+      },
+      {
+        "t": 4.65,
+        "text": "Half reps and a falling chest. Fix it."
+      },
+      {
+        "t": 7.35,
+        "text": "Sit back. Hips below your knees."
+      },
+      {
+        "t": 9.35,
+        "text": "Chest up, every rep."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "lean",
+        "title": "STOP SQUATTING LIKE THIS",
+        "stamp": "bad",
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "KNEE PAIN?",
+        "face": "shocked",
+        "bubble": "?"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "lean",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "focus": "hip",
+        "dx": 60,
+        "guide": "depth",
+        "face": "happy",
+        "title": "HIPS BELOW KNEES",
+        "note": "CHEST UP"
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "SIT BACK & DOWN",
+        "sub": "EVERY REP",
+        "face": "proud"
+      }
+    ]
+  }
+}

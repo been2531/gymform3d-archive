@@ -17,13 +17,16 @@ def load_style(name, ep):
     if name == "A":
         from pilots.style_a import StyleA
         return StyleA(ep)
+    if name == "B2":
+        from pilots.style_b2 import StyleB2
+        return StyleB2(ep)
     from pilots.style_b import StyleB
     return StyleB(ep)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--style", required=True, choices=["A", "B"])
+    ap.add_argument("--style", required=True, choices=["A", "B", "B2"])
     ap.add_argument("--episode", required=True)
     ap.add_argument("--out", default=None)
     ap.add_argument("--frames", type=int, default=0, help="debug: render only N frames")
@@ -33,7 +36,8 @@ def main():
     n = int(round(fps * dur)) if not a.frames else a.frames
     out_dir = a.out or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output", "pilots", time.strftime("%Y-%m-%d"))
     os.makedirs(out_dir, exist_ok=True)
-    stem = f"{ep['id']}_{a.style}"
+    stem = f"{ep['id']}_{'B_v2' if a.style == 'B2' else a.style}"
+    sec = ep.get(a.style) or ep["B"]
     silent = os.path.join(out_dir, f"_{stem}_silent.mp4")
     mp4 = os.path.join(out_dir, f"{stem}.mp4")
     t0 = time.time()
@@ -63,8 +67,8 @@ def main():
     render_s = time.time() - t0
     # audio
     wav = os.path.join(out_dir, f"_{stem}.wav")
-    narr = audio.build(ep[a.style], ep, style.events(), dur, os.path.join(out_dir, "_tts_cache"), wav,
-                       use_bed=ep[a.style].get("bed", True))
+    narr = audio.build(sec, ep, style.events(), dur, os.path.join(out_dir, "_tts_cache"), wav,
+                       use_bed=sec.get("bed", True))
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", silent, "-i", wav, "-c:v", "copy", "-c:a", "aac",
                     "-b:a", "192k", "-shortest", mp4], check=True)
     total_s = time.time() - t0
