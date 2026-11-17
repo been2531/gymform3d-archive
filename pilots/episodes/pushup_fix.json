@@ -1,0 +1,182 @@
+{
+  "id": "pushup_fix",
+  "exercise": "pushup",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 1.7,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {
+      "sag": 0,
+      "head": 0,
+      "depth": 1.0
+    },
+    "sag": {
+      "sag": 24,
+      "head": 30,
+      "depth": 0.8
+    },
+    "half": {
+      "sag": 0,
+      "head": 0,
+      "depth": 0.42
+    }
+  },
+  "A": {
+    "palette": "grey",
+    "hook": "FIX YOUR PUSH-UP",
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Your push-up might be wrecking your lower back."
+      },
+      {
+        "t": 3.05,
+        "text": "Keep one straight line, head to heels."
+      },
+      {
+        "t": 6.25,
+        "text": "Go all the way down. Chest to the floor."
+      },
+      {
+        "t": 9.05,
+        "text": "Squeeze your glutes. Save this."
+      }
+    ],
+    "segments": [
+      {
+        "t0": 0.0,
+        "t1": 3.0,
+        "solid": "sag",
+        "ghost": null,
+        "guide": "bent",
+        "label": {
+          "text": "HIPS SAG",
+          "kind": "bad"
+        },
+        "camera": {
+          "zoom": 1.2,
+          "focus": "body"
+        }
+      },
+      {
+        "t0": 3.0,
+        "t1": 6.2,
+        "solid": "good",
+        "ghost": "sag",
+        "guide": "line",
+        "label": {
+          "text": "STRAIGHT LINE",
+          "kind": "good"
+        },
+        "camera": {
+          "zoom": 1.5,
+          "focus": "hip"
+        }
+      },
+      {
+        "t0": 6.2,
+        "t1": 9.0,
+        "solid": "good",
+        "ghost": "half",
+        "guide": "depth",
+        "label": {
+          "text": "CHEST TO FLOOR",
+          "kind": "good"
+        },
+        "camera": {
+          "zoom": 1.7,
+          "focus": "shoulder"
+        }
+      },
+      {
+        "t0": 9.0,
+        "t1": 11.0,
+        "solid": "good",
+        "ghost": null,
+        "guide": null,
+        "label": {
+          "text": "SQUEEZE GLUTES",
+          "kind": "tip"
+        },
+        "camera": {
+          "zoom": 1.2,
+          "focus": "body"
+        }
+      }
+    ]
+  },
+  "B": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Ninety-nine percent of people do this wrong."
+      },
+      {
+        "t": 2.45,
+        "text": "Why does your back hurt?"
+      },
+      {
+        "t": 4.65,
+        "text": "Sagging hips. Make one straight line."
+      },
+      {
+        "t": 7.35,
+        "text": "Squeeze your glutes, brace your core."
+      },
+      {
+        "t": 9.35,
+        "text": "Chest to floor, every rep."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "sag",
+        "title": "99% DO THIS WRONG",
+        "stamp": "bad",
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "BACK PAIN?",
+        "face": "worried"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "sag",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "focus": "hip",
+        "title": "SQUEEZE GLUTES",
+        "note": "ONE LINE"
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "CHEST TO FLOOR",
+        "sub": "EVERY REP",
+        "face": "happy"
+      }
+    ]
+  }
+}
