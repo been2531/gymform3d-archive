@@ -1,0 +1,82 @@
+{
+ "joint": "knee",
+ "joint_xy": [
+  1320,
+  1760
+ ],
+ "shots": {
+  "hook": {
+   "kind": "hook",
+   "layer": "outer",
+   "win": [
+    1400,
+    1760
+   ],
+   "zoom": 1.0,
+   "win_r": 245,
+   "screen_y": 960
+  },
+  "s1": {
+   "kind": "cut",
+   "layer": "bone",
+   "label": "KNEECAP",
+   "target": [
+    1660,
+    1540
+   ],
+   "win": [
+    1520,
+    1660
+   ],
+   "zoom": 1.1,
+   "win_r": 300
+  },
+  "s2": {
+   "kind": "macro",
+   "layer": "macro",
+   "label": "CARTILAGE",
+   "target": [
+    1120,
+    1860
+   ],
+   "win": [
+    1280,
+    1820
+   ],
+   "zoom": 1.6,
+   "win_r": 330
+  },
+  "counter": {
+   "kind": "counter",
+   "layer": "bone",
+   "target": [
+    1320,
+    1760
+   ],
+   "win": [
+    1320,
+    1760
+   ],
+   "zoom": 1.05,
+   "win_r": 300,
+   "screen_y": 600
+  },
+  "bloom": {
+   "kind": "bloom",
+   "layer": "bone",
+   "target": [
+    1320,
+    1800
+   ],
+   "win": [
+    1320,
+    1760
+   ],
+   "zoom": 1.08,
+   "win_r": 300
+  }
+ },
+ "render": {
+  "screen_y": 860
+ }
+}

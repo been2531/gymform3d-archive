@@ -58,11 +58,13 @@ def fg_mask(im):
         k = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
         m = (lab == k).astype(np.uint8)
     # fill holes
-    ff = m.copy()
-    h, w = m.shape
+    # pad with a 1-px background frame so every border-touching background pocket is
+    # reached by the flood (otherwise pockets cut off by the limb get filled as "holes")
+    ff = cv2.copyMakeBorder(m, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+    h, w = ff.shape
     msk = np.zeros((h + 2, w + 2), np.uint8)
     cv2.floodFill(ff, msk, (0, 0), 1)
-    m = m | (1 - ff)
+    m = m | (1 - ff[1:-1, 1:-1])
     return m
 
 
@@ -140,6 +142,21 @@ def register_silhouette(skin, layer, max_shift=0.06, max_scale=0.08, max_rot=3.0
                                     "shift_px": [round(tx / k, 1), round(ty / k, 1)]}
 
 
+def unsharp(im, amount=0.45, sigma=1.4):
+    b = cv2.GaussianBlur(im, (0, 0), sigma)
+    return cv2.addWeighted(im, 1 + amount, b, -amount, 0)
+
+
+def local_warp(img, src_pt, dst_pt, sigma):
+    """Smooth landmark warp: content at src_pt moves to dst_pt, falling off with a
+    Gaussian of width sigma (px).  Inverse map: out(p) = in(p - d(p))."""
+    h, w = img.shape[:2]
+    d = np.array(dst_pt, np.float32) - np.array(src_pt, np.float32)
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    g = np.exp(-(((xs - dst_pt[0]) ** 2 + (ys - dst_pt[1]) ** 2) / (2 * sigma ** 2)))
+    return cv2.remap(img, xs - d[0] * g, ys - d[1] * g, cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+
 def register_macro(crop_rgb, macro_rgb):
     """Macro is an edit of a square crop: align by ECC on gray intensity."""
     g1 = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255
@@ -157,65 +174,68 @@ def register_macro(crop_rgb, macro_rgb):
     return warp, float(cc), shift
 
 
-def run(asset_dir: str) -> dict:
-    """asset_dir must hold skin_raw.*, outer_raw.*, bone_raw.*, macro_raw.* and
-    macro_crop.json ({"box_frac":[x0,y0,s]} of the bone raw used for the macro edit)."""
-    def find(stem):
+def run(asset_dir: str, joint: str | None = None) -> dict:
+    """asset_dir holds skin_raw.*, outer_raw.*, bone_raw.* and (optionally, after the
+    macro edit) macro_raw.* + macro_crop.json {"box_canvas": [x0, y0, size]} = the square
+    of the REGISTERED bone canvas that was given to the generator as the macro reference."""
+    import landmarks as LM
+
+    def find(stem, required=True):
         for ext in (".png", ".jpg", ".jpeg", ".webp"):
             p = os.path.join(asset_dir, stem + ext)
             if os.path.exists(p):
                 return p
-        raise FileNotFoundError(os.path.join(asset_dir, stem + ".*"))
+        if required:
+            raise FileNotFoundError(os.path.join(asset_dir, stem + ".*"))
+        return None
 
+    joint = joint or os.path.basename(os.path.normpath(asset_dir))
+    cfg = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "joint_landmarks.json"))).get(joint)
     out_dir = os.path.join(asset_dir, "registered")
     os.makedirs(out_dir, exist_ok=True)
     skin = load_rgb(find("skin_raw"))   # the exact image given to the generator as reference
     H, W = skin.shape[:2]
-    rep = {"canvas": [W, H], "layers": {}}
+    rep = {"canvas": [W, H], "layers": {}, "joint": joint}
     cv2.imwrite(os.path.join(out_dir, "skin.png"), cv2.cvtColor(skin, cv2.COLOR_RGB2BGR))
-    valid = np.ones((H, W), np.uint8)
-    bone_A, bone_off = None, None
     for name in ("outer", "bone"):
         raw = load_rgb(find(f"{name}_raw"))
-        lay, loff = raw, (0, 0)
-        A, (med, p90), _, info = register_silhouette(skin, lay)
-        warped = cv2.warpAffine(lay, A, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT,
+        A, (med, p90), _, info = register_silhouette(skin, raw)
+        warped = cv2.warpAffine(raw, A, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT,
                                 borderValue=(6, 6, 7))
-        vm = cv2.warpAffine(np.ones(lay.shape[:2], np.uint8), A, (W, H), flags=cv2.INTER_NEAREST)
-        valid &= vm
+        warped = unsharp(warped)
+        if name == "bone" and cfg and cfg.get("landmark") == "patella_vs_skin_bump":
+            before = LM.knee_report(skin, warped, cfg["front"])
+            lm = {"before": before}
+            if before.get("patella_apex"):
+                mag = float(np.hypot(before["dx"], before["dy"]))
+                lm["warp_canvas_px"] = round(mag, 1)
+                lm["warp_ok"] = mag <= cfg["max_warp_canvas_px"]
+                if lm["warp_ok"]:
+                    warped = local_warp(warped, before["patella_apex"], before["patella_target"],
+                                        cfg["sigma_frac"] * W)
+            lm["after"] = LM.knee_report(skin, warped, cfg["front"])
+            rep["landmark"] = lm
         cv2.imwrite(os.path.join(out_dir, f"{name}.png"), cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))
-        sc = float(np.sqrt(abs(np.linalg.det(A[:, :2]))))
-        rep["layers"][name] = {"A": A.tolist(), "trim_off": list(loff), "scale": sc,
-                               "chamfer_median_px": round(med, 2), "chamfer_p90_px": round(p90, 2),
+        wm = fg_mask(warped)
+        med, p90 = chamfer(fg_mask(skin), wm)
+        rep["layers"][name] = {"A": A.tolist(), "chamfer_median_px": round(med, 2), "chamfer_p90_px": round(p90, 2),
                                "raw_size": [raw.shape[1], raw.shape[0]], **info}
-        if name == "bone":
-            bone_A, bone_off, bone_raw = A, loff, raw
-    # macro: crop box (fractions of bone raw) -> canvas coords via bone transform
-    mc = json.load(open(os.path.join(asset_dir, "macro_crop.json")))
-    fx, fy, fs = mc["box_frac"]
-    rw, rh = bone_raw.shape[1], bone_raw.shape[0]
-    bx0, by0, bs = fx * rw, fy * rh, fs * rw
-    crop = bone_raw[int(by0):int(by0 + bs), int(bx0):int(bx0 + bs)]
-    macro = load_rgb(find("macro_raw"))
-    warp, cc, shift = register_macro(crop, macro)
-    # apply macro warp so macro sits exactly on the crop (crop-size px)
-    cs = crop.shape[1]
-    mac_small = cv2.resize(macro, (cs, cs), interpolation=cv2.INTER_AREA)
-    # upscale-aware: warp at macro native res
-    k = macro.shape[1] / cs
-    Wm = warp.copy()
-    Wm[:, 2] *= k
-    mac_reg = cv2.warpAffine(macro, Wm, (macro.shape[1], macro.shape[0]),
-                             flags=cv2.INTER_CUBIC | cv2.WARP_INVERSE_MAP, borderMode=cv2.BORDER_REFLECT)
-    cv2.imwrite(os.path.join(out_dir, "macro.png"), cv2.cvtColor(mac_reg, cv2.COLOR_RGB2BGR))
-    # crop box corners in canvas coords (bone raw -> trimmed -> canvas)
-    pts = np.array([[bx0 - bone_off[0], by0 - bone_off[1]], [bx0 + bs - bone_off[0], by0 + bs - bone_off[1]]], np.float32)
-    pc = cv2.transform(pts[None], bone_A)[0]
-    rep["macro"] = {"box_canvas": [float(pc[0, 0]), float(pc[0, 1]), float(pc[1, 0] - pc[0, 0])],
-                    "ecc": round(cc, 4), "shift_crop_px": round(shift, 2), "size": [macro.shape[1], macro.shape[0]]}
-    ys, xs = np.where(valid > 0)
-    rep["valid_rect"] = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
-    # debug overlay: skin silhouette edge (lime) vs each layer edge (magenta)
+    mcp = os.path.join(asset_dir, "macro_crop.json")
+    mraw = find("macro_raw", required=False)
+    if os.path.exists(mcp) and mraw:
+        bx, by, bs = json.load(open(mcp))["box_canvas"]
+        bone = load_rgb(os.path.join(out_dir, "bone.png"))
+        crop = bone[int(by):int(by + bs), int(bx):int(bx + bs)]
+        macro = load_rgb(mraw)
+        warp, cc, shift = register_macro(crop, macro)
+        k = macro.shape[1] / crop.shape[1]
+        Wm = warp.copy()
+        Wm[:, 2] *= k
+        mac_reg = cv2.warpAffine(macro, Wm, (macro.shape[1], macro.shape[0]),
+                                 flags=cv2.INTER_CUBIC | cv2.WARP_INVERSE_MAP, borderMode=cv2.BORDER_REFLECT)
+        cv2.imwrite(os.path.join(out_dir, "macro.png"), cv2.cvtColor(mac_reg, cv2.COLOR_RGB2BGR))
+        rep["macro"] = {"box_canvas": [float(bx), float(by), float(bs)], "ecc": round(cc, 4),
+                        "shift_crop_px": round(shift, 2), "size": [macro.shape[1], macro.shape[0]]}
     ms = fg_mask(skin)
     dbg = []
     for name in ("outer", "bone"):

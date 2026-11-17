@@ -1,0 +1,51 @@
+{
+ "_doc": "Fixed per-joint anatomy checklist used by the weekly agent-run judge. Every item must pass (full pass) for a layer to be accepted. 'auto' items are measured by code (landmarks.py); 'vision' items are judged by the agent viewing the candidate next to the public-domain reference plates listed in refs. Max 2 regenerations per layer, then the joint is dropped for that batch.",
+ "knee": {
+  "refs": ["Gray350.png", "Gray345.png"],
+  "skin": [
+   "V: one leg only, natural bent knee seen from the side, kneecap bump at the front",
+   "V: no extra limbs, fingers, deformities or text"
+  ],
+  "outer": [
+   "V: quadriceps muscle mass on the front of the thigh above the knee",
+   "V: one tendon runs over the kneecap and continues below it to the shin (quadriceps tendon -> patellar ligament)",
+   "V: muscle fibres run along the limb, no extra limbs, no skin, no text"
+  ],
+  "bone": [
+   "V: femur shaft comes down to rounded condyles; tibia below with a flat plateau",
+   "V: patella is a single oval bone in FRONT of the femoral condyles at the level of the femoral groove (Gray350), not on the tibia and not floating",
+   "V: articular cartilage is a THIN layer on the bone ends (no thick plastic shell, no cup)",
+   "V: meniscus pads sit between femur and tibia",
+   "V: no duplicated, forked or extra bones; no text",
+   "A: patella centre within 30 px (output, full-frame zoom) of the skin-bump target"
+  ],
+  "macro": [
+   "V: same joint gap as the bone layer crop (femur cartilage above, meniscus, tibia below)",
+   "V: synovial fluid is pale straw-yellow and translucent (not blue, not metallic, not opaque)",
+   "V: no extra structures, no text"
+  ]
+ },
+ "shoulder": {
+  "refs": ["Gray205_left_scapula_lateral_view.png", "Gray326.png", "Gray207.png"],
+  "skin": [
+   "V: one shoulder and upper arm, natural anatomy, no extra limbs, no text"
+  ],
+  "outer": [
+   "V: deltoid caps the shoulder and tapers down to the upper arm",
+   "V: no extra limbs or duplicated muscles, no skin left over the deltoid, no text"
+  ],
+  "bone": [
+   "V: humeral head is a smooth BALL (hemisphere) whose joint surface faces a socket",
+   "V: glenoid is a small shallow socket on the scapula next to the humeral head",
+   "V: acromion arches over the top of the humeral head and meets the clavicle end",
+   "V: scapula body is ONE flat blade (lateral view = a 'Y': coracoid + acromion above, one body below); no two downward prongs",
+   "V: cartilage is a thin layer on the humeral head, not a cup or cap sitting on top",
+   "V: single humerus shaft; no duplicated, forked or extra bones; no text"
+  ],
+  "macro": [
+   "V: ball-shaped humeral head against a shallow socket with a thin rim (labrum)",
+   "V: fluid (if any) pale straw-yellow and translucent",
+   "V: no extra structures, no text"
+  ]
+ }
+}

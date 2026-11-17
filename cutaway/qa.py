@@ -27,6 +27,9 @@ CRITERIA = {
     "facts_sourced": "every number in on-screen text and caption maps to a topic fact with source + url",
     "view_in_content": "camera never shows padding/letterbox outside the real image (overscan <= 2 px)",
     "caption": "exactly 3 lines, 0 hashtags, English (ASCII + x/°)",
+    "landmark": "joints with a landmark rule (knee: patella apex vs skin bump) <= 30 output px at the largest bone zoom",
+    "one_text_block": "at most one text block (hook | label | meter) visible (alpha > 0.05) on every sampled frame",
+    "source_upscale": "output px per source px <= 1.5 for every visible layer of every shot at peak push (skin, layer, macro)",
 }
 
 
@@ -58,6 +61,8 @@ def prerender(reel: C.Reel, topic: dict, reg: dict) -> dict:
     labels = [s["label"] for s in topic["shots"] if s.get("label")]
     if topic.get("counter"):
         labels.append(topic["counter"]["caption"])
+        if topic["counter"].get("action"):
+            labels.append(topic["counter"]["action"])
     bad = [l for l in labels if len(l.split()) > 3]
     res["label_words"] = {"pass": not bad, "value": max(len(l.split()) for l in labels), "bad": bad}
     # text sizes
@@ -67,7 +72,8 @@ def prerender(reel: C.Reel, topic: dict, reg: dict) -> dict:
         caps[f"label:{sp.lines[0]}"] = sp.cap
         fits = fits and sp.fits
     if topic.get("counter"):
-        caps["caption:" + reel.cap_sprite.lines[0]] = reel.cap_sprite.cap
+        caps["meter:" + reel.cap_sprite.lines[0]] = reel.cap_sprite.cap
+        fits = fits and reel.cap_sprite.fits
     sz_ok = fits and all((v >= 110 if k == "hook" else v >= 70) for k, v in caps.items())
     res["text_size"] = {"pass": bool(sz_ok), "value": {k: round(v, 1) for k, v in caps.items()}, "fits": fits}
     # sampled frames: bottom clear, contrast, holes, text vs window
@@ -76,6 +82,7 @@ def prerender(reel: C.Reel, topic: dict, reg: dict) -> dict:
     worst_c = (99.0, "")
     holes = 0.0
     overlap = []
+    multi = []
     y_safe = C.SAFE_BOTTOM
     bloom_t = next((s["t"] for s in topic["shots"] if s.get("kind") == "bloom"), 1e9)
     for t in sample_times(reel, 5):
@@ -90,6 +97,9 @@ def prerender(reel: C.Reel, topic: dict, reg: dict) -> dict:
             m = ((xs - jx) ** 2 + (ys - jy) ** 2) < (r - 8) ** 2
             V = fr[y0:y1, x0:x1].max(axis=2)[m]          # sRGB value: "black hole" = every channel < 0.04
             holes = max(holes, float((V < 0.04).mean()))
+        vis = sorted({tx["kind"] for tx in info["texts"] if tx["bbox"] is not None and tx["alpha"] > 0.05})
+        if len(vis) > 1:
+            multi.append(f"{'+'.join(vis)} @ {t:.2f}s")
         for tx in info["texts"]:
             if tx["bbox"] is None or tx["alpha"] < 0.95:
                 continue
@@ -111,6 +121,28 @@ def prerender(reel: C.Reel, topic: dict, reg: dict) -> dict:
                 nx, ny = min(max(jx, bx0), bx1), min(max(jy, by0), by1)
                 if (nx - jx) ** 2 + (ny - jy) ** 2 < (r + 6) ** 2:
                     overlap.append(f'{tx["text"]} @ {t:.2f}s')
+    res["one_text_block"] = {"pass": not multi, "value": len(multi), "where": multi[:5]}
+    # source upscale: output px per source px at the peak push of every shot
+    peak = 1.025 * (1 + reel.p["push"] + 0.03) * (1 + reel.p["breath"]) * 1.035
+    ups = {}
+    dens_layer = {"skin": 1.0}
+    for n in ("outer", "bone"):
+        dens_layer[n] = 1.0 / float(reel.reg["layers"][n]["A"][0][0])     # raw px per canvas px
+    dens_layer["macro"] = reel.macro.shape[1] / reel.reg["macro"]["box_canvas"][2]
+    for k, sh in enumerate(reel.shots):
+        o = reel.cover * sh.get("zoom", 1.0) * peak
+        seen = [sh["layer"]] + ([] if sh["kind"] == "bloom" else ["skin"])
+        ups[f"{k}:{sh['kind']}"] = {n: round(o / dens_layer[n], 2) for n in seen}
+    worst_up = max(v for d in ups.values() for v in d.values())
+    res["source_upscale"] = {"pass": worst_up <= 1.5, "value": worst_up, "per_shot": ups}
+    lm = reg.get("landmark")
+    if lm and lm.get("after", {}).get("error_canvas_px") is not None:
+        zb = max(sh.get("zoom", 1.0) for sh in reel.shots if sh["layer"] == "bone")
+        e_out = lm["after"]["error_canvas_px"] * reel.cover * zb * peak
+        res["landmark"] = {"pass": bool(lm.get("warp_ok")) and e_out <= 30.0, "value": round(e_out, 1),
+                           "before_canvas_px": lm["before"].get("error_canvas_px"), "warp_canvas_px": lm.get("warp_canvas_px")}
+    else:
+        res["landmark"] = {"pass": True, "value": None, "note": "no landmark rule for this joint"}
     res["view_in_content"] = {"pass": overscan <= 2.0, "value": round(overscan, 1)}
     res["bottom_clear"] = {"pass": bottom < 0.02, "value": round(bottom, 3)}
     res["text_contrast"] = {"pass": worst_c[0] >= 4.5, "value": round(worst_c[0], 2), "worst": worst_c[1]}
@@ -122,6 +154,7 @@ def prerender(reel: C.Reel, topic: dict, reg: dict) -> dict:
     texts = list(topic["hook"]) + labels + list(topic["caption"])
     if topic.get("counter"):
         texts.append(topic["counter"]["fmt"].format(topic["counter"]["to"]))
+        texts.append(topic["counter"].get("action", ""))
     nums = set()
     for tx in texts:
         for m_ in re.findall(r"\d+(?:\.\d+)?", tx):

@@ -1,0 +1,25 @@
+{
+ "series": "load_meter",
+ "brand": "GYMFORM LOAD METER",
+ "duration": 15.0,
+ "hook_out": 2.6,
+ "times": {
+  "hook": 0.0,
+  "s1": 2.7,
+  "s2": 5.1,
+  "counter": 7.5,
+  "bloom": 12.7
+ },
+ "counter": {
+  "fmt": "{:.1f}×",
+  "count": 2.4,
+  "header": "LOAD METER",
+  "scale_max": 8,
+  "delay": 0.4
+ },
+ "audio": {
+  "key_hz": 55.0,
+  "seed": 7
+ },
+ "notes": "Same timeline, meter panel, colour (lime #B4FF39 on near-black) and sound for every episode. Per topic only queue.json changes."
+}

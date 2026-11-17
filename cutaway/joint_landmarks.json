@@ -1,0 +1,11 @@
+{
+ "_doc": "Per-joint landmark registration + gate config. knee: the patella (anterior apex of the bone mask) is pulled onto the skin-bump target with a smooth local Gaussian warp; warp is capped (bigger -> asset rejected). Gate: post-warp error <= 30 px at full-frame zoom.",
+ "knee": {
+  "landmark": "patella_vs_skin_bump",
+  "front": "+x",
+  "sigma_frac": 0.11,
+  "max_warp_canvas_px": 180,
+  "gate_px": 30,
+  "_canvas": "2048x3640 (skin SR x2 on 2026-11-17)"
+ }
+}

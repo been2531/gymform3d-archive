@@ -148,7 +148,9 @@ def build(topic: dict, out_wav: str, target_lufs: float = -14.0, gain_db: float 
     if c:
         cnt = c.get("count", 1.3)
         for k in range(12):
-            add(tick(900 + 90 * k), c["t0"] + 0.1 + cnt * (1 - (1 - k / 12) ** 2), 1.0)
+            add(tick(900 + 90 * k), c["t0"] + 0.15 + cnt * (1 - (1 - k / 12) ** 2), 1.0)
+        if c.get("action"):      # LOAD METER signature: heavy hit when the count lands
+            add(thump(0.7, 75, 30), c["t0"] + 0.15 + cnt, 1.0)
     add(riser(rng, 0.6), bloom_t - 0.6, 1.0)
     add(thump(0.8, 90, 32), bloom_t, 0.95)
     add(tail(rng), bloom_t, 1.0)

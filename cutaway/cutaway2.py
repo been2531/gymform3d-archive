@@ -112,6 +112,81 @@ class TextSprite:
         self.words = sum(len(l.split()) for l in self.lines)
 
 
+
+class MeterPanel:
+    """LOAD METER block -- the series signature, identical in every reel.
+
+    One dark panel = one text block:  lime "LOAD METER" tag / huge counter "3.5x"
+    with "BODY / WEIGHT" stacked beside it / 8-segment lime bar on a fixed 0-8x
+    scale / the action name in lime once the count lands.  Rendered per frame
+    (the bar and number move), sizes fixed so the panel never jumps."""
+    X, PAD, WIDTH = 40, 34, 1000
+    SCALE_MAX, SEGS = 8.0, 8
+
+    def __init__(self, final_txt, action, header="LOAD METER", pill_alpha=232):
+        self.f_tag, self.f_num, self.f_cap, self.f_act = _font(84), _font(250), _font(92), _font(96)
+        self.header, self.action, self.pa = header, action, int(pill_alpha)
+        self.num_w = int(self.f_num.getlength(final_txt))
+        P = self.PAD
+        self.y_tag = P
+        self.y_num = self.y_tag + int(CAP_RATIO * 84) + 30
+        self.y_bar = self.y_num + int(CAP_RATIO * 250) + 34
+        self.y_act = self.y_bar + 40 + 30
+        self.h = self.y_act + int(CAP_RATIO * 96) + P
+        self.w = self.WIDTH
+        self.cap = CAP_RATIO * 84          # smallest text in the block
+        self.words = len(action.split())
+        self.fits = (P + 16 + self.num_w + 34 + max(self.f_cap.getlength("WEIGHT"), self.f_cap.getlength("BODY"))
+                     <= self.WIDTH - P) and self.f_act.getlength(action) <= self.WIDTH - 2 * P - 16
+        self.lines = [header, final_txt, "BODY WEIGHT", action]
+
+    def render(self, num_txt, value, act_a, glow=0.0):
+        bw, bh, P = self.w, self.h, self.PAD
+        img = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        fm = Image.new("L", (bw, bh), 0)
+        d, dm = ImageDraw.Draw(img), ImageDraw.Draw(fm)
+        d.rounded_rectangle([0, 0, bw - 1, bh - 1], radius=26, fill=(7, 9, 11, self.pa))
+        d.rounded_rectangle([0, 0, 11, bh - 1], radius=5, fill=LIME + (255,))
+        x0 = P + 16
+        def txt(x, y_cap_top, s, f, col, a=1.0):
+            asc = f.getbbox("H")[1]
+            d.text((x, y_cap_top - asc), s, font=f, fill=col + (int(255 * a),))
+            if a > 0.5:
+                dm.text((x, y_cap_top - asc), s, font=f, fill=255)
+        txt(x0, self.y_tag, self.header, self.f_tag, LIME)
+        txt(x0, self.y_num, num_txt, self.f_num, (255, 255, 255))
+        cx = x0 + self.num_w + 34
+        num_cap = CAP_RATIO * 250
+        cap_h = CAP_RATIO * 92
+        gap = num_cap - 2 * cap_h
+        txt(cx, self.y_num, "BODY", self.f_cap, (255, 255, 255))
+        txt(cx, self.y_num + cap_h + gap, "WEIGHT", self.f_cap, (255, 255, 255))
+        # 8-segment bar, fixed 0-8x scale
+        bx0, bx1, by0, by1 = x0, bw - P, self.y_bar, self.y_bar + 40
+        sw = (bx1 - bx0 - (self.SEGS - 1) * 8) / self.SEGS
+        frac = clamp(value / self.SCALE_MAX)
+        for k in range(self.SEGS):
+            sx0 = bx0 + k * (sw + 8)
+            sx1 = sx0 + sw
+            d.rounded_rectangle([sx0, by0, sx1, by1], radius=6, fill=(58, 62, 66, 255))
+            f = clamp(frac * self.SEGS - k)
+            if f > 0:
+                g = int(min(255, 255 * (0.85 + 0.15 * glow)))
+                d.rounded_rectangle([sx0, by0, sx0 + max(6, sw * f), by1], radius=6,
+                                    fill=(min(255, LIME[0] + int(60 * glow)), g, min(255, LIME[2] + int(120 * glow)), 255))
+        if act_a > 0:
+            txt(x0, self.y_act, self.action, self.f_act, LIME, act_a)
+        rgba = np.asarray(img, np.float32) / 255.0
+        fill = np.asarray(fm, np.float32) / 255.0
+        return SimpleSprite(rgba, fill, self.cap, self.lines, self.words, self.fits)
+
+
+class SimpleSprite:
+    def __init__(self, rgba, fill, cap, lines, words, fits):
+        self.rgba, self.fill, self.cap, self.lines, self.words, self.fits = rgba, fill, cap, lines, words, fits
+        self.h, self.w = rgba.shape[:2]
+
+
 # ----------------------------------------------------------------- render ----
 class Reel:
     def __init__(self, topic: dict, asset_dir: str, params: dict | None = None):
@@ -150,9 +225,10 @@ class Reel:
                                             max_w=930, min_size=82, pill_alpha=self.p["pill_alpha"])
         c = topic.get("counter")
         if c:
-            self.num_sprites = {}
-            self.cap_sprite = TextSprite([c["caption"]], self.p.get("label_size", 92), style="pill", max_w=930, min_size=82,
-                                         pill_alpha=self.p["pill_alpha"])
+            self.meter = MeterPanel(c["fmt"].format(c["to"]), c["action"], c.get("header", "LOAD METER"),
+                                    pill_alpha=max(232, self.p["pill_alpha"]))
+            self.meter_y = SAFE_BOTTOM - 24 - self.meter.h
+            self.cap_sprite = self.meter     # QA: text_size reads .cap / .lines
         self.last_info = None
         self.layout_log = self._autolayout() if self.p.get("autolayout", True) else []
 
@@ -175,16 +251,18 @@ class Reel:
         clamp is what usually pushes a joint near the frame edge up into the hook) in
         4 % steps up to 2.6x.  Logged into the QA report; never moves the anatomy."""
         log = []
-        hook_bottom = 166 + self.hook.h + 24
+        hy = self.p.get("hook_y", 166)
+        hook_bottom = hy + self.hook.h + 24 if hy < H * 0.4 else 120
+        hook_top = hy - 24 if hy >= H * 0.4 else C_SAFE_WIN_BOTTOM
         lab_bottom = 170 + (max((l.h for l in self.labels.values()), default=0)) + 24
-        cnt_top = 1170
+        cnt_top = getattr(self, "meter_y", 1170) - 24
         for i, sh in enumerate(self.shots):
             if sh.get("kind") == "bloom":
                 continue
             z0 = z = sh.get("zoom", 1.0)
             r = sh.get("win_r", self.p["win_r"]) * self.p.get("win_scale", 1.0) * 1.05
-            top_lim = hook_bottom if i == 0 else lab_bottom
-            bot_lim = cnt_top if sh.get("kind") == "counter" else C_SAFE_WIN_BOTTOM
+            top_lim = hook_bottom if i == 0 else (120 if sh.get("kind") == "counter" else lab_bottom)
+            bot_lim = cnt_top if sh.get("kind") == "counter" else (hook_top if i == 0 else C_SAFE_WIN_BOTTOM)
             for _ in range(40):
                 cx, cy = self._settle(sh, z)
                 if cy - r >= top_lim and cy + r <= bot_lim:
@@ -298,8 +376,12 @@ class Reel:
             # feather the macro square into the bone plate so its edge never shows
             mk = cv2.warpAffine(np.ones(self.macro.shape[:2], np.float32), Tm[:2], size, flags=cv2.INTER_LINEAR)
             mk = cv2.GaussianBlur(cv2.erode(mk, np.ones((25, 25), np.uint8)), (0, 0), 14)[..., None]
-            out = mac.astype(np.float32) * mk + under.astype(np.float32) * (1 - mk)
-            return out / 255.0
+            out = (mac.astype(np.float32) * mk + under.astype(np.float32) * (1 - mk)) / 255.0
+            # same no-hole rule as the bone plate: empty black around the macro -> dimmed muscle
+            back = cv2.warpAffine(self.L["outer"], T[:2], size, flags=cv2.INTER_LINEAR,
+                                  borderMode=cv2.BORDER_REPLICATE).astype(np.float32) / 255.0
+            a = np.clip((out.max(axis=2, keepdims=True) - 0.05) / 0.12, 0, 1)
+            return out * a + back * 0.42 * (1 - a)
         im = cv2.warpAffine(self.L[name], T[:2], size, flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
         out = im.astype(np.float32) / 255.0
         if name == "bone":   # fill empty dark space around the bones with dimmed muscle (no holes)
@@ -397,7 +479,7 @@ class Reel:
         # hook
         if t < self.t.get("hook_out", 2.25):
             a = (1 - inv(self.t.get("hook_out", 2.25) - 0.18, self.t.get("hook_out", 2.25), t))
-            yo = int(166 + 30 * (1 - ease_out(t / 0.25)))
+            yo = int(self.p.get("hook_y", 166) + 30 * (1 - ease_out(t / 0.25)))
             texts.append(self._blit(c, overlay_alpha, self.hook, 66, yo, a, "hook"))
         # label + leader
         lab = self.labels.get(i)
@@ -410,19 +492,20 @@ class Reel:
                 tgt = self.to_out(M, s.get("target", self.t["joint"]))
                 self._leader(c, overlay_alpha, (lx + 40, ly + lab.h), tgt, ease_out((dt - 0.05) / 0.26) * a)
                 texts.append(self._blit(c, overlay_alpha, lab, lx, ly, a, "label"))
-        # counter
+        # LOAD METER (one block; labels never share the screen with it)
         cn = self.t.get("counter")
         if cn and cn["t0"] <= t < cn["t1"]:
             dt = t - cn["t0"]
-            a = ease_out(dt / 0.15) * (1 - inv(cn["t1"] - 0.15, cn["t1"], t))
-            v = cn["to"] * ease_out(inv(0.1, 0.1 + cn.get("count", 1.3), dt))
-            txt = cn["fmt"].format(v)
-            sp = self.num_sprites.get(txt)
-            if sp is None:
-                sp = self.num_sprites[txt] = TextSprite([txt], self.p.get("num_size", 236), style="stroke", max_w=940)
-            yb = 1180
-            texts.append(self._blit(c, overlay_alpha, sp, 66, yb, a, "number"))
-            texts.append(self._blit(c, overlay_alpha, self.cap_sprite, 66, yb + sp.h + 12, a, "caption"))
+            a = ease_out(dt / 0.18) * (1 - inv(cn["t1"] - 0.15, cn["t1"], t))
+            cnt = cn.get("count", 2.4)
+            q = ease_out(inv(0.15, 0.15 + cnt, dt))
+            v = cn["to"] * q
+            land = dt - (0.15 + cnt)
+            act_a = ease_out(land / 0.2) if land > 0 else 0.0
+            glow = math.exp(-max(0.0, land) / 0.25) if land > 0 else 0.0
+            sp = self.meter.render(cn["fmt"].format(v), v, act_a, glow)
+            yb = int(self.meter_y + 40 * (1 - ease_out(dt / 0.25)))
+            texts.append(self._blit(c, overlay_alpha, sp, MeterPanel.X, yb, a, "meter"))
         out = np.clip(c, 0, 1)
         if want_info:
             Mi = np.linalg.inv(M)

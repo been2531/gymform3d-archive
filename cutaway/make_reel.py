@@ -33,6 +33,7 @@ import cutaway2 as C  # noqa: E402
 import qa  # noqa: E402
 import register  # noqa: E402
 import sound  # noqa: E402
+import build_topic  # noqa: E402
 
 MAX_RETRIES = 2
 # gate -> how to change params (None = not fixable by params -> stop)
@@ -48,6 +49,7 @@ FIXES = {
     "bottom_clear": None, "label_words": None, "text_size": None, "facts_sourced": None,
     "caption": None, "duration": None,
     "view_in_content": lambda p: p.update(push=p["push"] + 0.04),
+    "one_text_block": None, "source_upscale": None, "landmark": None,
 }
 
 
@@ -115,14 +117,15 @@ def cover_and_carousel(reel, topic, odir):
         for j, ln in enumerate(lines):
             d.text((cx + 150 - mid.getlength(ln) / 2, 450 + j * 66), ln, font=mid, fill=(255, 255, 255))
     reel.hide_text = False
-    d.text((60, 40), f"INSIDE YOUR {topic['joint_name'].upper()}", font=mid, fill=C.LIME)
+    head = f"LOAD METER: {topic['joint_name'].upper()}" if topic.get("series") == "load_meter" else f"INSIDE YOUR {topic['joint_name'].upper()}"
+    d.text((60, 40), head, font=mid, fill=C.LIME)
     c = topic.get("counter")
     if c:
         fact = next(f for f in topic["facts"] if f["id"] == c["fact"])
         num = c["fmt"].format(c["to"])
         d.text((60, 640), num, font=ImageFont.truetype(C.FONT, 220), fill=(255, 255, 255))
         d.text((60, 900), c["caption"], font=big, fill=(255, 255, 255))
-        lab = next((s["label"] for s in topic["shots"] if s.get("kind") == "counter"), "")
+        lab = c.get("action") or next((s["label"] for s in topic["shots"] if s.get("kind") == "counter"), "")
         d.text((60, 1000), lab, font=big, fill=C.LIME)
         src = fact["source"]
         # wrap source
@@ -137,11 +140,20 @@ def cover_and_carousel(reel, topic, odir):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--topic", required=True)
+    ap.add_argument("--topic", help="legacy topics/<id>.json")
+    ap.add_argument("--entry", help="queue.json entry id (series template + rig + verified library)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
     t_start = time.time()
-    topic = json.load(open(os.path.join(HERE, "topics", f"{args.topic}.json")))
+    if args.entry:
+        q = {e["id"]: e for e in build_topic.load_queue()}
+        if args.entry not in q:
+            raise SystemExit(f"unknown queue entry {args.entry}")
+        if not build_topic.verified(q[args.entry]["joint"]):
+            raise SystemExit(f"joint {q[args.entry]['joint']} is not in the verified library")
+        topic = build_topic.build(q[args.entry])
+    else:
+        topic = json.load(open(os.path.join(HERE, "topics", f"{args.topic}.json")))
     adir = os.path.join(REPO, topic["assets"])
     odir = args.out or os.path.join(REPO, "output", "cutaway", topic["id"])
     os.makedirs(odir, exist_ok=True)

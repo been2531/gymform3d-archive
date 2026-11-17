@@ -81,3 +81,21 @@ gain fix. Words, sizes, facts, caption, bottom zone → **not** auto-fixed: the 
 * Topic authoring (targets, facts, caption) is still an agent step with a human-readable check.
 
 Fonts: Anton, Archivo Black, Barlow Condensed, Inter, Oswald — SIL Open Font License.
+
+## LOAD METER series (2026-11-17, current default)
+
+Every reel: one verified joint cutaway + the LOAD METER panel counting up to "N× BODY WEIGHT"
+for one action, with a cited source. Per episode only `queue.json` changes.
+
+- `series/load_meter.json` – fixed timeline (hook 0–2.6 s, two labelled layer cuts, meter 7.9–15 s,
+  full-frame bloom at 12.7 s), counter style, sound. Same look every episode (lime #B4FF39 panel, 0–8× bar).
+- `rigs/<joint>.json` – framing per verified joint (window centres, labels, zooms, hook position).
+- `queue.json` – topics: joint, action (≤3 words), hook lines, value, fact {claim, source, url, year}, caption.
+- `build_topic.py` – series + rig + entry → topic dict for `make_reel.py --entry <id>`.
+- `daily.py` – picks the next runnable entry (sourced, verified joint, not the previous reel's joint,
+  not done, <2 fails), renders, writes `output/cutaway/daily/<date>_<id>/` (reel, cover, carousel,
+  caption, qa.json, report.md, package.json, sources.md). Never publishes. `--lint` runs pre-render gates
+  for the whole queue; `--dry-run` shows the pick.
+- `upscale.py` – Real-ESRGAN x4plus (BSD-3, ONNX, CPU) used once per library layer (models/ not in git).
+- New gates: `one_text_block`, `source_upscale` (≤1.5 output px per source px for every visible layer),
+  `landmark` (knee patella vs skin bump ≤30 px).
