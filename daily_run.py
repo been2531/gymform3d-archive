@@ -30,6 +30,7 @@ def main():
     ap.add_argument("--force", action="store_true", help="rebuild even if today is already scheduled")
     ap.add_argument("--max-episodes", type=int, default=2)
     ap.add_argument("--notify-dry-run", action="store_true", help="tests: Telegram notifier runs with --dry-run")
+    ap.add_argument("--publish-at", default=None, help="override publish_at (ISO with offset, e.g. 2026-11-17T17:10+09:00); default <date>T10:00+09:00")
     a = ap.parse_args()
     common.NOTIFY_DRY = a.notify_dry_run
     date = a.date or common.today()
@@ -86,7 +87,7 @@ def main():
             "exercise": ep["exercise"],
             "title": cap_txt.split("\n", 1)[0],
             "status": "scheduled",
-            "publish_at": f"{date}T10:00+09:00",
+            "publish_at": a.publish_at or f"{date}T10:00+09:00",
             "mp4": rel_(mp4),
             "cover": rel_(cov),
             "caption": rel_(cap_path),
