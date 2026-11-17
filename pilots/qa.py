@@ -1,7 +1,7 @@
 """Automatic QA gates. No human review: a reel either passes all gates or the
 daily runner skips it."""
 from __future__ import annotations
-import json, re, subprocess
+import json, math, os, re, subprocess
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from .rig import bone_errors
@@ -74,22 +74,111 @@ def run(style, ep, mp4, metas, small, bg, narr, body):
     # limb lengths
     errs = [bone_errors(body, J) for m in metas for J in m["joints"]]
     gates["limb_length_drift_lt_0_5px"] = (max(errs) < 0.5, f"max {max(errs):.4f}px over {len(errs)} poses")
+    # every hand, foot and mat end inside the frame with a safe margin (no clipped limbs)
+    gates["limbs_in_bounds"] = limbs_in_bounds(metas)
+    # a caption that names a posture must be on screen only while the body shows it
+    gates["pose_caption_sync"] = pose_caption_sync(metas, body, ep)
+    # no hole of digital silence between the narration lines
+    gates["no_dead_air"] = no_dead_air(mp4, dur)
     # audio
     li, tp = loudness(mp4)
     gates["loudness_-14pm1_LUFS"] = (abs(li + 14) <= 1.0, f"{li} LUFS, TP {tp} dBFS")
     gates["narration_fits_cues"] = (all(n["fits"] for n in narr), [f"{n['start']}-{n['end']}" for n in narr])
     gates["narration_present"] = (len(narr) >= 3, len(narr))
     if style == "B2":
-        _b2_gates(gates, ep, metas)
+        _b2_gates(gates, ep, metas, body)
     ok = all(g[0] for g in gates.values())
     return {"pass": ok, "passed": f"{sum(g[0] for g in gates.values())}/{len(gates)}",
             "gates": {k: {"ok": bool(g[0]), "value": g[1]} for k, g in gates.items()}}
 
 
+def _sheet_font(size=30):
+    """Label font for the flow sheet: first face this host actually has."""
+    from .text import path as font_path
+    for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_path("marker"), font_path("anton")):
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
+SAFE_MARGIN = 8
+
+
+def limbs_in_bounds(metas):
+    """Every drawn limb point and the mat's ends stay inside the frame. A body part or mat
+    end on the edge reads as a broken crop (the push-up's left side in v5)."""
+    pts = [p for m in metas for p in m.get("scr", [])]
+    bad = [(i, p) for i, p in enumerate(pts)
+           if p[0] < SAFE_MARGIN or p[0] > 1080 - SAFE_MARGIN or p[1] < SAFE_MARGIN or p[1] > 1920 - SAFE_MARGIN]
+    frames = sum(1 for m in metas if any(p[0] < SAFE_MARGIN or p[0] > 1080 - SAFE_MARGIN
+                                         or p[1] < SAFE_MARGIN or p[1] > 1920 - SAFE_MARGIN
+                                         for p in m.get("scr", [])))
+    d = f"{len(bad)} of {len(pts)} limb/mat points outside a {SAFE_MARGIN}px margin over {frames} frames"
+    if bad:
+        i, p = bad[0]
+        d += f"; first at x={p[0]:.0f} y={p[1]:.0f}"
+    return (not bad and bool(pts), d)
+
+
+def pose_caption_sync(metas, body, ep=None):
+    """A caption that names a posture ("HIPS BELOW KNEES", "HEELS UP", "CHEST TO FLOOR") may only
+    be on screen while the drawn pose shows it, and each one has to appear somewhere in its scene
+    (a claim that never holds is a caption the reel silently lost)."""
+    from .claims import claims_in, measure, synced
+    from .style_b2 import scene_texts
+    seen = 0; bad = []
+    for m in metas:
+        js = [J for J in m.get("joints", []) if J]
+        for x in m["text"]:
+            if not claims_in(x["text"]):
+                continue
+            seen += 1
+            if not js:
+                bad.append(f"t={m['t']:.2f}s {x['text']!r}: no side pose to measure")
+                continue
+            for J in js:
+                ok, claim, _ = synced(x["text"], J, body.H)
+                if not ok:
+                    bad.append(f"t={m['t']:.2f}s {x['text']!r} ({claim})")
+                    break
+    missing = []
+    scenes = ((ep or {}).get("B2") or {}).get("scenes", [])
+    for sc in scenes:
+        frames = [m for m in metas if sc["t0"] <= m["t"] < sc["t1"]]
+        for text in scene_texts(sc):
+            for claim in claims_in(text):
+                if not any(measure(claim, J, body.H) for m in frames for J in m.get("joints", []) if J):
+                    missing.append(f"t={sc['t0']:.1f}s {text!r} ({claim}) never holds")
+    d = f"{seen} posture captions checked, {len(bad)} contradict the pose"
+    if missing:
+        d += f", {len(missing)} never shown: {missing[0]}"
+    return (not bad and not missing, d + (f"; first {bad[0]}" if bad else ""))
+
+
+def no_dead_air(mp4, dur=None):
+    """No stretch of digital silence (>=0.25 s below -55 dBFS) inside the reel: a silent
+    hole between lines reads as a broken file, so the bed keeps the track alive."""
+    p = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", mp4, "-af",
+                        "silencedetect=noise=-55dB:d=0.25", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    dur = dur or 0.0
+    hits = []
+    for m in re.finditer(r"silence_start: (-?[\d.]+)(?:[^\n]*\n[^\n]*silence_end: ([\d.]+))?", p.stderr):
+        s0 = float(m.group(1)); s1 = float(m.group(2)) if m.group(2) else dur
+        if s0 <= 0.06 or s1 >= dur - 0.06:  # the 20 ms fade at each end
+            continue
+        hits.append((s0, s1))
+    worst = max((b - a for a, b in hits), default=0.0)
+    return (not hits, f"{len(hits)} silent gaps >=0.25s" + (f", worst {worst:.2f}s at {hits[0][0]:.2f}s" if hits else ""))
+
+
 def flow_sheet(frames, out):
     cw, ch = 360, 640
     sheet = Image.new("RGB", (cw * 4, ch * 3), (0, 0, 0))
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
+    font = _sheet_font()
     for i, (t, arr) in enumerate(frames):
         im = Image.fromarray(arr).resize((cw, ch), Image.LANCZOS)
         d = ImageDraw.Draw(im)
@@ -107,7 +196,7 @@ FAULT_MIN = 0.06         # wrong vs good form: >= 6% of body height apart at the
 HL_MIN_W = 18            # fault band width on screen (px)
 
 
-def _b2_gates(gates, ep, metas):
+def _b2_gates(gates, ep, metas, body=None):
     fps = 30.0
     # target muscles: right-form solo frames + ending show every listed muscle; wrong-form panels show none
     from .style_b2 import muscles_named
@@ -177,3 +266,66 @@ def _b2_gates(gates, ep, metas):
     var = metas[0].get("variants", {})
     gates["think_end_variant_valid"] = (var.get("think", "scratch") in ("scratch", "shrug", "hold")
                                         and var.get("conclusion", "flex") in ("flex", "victory", "thumbs"), var)
+    gates["fault_joint_delta"] = _fault_joint_delta(ep, metas, getattr(body, "H", 760.0))
+
+
+def _interior(J, a, b, c):
+    """Interior joint angle at b in degrees (e.g. knee flexion at the bottom of a squat)."""
+    u = (J[a][0] - J[b][0], J[a][1] - J[b][1]); v = (J[c][0] - J[b][0], J[c][1] - J[b][1])
+    nu = math.hypot(*u); nv = math.hypot(*v)
+    if not nu or not nv or any(k not in J for k in (a, b, c)):
+        return None
+    cosv = max(-1.0, min(1.0, (u[0] * v[0] + u[1] * v[1]) / (nu * nv)))
+    return math.degrees(math.acos(cosv))
+
+
+def _torso_tilt(J):
+    return math.degrees(math.atan2(-(J["shoulder"][1] - J["hip"][1]), J["shoulder"][0] - J["hip"][0]))
+
+
+JOINT_DEG = 15.0     # wrong vs right: at least this much joint-angle difference at the bottom
+TOP_DEG = 8.0        # ... and the fault still reads at the top of the rep
+TOP_HIP_H = 0.03     # ... or the hip sits this much (body heights) away at the top
+
+
+def _fault_joint_delta(ep, metas, H):
+    """WRONG vs RIGHT must differ in the pose itself (joint angles / hip height), not only in
+    colour: each wrong form is compared with the good pose at the same phase of the rep."""
+    fp = metas[0].get("form_poses") or {}
+    forms = ep.get("forms") or {}
+    good = fp.get("good") or {}
+    gform = forms.get("good", {})
+    rows, ok = [], bool(fp)
+    for f in [k for k in forms if k != "good"]:
+        F = fp.get(f) or {}
+        if not good.get("bottom") or not F.get("bottom"):
+            rows.append(f"{f}: no pose")
+            ok = False
+            continue
+        # a fault that only changes how far the rep goes (depth / lift) is judged at the
+        # bottom of the rep; a shape fault has to read at the top of the rep too
+        range_only = {k for k in set(forms[f]) | set(gform)
+                      if k != "highlight" and forms[f].get(k) != gform.get(k)} <= {"depth", "lift"}
+
+        def deltas(at):
+            Jw, Jg = F[at], good[at]
+            d = {"knee": (_interior(Jw, "hip", "knee", "ankle"), _interior(Jg, "hip", "knee", "ankle")),
+                 "ankle": (_interior(Jw, "knee", "ankle", "ball"), _interior(Jg, "knee", "ankle", "ball")),
+                 "torso": (_torso_tilt(Jw), _torso_tilt(Jg))}
+            d = {k: abs(a - b) for k, (a, b) in d.items() if a is not None and b is not None}
+            return (max(d.values()) if d else 0.0), d
+
+        bottom, db = deltas("bottom")
+        top, dt = deltas("top")
+        hipb = abs(F["bottom"]["hip"][1] - good["bottom"]["hip"][1]) / H
+        hipt = abs(F["top"]["hip"][1] - good["top"]["hip"][1]) / H
+        chestb = abs(F["bottom"]["shoulder"][1] - good["bottom"]["shoulder"][1]) / H
+        chestr = abs(F["top"]["shoulder"][1] - good["top"]["shoulder"][1]) / H
+        vb, vt = max(hipb, chestb), max(hipt, chestr)   # clear posture difference, in body heights
+        rows.append(f"{f}: bottom max {bottom:.0f}deg ({', '.join(f'{k} {v:.0f}' for k, v in sorted(db.items()))}) "
+                    f"or {vb:.2f}H, top max {top:.0f}deg or {vt:.2f}H")
+        if range_only:
+            ok = ok and (bottom >= JOINT_DEG or vb >= 0.06)
+        else:
+            ok = ok and (bottom >= JOINT_DEG or vb >= 0.06) and (top >= TOP_DEG or vt >= TOP_HIP_H)
+    return (ok, "; ".join(rows) or "no wrong form")

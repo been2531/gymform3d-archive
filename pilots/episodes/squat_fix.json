@@ -13,11 +13,12 @@
       "head": 0
     },
     "lean": {
-      "depth": 0.8,
-      "lean": 38,
+      "depth": 0.85,
+      "shin": 62,
+      "thigh": 170,
+      "lean": 14,
+      "heel": 22,
       "head": 18,
-      "heel": 38,
-      "knee_fwd": 14,
       "highlight": [
         [
           "hip",
@@ -116,7 +117,7 @@
         "t0": 9.3,
         "t1": 11.0,
         "type": "conclusion",
-        "title": "SIT BACK & DOWN",
+        "title": "OWN THE DEPTH",
         "sub": "EVERY REP",
         "face": "proud"
       }

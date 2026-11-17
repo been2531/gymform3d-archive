@@ -1,17 +1,28 @@
 """Text blocks with measured cap height, logged per frame for QA."""
+import os
 import skia
 
+# The repo ships the three display faces (OFL/Apache), so a checkout renders the same
+# type anywhere; the host-wide path is kept as a fallback.
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_FONTS = os.path.join(os.path.dirname(HERE), "fonts")
 FONTS = {
     "anton": "/usr/share/fonts/truetype/sand-box/google/Anton/Anton-Regular.ttf",
     "kalam": "/usr/share/fonts/truetype/sand-box/google/Kalam/Kalam-Bold.ttf",
     "marker": "/usr/share/fonts/truetype/sand-box/google/Permanent Marker/PermanentMarker-Regular.ttf",
 }
+_FILES = {"anton": "Anton-Regular.ttf", "kalam": "Kalam-Bold.ttf", "marker": "PermanentMarker-Regular.ttf"}
 _tf = {}
+
+
+def path(name):
+    local = os.path.join(REPO_FONTS, _FILES[name])
+    return local if os.path.exists(local) else FONTS[name]
 
 
 def typeface(name):
     if name not in _tf:
-        _tf[name] = skia.Typeface.MakeFromFile(FONTS[name])
+        _tf[name] = skia.Typeface.MakeFromFile(path(name))
     return _tf[name]
 
 

@@ -5,16 +5,30 @@ import numpy as np
 import soundfile as sf
 
 SR = 24000
-KOKORO_PY = "/workspace/venv-kokoro/bin/python"
+# Narration engines. Kokoro is the default; the Supertonic worker is used on hosts
+# without the Kokoro venv (same 24 kHz mono contract, so nothing downstream changes).
+KOKORO_PY = os.environ.get("GYMFORM_KOKORO_PY", "/workspace/venv-kokoro/bin/python")
+SUPERTONIC_PY = os.environ.get("GYMFORM_SUPERTONIC_PY", "/workspace/venv-supertonic/bin/python")
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def engine():
+    """(name, interpreter, worker) for the narration voice available on this host."""
+    want = os.environ.get("GYMFORM_TTS", "auto").lower()
+    if want == "kokoro" or (want == "auto" and os.path.exists(KOKORO_PY)):
+        return "kokoro", KOKORO_PY, "tts_kokoro.py"
+    if want == "supertonic" or (want == "auto" and os.path.exists(SUPERTONIC_PY)):
+        return "supertonic", SUPERTONIC_PY, "tts_supertonic.py"
+    raise RuntimeError(f"no narration engine: set GYMFORM_TTS and GYMFORM_KOKORO_PY (missing {KOKORO_PY})")
 
 
 def tts(text, voice, speed, cache_dir):
     os.makedirs(cache_dir, exist_ok=True)
-    key = hashlib.sha1(f"{voice}|{speed}|{text}".encode()).hexdigest()[:16]
+    name, py, worker = engine()
+    key = hashlib.sha1(f"{name}|{voice}|{speed}|{text}".encode()).hexdigest()[:16]
     out = os.path.join(cache_dir, f"{key}.wav")
     if not os.path.exists(out):
-        subprocess.run(["nice", "-n", "19", KOKORO_PY, os.path.join(HERE, "tts_kokoro.py"), voice, str(speed), out, text],
+        subprocess.run(["nice", "-n", "19", py, os.path.join(HERE, worker), voice, str(speed), out, text],
                        check=True, capture_output=True)
     s, sr = sf.read(out, dtype="float32")
     assert sr == SR
@@ -84,16 +98,56 @@ def place(buf, clip, t, gain=1.0):
     buf[i:j] += gain * clip[: j - i]
 
 
+def measure(path):
+    """(integrated LUFS, true peak dBFS) of a file, measured on the decoded stream."""
+    p = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-af", "ebur128=peak=true",
+                        "-f", "null", "-"], capture_output=True, text=True)
+    i = float(re.findall(r"I:\s+(-?[\d.]+) LUFS", p.stderr)[-1])
+    tp = float(re.findall(r"Peak:\s+(-?[\d.]+) dBFS", p.stderr)[-1])
+    return i, tp
+
+
+def final_trim(mp4, target=-14.0, tol=0.3, max_tp=-1.5, tries=2):
+    """loudnorm in linear mode lands near -14 LUFS but not on it (the stereo pan and the
+    codec both move it a little), so the muxed file is measured and trimmed to the target.
+    Video is copied; only the audio is re-encoded."""
+    i, tp = measure(mp4)
+    for _ in range(tries):
+        d = target - i
+        if abs(d) <= tol:
+            break
+        gain = min(d, max(max_tp - tp, -12.0)) if tp + d > max_tp else d
+        tmp = mp4 + ".trim.mp4"
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", mp4, "-c:v", "copy",
+                        "-af", f"volume={gain:.2f}dB", "-c:a", "aac", "-profile:a", "aac_low", "-ar", "48000",
+                        "-b:a", "192k", "-movflags", "+faststart", tmp], check=True)
+        os.replace(tmp, mp4)
+        i, tp = measure(mp4)
+    return i, tp
+
+
 def bed(duration, bpm=104):
-    """Minimal CC0 kick/hat groove, ducked later under speech."""
+    """Thin CC0 rhythm loop, ducked later under speech. Kick on the beat, shaker on
+    the offbeat, quiet 16th ticks, and a sustained low pad so the track never falls
+    to digital silence in the gaps between narration lines (a silent hole reads as a
+    broken file on a phone, and IG's own audio never has one). Snare-free and quiet
+    enough to stay under the voice."""
     b = np.zeros(int(duration * SR), np.float32)
     beat = 60.0 / bpm
-    k, h = sfx("kick"), sfx("hat", 3)
+    k, h, tk = sfx("kick"), sfx("hat", 3), sfx("tick", 5)
     t = 0.0; i = 0
     while t < duration:
-        if i % 2 == 0: place(b, k, t, 0.55)
-        place(b, h, t + beat / 2, 0.5)
+        if i % 2 == 0:
+            place(b, k, t, 0.5)
+        place(b, h, t + beat / 2, 0.4)
+        place(b, tk, t + beat / 4, 0.09)
+        place(b, tk, t + 3 * beat / 4, 0.07)
         t += beat; i += 1
+    tt = np.arange(len(b)) / SR
+    lfo = 0.7 + 0.3 * np.sin(2 * np.pi * 0.13 * tt)
+    pad = (np.sin(2 * np.pi * 110.0 * tt) + 0.8 * np.sin(2 * np.pi * 164.81 * tt)
+           + 0.45 * np.sin(2 * np.pi * 220.0 * tt)) * lfo * 0.08
+    b += pad.astype(np.float32)
     return b
 
 

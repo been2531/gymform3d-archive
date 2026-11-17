@@ -82,6 +82,7 @@ def main():
                        use_bed=sec.get("bed", True))
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", silent, "-i", wav]
                     + AUDIO_MUX + [mp4], check=True)
+    audio.final_trim(mp4)  # land on -14.0 LUFS after the stereo pan and the AAC encode
     total_s = time.time() - t0
     # flow sheet
     sheet = os.path.join(out_dir, f"{stem}_sheet.jpg")

@@ -203,21 +203,32 @@ def hand_x_for(body: Body, floor_y: float, ball_x: float, lead: float = 0.0):
 
 def squat_pose(body: Body, phase: float, form: dict, floor_y: float, ankle_x: float):
     """Side-view bodyweight squat, facing right. form: depth (0..1 of a full
-    squat), lean (extra forward torso lean in deg at the bottom)."""
+    squat), plus the bottom-of-rep joint angles that make a fault read as a real
+    pose instead of a colour change:
+      shin   deg of the shin from horizontal at the bottom (90 = vertical, 52 = good)
+      thigh  deg of the thigh from horizontal at the bottom (196 = hips below knees)
+      lean   deg the torso leans forward from vertical at the bottom
+      heel   deg the heel lifts, pivoting on the ball (0 = flat foot)
+    Defaults are the good squat, so a correct form needs no angle keys; a fault
+    keeps fault(phase) of its offset at the top of the rep so it stays readable.
+    """
     L = body.L
-    dpt = form.get("depth", 1.0) * phase
-    ball0 = add((ankle_x, floor_y - 0.04 * body.H), d(-22.0), L["foot"])
-    ball = (ball0[0], ball0[1])
-    ankle = add(ball, d(158.0 - form.get("heel", 0.0) * fault(phase)), L["foot"])  # heel lift pivots on the ball
-    knee = add(ankle, d(90.0 - (38.0 + form.get("knee_fwd", 0.0)) * dpt), L["shin"])
-    hip = add(knee, d(90.0 + 106.0 * dpt), L["thigh"])
-    lean = 42.0 * dpt + form.get("lean", 0.0) * fault(phase)
+    k = float(form.get("depth", 1.0)) * phase
+    fw = fault(phase)
+    heel = form.get("heel", 0.0) * fw
+    shin_b = float(form.get("shin", 52.0 - form.get("knee_fwd", 0.0)))
+    thigh_b = float(form.get("thigh", 196.0))
+    lean = 42.0 * k + float(form.get("lean", 0.0)) * fw   # lean = extra forward torso lean
+    ball = add((ankle_x, floor_y - 0.04 * body.H), d(-22.0), L["foot"])
+    ankle = add(ball, d(158.0 - heel), L["foot"])  # heel lift pivots on the ball
+    knee = add(ankle, d(90.0 - (38.0 * k) + (shin_b - 52.0) * fw), L["shin"])
+    hip = add(knee, d(90.0 + 106.0 * k + (thigh_b - 196.0) * fw), L["thigh"])
     t_ang = 90.0 - lean
     sh = add(hip, d(t_ang), L["torso"])
     neck = add(sh, d(t_ang + 6.0), L["neck"])
-    h_ang = t_ang + 0.55 * lean - form.get("head", 0.0) * fault(phase)
+    h_ang = t_ang + 0.55 * lean - form.get("head", 0.0) * fw
     head = add(neck, d(h_ang), L["head"])
-    arm = -70.0 + 72.0 * min(dpt * 1.4, 1.0)
+    arm = -70.0 + 72.0 * min(k * 1.4, 1.0)
     elbow = add(sh, d(arm), L["upper_arm"])
     wrist = add(elbow, d(arm + 4.0), L["forearm"])
     fingers = add(wrist, d(arm + 4.0), L["hand"])

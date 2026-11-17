@@ -1,4 +1,7 @@
 __pycache__/
+
+# third-party reference reels kept only on the owner's machine (not redistributable)
+viral_refs_2026/
 *.pyc
 frames_*/
 _tmp*/
