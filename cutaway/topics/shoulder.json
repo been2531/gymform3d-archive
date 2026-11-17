@@ -1,0 +1,155 @@
+{
+ "id": "shoulder",
+ "joint_name": "shoulder",
+ "assets": "output/cutaway/assets/shoulder",
+ "duration": 15.0,
+ "hook": [
+  "WHAT'S INSIDE",
+  "YOUR SHOULDER?"
+ ],
+ "hook_out": 2.2,
+ "joint": [
+  385,
+  300
+ ],
+ "render": {
+  "screen_y": 820
+ },
+ "shots": [
+  {
+   "t": 0.0,
+   "kind": "hook",
+   "layer": "outer",
+   "win": [
+    395,
+    400
+   ],
+   "zoom": 1.3,
+   "win_r": 260
+  },
+  {
+   "t": 2.3,
+   "kind": "cut",
+   "layer": "outer",
+   "label": "DELTOID",
+   "target": [
+    405,
+    380
+   ],
+   "win": [
+    395,
+    400
+   ],
+   "zoom": 1.35,
+   "win_r": 290
+  },
+  {
+   "t": 5.0,
+   "kind": "cut",
+   "layer": "bone",
+   "label": "BALL AND SOCKET",
+   "target": [
+    385,
+    285
+   ],
+   "win": [
+    385,
+    300
+   ],
+   "zoom": 1.35,
+   "win_r": 300
+  },
+  {
+   "t": 7.6,
+   "kind": "macro",
+   "layer": "macro",
+   "label": "CARTILAGE",
+   "target": [
+    390,
+    252
+   ],
+   "win": [
+    392,
+    270
+   ],
+   "zoom": 1.75,
+   "win_r": 330
+  },
+  {
+   "t": 10.3,
+   "kind": "counter",
+   "layer": "bone",
+   "label": "ARM AT 90°",
+   "target": [
+    385,
+    285
+   ],
+   "win": [
+    385,
+    300
+   ],
+   "zoom": 1.35,
+   "win_r": 280,
+   "screen_y": 740
+  },
+  {
+   "t": 12.8,
+   "kind": "bloom",
+   "layer": "bone",
+   "label": "SHALLOW SOCKET",
+   "target": [
+    372,
+    280
+   ],
+   "win": [
+    385,
+    330
+   ],
+   "zoom": 1.12,
+   "win_r": 290
+  }
+ ],
+ "counter": {
+  "t0": 10.3,
+  "t1": 12.75,
+  "to": 0.89,
+  "fmt": "{:.2f}×",
+  "caption": "BODY WEIGHT",
+  "fact": "ghj_force_90_abd"
+ },
+ "facts": [
+  {
+   "id": "ghj_force_90_abd",
+   "value": 0.89,
+   "unit": "x body weight",
+   "claim": "Resultant glenohumeral joint force peaks at 0.89x body weight at 90 degrees of isometric abduction in the scapular plane (EMG-based model).",
+   "source": "Poppen NK, Walker PS. Forces at the glenohumeral joint in abduction. Clin Orthop Relat Res. 1978;(135):165-170.",
+   "url": "https://doi.org/10.1097/00003086-197809000-00035"
+  },
+  {
+   "id": "angle_90",
+   "value": 90,
+   "unit": "degrees",
+   "claim": "Arm angle at which the peak above occurs (same source).",
+   "source": "Poppen & Walker 1978 (see above)",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/709928"
+  },
+  {
+   "id": "year_poppen",
+   "value": 1978,
+   "unit": "year",
+   "claim": "Publication year of the source above.",
+   "source": "Poppen & Walker 1978",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/709928"
+  }
+ ],
+ "caption": [
+  "Your shoulder is a big ball sitting on a small, shallow socket.",
+  "Holding your arm out at 90 degrees loads that joint with about 0.89x body weight (Poppen & Walker, 1978).",
+  "Which joint should we open next?"
+ ],
+ "audio": {
+  "key_hz": 49.0,
+  "seed": 11
+ }
+}

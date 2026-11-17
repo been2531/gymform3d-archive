@@ -1,0 +1,45 @@
+{
+ "_doc": "Per-joint prompt parts for the 4 registered layers. Edit prompts here, not in code. macro_box_frac = [x0, y0, size] of the bone image (fractions of width/height/width) used as the macro edit reference; adjust after seeing the bone layer grid.",
+ "knee": {
+  "skin": "the outside of an athletic adult's bent knee seen from the side (lateral view), kneecap bump at the front, tanned skin with fine pores",
+  "outer": "the superficial thigh and calf muscles, red-pink striated quadriceps fibres, glossy white quadriceps tendon and patellar tendon wrapping over the kneecap",
+  "bone": "femur coming down from the top, tibia going down, the kneecap (patella) at the front where the skin bump is, glossy pale blue-white articular cartilage on the femur and tibia ends, two C-shaped meniscus pads between them",
+  "macro": "a thin layer of pale, translucent, straw-yellow synovial fluid filling the narrow gaps between cartilage, meniscus and tibia, tiny glistening highlights and a few stretched strands",
+  "macro_box_frac": [0.335, 0.3475, 0.56]
+ },
+ "shoulder": {
+  "skin": "an athletic adult's right shoulder and upper arm seen from the side (lateral view), arm hanging relaxed, rounded deltoid clearly visible, tanned skin",
+  "outer": "the deltoid muscle capping the shoulder with red-pink striated fibres fanning down to the upper arm, glossy white tendon sheen, edges of trapezius and pectoral, biceps and triceps",
+  "bone": "the round humeral head at the top of the humerus against the shallow pear-shaped glenoid socket of the scapula, the flat acromion arching over the top and meeting the clavicle end, the humerus shaft running down to the elbow, glossy cartilage on the humeral head, thin white labrum ring",
+  "macro": "the humeral head as a smooth round ball covered in glossy pale blue-white cartilage resting against a small shallow socket, a thin glossy white labrum ring deepening the socket, a thin film of pale translucent straw-yellow synovial fluid in the gap",
+  "macro_box_frac": [0.28, 0.109375, 0.5]
+ },
+ "hip": {
+  "skin": "an athletic adult's right hip and upper thigh seen from the side, slight hip flexion, tanned skin, glute and thigh contour",
+  "outer": "gluteus medius and maximus, tensor fasciae latae and the glossy white iliotibial band running down the thigh",
+  "bone": "the pelvis side wall with the deep cup-shaped acetabulum socket, the round femoral head seated deep inside it, the femoral neck and greater trochanter, femur shaft going down, glossy cartilage inside the socket",
+  "macro": "the femoral head deep in the acetabulum, glossy cartilage on both surfaces, the white labrum rim around the socket, a thin film of pale translucent straw-yellow synovial fluid",
+  "macro_box_frac": [0.25, 0.25, 0.5]
+ },
+ "lower_back": {
+  "skin": "an athletic adult's lower back seen from behind at a slight angle, spinal groove and erector muscles visible, tanned skin",
+  "outer": "the erector spinae muscle columns either side of the spine, glossy white thoracolumbar fascia",
+  "bone": "the lumbar vertebrae L1 to L5 stacked down the middle, each separated by a pale intervertebral disc, the sacrum at the bottom",
+  "macro": "one lumbar intervertebral disc between two vertebral bodies, tough white fibrous outer rings (annulus) around a soft translucent gel-like centre (nucleus)",
+  "macro_box_frac": [0.25, 0.35, 0.5]
+ },
+ "ankle": {
+  "skin": "an athletic adult's right ankle and lower calf seen from the side, foot flat, Achilles tendon visible, tanned skin",
+  "outer": "the calf muscles tapering into the thick glossy white Achilles tendon, tendons crossing the front of the ankle under the retinaculum",
+  "bone": "the tibia and fibula ends forming a mortise around the dome of the talus, the heel bone (calcaneus) behind and below, glossy cartilage on the talus dome",
+  "macro": "the talus dome sitting in the tibia-fibula mortise, glossy cartilage, a thin film of pale translucent straw-yellow synovial fluid",
+  "macro_box_frac": [0.25, 0.4, 0.5]
+ },
+ "elbow": {
+  "skin": "an athletic adult's right elbow seen from the side, arm bent about 90 degrees, tanned skin",
+  "outer": "biceps tendon crossing the front of the elbow, forearm flexor and extensor muscles, triceps tendon at the back",
+  "bone": "the lower humerus with its spool-shaped trochlea, the ulna hooking around it from behind (olecranon), the radius head beside it, glossy cartilage",
+  "macro": "the ulna's hook wrapped around the humerus trochlea like a wrench, glossy cartilage, a thin film of pale translucent straw-yellow synovial fluid",
+  "macro_box_frac": [0.25, 0.3, 0.5]
+ }
+}

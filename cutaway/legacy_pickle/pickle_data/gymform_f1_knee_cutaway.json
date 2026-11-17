@@ -1,0 +1,565 @@
+{
+  "id": "gymform_f1_knee_cutaway",
+  "title": "What's inside your knee — 15s CUTAWAY (F1)",
+  "brand": {
+    "handle": "gymform.3d",
+    "wordmark": "GYMFORM"
+  },
+  "palette": {
+    "bg": "#08090A",
+    "paper": "#F4F5F1",
+    "lime": "#B4FF39",
+    "muted": "#8E9499",
+    "line": "#2A2D30"
+  },
+  "format": {
+    "kind": "CUTAWAY",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "duration": 15.0
+  },
+  "assets": {
+    "skin": "assets/anatomy/knee_skin_v1.png",
+    "outer": "assets/anatomy/knee_cutaway_v1.png",
+    "bone": "assets/anatomy/knee_deep_v1.png",
+    "macro": "assets/anatomy/knee_fluid_v3.png"
+  },
+  "base_asset": "skin",
+  "camera": {
+    "focus_src": [
+      700,
+      860
+    ],
+    "focus_out": [
+      640,
+      1075
+    ],
+    "scale": [
+      1.255,
+      1.315
+    ]
+  },
+  "hook": {
+    "t": 0.0,
+    "out": 2.28,
+    "text": [
+      "WHAT'S INSIDE",
+      "YOUR KNEE?"
+    ],
+    "x": 88,
+    "y": 470,
+    "size": 132,
+    "rule": {
+      "w": 300,
+      "color": "#B4FF39"
+    }
+  },
+  "style": {
+    "hook": {
+      "eyebrow": "BIOMECHANICS · DEEP SQUAT",
+      "eyebrow_size": 26,
+      "eyebrow_track": 5.6,
+      "meta": [
+        "RIGHT KNEE",
+        "ANTERIOR VIEW",
+        "90° FLEXION"
+      ],
+      "meta_size": 21,
+      "meta_track": 3.6,
+      "grad_top": "#FFFFFF",
+      "grad_bot": "#F1F4EA",
+      "scrim": 0.52,
+      "dim": 0.1
+    },
+    "label": {
+      "x": 88,
+      "y": 300,
+      "size": 60,
+      "track": 3.4,
+      "pad_x": 46,
+      "pad_y": 26,
+      "radius": 15,
+      "glass": 0.42,
+      "blur": 13.0,
+      "rim_alpha": 0.5,
+      "leader": true,
+      "leader_w": 3.4,
+      "leader_color": "#B4FF39"
+    },
+    "counter": {
+      "x": 88,
+      "y": 1430,
+      "size": 178,
+      "unit_size": 70,
+      "cap_size": 28,
+      "cap_track": 7.5,
+      "meter_w": 430,
+      "meter_ticks": 41
+    },
+    "rim": {
+      "hairline": "#EAF2D8",
+      "accent": "#B4FF39",
+      "bevel": 10.0,
+      "scanner": true
+    }
+  },
+  "label_y": 300,
+  "window": {
+    "cx": 790,
+    "cy": 900,
+    "r": 258,
+    "open": {
+      "at": 2.6,
+      "dur": 0.52
+    }
+  },
+  "bloom": {
+    "at": 12.86,
+    "dur": 0.68,
+    "r": 1500
+  },
+  "shots": [
+    {
+      "t": 0.0,
+      "kind": "hook"
+    },
+    {
+      "t": 2.6,
+      "kind": "cut",
+      "label": "PATELLA",
+      "tool": "saw",
+      "tool_angle": -2.55,
+      "window": {
+        "cx": 780,
+        "cy": 855,
+        "r": 240
+      },
+      "content": {
+        "asset": "outer",
+        "match_base": true,
+        "scale_drift": 0.05,
+        "drift_dur": 2.5,
+        "tint": "#FFD9A8",
+        "mix": 0.1
+      }
+    },
+    {
+      "t": 5.2,
+      "kind": "cut",
+      "label": "CARTILAGE",
+      "tool": "scalpel",
+      "tool_angle": -1.05,
+      "window": {
+        "cx": 600,
+        "cy": 1000,
+        "r": 236
+      },
+      "content": {
+        "asset": "bone",
+        "match_base": true,
+        "scale_drift": 0.07,
+        "drift_dur": 2.5,
+        "tint": "#D3E9FF",
+        "mix": 0.13,
+        "backdrop": "outer"
+      }
+    },
+    {
+      "t": 7.8,
+      "kind": "cut",
+      "label": "SYNOVIAL FLUID",
+      "label_size": 58,
+      "tool": "syringe",
+      "tool_angle": -2.35,
+      "window": {
+        "cx": 670,
+        "cy": 1058,
+        "r": 248
+      },
+      "content": {
+        "asset": "macro",
+        "scale": 0.74,
+        "focus": [
+          690,
+          600
+        ],
+        "scale_drift": 0.05,
+        "drift_dur": 2.6,
+        "tint": "#CFEFFF",
+        "mix": 0.03,
+        "lift": 0.0,
+        "exposure": 0.95,
+        "contrast": 1.42,
+        "center_gain": 0.02
+      }
+    },
+    {
+      "t": 10.4,
+      "kind": "counter",
+      "window": {
+        "cx": 670,
+        "cy": 1058,
+        "r": 248
+      },
+      "content": {
+        "asset": "macro",
+        "scale": 0.82,
+        "focus": [
+          694,
+          606
+        ],
+        "tint": "#CFEFFF",
+        "mix": 0.03,
+        "lift": 0.0,
+        "exposure": 0.95,
+        "contrast": 1.42,
+        "scale_drift": 0.0,
+        "center_gain": 0.02
+      }
+    },
+    {
+      "t": 12.86,
+      "kind": "bloom",
+      "label": "FIVE MOVING PARTS",
+      "label_size": 58,
+      "window": {
+        "cx": 670,
+        "cy": 1058,
+        "r": 248
+      },
+      "content": {
+        "asset": "bone",
+        "match_base": true,
+        "tint": "#EAF4FF",
+        "mix": 0.05,
+        "backdrop": "outer"
+      },
+      "label_delay": 0.52
+    }
+  ],
+  "events": [
+    {
+      "type": "glow",
+      "t0": 3.3,
+      "t1": 5.1,
+      "rel": [
+        84,
+        -40
+      ],
+      "r": 132,
+      "squash": 0.86,
+      "amount": 0.46,
+      "color": "#FFF0D2",
+      "clip": true
+    },
+    {
+      "type": "arrow",
+      "t0": 3.18,
+      "t1": 4.4,
+      "from": [
+        556,
+        776
+      ],
+      "to": [
+        802,
+        794
+      ],
+      "color": "#B4FF39",
+      "width": 9,
+      "head": 46,
+      "clip": true
+    },
+    {
+      "type": "glow",
+      "t0": 5.55,
+      "t1": 7.7,
+      "rel": [
+        -64,
+        -40
+      ],
+      "r": 150,
+      "squash": 0.44,
+      "amount": 0.3,
+      "color": "#CFE8FF",
+      "clip": true
+    },
+    {
+      "type": "arrow",
+      "t0": 6.1,
+      "t1": 7.55,
+      "from": [
+        372,
+        826
+      ],
+      "to": [
+        512,
+        968
+      ],
+      "color": "#B4FF39",
+      "width": 9,
+      "head": 44,
+      "clip": false
+    },
+    {
+      "type": "arrow",
+      "t0": 6.34,
+      "t1": 7.55,
+      "from": [
+        722,
+        1186
+      ],
+      "to": [
+        560,
+        1032
+      ],
+      "color": "#B4FF39",
+      "width": 9,
+      "head": 44,
+      "clip": true
+    },
+    {
+      "type": "sheen",
+      "t0": 8.25,
+      "t1": 9.7,
+      "angle": 34,
+      "width": 0.085,
+      "amount": 0.34,
+      "color": "#E8FAFF"
+    },
+    {
+      "type": "glow",
+      "t0": 8.16,
+      "t1": 10.2,
+      "rel": [
+        0,
+        -6
+      ],
+      "r": 168,
+      "squash": 0.72,
+      "amount": 0.22,
+      "color": "#BFEAFF",
+      "clip": true
+    },
+    {
+      "type": "sheen",
+      "t0": 9.95,
+      "t1": 11.3,
+      "angle": -18,
+      "width": 0.075,
+      "amount": 0.26,
+      "color": "#DDF4FF"
+    },
+    {
+      "type": "gauge",
+      "t0": 10.42,
+      "t1": 12.45,
+      "color": "#B4FF39"
+    }
+  ],
+  "counter": {
+    "t": 10.4,
+    "start": 10.58,
+    "dur": 1.5,
+    "out": 12.55,
+    "from": 0.0,
+    "to": 7.6,
+    "caption": "BODY WEIGHT LOAD",
+    "x": 88,
+    "y": 1430,
+    "size": 178,
+    "cap_size": 28,
+    "meter_w": 430
+  },
+  "sheet": {
+    "times": [
+      0.1,
+      1.4,
+      2.95,
+      3.7,
+      5.65,
+      6.9,
+      8.6,
+      9.9,
+      11.4,
+      12.3,
+      13.75,
+      14.9
+    ],
+    "title": "GYMFORM.3D  ·  F1 CUTAWAY  ·  15s REEL FRAME CHECK  (0.1s – 14.9s)"
+  },
+  "audio": {
+    "voice": "M1",
+    "speed": 1.13,
+    "steps": 10,
+    "lang": "en",
+    "python": "/workspace/venv-supertonic/bin/supertonic",
+    "target_lufs": -14.0,
+    "trim_lead": true,
+    "lines": [
+      {
+        "id": "l1",
+        "at": 0.14,
+        "text": "This is what's inside your knee at the bottom of a squat."
+      },
+      {
+        "id": "l2",
+        "at": 2.62,
+        "text": "The kneecap rides a groove of cartilage, not a hinge."
+      },
+      {
+        "id": "l3",
+        "at": 5.11,
+        "text": "A few millimeters of cartilage takes the whole load."
+      },
+      {
+        "id": "l4",
+        "at": 7.72,
+        "text": "Synovial fluid inside the joint kills the friction."
+      },
+      {
+        "id": "l5",
+        "at": 10.27,
+        "text": "Deep squat: seven point six times your body weight."
+      },
+      {
+        "id": "l6",
+        "at": 12.7,
+        "text": "Five moving parts. One joint."
+      }
+    ],
+    "sfx": [
+      {
+        "type": "impact",
+        "at": 0.02,
+        "gain": 0.8
+      },
+      {
+        "type": "whoosh",
+        "at": 2.5,
+        "gain": 0.5
+      },
+      {
+        "type": "impact",
+        "at": 2.62,
+        "gain": 0.42
+      },
+      {
+        "type": "pop",
+        "at": 2.76,
+        "gain": 0.3
+      },
+      {
+        "type": "whoosh",
+        "at": 5.1,
+        "gain": 0.32
+      },
+      {
+        "type": "pop",
+        "at": 5.36,
+        "gain": 0.28
+      },
+      {
+        "type": "whoosh",
+        "at": 7.7,
+        "gain": 0.42
+      },
+      {
+        "type": "impact",
+        "at": 7.82,
+        "gain": 0.3
+      },
+      {
+        "type": "pop",
+        "at": 7.96,
+        "gain": 0.24
+      },
+      {
+        "type": "impact",
+        "at": 10.44,
+        "gain": 0.38
+      },
+      {
+        "type": "tick",
+        "at": 10.62,
+        "gain": 0.2
+      },
+      {
+        "type": "tick",
+        "at": 10.81,
+        "gain": 0.2
+      },
+      {
+        "type": "tick",
+        "at": 11.0,
+        "gain": 0.2
+      },
+      {
+        "type": "tick",
+        "at": 11.19,
+        "gain": 0.2
+      },
+      {
+        "type": "tick",
+        "at": 11.38,
+        "gain": 0.2
+      },
+      {
+        "type": "tick",
+        "at": 11.57,
+        "gain": 0.2
+      },
+      {
+        "type": "tick",
+        "at": 11.76,
+        "gain": 0.2
+      },
+      {
+        "type": "tick",
+        "at": 11.95,
+        "gain": 0.2
+      },
+      {
+        "type": "tick",
+        "at": 12.14,
+        "gain": 0.2
+      },
+      {
+        "type": "tick",
+        "at": 12.24,
+        "gain": 0.26
+      },
+      {
+        "type": "riser",
+        "at": 12.46,
+        "gain": 0.4
+      },
+      {
+        "type": "impact",
+        "at": 12.88,
+        "gain": 0.52
+      },
+      {
+        "type": "ding",
+        "at": 13.38,
+        "gain": 0.34
+      }
+    ],
+    "bed": {
+      "tempo": 100.0,
+      "level": 0.26
+    }
+  },
+  "qa": {
+    "max_words_per_label": 3,
+    "labels_per_shot": 1,
+    "safe_area": [
+      80,
+      250,
+      1000,
+      1520
+    ],
+    "cut_min_gap_s": 2.0,
+    "hook_at_s": 0.0
+  }
+}

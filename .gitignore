@@ -31,3 +31,6 @@ output/_basemodels/
 # third-party outfit candidate downloads (never commit binaries)
 output/_assets/
 output/outfit_candidates_v1.png
+
+# cutaway reels: renders, generated anatomy images, QA packages (never committed)
+output/cutaway/

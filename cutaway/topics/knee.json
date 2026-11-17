@@ -1,0 +1,32 @@
+{
+ "id": "knee",
+ "joint_name": "knee",
+ "assets": "output/cutaway/assets/knee",
+ "duration": 15.0,
+ "hook": ["WHAT'S INSIDE", "YOUR KNEE?"],
+ "hook_out": 2.2,
+ "joint": [690, 860],
+ "shots": [
+  {"t": 0.0, "kind": "hook", "layer": "outer", "win": [690, 860], "zoom": 1.0, "win_r": 290},
+  {"t": 2.3, "kind": "cut", "layer": "bone", "label": "PATELLA", "target": [790, 790], "win": [730, 840], "zoom": 1.12, "win_r": 300},
+  {"t": 5.0, "kind": "cut", "layer": "bone", "label": "CARTILAGE", "target": [600, 815], "win": [625, 860], "zoom": 1.32, "win_r": 310},
+  {"t": 7.6, "kind": "macro", "layer": "macro", "label": "SYNOVIAL FLUID", "target": [628, 940], "win": [628, 920], "zoom": 1.8, "win_r": 340},
+  {"t": 10.3, "kind": "counter", "layer": "macro", "label": "DEEP SQUAT", "target": [700, 880], "win": [660, 880], "zoom": 1.55, "win_r": 300, "screen_y": 760},
+  {"t": 12.8, "kind": "bloom", "layer": "bone", "label": "BUILT TO GLIDE", "target": [650, 935], "win": [660, 870], "zoom": 1.15, "win_r": 300}
+ ],
+ "counter": {"t0": 10.3, "t1": 12.75, "to": 7.6, "fmt": "{:.1f}×", "caption": "BODY WEIGHT", "fact": "pfjr_deep_knee_bend"},
+ "facts": [
+  {"id": "pfjr_deep_knee_bend", "value": 7.6, "unit": "x body weight",
+   "claim": "Peak patellofemoral joint reaction force in a deep knee bend: 650 kg for an 85 kg subject = 7.6x body weight (static estimate, small sample).",
+   "source": "Reilly DT, Martens M. Experimental analysis of the quadriceps muscle force and patello-femoral joint reaction force for various activities. Acta Orthop Scand. 1972;43(2):126-137.",
+   "url": "https://doi.org/10.3109/17453677208991251"},
+  {"id": "year_reilly", "value": 1972, "unit": "year", "claim": "Publication year of the source above.",
+   "source": "Reilly & Martens 1972 (see above)", "url": "https://doi.org/10.3109/17453677208991251"}
+ ],
+ "caption": [
+  "Your kneecap glides on cartilage, bathed in synovial fluid.",
+  "In a deep knee bend, the force behind the kneecap was measured at 7.6x body weight (Reilly & Martens, 1972).",
+  "Which joint should we open next?"
+ ],
+ "audio": {"key_hz": 55.0, "seed": 7}
+}

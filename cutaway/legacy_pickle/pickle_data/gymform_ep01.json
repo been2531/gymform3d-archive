@@ -1,0 +1,368 @@
+{
+  "id": "gymform_ep01_squat_protein",
+  "title": "Squat form check -> 30g protein (15s reel + 2 carousel cards)",
+  "brand": {
+    "handle": "gymform.3d",
+    "wordmark": "GYMFORM",
+    "tagline": "MOVE BETTER. LIFT STRONGER."
+  },
+  "palette": {
+    "bg": "#08090A",
+    "ink": "#0A0B0A",
+    "paper": "#F4F5F1",
+    "lime": "#B4FF39",
+    "red": "#FF3B30",
+    "green": "#4FE03A",
+    "amber": "#FFB020",
+    "muted": "#8E9499",
+    "card": "#141618",
+    "line": "#2A2D30"
+  },
+  "format": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "duration": 15.0
+  },
+  "assets": {
+    "form": "downloads/reel_concept_1_form_angle.png",
+    "protein": "downloads/reel_concept_2_protein_visual.png"
+  },
+  "reel": {
+    "scenes": {
+      "form": [
+        0.0,
+        7.5
+      ],
+      "cut": [
+        7.5,
+        8.0
+      ],
+      "macro": [
+        8.0,
+        13.35
+      ],
+      "cta": [
+        13.35,
+        15.0
+      ]
+    },
+    "form": {
+      "zoom": [
+        1.0,
+        1.04
+      ],
+      "switch": 3.5,
+      "wrong": {
+        "label": "WRONG",
+        "angle": 78,
+        "color": "red"
+      },
+      "safe": {
+        "label": "SAFE",
+        "angle": 95,
+        "color": "green"
+      },
+      "cue_wrong": [
+        "KNEES CAVING IN",
+        "MORE STRESS ON",
+        "LOWER BACK & KNEES"
+      ],
+      "cue_safe": [
+        "KNEES TRACK OUT",
+        "MORE GLUTE & QUAD",
+        "ACTIVATION"
+      ],
+      "sprite_boxes": {
+        "left": [
+          168,
+          1246,
+          352,
+          1344
+        ],
+        "right": [
+          608,
+          1246,
+          788,
+          1344
+        ]
+      },
+      "frame_boxes": {
+        "left": [
+          140,
+          1177,
+          384,
+          1392
+        ],
+        "right": [
+          578,
+          1177,
+          812,
+          1392
+        ]
+      }
+    },
+    "cut": {
+      "line1": "GOOD FORM",
+      "line2": "NEEDS FUEL"
+    },
+    "macro": {
+      "header": "PER 30g OF PROTEIN  ·  MACRO BREAKDOWN",
+      "header_reveal": "−292 KCAL FOR THE SAME 30g PROTEIN",
+      "reveal_at": 11.65,
+      "count_start": 8.05,
+      "count_dur": 1.5,
+      "count_stagger": 0.16,
+      "left": {
+        "title": "LENTILS + PANEER + CHICKPEAS",
+        "values": {
+          "calories": 678,
+          "protein": 30,
+          "carbs": 92,
+          "fiber": 25
+        }
+      },
+      "right": {
+        "title": "4 EGGS + CHICKEN BREAST",
+        "values": {
+          "calories": 386,
+          "protein": 30,
+          "carbs": 3,
+          "fiber": 0
+        }
+      },
+      "rows": [
+        {
+          "key": "calories",
+          "label": "CALORIES",
+          "unit": "kcal",
+          "color": "amber",
+          "max": 700
+        },
+        {
+          "key": "protein",
+          "label": "PROTEIN",
+          "unit": "g",
+          "color": "green",
+          "max": 40
+        },
+        {
+          "key": "carbs",
+          "label": "CARBS",
+          "unit": "g",
+          "color": "amber",
+          "max": 100
+        },
+        {
+          "key": "fiber",
+          "label": "FIBER",
+          "unit": "g",
+          "color": "green",
+          "max": 30
+        }
+      ]
+    },
+    "cta": {
+      "text": "SAVE FOR LEG DAY"
+    },
+    "band_entry": 7.76
+  },
+  "audio": {
+    "voice": "M1",
+    "speed": 1.12,
+    "steps": 10,
+    "lang": "en",
+    "python": "/workspace/venv-supertonic/bin/supertonic",
+    "target_lufs": -14.0,
+    "lines": [
+      {
+        "id": "s1",
+        "at": 0.1,
+        "text": "Seventy-eight degrees? Knees caving in."
+      },
+      {
+        "id": "s2",
+        "at": 3.5,
+        "text": "Ninety-five. Knees track out — glutes do the work."
+      },
+      {
+        "id": "s3",
+        "at": 7.18,
+        "text": "Fuel."
+      },
+      {
+        "id": "s4",
+        "at": 8.45,
+        "text": "Six seventy-eight versus three eighty-six calories. Same thirty grams of protein."
+      },
+      {
+        "id": "s5",
+        "at": 13.45,
+        "text": "Save for leg day."
+      }
+    ],
+    "sfx": [
+      {
+        "type": "riser",
+        "at": 0.0,
+        "gain": 0.55
+      },
+      {
+        "type": "impact",
+        "at": 0.02,
+        "gain": 0.85
+      },
+      {
+        "type": "pop",
+        "at": 0.3,
+        "gain": 0.45
+      },
+      {
+        "type": "whoosh",
+        "at": 3.42,
+        "gain": 0.6
+      },
+      {
+        "type": "ding",
+        "at": 3.72,
+        "gain": 0.5
+      },
+      {
+        "type": "whoosh",
+        "at": 7.44,
+        "gain": 0.7
+      },
+      {
+        "type": "impact",
+        "at": 7.56,
+        "gain": 0.7
+      },
+      {
+        "type": "pop",
+        "at": 8.06,
+        "gain": 0.4
+      },
+      {
+        "type": "tick",
+        "at": 8.2,
+        "gain": 0.3
+      },
+      {
+        "type": "tick",
+        "at": 8.36,
+        "gain": 0.3
+      },
+      {
+        "type": "tick",
+        "at": 8.52,
+        "gain": 0.3
+      },
+      {
+        "type": "tick",
+        "at": 8.68,
+        "gain": 0.3
+      },
+      {
+        "type": "ding",
+        "at": 11.66,
+        "gain": 0.45
+      },
+      {
+        "type": "whoosh",
+        "at": 13.3,
+        "gain": 0.55
+      },
+      {
+        "type": "impact",
+        "at": 13.4,
+        "gain": 0.65
+      }
+    ],
+    "bed": {
+      "tempo": 120,
+      "level": 0.42
+    }
+  },
+  "carousel": {
+    "card1": {
+      "eyebrow": "SQUAT · FORM CHECK",
+      "headline": [
+        "THE 17° THAT",
+        "SAVES YOUR KNEES"
+      ],
+      "sub": "Knee track angle, side view",
+      "wrong": {
+        "label": "WRONG",
+        "angle": "78°",
+        "cue": [
+          "KNEES CAVE IN",
+          "SHEAR ON LOWER BACK",
+          "& KNEES"
+        ]
+      },
+      "safe": {
+        "label": "SAFE",
+        "angle": "95°",
+        "cue": [
+          "KNEES TRACK OUT",
+          "GLUTE & QUAD",
+          "DO THE WORK"
+        ]
+      },
+      "foot": "SAVE FOR LEG DAY",
+      "crops": {
+        "left": [
+          54,
+          636,
+          432,
+          1088
+        ],
+        "right": [
+          490,
+          636,
+          868,
+          1088
+        ]
+      },
+      "fix_label": "THE FIX",
+      "fix": "KNEES TRACK OUT OVER YOUR TOES"
+    },
+    "card2": {
+      "eyebrow": "POST-WORKOUT · 30g PROTEIN",
+      "headline": [
+        "SAME 30g.",
+        "292 KCAL APART."
+      ],
+      "sub": "What one serving actually costs you",
+      "left": {
+        "title": [
+          "LENTILS + PANEER",
+          "+ CHICKPEAS"
+        ],
+        "tag": "PLANT"
+      },
+      "right": {
+        "title": [
+          "4 EGGS +",
+          "CHICKEN BREAST"
+        ],
+        "tag": "ANIMAL"
+      },
+      "crops": {
+        "left": [
+          35,
+          465,
+          415,
+          845
+        ],
+        "right": [
+          530,
+          465,
+          910,
+          845
+        ]
+      },
+      "foot": "PROTEIN IS PROTEIN. CHOOSE WISELY."
+    }
+  }
+}
