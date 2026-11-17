@@ -1,9 +1,13 @@
 {
   "id": "pushup_depth",
   "exercise": "pushup",
+  "muscles": [
+    "chest",
+    "triceps"
+  ],
   "fps": 30,
-  "duration": 11.0,
-  "rep_period": 1.7,
+  "duration": 13.4,
+  "rep_period": 2.5,
   "voice": "am_michael",
   "speed": 1.12,
   "forms": {
@@ -31,26 +35,26 @@
         "text": "Half reps don't count."
       },
       {
-        "t": 2.45,
+        "t": 3.35,
         "text": "Chest not growing?"
       },
       {
-        "t": 4.65,
+        "t": 5.55,
         "text": "Stopping halfway skips the hardest part."
       },
       {
-        "t": 7.35,
+        "t": 8.55,
         "text": "Chest almost to the floor."
       },
       {
-        "t": 9.35,
+        "t": 11.55,
         "text": "Fewer reps, full range."
       }
     ],
     "scenes": [
       {
         "t0": 0.0,
-        "t1": 2.3,
+        "t1": 3.2,
         "type": "reps",
         "form": "half",
         "title": "HALF REPS DON'T COUNT",
@@ -62,17 +66,18 @@
         "face": "strain"
       },
       {
-        "t0": 2.3,
-        "t1": 4.5,
+        "t0": 3.2,
+        "t1": 5.4,
         "type": "think",
         "title": "NO CHEST GAINS?",
         "face": "shocked",
         "bubble": "?",
-        "pain": "shoulder"
+        "pain": "shoulder",
+        "variant": "hold"
       },
       {
-        "t0": 4.5,
-        "t1": 7.2,
+        "t0": 5.4,
+        "t1": 8.4,
         "type": "split",
         "top": {
           "form": "half",
@@ -84,8 +89,8 @@
         }
       },
       {
-        "t0": 7.2,
-        "t1": 9.3,
+        "t0": 8.4,
+        "t1": 11.4,
         "type": "closeup",
         "form": "good",
         "face": "happy",
@@ -100,12 +105,13 @@
         }
       },
       {
-        "t0": 9.3,
-        "t1": 11.0,
+        "t0": 11.4,
+        "t1": 13.4,
         "type": "conclusion",
         "title": "FEWER REPS",
         "sub": "FULL RANGE",
-        "face": "proud"
+        "face": "proud",
+        "variant": "flex"
       }
     ]
   },

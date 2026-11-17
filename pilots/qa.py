@@ -29,7 +29,7 @@ def run(style, ep, mp4, metas, small, bg, narr, body):
     dur = float(pr["format"]["duration"])
     v = [s for s in pr["streams"] if s["codec_type"] == "video"][0]
     gates["format_1080x1920_30fps"] = (v["width"] == 1080 and v["height"] == 1920 and v["r_frame_rate"] == "30/1", f"{v['width']}x{v['height']}@{v['r_frame_rate']}")
-    gates["length_10_12s"] = (10.0 <= dur <= 12.0, round(dur, 2))
+    gates["length_10_15s"] = (10.0 <= dur <= 15.0, round(dur, 2))
     # motion
     diffs = [float((np.abs(small[i] - small[i - 1]).max(axis=2) > 6).mean()) for i in range(1, len(small))]
     gates["motion_frame0"] = (diffs[0] > 0.0005, round(diffs[0], 5))
@@ -77,6 +77,8 @@ def run(style, ep, mp4, metas, small, bg, narr, body):
     gates["loudness_-14pm1_LUFS"] = (abs(li + 14) <= 1.0, f"{li} LUFS, TP {tp} dBFS")
     gates["narration_fits_cues"] = (all(n["fits"] for n in narr), [f"{n['start']}-{n['end']}" for n in narr])
     gates["narration_present"] = (len(narr) >= 3, len(narr))
+    if style == "B2":
+        _b2_gates(gates, ep, metas)
     ok = all(g[0] for g in gates.values())
     return {"pass": ok, "passed": f"{sum(g[0] for g in gates.values())}/{len(gates)}",
             "gates": {k: {"ok": bool(g[0]), "value": g[1]} for k, g in gates.items()}}
@@ -92,3 +94,66 @@ def flow_sheet(frames, out):
         d.rectangle([0, ch - 44, 120, ch], fill=(0, 0, 0)); d.text((8, ch - 40), f"{t:.1f}s", fill=(255, 255, 255), font=font)
         sheet.paste(im, ((i % 4) * cw, (i // 4) * ch))
     sheet.save(out, quality=90)
+
+
+MUSCLES = ("quads", "glutes", "hamstrings", "chest", "triceps", "core", "shoulders", "calves")
+FILL_MIN = 0.10          # solo side figure: swept bbox over each rep scene >= 10% of the frame
+FILL_H_MIN = 0.17        # horizontal poses (push-up/plank/bridge): >= 17% of frame height tall
+MUSCLE_MIN_PX2 = 1500    # every target muscle shape on screen, every solo frame
+FAULT_MIN = 0.06         # wrong vs good form: >= 6% of body height apart at the least visible moment
+HL_MIN_W = 22            # fault band width on screen (px)
+
+
+def _b2_gates(gates, ep, metas):
+    fps = 30.0
+    # target muscles
+    want = ep.get("muscles", [])
+    solo = [m for m in metas if m.get("solo")]
+    worst = None; missing = 0
+    for m in solo:
+        got = {}
+        for name, area in m.get("muscles", []):
+            got[name] = max(got.get(name, 0), area)
+        for w in want:
+            a = got.get(w, 0)
+            worst = a if worst is None else min(worst, a)
+            if a < MUSCLE_MIN_PX2:
+                missing += 1
+    ok = bool(want) and all(w in MUSCLES for w in want) and bool(solo) and missing == 0
+    gates["target_muscle_visible"] = (ok, f"{'+'.join(want) or 'none listed'}; min {worst or 0:.0f}px2 over {len(solo)} frames, {missing} misses")
+    # slow reps: period, measured period, and every rep scene shows a full rep
+    P = float(ep.get("rep_period", 0))
+    ups = [m["t"] for prev, m in zip(metas, metas[1:]) if m.get("solo") and prev.get("solo")
+           and prev.get("phase", 0) < 0.5 <= m.get("phase", 0)]
+    gaps = [b - a for a, b in zip(ups, ups[1:]) if b - a < 2 * P + 0.1]
+    scenes = (ep.get("B2") or {}).get("scenes", [])
+    short = [sc["type"] for sc in scenes if sc["type"] in ("reps", "closeup", "split") and sc["t1"] - sc["t0"] < P - 1e-6]
+    meas = min(gaps) if gaps else P
+    gates["min_rep_duration_ge_2_2s"] = (P >= 2.2 and meas >= 2.2 - 1 / fps and not short,
+                                         f"period {P}s, measured {meas:.2f}s" + (f", scenes shorter than a rep: {short}" if short else ""))
+    # framing: per solo scene, the figure's swept box over the rep fills the frame
+    groups = {}
+    for m in solo:
+        key = m.get("scene_t0", m.get("scene"))
+        for (x0, y0, x1, y1) in m.get("figs", []):
+            x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, 1080), min(y1, 1920)
+            g = groups.setdefault(key, [x0, y0, x1, y1])
+            g[0], g[1], g[2], g[3] = min(g[0], x0), min(g[1], y0), max(g[2], x1), max(g[3], y1)
+    fills = {k: ((g[2] - g[0]) * (g[3] - g[1]) / (1080 * 1920), (g[3] - g[1]) / 1920) for k, g in groups.items()}
+    horiz = ep.get("exercise") in ("pushup", "plank", "bridge")
+    okf = bool(fills) and all(a >= FILL_MIN and (not horiz or h >= FILL_H_MIN) for a, h in fills.values())
+    gates["figure_fill"] = (okf, ", ".join(f"{k}: {a:.1%} area / {h:.1%} tall" for k, (a, h) in fills.items()))
+    # faces: profile faces look where the body faces
+    faces = [f for m in metas for f in m.get("faces", [])]
+    gates["profile_face_matches_body"] = (bool(faces) and min(faces) > 0.5, f"min dot {min(faces) if faces else None} over {len(faces)} side faces")
+    # fault highlight strength + readability of wrong forms
+    hl = [h for m in metas for h in m.get("hl", [])]
+    wrong_used = any(sc.get("form", "good") != "good" for sc in scenes if sc["type"] in ("reps", "closeup")) or \
+        any(sc.get(k, {}).get("form", "good") != "good" for sc in scenes for k in ("top", "bottom"))
+    gates["fault_highlight_strong"] = ((not wrong_used) or (bool(hl) and min(h[0] for h in hl) >= HL_MIN_W),
+                                       f"min band {min(h[0] for h in hl) if hl else 0:.0f}px over {len(hl)} segments")
+    sep = metas[0].get("fault_sep", {})
+    gates["wrong_form_readable_all_rep"] = (all(v >= FAULT_MIN for v in sep.values()), sep)
+    var = metas[0].get("variants", {})
+    gates["think_end_variant_valid"] = (var.get("think", "scratch") in ("scratch", "shrug", "hold")
+                                        and var.get("conclusion", "flex") in ("flex", "victory", "thumbs"), var)

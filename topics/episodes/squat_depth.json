@@ -1,9 +1,13 @@
 {
   "id": "squat_depth",
   "exercise": "squat",
+  "muscles": [
+    "quads",
+    "glutes"
+  ],
   "fps": 30,
-  "duration": 11.0,
-  "rep_period": 2.0,
+  "duration": 13.4,
+  "rep_period": 2.8,
   "voice": "am_michael",
   "speed": 1.12,
   "forms": {
@@ -27,26 +31,26 @@
         "text": "Your squat is too shallow."
       },
       {
-        "t": 2.45,
+        "t": 3.35,
         "text": "Legs not growing?"
       },
       {
-        "t": 4.65,
+        "t": 5.55,
         "text": "Half squats skip your glutes."
       },
       {
-        "t": 7.35,
+        "t": 8.55,
         "text": "Sit until your hips pass your knees."
       },
       {
-        "t": 9.35,
+        "t": 11.55,
         "text": "All the way, every rep."
       }
     ],
     "scenes": [
       {
         "t0": 0.0,
-        "t1": 2.3,
+        "t1": 3.2,
         "type": "reps",
         "form": "half",
         "title": "SQUAT DEEPER",
@@ -58,17 +62,18 @@
         "face": "strain"
       },
       {
-        "t0": 2.3,
-        "t1": 4.5,
+        "t0": 3.2,
+        "t1": 5.4,
         "type": "think",
         "title": "WEAK LEGS?",
         "face": "shocked",
         "bubble": "?",
-        "pain": "knee"
+        "pain": "knee",
+        "variant": "shrug"
       },
       {
-        "t0": 4.5,
-        "t1": 7.2,
+        "t0": 5.4,
+        "t1": 8.4,
         "type": "split",
         "top": {
           "form": "half",
@@ -80,8 +85,8 @@
         }
       },
       {
-        "t0": 7.2,
-        "t1": 9.3,
+        "t0": 8.4,
+        "t1": 11.4,
         "type": "closeup",
         "form": "good",
         "face": "happy",
@@ -99,12 +104,13 @@
         }
       },
       {
-        "t0": 9.3,
-        "t1": 11.0,
+        "t0": 11.4,
+        "t1": 13.4,
         "type": "conclusion",
         "title": "SIT ALL THE WAY",
         "sub": "EVERY REP",
-        "face": "proud"
+        "face": "proud",
+        "variant": "flex"
       }
     ]
   },

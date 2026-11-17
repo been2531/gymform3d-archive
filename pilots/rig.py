@@ -159,14 +159,39 @@ def bone_errors(body: Body, J: dict):
     return max(abs(dist(J[a], J[b]) - L) for (a, b), L in nom.items() if a in J and b in J)
 
 
+# Rep timing (fractions of the period): lower 0-0.40, hold at the bottom 0.40-0.55,
+# press up 0.55-0.90 (concentric), short hold at the top 0.90-1.0. Eased both ways.
+REP_DOWN, REP_HOLD, REP_UP = 0.40, 0.55, 0.90
+REP_DONE = REP_UP  # a rep is counted when the lift finishes
+
+
+def _ease(x):
+    return 0.5 - 0.5 * math.cos(math.pi * min(max(x, 0.0), 1.0))
+
+
 def rep_phase(t: float, period: float, offset: float = 0.0):
-    """Smooth 0..1..0 rep curve; slightly slower lowering than pressing."""
+    """0 = top/start, 1 = bottom. Slow eased lowering, brief bottom hold, eased lift, short top hold."""
     u = ((t + offset) / period) % 1.0
-    if u < 0.55:
-        x = u / 0.55
-    else:
-        x = 1.0 - (u - 0.55) / 0.45
-    return 0.5 - 0.5 * math.cos(math.pi * x)
+    if u < REP_DOWN:
+        return _ease(u / REP_DOWN)
+    if u < REP_HOLD:
+        return 1.0
+    if u < REP_UP:
+        return 1.0 - _ease((u - REP_HOLD) / (REP_UP - REP_HOLD))
+    return 0.0
+
+
+def rep_concentric(t: float, period: float, offset: float = 0.0):
+    """0..1 pulse while the working muscles shorten (the lift), 0 elsewhere."""
+    u = ((t + offset) / period) % 1.0
+    if REP_HOLD <= u < REP_UP:
+        return math.sin(math.pi * (u - REP_HOLD) / (REP_UP - REP_HOLD))
+    return 0.0
+
+
+def fault(phase: float):
+    """Faults stay visible over the whole rep (55% at the top, 100% at the bottom)."""
+    return 0.55 + 0.45 * phase
 
 
 def hand_x_for(body: Body, floor_y: float, ball_x: float, lead: float = 0.0):
@@ -183,14 +208,14 @@ def squat_pose(body: Body, phase: float, form: dict, floor_y: float, ankle_x: fl
     dpt = form.get("depth", 1.0) * phase
     ball0 = add((ankle_x, floor_y - 0.04 * body.H), d(-22.0), L["foot"])
     ball = (ball0[0], ball0[1])
-    ankle = add(ball, d(158.0 - form.get("heel", 0.0) * phase), L["foot"])  # heel lift pivots on the ball
+    ankle = add(ball, d(158.0 - form.get("heel", 0.0) * fault(phase)), L["foot"])  # heel lift pivots on the ball
     knee = add(ankle, d(90.0 - (38.0 + form.get("knee_fwd", 0.0)) * dpt), L["shin"])
     hip = add(knee, d(90.0 + 106.0 * dpt), L["thigh"])
-    lean = 42.0 * dpt + form.get("lean", 0.0) * phase
+    lean = 42.0 * dpt + form.get("lean", 0.0) * fault(phase)
     t_ang = 90.0 - lean
     sh = add(hip, d(t_ang), L["torso"])
     neck = add(sh, d(t_ang + 6.0), L["neck"])
-    h_ang = t_ang + 0.55 * lean - form.get("head", 0.0) * phase
+    h_ang = t_ang + 0.55 * lean - form.get("head", 0.0) * fault(phase)
     head = add(neck, d(h_ang), L["head"])
     arm = -70.0 + 72.0 * min(dpt * 1.4, 1.0)
     elbow = add(sh, d(arm), L["upper_arm"])
@@ -252,11 +277,11 @@ def lunge_pose(body: Body, phase: float, form: dict, floor_y: float, mid_x: floa
     ankle_b = add(ball_b, d(130.0), L["foot"])
     leg = L["thigh"] + L["shin"]
     hip_y0 = floor_y - 0.04 * Hh - math.sqrt(max(leg ** 2 - (0.28 * Hh) ** 2, 1)) * 0.97
-    hip = (mid_x - 0.03 * Hh + form.get("fwd", 0.0) * Hh * phase, hip_y0 + 0.22 * Hh * dpt)
+    hip = (mid_x - 0.03 * Hh + form.get("fwd", 0.0) * Hh * fault(phase), hip_y0 + 0.22 * Hh * dpt)
     kf, af = two_bone(hip, ankle_f, L["thigh"], L["shin"], pick=lambda c: c[0])
     kb, ab = two_bone(hip, ankle_b, L["thigh"], L["shin"], pick=lambda c: c[1])
     ball_f = add(af, d(-22.0), L["foot"]); ball_b2 = add(ab, d(-50.0), L["foot"])
-    lean = 4.0 + form.get("lean", 0.0) * phase
+    lean = 4.0 + form.get("lean", 0.0) * fault(phase)
     t_ang = 90.0 - lean
     sh = add(hip, d(t_ang), L["torso"])
     neck = add(sh, d(t_ang + 4.0), L["neck"])
@@ -296,8 +321,9 @@ def hinge_pose(body: Body, phase: float, form: dict, floor_y: float, ankle_x: fl
     ankle = (ankle_x, floor_y - 0.04 * body.H)
     ball = add(ankle, d(-22.0), L["foot"])
     kb = form.get("knee", 0.0)
-    knee = add(ankle, d(90.0 - (9.0 + kb * 0.45) * p), L["shin"])
-    hip = add(knee, d(90.0 + (22.0 + kb) * p), L["thigh"])
+    kf = kb * fault(p)  # a 'squatted' hinge keeps bent knees all rep
+    knee = add(ankle, d(90.0 - 9.0 * p - kf * 0.45), L["shin"])
+    hip = add(knee, d(90.0 + 22.0 * p + kf), L["thigh"])
     lean = form.get("lean", 78.0) * p
     t_ang = 90.0 - lean
     sh = add(hip, d(t_ang), L["torso"])

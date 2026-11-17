@@ -1,15 +1,18 @@
 {
   "id": "plank_fix",
   "exercise": "plank",
+  "muscles": [
+    "core"
+  ],
   "fps": 30,
-  "duration": 11.0,
-  "rep_period": 2.4,
+  "duration": 13.4,
+  "rep_period": 2.6,
   "voice": "am_michael",
   "speed": 1.12,
   "forms": {
     "good": {},
     "sag": {
-      "sag": 24,
+      "sag": 32,
       "head": 22,
       "highlight": [
         [
@@ -30,26 +33,26 @@
         "text": "Your plank is probably sagging."
       },
       {
-        "t": 2.45,
+        "t": 3.35,
         "text": "Does your back ache?"
       },
       {
-        "t": 4.65,
+        "t": 5.55,
         "text": "Dropping hips load your lower back."
       },
       {
-        "t": 7.35,
+        "t": 8.55,
         "text": "Brace like a punch is coming."
       },
       {
-        "t": 9.35,
+        "t": 11.55,
         "text": "Straight beats long."
       }
     ],
     "scenes": [
       {
         "t0": 0.0,
-        "t1": 2.3,
+        "t1": 3.2,
         "type": "reps",
         "form": "sag",
         "title": "YOUR PLANK IS SAGGING",
@@ -61,17 +64,18 @@
         "face": "strain"
       },
       {
-        "t0": 2.3,
-        "t1": 4.5,
+        "t0": 3.2,
+        "t1": 5.4,
         "type": "think",
         "title": "BACK ACHE?",
         "face": "shocked",
         "bubble": "?",
-        "pain": "lower_back"
+        "pain": "lower_back",
+        "variant": "hold"
       },
       {
-        "t0": 4.5,
-        "t1": 7.2,
+        "t0": 5.4,
+        "t1": 8.4,
         "type": "split",
         "top": {
           "form": "sag",
@@ -83,8 +87,8 @@
         }
       },
       {
-        "t0": 7.2,
-        "t1": 9.3,
+        "t0": 8.4,
+        "t1": 11.4,
         "type": "closeup",
         "form": "good",
         "face": "happy",
@@ -103,12 +107,13 @@
         }
       },
       {
-        "t0": 9.3,
-        "t1": 11.0,
+        "t0": 11.4,
+        "t1": 13.4,
         "type": "conclusion",
         "title": "STRAIGHT > LONG",
         "sub": "BRACE HARD",
-        "face": "proud"
+        "face": "proud",
+        "variant": "thumbs"
       }
     ]
   },

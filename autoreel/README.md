@@ -32,7 +32,7 @@ Dry run of the publish step (reads Instagram only, sends nothing): add `--dry-ru
 {"pipeline": "autoreel", "episode": "topics/episodes/<id>.json", "exercise": "...", "title": "<caption line 1>",
  "status": "scheduled", "publish_at": "<date>T10:00+09:00",
  "mp4": "output/autoreel/<date>/<id>_B.mp4", "cover": "..._cover.jpg", "caption": "..._caption.txt", "sheet": "..._sheet.jpg",
- "qa": "16/16 PASS", "approved_by": "topic queue (owner standing rule: queue selection = approval)",
+ "qa": "23/23 PASS", "approved_by": "topic queue (owner standing rule: queue selection = approval)",
  "approved_at": "...", "created_at": "..."}
 ```
 After posting, `publish_run.py` adds `media_id`, `permalink`, `published_at` and `container_id`, and sets `status` to `"published"`.
@@ -40,3 +40,30 @@ After posting, `publish_run.py` adds `media_id`, `permalink`, `published_at` and
 - A reel more than 6 h past `publish_at` is marked `"missed"` and raises ❌ once.
 
 The routinizer watcher (`gymform_publish_watch.py`) only takes `"approved"` files, so it ignores these.
+
+## Style B2 modules (v4, applies to every episode)
+- Target muscles: each episode lists `"muscles"` from quads/glutes/hamstrings/chest/triceps/core/shoulders/calves.
+  - They are drawn as orange hatched pen-style muscle bellies on the right side of the bone.
+  - They pulse during the lift (concentric phase).
+  - The ending pose shows them too.
+- Rep timing: lower 40%, hold at the bottom 15%, lift 35%, top 10%, eased.
+  - `rep_period` must be at least 2.2 s.
+  - Every reps, split and close-up scene lasts at least one full rep.
+  - Reels are 10–15 s long (currently 13.4 s).
+- Framing: horizontal poses (push-up, plank, bridge) are framed hips-to-head, and the feet may run off the edge.
+  - Close-ups never crop the head or body.
+- Faces: side figures get profile faces that look where the chest faces; front scenes keep front faces.
+- Fault highlight: a thick pulsing red band under the faulty segments, which are also re-inked in red.
+- Wrong forms stay visible over the whole rep (`rig.fault()`: 55% at the top, 100% at the bottom).
+- Think pose variants are scratch, shrug and hold. Ending variants are flex, victory and thumbs.
+  - Set them with `"variant"` on the scene.
+  - Neighbouring queue episodes must differ (the validator checks this).
+- QA gates added in v4:
+  - `target_muscle_visible`
+  - `min_rep_duration_ge_2_2s`
+  - `figure_fill`
+  - `profile_face_matches_body`
+  - `fault_highlight_strong`
+  - `wrong_form_readable_all_rep`
+  - `think_end_variant_valid`
+  - plus the queue variety check in `validate.py`

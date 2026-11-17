@@ -1,15 +1,18 @@
 {
   "id": "plank_pike",
   "exercise": "plank",
+  "muscles": [
+    "core"
+  ],
   "fps": 30,
-  "duration": 11.0,
-  "rep_period": 2.4,
+  "duration": 13.4,
+  "rep_period": 2.6,
   "voice": "am_michael",
   "speed": 1.12,
   "forms": {
     "good": {},
     "pike": {
-      "pike": 26,
+      "pike": 34,
       "highlight": [
         [
           "knee",
@@ -29,26 +32,26 @@
         "text": "Hips up high? That's cheating."
       },
       {
-        "t": 2.45,
+        "t": 3.35,
         "text": "Feels too easy, right?"
       },
       {
-        "t": 4.65,
+        "t": 5.55,
         "text": "Piked hips take your abs out of it."
       },
       {
-        "t": 7.35,
+        "t": 8.55,
         "text": "Lower them into one line."
       },
       {
-        "t": 9.35,
+        "t": 11.55,
         "text": "Flat like a table."
       }
     ],
     "scenes": [
       {
         "t0": 0.0,
-        "t1": 2.3,
+        "t1": 3.2,
         "type": "reps",
         "form": "pike",
         "title": "HIPS TOO HIGH?",
@@ -60,17 +63,18 @@
         "face": "strain"
       },
       {
-        "t0": 2.3,
-        "t1": 4.5,
+        "t0": 3.2,
+        "t1": 5.4,
         "type": "think",
         "title": "TOO EASY?",
         "face": "shocked",
         "bubble": "?",
-        "pain": "shoulder"
+        "pain": "shoulder",
+        "variant": "hold"
       },
       {
-        "t0": 4.5,
-        "t1": 7.2,
+        "t0": 5.4,
+        "t1": 8.4,
         "type": "split",
         "top": {
           "form": "pike",
@@ -82,8 +86,8 @@
         }
       },
       {
-        "t0": 7.2,
-        "t1": 9.3,
+        "t0": 8.4,
+        "t1": 11.4,
         "type": "closeup",
         "form": "good",
         "face": "happy",
@@ -102,12 +106,13 @@
         }
       },
       {
-        "t0": 9.3,
-        "t1": 11.0,
+        "t0": 11.4,
+        "t1": 13.4,
         "type": "conclusion",
         "title": "FLAT LIKE A TABLE",
         "sub": "FEEL THE ABS",
-        "face": "proud"
+        "face": "proud",
+        "variant": "victory"
       }
     ]
   },

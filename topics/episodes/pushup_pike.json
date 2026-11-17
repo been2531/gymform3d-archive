@@ -1,9 +1,13 @@
 {
   "id": "pushup_pike",
   "exercise": "pushup",
+  "muscles": [
+    "chest",
+    "triceps"
+  ],
   "fps": 30,
-  "duration": 11.0,
-  "rep_period": 1.7,
+  "duration": 13.4,
+  "rep_period": 2.5,
   "voice": "am_michael",
   "speed": 1.12,
   "forms": {
@@ -29,26 +33,26 @@
         "text": "Hips in the air? Stop."
       },
       {
-        "t": 2.45,
+        "t": 3.35,
         "text": "Abs not doing anything?"
       },
       {
-        "t": 4.65,
+        "t": 5.55,
         "text": "Piking turns it into a lazy shoulder press."
       },
       {
-        "t": 7.35,
+        "t": 8.55,
         "text": "Tuck your hips into one line."
       },
       {
-        "t": 9.35,
+        "t": 11.55,
         "text": "A plank that moves."
       }
     ],
     "scenes": [
       {
         "t0": 0.0,
-        "t1": 2.3,
+        "t1": 3.2,
         "type": "reps",
         "form": "pike",
         "title": "HIPS UP? STOP",
@@ -60,17 +64,18 @@
         "face": "strain"
       },
       {
-        "t0": 2.3,
-        "t1": 4.5,
+        "t0": 3.2,
+        "t1": 5.4,
         "type": "think",
         "title": "ABS NOT WORKING?",
         "face": "shocked",
         "bubble": "?",
-        "pain": "shoulder"
+        "pain": "shoulder",
+        "variant": "scratch"
       },
       {
-        "t0": 4.5,
-        "t1": 7.2,
+        "t0": 5.4,
+        "t1": 8.4,
         "type": "split",
         "top": {
           "form": "pike",
@@ -82,8 +87,8 @@
         }
       },
       {
-        "t0": 7.2,
-        "t1": 9.3,
+        "t0": 8.4,
+        "t1": 11.4,
         "type": "closeup",
         "form": "good",
         "face": "happy",
@@ -102,12 +107,13 @@
         }
       },
       {
-        "t0": 9.3,
-        "t1": 11.0,
+        "t0": 11.4,
+        "t1": 13.4,
         "type": "conclusion",
         "title": "PLANK THAT MOVES",
         "sub": "EVERY REP",
-        "face": "proud"
+        "face": "proud",
+        "variant": "thumbs"
       }
     ]
   },

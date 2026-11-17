@@ -18,7 +18,7 @@ import skia  # noqa: E402
 from autoreel import caption, common  # noqa: E402
 from autoreel.render import render  # noqa: E402
 from pilots import audio, text as T  # noqa: E402
-from pilots.style_b2 import EXERCISES, PAIN_SPOTS  # noqa: E402
+from pilots.style_b2 import EXERCISES, PAIN_SPOTS, MUSCLES, THINK_VARIANTS, END_VARIANTS  # noqa: E402
 
 FACES = {"strain", "shocked", "worried", "happy", "proud"}
 TYPES = {"reps", "think", "split", "closeup", "conclusion"}
@@ -50,8 +50,13 @@ def check(path, tts=True):
         return errs
     if ep["exercise"] not in EXERCISES:
         errs.append(f"unknown exercise {ep['exercise']} (add a pose function in pilots/rig.py)")
-    if ep["fps"] != 30 or not 10 <= ep["duration"] <= 12:
-        errs.append("fps must be 30 and duration 10-12 s")
+    if ep["fps"] != 30 or not 10 <= ep["duration"] <= 15:
+        errs.append("fps must be 30 and duration 10-15 s")
+    if ep["rep_period"] < 2.2:
+        errs.append(f"rep_period {ep['rep_period']} s < 2.2 s (too fast to follow)")
+    mus = ep.get("muscles") or []
+    if not mus or any(m not in MUSCLES for m in mus):
+        errs.append(f"muscles must be a non-empty list from {MUSCLES}: {mus}")
     if "good" not in ep["forms"]:
         errs.append("forms needs 'good'")
     sc = ep["B2"]["scenes"]
@@ -59,8 +64,15 @@ def check(path, tts=True):
         errs.append("scenes must cover 0..duration")
     for i, s in enumerate(sc):
         d = s["t1"] - s["t0"]
-        if not 1.7 - 1e-6 <= d <= 3.0 + 1e-6:
+        if s["type"] in ("reps", "split", "closeup"):  # must show at least one full slow rep
+            if not ep["rep_period"] - 1e-6 <= d <= 3.6 + 1e-6:
+                errs.append(f"scene {i} ({s['type']}) lasts {d:.2f}s (need rep_period {ep['rep_period']}-3.6)")
+        elif not 1.7 - 1e-6 <= d <= 3.0 + 1e-6:
             errs.append(f"scene {i} lasts {d:.2f}s (need 1.7-3.0)")
+        if s["type"] == "think" and s.get("variant") and s["variant"] not in THINK_VARIANTS:
+            errs.append(f"scene {i} think variant {s['variant']}")
+        if s["type"] == "conclusion" and s.get("variant") and s["variant"] not in END_VARIANTS:
+            errs.append(f"scene {i} ending variant {s['variant']}")
         if i and abs(s["t0"] - sc[i - 1]["t1"]) > 1e-6:
             errs.append(f"scene {i} not contiguous")
         if s["type"] not in TYPES:
@@ -106,6 +118,25 @@ def check(path, tts=True):
     return errs
 
 
+def variant_of(ep, typ):
+    sc = next((x for x in ep["B2"]["scenes"] if x["type"] == typ), {})
+    if sc.get("variant"):
+        return sc["variant"]
+    opts = THINK_VARIANTS if typ == "think" else END_VARIANTS
+    return opts[(sum(ord(ch) for ch in ep.get("id", "")) + (0 if typ == "think" else 1)) % len(opts)]
+
+
+def queue_variety(paths):
+    """Batch gate: neighbouring queue episodes never reuse the same think pose or the same ending pose."""
+    errs = []
+    eps = [json.load(open(os.path.join(common.REPO, p))) for p in paths]
+    for a, b in zip(eps, eps[1:]):
+        for typ in ("think", "conclusion"):
+            if variant_of(a, typ) == variant_of(b, typ):
+                errs.append(f"{a['id']} -> {b['id']}: same {typ} variant {variant_of(a, typ)}")
+    return errs
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="+")
@@ -129,6 +160,11 @@ def main():
         ok_all &= not errs
         if not errs and a.add and rel not in q["episodes"]:
             q["episodes"].append(rel)
+    ve = queue_variety(q["episodes"])
+    print("queue variety: " + ("OK" if not ve else "FAIL"))
+    for e in ve:
+        print("     - " + e)
+    ok_all &= not ve
     if a.add:
         common.write_json(common.QUEUE, q)
         print(f"queue: {len(q['episodes'])} episodes")
