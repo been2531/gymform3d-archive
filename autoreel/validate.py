@@ -18,7 +18,7 @@ import skia  # noqa: E402
 from autoreel import caption, common  # noqa: E402
 from autoreel.render import render  # noqa: E402
 from pilots import audio, text as T  # noqa: E402
-from pilots.style_b2 import EXERCISES, PAIN_SPOTS, MUSCLES, THINK_VARIANTS, END_VARIANTS  # noqa: E402
+from pilots.style_b2 import EXERCISES, PAIN_SPOTS, MUSCLES, THINK_VARIANTS, END_VARIANTS, muscles_named, scene_shown_muscles, scene_texts  # noqa: E402
 
 FACES = {"strain", "shocked", "worried", "happy", "proud"}
 TYPES = {"reps", "think", "split", "closeup", "conclusion"}
@@ -69,6 +69,13 @@ def check(path, tts=True):
                 errs.append(f"scene {i} ({s['type']}) lasts {d:.2f}s (need rep_period {ep['rep_period']}-3.6)")
         elif not 1.7 - 1e-6 <= d <= 3.0 + 1e-6:
             errs.append(f"scene {i} lasts {d:.2f}s (need 1.7-3.0)")
+        shown = set(scene_shown_muscles(ep, s))
+        for txt in scene_texts(s):
+            miss = muscles_named(txt) - shown
+            if miss:
+                errs.append(f"scene {i} text {txt!r} names {sorted(miss)} but the scene highlights {sorted(shown) or 'none'}")
+        if s.get("muscles") and any(m not in MUSCLES for m in s["muscles"]):
+            errs.append(f"scene {i} muscles {s['muscles']}")
         if s["type"] == "think" and s.get("variant") and s["variant"] not in THINK_VARIANTS:
             errs.append(f"scene {i} think variant {s['variant']}")
         if s["type"] == "conclusion" and s.get("variant") and s["variant"] not in END_VARIANTS:

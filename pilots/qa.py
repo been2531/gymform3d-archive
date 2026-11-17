@@ -98,29 +98,45 @@ def flow_sheet(frames, out):
 
 MUSCLES = ("quads", "glutes", "hamstrings", "chest", "triceps", "core", "shoulders", "calves")
 FILL_MIN = 0.10          # solo side figure: swept bbox over each rep scene >= 10% of the frame
+TALL_H_MIN = 0.50        # standing poses (squat/hinge/lunge): >= 50% of frame height in rep + close-up scenes
 FILL_H_MIN = 0.17        # horizontal poses (push-up/plank/bridge): >= 17% of frame height tall
 MUSCLE_MIN_PX2 = 1500    # every target muscle shape on screen, every solo frame
 FAULT_MIN = 0.06         # wrong vs good form: >= 6% of body height apart at the least visible moment
-HL_MIN_W = 22            # fault band width on screen (px)
+HL_MIN_W = 18            # fault band width on screen (px)
 
 
 def _b2_gates(gates, ep, metas):
     fps = 30.0
-    # target muscles
+    # target muscles: right-form solo frames + ending show every listed muscle; wrong-form panels show none
+    from .style_b2 import muscles_named
     want = ep.get("muscles", [])
     solo = [m for m in metas if m.get("solo")]
-    worst = None; missing = 0
-    for m in solo:
+    worst = None; missing = 0; wrong_orange = 0
+    for m in metas:
         got = {}
         for name, area in m.get("muscles", []):
             got[name] = max(got.get(name, 0), area)
-        for w in want:
-            a = got.get(w, 0)
-            worst = a if worst is None else min(worst, a)
-            if a < MUSCLE_MIN_PX2:
-                missing += 1
-    ok = bool(want) and all(w in MUSCLES for w in want) and bool(solo) and missing == 0
-    gates["target_muscle_visible"] = (ok, f"{'+'.join(want) or 'none listed'}; min {worst or 0:.0f}px2 over {len(solo)} frames, {missing} misses")
+        if m.get("solo") and not m.get("solo_good"):
+            wrong_orange += bool(got)
+            continue
+        if m.get("solo") or m.get("scene") == "conclusion":
+            for w in m.get("shown_muscles", []):
+                a = got.get(w, 0)
+                worst = a if worst is None else min(worst, a)
+                missing += a < MUSCLE_MIN_PX2
+    ok = bool(want) and all(w in MUSCLES for w in want) and missing == 0 and wrong_orange == 0 and worst is not None
+    gates["target_muscle_visible"] = (ok, f"{'+'.join(want) or 'none listed'}; min {min(worst or 0, 1e5):.0f}px2, {missing} misses, {wrong_orange} wrong-form frames with orange")
+    # any muscle named on screen must be highlighted in that frame
+    bad = []
+    for m in metas:
+        drawn = {n for n, _ in m.get("muscles", [])}
+        for x in m["text"]:
+            miss = muscles_named(x["text"]) - drawn
+            if miss:
+                bad.append(f"t={m['t']:.2f}s {x['text']!r} names {sorted(miss)}")
+    zh = [h for m in metas for h in m.get("front_zone_hits", [])]
+    gates["no_highlight_in_groin_zone"] = (sum(zh) == 0, f"{sum(zh)} highlighted samples in the front-view groin zone over {len(zh)} figures")
+    gates["named_muscle_is_highlighted"] = (not bad, f"{len(bad)} frames" + (f", first {bad[0]}" if bad else ""))
     # slow reps: period, measured period, and every rep scene shows a full rep
     P = float(ep.get("rep_period", 0))
     ups = [m["t"] for prev, m in zip(metas, metas[1:]) if m.get("solo") and prev.get("solo")
@@ -141,7 +157,9 @@ def _b2_gates(gates, ep, metas):
             g[0], g[1], g[2], g[3] = min(g[0], x0), min(g[1], y0), max(g[2], x1), max(g[3], y1)
     fills = {k: ((g[2] - g[0]) * (g[3] - g[1]) / (1080 * 1920), (g[3] - g[1]) / 1920) for k, g in groups.items()}
     horiz = ep.get("exercise") in ("pushup", "plank", "bridge")
-    okf = bool(fills) and all(a >= FILL_MIN and (not horiz or h >= FILL_H_MIN) for a, h in fills.values())
+    tall = ep.get("exercise") in ("squat", "hinge", "lunge")
+    okf = bool(fills) and all(a >= FILL_MIN and (not horiz or h >= FILL_H_MIN) and (not tall or h >= TALL_H_MIN)
+                              for a, h in fills.values())
     gates["figure_fill"] = (okf, ", ".join(f"{k}: {a:.1%} area / {h:.1%} tall" for k, (a, h) in fills.items()))
     # faces: profile faces look where the body faces
     faces = [f for m in metas for f in m.get("faces", [])]

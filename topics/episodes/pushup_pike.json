@@ -71,7 +71,10 @@
         "face": "shocked",
         "bubble": "?",
         "pain": "shoulder",
-        "variant": "scratch"
+        "variant": "scratch",
+        "muscles": [
+          "core"
+        ]
       },
       {
         "t0": 5.4,

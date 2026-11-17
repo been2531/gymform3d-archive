@@ -42,10 +42,17 @@ After posting, `publish_run.py` adds `media_id`, `permalink`, `published_at` and
 The routinizer watcher (`gymform_publish_watch.py`) only takes `"approved"` files, so it ignores these.
 
 ## Style B2 modules (v4, applies to every episode)
-- Target muscles: each episode lists `"muscles"` from quads/glutes/hamstrings/chest/triceps/core/shoulders/calves.
-  - They are drawn as orange hatched pen-style muscle bellies on the right side of the bone.
-  - They pulse during the lift (concentric phase).
-  - The ending pose shows them too.
+- Target muscles (v5, simplified): each episode lists `"muscles"` (a scene may override it with its own `"muscles"`).
+  - The worked limb or torso segments themselves are re-inked in orange, slightly thicker, with a gentle pulse on the lift. No extra shapes.
+  - Orange appears only on right-form figures and on front views. Wrong-form panels show none.
+  - Front views never draw glutes, colour thighs only from mid-thigh down, and keep chest/core on the torso line above the hips.
+  - Gate `no_highlight_in_groin_zone` checks the groin exclusion zone.
+  - Gate `named_muscle_is_highlighted`: any muscle named on screen (GLUTES, CORE, QUADS ...) must be highlighted in that frame. The validator checks the same thing statically.
+- Faults: only the faulty segment is re-inked in red, with a thicker stroke (no glow band).
+- Standing exercises (squat, hinge, lunge) use a tall layout.
+  - The figure is at least 50% of the frame height (gate).
+  - The cue goes under the floor, with no rep counter.
+  - Close-ups keep the same full-body framing (no zoom without cropping).
 - Rep timing: lower 40%, hold at the bottom 15%, lift 35%, top 10%, eased.
   - `rep_period` must be at least 2.2 s.
   - Every reps, split and close-up scene lasts at least one full rep.

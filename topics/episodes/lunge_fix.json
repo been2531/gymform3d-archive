@@ -63,7 +63,7 @@
         "form": "lean",
         "title": "FIX YOUR LUNGE",
         "cue": {
-          "text": "CHEST FALLS",
+          "text": "LEANING IN",
           "kind": "bad"
         },
         "counter": true,

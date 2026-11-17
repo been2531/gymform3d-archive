@@ -20,6 +20,37 @@ MUSCLE_INK = 0xFFC2410C
 HEAD_SCALE = {"bridge": 0.8}  # lying poses: smaller head so shoulders/torso read
 MUSCLES = ("quads", "glutes", "hamstrings", "chest", "triceps", "core", "shoulders", "calves")
 THINK_VARIANTS = ("scratch", "shrug", "hold")
+TALL = ("squat", "hinge", "lunge")
+FRONT_DRAWN = ("quads", "hamstrings", "calves", "chest", "core", "triceps", "shoulders")  # glutes: not visible from the front   # standing exercises: tall layout (figure >= 50% of frame height)
+import re as _re
+MUSCLE_WORDS = {"GLUTE": "glutes", "GLUTES": "glutes", "CORE": "core", "ABS": "core", "QUAD": "quads", "QUADS": "quads",
+                "HAMSTRING": "hamstrings", "HAMSTRINGS": "hamstrings", "CHEST": "chest", "PEC": "chest", "PECS": "chest",
+                "TRICEP": "triceps", "TRICEPS": "triceps", "SHOULDER": "shoulders", "SHOULDERS": "shoulders",
+                "DELT": "shoulders", "DELTS": "shoulders", "CALF": "calves", "CALVES": "calves"}
+
+
+def muscles_named(text):
+    """Muscles a piece of on-screen text names (GLUTES, CORE, QUADS ...)."""
+    return {MUSCLE_WORDS[w] for w in _re.findall(r"[A-Z]+", (text or "").upper()) if w in MUSCLE_WORDS}
+
+
+def scene_shown_muscles(ep, sc):
+    """Muscles drawn in a scene: wrong-form panels show none (orange only on right form / ending)."""
+    base = sc.get("muscles", ep.get("muscles", []))
+    t = sc["type"]
+    if t in ("reps", "closeup"):
+        return list(base) if sc.get("form") == "good" else []
+    if t == "think":
+        return [m for m in sc.get("muscles", []) if m in FRONT_DRAWN]
+    if t == "conclusion":
+        return [m for m in base if m in FRONT_DRAWN]
+    return list(base)  # split (good panel)
+
+
+def scene_texts(sc):
+    out = [sc.get("title"), sc.get("sub"), (sc.get("cue") or {}).get("text")]
+    out += [(sc.get(k) or {}).get("label") for k in ("top", "bottom")]
+    return [x for x in out if x]
 END_VARIANTS = ("flex", "victory", "thumbs")
 
 
@@ -86,6 +117,8 @@ class StyleB2:
                     if key in J:
                         xs.append(J[key][0]); ys.append(J[key][1])
                 c = self.head_c(J); xs += [c[0] - self.R, c[0] + self.R]; ys += [c[1] - self.R, c[1] + self.R]
+        if self.ep.get("exercise") in TALL:  # tall layout: box = head top .. floor (mat/floor may sit just below)
+            return min(xs) - 40, min(ys) - 8, max(xs) + 40, FLOOR
         ys.append(FLOOR + 30)
         return min(xs) - 40, min(ys) - 20, max(xs) + 40, max(ys)
 
@@ -104,7 +137,7 @@ class StyleB2:
                     if key in J:
                         xs.append(J[key][0]); ys.append(J[key][1])
                 c = self.head_c(J); xs += [c[0] - self.R * 1.15, c[0] + self.R * 1.15]; ys += [c[1] - self.R * 1.15, c[1] + self.R * 1.15]
-            y1 = max(ys) + (30 if self.ep.get("exercise") in ("squat", "hinge", "lunge") else 0)
+            y1 = max(ys) + (6 if self.ep.get("exercise") in TALL else 0)
             self._fit_cache[k] = (min(xs), min(ys), max(xs), y1)
         return self._fit_cache[k]
 
@@ -234,136 +267,88 @@ class StyleB2:
         off = (9, -6)
         F = {k: (v[0] + off[0], v[1] + off[1]) if isinstance(v, tuple) else v for k, v in J.items()}
         z = self._xf[0] if getattr(self, "_xf", None) else 1.0
-        glow = 0.55 + 0.25 * math.sin(t * 2 * math.pi * 2.0)
-        for a_, b_ in hl:  # fault band under the faulty segments (phone-size readable)
-            if a_ in J and b_ in J:
-                gp = Pen(t, pen.w * 4.6, RED, 0).paint(alpha=glow)
-                cv.drawLine(*J[a_], *J[b_], gp)
-                if meta is not None:
-                    ln = math.hypot(J[b_][0] - J[a_][0], J[b_][1] - J[a_][1])
-                    meta.setdefault("hl", []).append((pen.w * 4.6 * z, ln * z))
         if "knee2" in J:
             cv.drawPath(far.poly([J["hip"], J["knee2"], J["ankle2"], J["ball2"]], seed + 1), far.paint())
         else:
             cv.drawPath(far.poly([F["hip"], F["knee"], F["ankle"], F["ball"]], seed + 1), far.paint())
         cv.drawPath(far.poly([F["shoulder"], F["elbow"], F["wrist"], F["fingers"]], seed + 2), far.paint())
-        if muscles:
-            self.draw_muscles_side(cv, pen, J, muscles, t, pulse, meta, z)
         cv.drawPath(pen.poly([J["hip"], J["knee"], J["ankle"], J["ball"]], seed + 3), pen.paint())
         cv.drawPath(pen.poly([J["hip"], J["shoulder"], J["neck"]], seed + 4), pen.paint())
         cv.drawPath(pen.poly([J["shoulder"], J["elbow"], J["wrist"], J["fingers"]], seed + 5), pen.paint())
-        rp = Pen(t, pen.w * 1.05, RED, pen.amp)
-        for k_, (a_, b_) in enumerate(hl):  # faulty segments re-inked in red on top
+        if muscles:
+            self.draw_muscles_side(cv, pen, J, muscles, t, pulse, meta, z)
+        rp = Pen(t, pen.w * 1.5, RED, pen.amp)
+        for k_, (a_, b_) in enumerate(hl):  # fault: the faulty segment itself re-inked red (simple stroke, no band)
             if a_ in J and b_ in J:
                 cv.drawPath(rp.poly([J[a_], J[b_]], seed + 30 + k_), rp.paint())
+                if meta is not None:
+                    ln = math.hypot(J[b_][0] - J[a_][0], J[b_][1] - J[a_][1])
+                    meta.setdefault("hl", []).append((pen.w * 1.5 * z, ln * z))
         hc = self.head_c(J)
         self.head_profile(cv, pen, hc, J, mood, t, seed + 6, meta)
         pts = [v for k, v in J.items() if not k.startswith("_") and isinstance(v, tuple)]
         pts += [(hc[0] - self.R, hc[1] - self.R), (hc[0] + self.R, hc[1] + self.R)]
         self.log_fig(meta, pts)
 
-    # ---------------- target muscles ----------------
-    def _muscle_shape(self, cv, pen, c, along, length, thick, t, seed, alpha):
-        """Pen-style muscle belly: filled oval + hatching + wobbly outline, oriented along a bone."""
-        ang = math.degrees(math.atan2(along[1], along[0]))
-        cv.save(); cv.translate(*c); cv.rotate(ang)
-        r = skia.Rect.MakeXYWH(-length / 2, -thick / 2, length, thick)
-        path = skia.Path(); path.addOval(r)
-        cv.drawPath(path, skia.Paint(AntiAlias=True, Color=MUSCLE, Style=skia.Paint.kFill_Style, Alphaf=alpha))
-        cv.save(); cv.clipPath(path, doAntiAlias=True)
-        hp = Pen(t, pen.w * 0.42, MUSCLE_INK, pen.amp * 0.6)
-        step = max(thick * 0.42, 6)
-        x = -length / 2 - thick
-        k = 0
-        while x < length / 2 + thick:
-            cv.drawPath(hp.poly([(x, thick), (x + thick * 1.1, -thick)], seed + k), hp.paint(alpha=0.55 + 0.4 * alpha))
-            x += step; k += 1
-        cv.restore()
-        op = Pen(t, pen.w * 0.55, MUSCLE_INK, pen.amp)
-        cv.drawPath(path, op.paint())
-        cv.restore()
+    # ---------------- target muscles (simple: recolour the worked segments) ----------------
+    # muscle -> (from joint, to joint, start fraction, end fraction) on the side figure
+    SIDE_SEGS = {"quads": [("hip", "knee", 0.0, 1.0)], "hamstrings": [("hip", "knee", 0.0, 1.0)],
+                 "glutes": [("hip", "knee", 0.0, 0.45)], "calves": [("knee", "ankle", 0.0, 0.7)],
+                 "chest": [("shoulder", "hip", 0.0, 0.45)], "core": [("shoulder", "hip", 0.25, 1.0)],
+                 "triceps": [("shoulder", "elbow", 0.0, 1.0)], "shoulders": [("shoulder", "elbow", 0.0, 0.4)]}
+
+    def _seg_stroke(self, cv, pen, A, B, f0, f1, color, wmul, t, seed, alpha=1.0):
+        p0 = (A[0] + (B[0] - A[0]) * f0, A[1] + (B[1] - A[1]) * f0)
+        p1 = (A[0] + (B[0] - A[0]) * f1, A[1] + (B[1] - A[1]) * f1)
+        sp = Pen(t, pen.w * wmul, color, pen.amp)
+        cv.drawPath(sp.poly([p0, p1], seed), sp.paint(alpha=alpha))
+        return p0, p1, math.hypot(p1[0] - p0[0], p1[1] - p0[1])
 
     def draw_muscles_side(self, cv, pen, J, muscles, t, pulse, meta, z):
-        """Target muscles on the side figure, offset to the anatomically right side of the bone.
-        Pulse (brighter + slightly bigger) during the concentric phase."""
-        H_ = self.body.H
-        n = body_front(J)
-        alpha = 0.45 + 0.45 * pulse
-        grow = 1.0 + 0.12 * pulse
-
-        def seg(a, b, side, f0, f1, thick, k):
-            A, B = J[a], J[b]
-            v = (B[0] - A[0], B[1] - A[1]); ln = math.hypot(*v); u = _unit(v)
-            p = (-u[1], u[0])
-            ref = n if side in ("front", "back") else side
-            sgn = 1 if p[0] * ref[0] + p[1] * ref[1] >= 0 else -1
-            if side == "back":
-                sgn = -sgn
-            m0 = (A[0] + v[0] * (f0 + f1) / 2, A[1] + v[1] * (f0 + f1) / 2)
-            th = thick * grow
-            c = (m0[0] + p[0] * sgn * th * 0.32, m0[1] + p[1] * sgn * th * 0.32)
-            L_ = ln * (f1 - f0) * grow
-            self._muscle_shape(cv, pen, c, u, L_, th, t, 70 + k, alpha)
-            return math.pi / 4 * L_ * th * z * z
-
+        """Worked segments re-inked in orange, slightly thicker, gentle pulse on the lift. No extra shapes."""
+        wmul = 1.45 + 0.25 * pulse
         for k, m in enumerate(muscles):
             area = 0.0
-            if m == "quads":
-                area = seg("hip", "knee", "front", 0.12, 0.88, 0.075 * H_, k)
-            elif m == "hamstrings":
-                area = seg("hip", "knee", "back", 0.12, 0.88, 0.07 * H_, k)
-            elif m == "calves":
-                area = seg("knee", "ankle", "back", 0.1, 0.6, 0.06 * H_, k)
-            elif m == "chest":
-                area = seg("shoulder", "hip", "front", 0.04, 0.42, 0.085 * H_, k)
-            elif m == "core":
-                area = seg("shoulder", "hip", "front", 0.38, 0.92, 0.075 * H_, k)
-            elif m in ("triceps", "shoulders"):
-                if "elbow" in J:
-                    fw = (J["wrist"][0] - J["elbow"][0], J["wrist"][1] - J["elbow"][1])
-                    away = (-fw[0], -fw[1])  # triceps sit on the outside of the elbow bend
-                    if m == "triceps":
-                        area = seg("shoulder", "elbow", away, 0.15, 0.9, 0.055 * H_, k)
-                    else:
-                        area = seg("shoulder", "elbow", away, 0.0, 0.38, 0.07 * H_, k)
-            elif m == "glutes":
-                hip, kn = J["hip"], J["knee"]
-                u = _unit((kn[0] - hip[0], kn[1] - hip[1]))
-                c = (hip[0] - n[0] * 0.075 * H_ + u[0] * 0.02 * H_, hip[1] - n[1] * 0.075 * H_ + u[1] * 0.02 * H_)
-                Lg, Tg = 0.15 * H_ * grow, 0.10 * H_ * grow
-                self._muscle_shape(cv, pen, c, u, Lg, Tg, t, 90 + k, alpha)
-                area = math.pi / 4 * Lg * Tg * z * z
+            for (a_, b_, f0, f1) in self.SIDE_SEGS.get(m, []):
+                if a_ in J and b_ in J:
+                    _, _, ln = self._seg_stroke(cv, pen, J[a_], J[b_], f0, f1, MUSCLE, wmul, t, 60 + k)
+                    area += ln * pen.w * wmul * z * z
             if meta is not None:
                 meta.setdefault("muscles", []).append((m, area))
 
-    def draw_muscles_front(self, cv, pen, P, muscles, t, pulse):
+    def draw_muscles_front(self, cv, pen, P, muscles, t, pulse, meta=None):
+        """Front view: only limb/torso lines, never near the groin. Thighs are coloured from mid-thigh down,
+        glutes are not drawn (not visible from the front), chest/core stay on the torso line above the hips."""
         H_ = self.body.H
         hip, sh = P["hip"], P["shoulder"]
-        alpha = 0.45 + 0.45 * pulse; grow = 1.0 + 0.1 * pulse
-        for k, m in enumerate(muscles):
+        wmul = 1.45 + 0.25 * pulse
+        segs = []
+        for m in muscles:
             if m in ("quads", "hamstrings"):
-                for i, (kn, an, bl) in enumerate(P["legs"]):
-                    c = ((hip[0] + kn[0]) / 2, (hip[1] + kn[1]) / 2)
-                    self._muscle_shape(cv, pen, c, _unit((kn[0] - hip[0], kn[1] - hip[1])), 0.24 * H_ * grow, 0.07 * H_ * grow, t, 120 + k * 3 + i, alpha)
+                segs += [(hip, kn, 0.72, 1.0) for (kn, an, bl) in P["legs"]]
             elif m == "calves":
-                for i, (kn, an, bl) in enumerate(P["legs"]):
-                    c = (kn[0] + (an[0] - kn[0]) * 0.35, kn[1] + (an[1] - kn[1]) * 0.35)
-                    self._muscle_shape(cv, pen, c, _unit((an[0] - kn[0], an[1] - kn[1])), 0.13 * H_, 0.05 * H_, t, 125 + i, alpha)
-            elif m == "glutes":
-                for sx in (-1, 1):
-                    self._muscle_shape(cv, pen, (hip[0] + sx * 0.055 * H_, hip[1] + 0.01 * H_), (0, 1), 0.10 * H_ * grow, 0.075 * H_ * grow, t, 130 + sx, alpha)
+                segs += [(kn, an, 0.0, 0.7) for (kn, an, bl) in P["legs"]]
             elif m == "chest":
-                for sx in (-1, 1):
-                    self._muscle_shape(cv, pen, (sh[0] + sx * 0.06 * H_, sh[1] + 0.06 * H_), (1, 0), 0.11 * H_ * grow, 0.07 * H_ * grow, t, 140 + sx, alpha)
+                segs.append((sh, hip, 0.0, 0.4))
             elif m == "core":
-                self._muscle_shape(cv, pen, ((sh[0] + hip[0]) / 2, sh[1] + (hip[1] - sh[1]) * 0.62), (0, 1), 0.17 * H_ * grow, 0.08 * H_ * grow, t, 150, alpha)
-            elif m in ("triceps", "shoulders"):
-                for i, (e, w) in enumerate(P["arms"]):
-                    f0, f1 = (0.15, 0.9) if m == "triceps" else (0.0, 0.4)
-                    a0 = (sh[0] + (e[0] - sh[0]) * f0, sh[1] + (e[1] - sh[1]) * f0); a1 = (sh[0] + (e[0] - sh[0]) * f1, sh[1] + (e[1] - sh[1]) * f1)
-                    c = ((a0[0] + a1[0]) / 2, (a0[1] + a1[1]) / 2)
-                    ln = math.hypot(a1[0] - a0[0], a1[1] - a0[1])
-                    self._muscle_shape(cv, pen, c, _unit((e[0] - sh[0], e[1] - sh[1])), ln, 0.05 * H_, t, 160 + i, alpha)
+                segs.append((sh, hip, 0.35, 0.78))
+            elif m == "triceps":
+                segs += [(sh, e, 0.0, 1.0) for (e, w) in P["arms"]]
+            elif m == "shoulders":
+                segs += [(sh, e, 0.0, 0.4) for (e, w) in P["arms"]]
+        thigh = math.hypot(P["legs"][0][0][0] - hip[0], P["legs"][0][0][1] - hip[1])
+        zone = (hip[0] - 0.07 * H_, hip[1] - 0.04 * H_, hip[0] + 0.07 * H_, hip[1] + 0.55 * thigh)  # crotch exclusion
+        hits = 0
+        for k, (A, B, f0, f1) in enumerate(segs):
+            p0, p1, _ = self._seg_stroke(cv, pen, A, B, f0, f1, MUSCLE, wmul, t, 120 + k)
+            for i in range(21):
+                q = (p0[0] + (p1[0] - p0[0]) * i / 20, p0[1] + (p1[1] - p0[1]) * i / 20)
+                r = pen.w * wmul / 2
+                if zone[0] - r < q[0] < zone[2] + r and zone[1] - r < q[1] < zone[3] + r:
+                    hits += 1
+        if meta is not None:
+            meta.setdefault("muscles", []).extend((m, 1e6) for m in muscles if m in FRONT_DRAWN)  # only what is really drawn
+            meta.setdefault("front_zone_hits", []).append(hits)
 
     # ---------------- side-profile face ----------------
     def head_profile(self, cv, pen, c, J, mood, t, seed, meta=None):
@@ -477,8 +462,6 @@ class StyleB2:
     def stick_front(self, cv, pen, P, mood, t, meta, kind, seed=0, muscles=None, pulse=0.0):
         hip, sh, neck = P["hip"], P["shoulder"], P["neck"]
         var = P.get("variant") or ("flex" if kind == "flex" else "scratch")
-        if muscles:
-            self.draw_muscles_front(cv, pen, P, muscles, t, pulse)
         for i, (k, a, b) in enumerate(P["legs"]):
             cv.drawPath(pen.poly([hip, k, a, b], seed + i), pen.paint())
         cv.drawPath(pen.poly([hip, sh, neck], seed + 3), pen.paint())
@@ -500,6 +483,8 @@ class StyleB2:
                     x0 = w[0] + s * (40 + 14 * ph); y0 = w[1] - 30 + k * 30
                     lp = Pen(t, pen.w * 0.6, INK, 0.5).paint(alpha=1 - ph * 0.6)
                     cv.drawLine(x0, y0, x0 + s * 34, y0 - 8, lp)
+        if muscles:  # worked segments re-inked orange on top of the body lines
+            self.draw_muscles_front(cv, pen, P, muscles, t, pulse, meta)
         mood_look = (0.0, 0.0)
         self.head(cv, pen, P["head_c"], mood, t, seed + 9, mood_look)
         if kind == "think" and var == "scratch":  # scratching hand stays in front of the head
@@ -649,6 +634,7 @@ class StyleB2:
             meta["variants"] = {sc["type"]: sc.get("variant") or self.variant(sc["type"]) for sc in self.scenes
                                 if sc["type"] in ("think", "conclusion")}
         sc_ = self.scene_at(t)[1]; meta["scene"] = sc_["type"]; meta["scene_t0"] = f"{sc_['type']}@{sc_['t0']}"
+        meta["shown_muscles"] = scene_shown_muscles(self.ep, sc_)
         cv.drawImage(self.bg_img, 0, 0)
         i, s = self.scene_at(t); ts = t - s["t0"]
         punch = 1.0 + 0.08 * (1 - ease(ts / 0.3))
@@ -663,33 +649,38 @@ class StyleB2:
             J = self.poser(ph, form); meta["joints"].append(J)
             meta["phase"] = ph; meta["solo"] = True
             box = self.bbox_side([s["form"]])
-            fig_top = max(title_bottom + 50, 470)
+            tall = self.ep.get("exercise") in TALL
+            fig_top = title_bottom + 30 if tall else max(title_bottom + 50, 470)
+            if tall:  # gentler scene-start punch so the tall figure never grows into the title
+                punch = 1.0 + 0.025 * (1 - ease(ts / 0.3))
+            rb = 1430 if tall else 1190
+            meta["solo_good"] = s["form"] == "good"
             fbox = box
             if (box[2] - box[0]) > 1.6 * (box[3] - box[1]):  # horizontal pose: frame hips-to-head, feet may bleed off
                 kb = self.keep_box(s["form"])
                 fbox = (kb[0] - 40, box[1], kb[2] + 40, box[3])
-            z, f, a = self.fit(("solo", s["form"], fig_top), fbox, (40, fig_top, 1040, 1190))
+            z, f, a = self.fit(("solo", s["form"], fig_top), fbox, (40, fig_top, 1040, rb))
             clip = None
-            if typ == "closeup":
+            if typ == "closeup" and not tall:  # tall poses already fill the frame top-to-floor: no crop-free zoom left
                 fj = J[s.get("focus", "hip")]
                 z = z * (s.get("zoom", 1.35) + 0.1 * ease(ts / 2.0))
-                f = (fj[0] + s.get("dx", 0), fj[1] + s.get("dy", 0)); a = (540, (fig_top + 1210) / 2)
-                clip = (0, fig_top - 30, 1080, 1215)
+                f = (fj[0] + s.get("dx", 0), fj[1] + s.get("dy", 0)); a = (540, (fig_top + rb + 20) / 2)
+                clip = (0, fig_top - 30, 1080, rb + (45 if tall else 25))
                 # never crop the head/body: account for the punch zoom too
-                z, f = self.clamp_view(z * 1.08, f, a, self.keep_box(s["form"]), (40, fig_top - 10, 1040, 1205))
+                z, f = self.clamp_view(z * 1.08, f, a, self.keep_box(s["form"]), (40, fig_top - 10, 1040, rb + (22 if tall else 15)))
                 z /= 1.08
             pen = Pen(t, 13 / z * 1.15, INK, 2.0 / z * 1.1)
             hl = [tuple(x) for x in form.get("highlight", [])]
             def draw(c):
                 self.floor(c, pen); self.mat(c, pen, box[0] + 10, box[2] - 10)
                 self.stick_side(c, pen, J, s.get("face", "strain"), t, hl=hl, meta=meta,
-                                muscles=self.muscles, pulse=rep_concentric(t, self.ep["rep_period"]))
+                                muscles=scene_shown_muscles(self.ep, s), pulse=rep_concentric(t, self.ep["rep_period"]))
                 if typ == "closeup" and s.get("guide"):
                     self.guide(c, s["guide"], J, t, ph)
                 if typ == "closeup" and s.get("arrow"):
                     self.arrow(c, J[s["arrow"]], t)
             self.world(cv, z * punch, f, a, draw, clip=clip)
-            self.cue_block(cv, logt, s, ts, t)
+            self.cue_block(cv, logt, s, ts, t, tall=tall)
         elif typ in ("think", "conclusion"):
             kind = "think" if typ == "think" else "flex"
             var = s.get("variant") or self.variant(typ)
@@ -708,7 +699,7 @@ class StyleB2:
                 else:
                     self.floor(c, pen, 250, 830)
                 self.stick_front(c, pen, P, s.get("face", "worried"), t, meta, kind,
-                                 muscles=self.muscles if typ == "conclusion" else None,
+                                 muscles=scene_shown_muscles(self.ep, s) or None,
                                  pulse=0.5 + 0.5 * math.sin(t * 2 * math.pi * 1.2))
                 if typ == "think":
                     self.pain(c, P, s.get("pain", "lower_back"), t)
@@ -754,7 +745,7 @@ class StyleB2:
                 def draw(c, J=J, bad=bad, pen=pen, hl=hl):
                     self.floor(c, pen); self.mat(c, pen, box[0] + 10, box[2] - 10)
                     self.stick_side(c, pen, J, "worried" if bad else "happy", t, seed=k * 20, hl=hl, meta=meta,
-                                    muscles=None if bad else self.muscles,
+                                    muscles=None if bad else scene_shown_muscles(self.ep, s),
                                     pulse=rep_concentric(t, self.ep["rep_period"], k * 0.3))
                 self.world(cv, z * punch, f, a, draw)
                 T.block(cv, logt, "label", sd["label"], "marker", 80, lab_c, lab_y, RED if bad else GREEN, BG, max_w=500)
@@ -775,9 +766,10 @@ class StyleB2:
         c.drawPath(zp.poly([(x, y), (x + 40, y + 22), (x + 15, y + 44), (x + 62, y + 66)], 5), zp.paint())
         c.drawPath(zp.poly([(x + 70, y - 6), (x + 92, y + 8)], 7), zp.paint())
 
-    def cue_block(self, cv, logt, s, ts, t):
-        """Lower-third block under horizontal figures: big wrong/right cue + rep counter."""
-        y = 1250
+    def cue_block(self, cv, logt, s, ts, t, tall=False):
+        """Lower-third block under horizontal figures: big wrong/right cue + rep counter.
+        Tall (standing) layout: the figure fills the lower third, cue sits under the floor, no counter."""
+        y = 1478 if tall else 1250
         cue = s.get("cue")
         if cue and ts > 0.45:
             k = (ts - 0.45) / 0.25
@@ -795,7 +787,7 @@ class StyleB2:
             self.mark(cv, cue.get("kind", "bad"), (x0 + iw / 2, y + cap / 2), 30, 1.0, 21)
             cv.restore()
             T.block(cv, logt, "label", cue["text"], "marker", cap, x0 + iw + 30 + tw / 2, y, col, BG, scale=sc, max_w=tw + 2)
-        if s.get("counter"):
+        if s.get("counter") and not tall:
             P = self.ep["rep_period"]
             n = int(math.floor((t - REP_DONE * P) / P) - math.floor((s["t0"] - REP_DONE * P) / P))
             if n >= 1:

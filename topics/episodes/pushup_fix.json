@@ -272,7 +272,12 @@
           "text": "ONE LINE",
           "kind": "good"
         },
-        "counter": true
+        "counter": true,
+        "muscles": [
+          "chest",
+          "triceps",
+          "glutes"
+        ]
       },
       {
         "t0": 11.4,

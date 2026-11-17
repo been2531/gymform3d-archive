@@ -73,7 +73,10 @@
         "face": "shocked",
         "bubble": "?",
         "pain": "shoulder",
-        "variant": "hold"
+        "variant": "hold",
+        "muscles": [
+          "chest"
+        ]
       },
       {
         "t0": 5.4,
