@@ -81,7 +81,9 @@ def main():
     narr = audio.build(sec, ep, style.events(), dur, os.path.join(out_dir, "_tts_cache"), wav,
                        use_bed=sec.get("bed", True))
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", silent, "-i", wav, "-c:v", "copy", "-c:a", "aac",
-                    "-b:a", "192k", "-shortest", mp4], check=True)
+                    # IG REELS containers reject our earlier mono / moov-at-end files: stereo (-3 dB/ch keeps -14 LUFS) + faststart
+                    "-af", "pan=stereo|c0=0.7071*c0|c1=0.7071*c0", "-ar", "48000",
+                    "-b:a", "192k", "-shortest", "-movflags", "+faststart", mp4], check=True)
     total_s = time.time() - t0
     # flow sheet
     sheet = os.path.join(out_dir, f"{stem}_sheet.jpg")

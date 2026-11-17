@@ -1,0 +1,22 @@
+{
+  "pipeline": "autoreel",
+  "episode": "topics/episodes/pushup_fix.json",
+  "exercise": "pushup",
+  "title": "Your push-up is lying to your lower back.",
+  "status": "published",
+  "publish_at": "2026-11-17T17:10+09:00",
+  "mp4": "output/autoreel/2026-11-17/pushup_fix_B.mp4",
+  "cover": "output/autoreel/2026-11-17/pushup_fix_B_cover.jpg",
+  "caption": "output/autoreel/2026-11-17/pushup_fix_B_caption.txt",
+  "sheet": "output/autoreel/2026-11-17/pushup_fix_B_sheet.jpg",
+  "qa": "25/25 PASS",
+  "approved_by": "topic queue (owner standing rule: queue selection = approval)",
+  "approved_at": "2026-11-17T17:11:10+09:00",
+  "created_at": "2026-11-17T17:11:10+09:00",
+  "note": "1st attempt 17:12 KST: IG container ERROR (mono audio, moov at end); nothing posted; remuxed stereo+faststart, video stream unchanged",
+  "media_id": "18142928545616742",
+  "permalink": "https://www.instagram.com/reel/Df1egTLpPJ-/",
+  "published_at": "2026-11-17T17:14:42+09:00",
+  "container_id": "18154215685548902",
+  "published_by": "autoreel"
+}
