@@ -7,6 +7,7 @@ import skia
 from .rig import (Body, pushup_pose, squat_pose, plank_pose, lunge_pose, bridge_pose, hinge_pose,
                   hand_x_for, rep_phase, rep_concentric, REP_DONE, add, d, two_bone)
 from . import text as T
+from . import claims
 from .style_b import Pen, ease, back_out, BG, INK, RED, GREEN
 
 W, H = 1080, 1920
@@ -185,6 +186,24 @@ class StyleB2:
         if x1 > x0 and y1 > y0:
             meta.setdefault("figs", []).append((x0, y0, x1, y1))
 
+    def log_pts(self, meta, pts):
+        """Every screen point drawn for the figure (limbs_in_bounds gate). Unclipped, so a
+        limb that leaves the frame is measured where it really is."""
+        if meta is None:
+            return
+        z, f, a, clip = self._xf
+        meta.setdefault("scr", []).extend((a[0] + (p[0] - f[0]) * z, a[1] + (p[1] - f[1]) * z) for p in pts)
+
+    # ---------------- pose captions ----------------
+    def claim_alpha(self, text, J, J_prev=None):
+        """Opacity for a caption that names a posture: drawn only while the pose shows it.
+        Fades in over ~0.1 s; cuts out at once so no visible frame contradicts the body."""
+        if not claims.claims_in(text):
+            return 1.0
+        if not claims.holds(text, J, self.body.H):
+            return 0.0
+        return 0.55 if (J_prev is not None and not claims.holds(text, J_prev, self.body.H)) else 1.0
+
     # ---------------- face ----------------
     def face(self, cv, c, r, mood, t, look=(0.0, 0.0), z=1.0):
         lw = max(r * 0.075, 3.0)
@@ -289,6 +308,7 @@ class StyleB2:
         pts = [v for k, v in J.items() if not k.startswith("_") and isinstance(v, tuple)]
         pts += [(hc[0] - self.R, hc[1] - self.R), (hc[0] + self.R, hc[1] + self.R)]
         self.log_fig(meta, pts)
+        self.log_pts(meta, pts)
 
     # ---------------- target muscles (simple: recolour the worked segments) ----------------
     # muscle -> (from joint, to joint, start fraction, end fraction) on the side figure
@@ -500,12 +520,16 @@ class StyleB2:
                 meta["joints"].append({"hip": hip, "knee": k, "ankle": a, "shoulder": sh, "elbow": e, "wrist": w, "neck": neck})
 
     # ---------------- props ----------------
-    def mat(self, cv, pen, x0, x1):
+    def mat(self, cv, pen, x0, x1, meta=None):
         r = skia.Rect.MakeLTRB(x0, FLOOR - 4, x1, FLOOR + 22)
         p = skia.Path(); p.addRoundRect(r, 12, 12)
         cv.drawPath(p, pen.paint(fill=True, color=MAT_FILL)); cv.drawPath(p, Pen(0, pen.w * 0.7, INK, 1.2).paint())
+        if meta is not None:
+            self.log_pts(meta, [(x0, FLOOR - 4), (x1, FLOOR + 22)])
 
-    def floor(self, cv, pen, x0=-200, x1=1300):
+    def floor(self, cv, pen, x0=-200, x1=1300, meta=None):
+        # the horizon line spans wider than the frame on purpose; only the mat's ends are
+        # treated as a floor edge that must stay visible (limbs_in_bounds)
         cv.drawPath(pen.poly([(x0, FLOOR + 24), (x1, FLOOR + 24)], 91), Pen(0, pen.w * 0.55, 0xFF7C8796).paint())
 
     def bubble(self, cv, c, rx, ry, t, content="?"):
@@ -631,6 +655,10 @@ class StyleB2:
     def render(self, cv, t, meta):
         if t == 0:
             meta["fault_sep"] = self.fault_separation()
+            # the wrong and the right pose at the top and the bottom of a rep, for the
+            # fault_joint_delta gate (a fault has to be a different pose, not a red line)
+            meta["form_poses"] = {name: {"top": self.poser(0.0, fm), "bottom": self.poser(1.0, fm)}
+                                  for name, fm in self.ep["forms"].items()}
             meta["variants"] = {sc["type"]: sc.get("variant") or self.variant(sc["type"]) for sc in self.scenes
                                 if sc["type"] in ("think", "conclusion")}
         sc_ = self.scene_at(t)[1]; meta["scene"] = sc_["type"]; meta["scene_t0"] = f"{sc_['type']}@{sc_['t0']}"
@@ -639,26 +667,32 @@ class StyleB2:
         i, s = self.scene_at(t); ts = t - s["t0"]
         punch = 1.0 + 0.08 * (1 - ease(ts / 0.3))
         typ = s["type"]; logt = meta["text"]
+        # Pose of this frame first: a caption that names a posture is only drawn while the
+        # body in frame shows it (0.12 s ago as well, so it fades in and cuts out).
+        J0 = Jp0 = None
+        if typ in ("reps", "closeup"):
+            J0 = self.poser(rep_phase(t, self.ep["rep_period"]), self.ep["forms"][s["form"]])
+            Jp0 = self.poser(rep_phase(max(t - 0.12, 0.0), self.ep["rep_period"]), self.ep["forms"][s["form"]])
         title_bottom = 150
         if s.get("title"):
             title_bottom = T.block(cv, logt, "title", s["title"], self.B.get("title_font", "marker"), 112, 540, 150, INK, BG,
-                                   max_w=1010, max_lines=2, fallback_font="kalam")
+                                   max_w=1010, max_lines=2, fallback_font="kalam",
+                                   alpha=self.claim_alpha(s["title"], J0, Jp0))
         if typ in ("reps", "closeup"):
             form = self.ep["forms"][s["form"]]
             ph = rep_phase(t, self.ep["rep_period"])
-            J = self.poser(ph, form); meta["joints"].append(J)
+            J = J0; meta["joints"].append(J)
             meta["phase"] = ph; meta["solo"] = True
             box = self.bbox_side([s["form"]])
             tall = self.ep.get("exercise") in TALL
-            fig_top = title_bottom + 30 if tall else max(title_bottom + 50, 470)
+            fig_top = title_bottom + 20 if tall else max(title_bottom + 50, 470)
             if tall:  # gentler scene-start punch so the tall figure never grows into the title
                 punch = 1.0 + 0.025 * (1 - ease(ts / 0.3))
-            rb = 1430 if tall else 1190
+            rb = 1470 if tall else 1190  # standing layouts use the room above the lower-third cue
             meta["solo_good"] = s["form"] == "good"
+            # the whole body is framed: a foot, hand or mat end that runs off the edge
+            # reads as a broken figure (the v5 defect on the push-up's left side)
             fbox = box
-            if (box[2] - box[0]) > 1.6 * (box[3] - box[1]):  # horizontal pose: frame hips-to-head, feet may bleed off
-                kb = self.keep_box(s["form"])
-                fbox = (kb[0] - 40, box[1], kb[2] + 40, box[3])
             z, f, a = self.fit(("solo", s["form"], fig_top), fbox, (40, fig_top, 1040, rb))
             clip = None
             if typ == "closeup" and not tall:  # tall poses already fill the frame top-to-floor: no crop-free zoom left
@@ -667,12 +701,12 @@ class StyleB2:
                 f = (fj[0] + s.get("dx", 0), fj[1] + s.get("dy", 0)); a = (540, (fig_top + rb + 20) / 2)
                 clip = (0, fig_top - 30, 1080, rb + (45 if tall else 25))
                 # never crop the head/body: account for the punch zoom too
-                z, f = self.clamp_view(z * 1.08, f, a, self.keep_box(s["form"]), (40, fig_top - 10, 1040, rb + (22 if tall else 15)))
+                z, f = self.clamp_view(z * 1.08, f, a, box, (40, fig_top - 10, 1040, rb + (22 if tall else 15)))
                 z /= 1.08
             pen = Pen(t, 13 / z * 1.15, INK, 2.0 / z * 1.1)
             hl = [tuple(x) for x in form.get("highlight", [])]
             def draw(c):
-                self.floor(c, pen); self.mat(c, pen, box[0] + 10, box[2] - 10)
+                self.floor(c, pen, meta=meta); self.mat(c, pen, box[0] + 10, box[2] - 10, meta=meta)
                 self.stick_side(c, pen, J, s.get("face", "strain"), t, hl=hl, meta=meta,
                                 muscles=scene_shown_muscles(self.ep, s), pulse=rep_concentric(t, self.ep["rep_period"]))
                 if typ == "closeup" and s.get("guide"):
@@ -680,7 +714,7 @@ class StyleB2:
                 if typ == "closeup" and s.get("arrow"):
                     self.arrow(c, J[s["arrow"]], t)
             self.world(cv, z * punch, f, a, draw, clip=clip)
-            self.cue_block(cv, logt, s, ts, t, tall=tall)
+            self.cue_block(cv, logt, s, ts, t, tall=tall, j=J, jp=Jp0)
         elif typ in ("think", "conclusion"):
             kind = "think" if typ == "think" else "flex"
             var = s.get("variant") or self.variant(typ)
@@ -729,16 +763,26 @@ class StyleB2:
         elif typ == "split":
             box = self.bbox_side([s["top"]["form"], s["bottom"]["form"]])
             cols = (box[3] - box[1]) > 0.8 * (box[2] - box[0])  # tall poses (squat): side by side
+            # both panels move together, and the cut opens on the bottom of a rep: the wrong and
+            # the right pose are compared at the same instant, which is where they differ most
+            P_ = self.ep["rep_period"]
+            off = (0.45 * P_ - s["t0"]) % P_
+            # one scale for both panels: a wrong pose that is drawn bigger than the right one
+            # reads as a different body, not as a form fault
+            if cols:
+                z, f, _ = self.fit(("splitc", 0), box, (30, 600, 520, 1560))
+            else:
+                z, f, _ = self.fit(("split", 0), box, (50, 430, 1030, 900))
             for k, side in enumerate(("top", "bottom")):
-                sd = s[side]; J = self.pose(t, sd["form"], offset=k * 0.3); meta["joints"].append(J)
+                sd = s[side]; J = self.pose(t, sd["form"], offset=off); meta["joints"].append(J)
                 y0 = 300 if k == 0 else 975
                 bad = sd["form"] != "good"
                 if cols:
                     x0 = 20 if k == 0 else 550
-                    z, f, a = self.fit(("splitc", k), box, (x0 + 10, 600, x0 + 500, 1560))
+                    a = (x0 + 255, 1560)
                     lab_c, lab_y, mk = x0 + 230, 330, (x0 + 255, 470)
                 else:
-                    z, f, a = self.fit(("split", k), box, (50, y0 + 130, 1030, y0 + 600))
+                    a = (540, y0 + 600)
                     lab_c, lab_y, mk = 540, y0 + 20, (900, y0 + 60)
                 pen = Pen(t, 12 / z * 1.1, INK, 2.0 / z)
                 hl = [tuple(x) for x in self.ep["forms"][sd["form"]].get("highlight", [])]
@@ -746,10 +790,13 @@ class StyleB2:
                     self.floor(c, pen); self.mat(c, pen, box[0] + 10, box[2] - 10)
                     self.stick_side(c, pen, J, "worried" if bad else "happy", t, seed=k * 20, hl=hl, meta=meta,
                                     muscles=None if bad else scene_shown_muscles(self.ep, s),
-                                    pulse=rep_concentric(t, self.ep["rep_period"], k * 0.3))
+                                    pulse=rep_concentric(t, self.ep["rep_period"], off))
                 self.world(cv, z * punch, f, a, draw)
-                T.block(cv, logt, "label", sd["label"], "marker", 80, lab_c, lab_y, RED if bad else GREEN, BG, max_w=500)
-                self.mark(cv, "bad" if bad else "good", mk, 46, ts - 0.15 - k * 0.35, 9 + k)
+                la = self.claim_alpha(sd["label"], J, self.pose(max(t - 0.12, 0.0), sd["form"], offset=off))
+                if la > 0:
+                    T.block(cv, logt, "label", sd["label"], "marker", 80, lab_c, lab_y, RED if bad else GREEN, BG, max_w=500,
+                            alpha=la)
+                    self.mark(cv, "bad" if bad else "good", mk, 46, ts - 0.15 - k * 0.35, 9 + k)
             dv = [(540, 330), (540, 1560)] if cols else [(60, 955), (1020, 955)]
             cv.drawPath(Pen(t, 6, 0xFF7C8796).poly(dv, 55), Pen(t, 6, 0xFF7C8796).paint())
 
@@ -766,12 +813,13 @@ class StyleB2:
         c.drawPath(zp.poly([(x, y), (x + 40, y + 22), (x + 15, y + 44), (x + 62, y + 66)], 5), zp.paint())
         c.drawPath(zp.poly([(x + 70, y - 6), (x + 92, y + 8)], 7), zp.paint())
 
-    def cue_block(self, cv, logt, s, ts, t, tall=False):
+    def cue_block(self, cv, logt, s, ts, t, tall=False, j=None, jp=None):
         """Lower-third block under horizontal figures: big wrong/right cue + rep counter.
         Tall (standing) layout: the figure fills the lower third, cue sits under the floor, no counter."""
-        y = 1478 if tall else 1250
+        y = 1528 if tall else 1250
         cue = s.get("cue")
-        if cue and ts > 0.45:
+        cue_a = self.claim_alpha(cue["text"], j, jp) if cue else 0.0
+        if cue and ts > 0.45 and cue_a > 0:
             k = (ts - 0.45) / 0.25
             sc = back_out(k) if k < 1 else 1.0
             col = RED if cue.get("kind") == "bad" else GREEN
@@ -786,7 +834,8 @@ class StyleB2:
             cv.save(); cv.translate(540, y + cap / 2); cv.scale(sc, sc); cv.translate(-540, -(y + cap / 2))
             self.mark(cv, cue.get("kind", "bad"), (x0 + iw / 2, y + cap / 2), 30, 1.0, 21)
             cv.restore()
-            T.block(cv, logt, "label", cue["text"], "marker", cap, x0 + iw + 30 + tw / 2, y, col, BG, scale=sc, max_w=tw + 2)
+            T.block(cv, logt, "label", cue["text"], "marker", cap, x0 + iw + 30 + tw / 2, y, col, BG, scale=sc, max_w=tw + 2,
+                    alpha=cue_a)
         if s.get("counter") and not tall:
             P = self.ep["rep_period"]
             n = int(math.floor((t - REP_DONE * P) / P) - math.floor((s["t0"] - REP_DONE * P) / P))
