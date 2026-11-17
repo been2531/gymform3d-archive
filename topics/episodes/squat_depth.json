@@ -1,0 +1,116 @@
+{
+  "id": "squat_depth",
+  "exercise": "squat",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 2.0,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {
+      "depth": 1.0
+    },
+    "half": {
+      "depth": 0.45,
+      "highlight": [
+        [
+          "hip",
+          "knee"
+        ]
+      ]
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Your squat is too shallow."
+      },
+      {
+        "t": 2.45,
+        "text": "Legs not growing?"
+      },
+      {
+        "t": 4.65,
+        "text": "Half squats skip your glutes."
+      },
+      {
+        "t": 7.35,
+        "text": "Sit until your hips pass your knees."
+      },
+      {
+        "t": 9.35,
+        "text": "All the way, every rep."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "half",
+        "title": "SQUAT DEEPER",
+        "cue": {
+          "text": "HALF SQUAT",
+          "kind": "bad"
+        },
+        "counter": true,
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "WEAK LEGS?",
+        "face": "shocked",
+        "bubble": "?",
+        "pain": "knee"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "half",
+          "label": "HALF"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "face": "happy",
+        "counter": true,
+        "title": "HIPS BELOW KNEES",
+        "focus": "hip",
+        "dx": 60,
+        "zoom": 1.15,
+        "guide": {
+          "type": "depth"
+        },
+        "cue": {
+          "text": "FULL DEPTH",
+          "kind": "good"
+        }
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "SIT ALL THE WAY",
+        "sub": "EVERY REP",
+        "face": "proud"
+      }
+    ]
+  },
+  "caption": {
+    "title": "Most squats stop halfway down.",
+    "question": "Can you squat below parallel without pain?",
+    "save": "Save this for your next leg day."
+  }
+}

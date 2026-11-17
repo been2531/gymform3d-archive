@@ -1,0 +1,119 @@
+{
+  "id": "plank_pike",
+  "exercise": "plank",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 2.4,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {},
+    "pike": {
+      "pike": 26,
+      "highlight": [
+        [
+          "knee",
+          "hip"
+        ],
+        [
+          "hip",
+          "shoulder"
+        ]
+      ]
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Hips up high? That's cheating."
+      },
+      {
+        "t": 2.45,
+        "text": "Feels too easy, right?"
+      },
+      {
+        "t": 4.65,
+        "text": "Piked hips take your abs out of it."
+      },
+      {
+        "t": 7.35,
+        "text": "Lower them into one line."
+      },
+      {
+        "t": 9.35,
+        "text": "Flat like a table."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "pike",
+        "title": "HIPS TOO HIGH?",
+        "cue": {
+          "text": "PIKED HIPS",
+          "kind": "bad"
+        },
+        "counter": false,
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "TOO EASY?",
+        "face": "shocked",
+        "bubble": "?",
+        "pain": "shoulder"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "pike",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "face": "happy",
+        "counter": false,
+        "title": "HIPS DOWN",
+        "focus": "hip",
+        "dx": 120,
+        "guide": {
+          "type": "line",
+          "a": "ankle",
+          "b": "shoulder"
+        },
+        "cue": {
+          "text": "ONE LINE",
+          "kind": "good"
+        }
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "FLAT LIKE A TABLE",
+        "sub": "FEEL THE ABS",
+        "face": "proud"
+      }
+    ]
+  },
+  "caption": {
+    "title": "Piking your hips makes the plank easy for the wrong reason.",
+    "question": "Do your hips creep up when you get tired?",
+    "save": "Save this for your next core day."
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "id": "bridge_fix",
+  "exercise": "bridge",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 2.2,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {
+      "lift": 26
+    },
+    "arch": {
+      "lift": 44,
+      "highlight": [
+        [
+          "hip",
+          "shoulder"
+        ]
+      ]
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Higher is not better here."
+      },
+      {
+        "t": 2.45,
+        "text": "Feel it in your back?"
+      },
+      {
+        "t": 4.65,
+        "text": "Over-arching moves the work to your spine."
+      },
+      {
+        "t": 7.35,
+        "text": "Stop at one line, knee to shoulder."
+      },
+      {
+        "t": 9.35,
+        "text": "Squeeze, don't arch."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "arch",
+        "title": "STOP ARCHING THIS",
+        "cue": {
+          "text": "BACK ARCHED",
+          "kind": "bad"
+        },
+        "counter": true,
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "BACK NOT GLUTES?",
+        "face": "shocked",
+        "bubble": "?",
+        "pain": "lower_back"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "arch",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "face": "happy",
+        "counter": true,
+        "title": "RIBS DOWN",
+        "focus": "hip",
+        "dx": 40,
+        "zoom": 1.2,
+        "guide": {
+          "type": "line",
+          "a": "knee",
+          "b": "shoulder",
+          "offset": 60
+        },
+        "cue": {
+          "text": "ONE LINE",
+          "kind": "good"
+        }
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "SQUEEZE AT THE TOP",
+        "sub": "NOT HIGHER",
+        "face": "proud"
+      }
+    ]
+  },
+  "caption": {
+    "title": "A higher glute bridge is not a better glute bridge.",
+    "question": "Do you feel bridges in your glutes or your back?",
+    "save": "Save this for your next glute day."
+  }
+}

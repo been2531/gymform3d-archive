@@ -13,6 +13,13 @@ from pilots import audio, qa  # noqa: E402
 W, H = 1080, 1920
 
 
+def deep_merge(a, b):
+    out = dict(a)
+    for k, v in b.items():
+        out[k] = deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
 def load_style(name, ep):
     if name == "A":
         from pilots.style_a import StyleA
@@ -30,13 +37,17 @@ def main():
     ap.add_argument("--episode", required=True)
     ap.add_argument("--out", default=None)
     ap.add_argument("--frames", type=int, default=0, help="debug: render only N frames")
+    ap.add_argument("--tag", default=None, help="output stem suffix (default: style letter)")
+    ap.add_argument("--override", default=None, help="JSON deep-merged into the episode (retry tweaks)")
     a = ap.parse_args()
     ep = json.load(open(a.episode))
+    if a.override:
+        ep = deep_merge(ep, json.loads(a.override))
     fps, dur = ep["fps"], ep["duration"]
     n = int(round(fps * dur)) if not a.frames else a.frames
     out_dir = a.out or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output", "pilots", time.strftime("%Y-%m-%d"))
     os.makedirs(out_dir, exist_ok=True)
-    stem = f"{ep['id']}_{'B_v2' if a.style == 'B2' else a.style}"
+    stem = f"{ep['id']}_{a.tag or ('B_v2' if a.style == 'B2' else a.style)}"
     sec = ep.get(a.style) or ep["B"]
     silent = os.path.join(out_dir, f"_{stem}_silent.mp4")
     mp4 = os.path.join(out_dir, f"{stem}.mp4")
@@ -51,7 +62,7 @@ def main():
     for f in range(n):
         t = f / fps
         cv = surf.getCanvas()
-        meta = {"t": t, "joints": [], "text": []}
+        meta = {"t": t, "joints": [], "text": [], "figs": []}
         style.render(cv, t, meta)
         img = surf.makeImageSnapshot()
         arr = img.toarray(colorType=skia.kRGBA_8888_ColorType)

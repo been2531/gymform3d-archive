@@ -1,0 +1,14 @@
+{
+  "episodes": [
+    "topics/episodes/pushup_fix.json",
+    "topics/episodes/squat_fix.json",
+    "topics/episodes/plank_fix.json",
+    "topics/episodes/lunge_fix.json",
+    "topics/episodes/hinge_fix.json",
+    "topics/episodes/pushup_depth.json",
+    "topics/episodes/bridge_fix.json",
+    "topics/episodes/squat_depth.json",
+    "topics/episodes/plank_pike.json",
+    "topics/episodes/pushup_pike.json"
+  ]
+}

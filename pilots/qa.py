@@ -54,6 +54,21 @@ def run(style, ep, mp4, metas, small, bg, narr, body):
     bgs = bg[::4, ::4].astype(np.int16)[y0:]
     worst = max(float((np.abs(s[y0:] - bgs).max(axis=2) > 10).mean()) for s in small)
     gates["bottom_15pct_clear"] = (tb < H * 0.85 and worst < 0.001, f"lowest text {tb:.0f}px, max dirty {worst:.4%}")
+    # title lines + text never over a figure (head/limbs)
+    tl = [x.get("lines", 1) for m in metas for x in m["text"] if x["role"] in ("hook", "title")]
+    gates["title_max_2_lines"] = (max(tl) <= 2, f"max {max(tl)} lines")
+    hits = 0; first = None
+    for m in metas:
+        for x in m["text"]:
+            if "left" not in x:
+                continue
+            for (fx0, fy0, fx1, fy1) in m.get("figs", []):
+                if x["left"] < fx1 and x["right"] > fx0 and x["top"] < fy1 and x["bottom"] > fy0:
+                    hits += 1
+                    first = first or f"t={m['t']:.2f}s {x['text']!r}"
+    outside = [x["text"] for m in metas for x in m["text"] if "left" in x and (x["left"] < 20 or x["right"] > 1060)]
+    gates["text_inside_frame"] = (not outside, f"{len(outside)} frames" + (f", e.g. {outside[0]!r}" if outside else ""))
+    gates["text_clear_of_figure"] = (hits == 0, f"{hits} overlapping text/figure frames" + (f", first {first}" if first else ""))
     # limb lengths
     errs = [bone_errors(body, J) for m in metas for J in m["joints"]]
     gates["limb_length_drift_lt_0_5px"] = (max(errs) < 0.5, f"max {max(errs):.4f}px over {len(errs)} poses")

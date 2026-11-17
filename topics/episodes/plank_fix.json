@@ -1,0 +1,120 @@
+{
+  "id": "plank_fix",
+  "exercise": "plank",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 2.4,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {},
+    "sag": {
+      "sag": 24,
+      "head": 22,
+      "highlight": [
+        [
+          "knee",
+          "hip"
+        ],
+        [
+          "hip",
+          "shoulder"
+        ]
+      ]
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Your plank is probably sagging."
+      },
+      {
+        "t": 2.45,
+        "text": "Does your back ache?"
+      },
+      {
+        "t": 4.65,
+        "text": "Dropping hips load your lower back."
+      },
+      {
+        "t": 7.35,
+        "text": "Brace like a punch is coming."
+      },
+      {
+        "t": 9.35,
+        "text": "Straight beats long."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "sag",
+        "title": "YOUR PLANK IS SAGGING",
+        "cue": {
+          "text": "HIPS DROP",
+          "kind": "bad"
+        },
+        "counter": false,
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "BACK ACHE?",
+        "face": "shocked",
+        "bubble": "?",
+        "pain": "lower_back"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "sag",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "face": "happy",
+        "counter": false,
+        "title": "BRACE YOUR CORE",
+        "focus": "hip",
+        "dx": 120,
+        "guide": {
+          "type": "line",
+          "a": "ankle",
+          "b": "shoulder"
+        },
+        "cue": {
+          "text": "ONE LINE",
+          "kind": "good"
+        }
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "STRAIGHT > LONG",
+        "sub": "BRACE HARD",
+        "face": "proud"
+      }
+    ]
+  },
+  "caption": {
+    "title": "A sagging plank trains your lower back, not your core.",
+    "question": "How long can you hold a straight plank?",
+    "save": "Save this for your next core day."
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "id": "pushup_pike",
+  "exercise": "pushup",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 1.7,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {},
+    "pike": {
+      "pike": 22,
+      "highlight": [
+        [
+          "knee",
+          "hip"
+        ],
+        [
+          "hip",
+          "shoulder"
+        ]
+      ]
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Hips in the air? Stop."
+      },
+      {
+        "t": 2.45,
+        "text": "Abs not doing anything?"
+      },
+      {
+        "t": 4.65,
+        "text": "Piking turns it into a lazy shoulder press."
+      },
+      {
+        "t": 7.35,
+        "text": "Tuck your hips into one line."
+      },
+      {
+        "t": 9.35,
+        "text": "A plank that moves."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "pike",
+        "title": "HIPS UP? STOP",
+        "cue": {
+          "text": "HIPS PIKED",
+          "kind": "bad"
+        },
+        "counter": true,
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "ABS NOT WORKING?",
+        "face": "shocked",
+        "bubble": "?",
+        "pain": "shoulder"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "pike",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "face": "happy",
+        "counter": true,
+        "title": "TUCK YOUR HIPS",
+        "focus": "hip",
+        "dx": 130,
+        "guide": {
+          "type": "line",
+          "a": "ankle",
+          "b": "shoulder"
+        },
+        "cue": {
+          "text": "ONE LINE",
+          "kind": "good"
+        }
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "PLANK THAT MOVES",
+        "sub": "EVERY REP",
+        "face": "proud"
+      }
+    ]
+  },
+  "caption": {
+    "title": "A push-up is a moving plank, hips included.",
+    "question": "Do your hips rise when the reps get hard?",
+    "save": "Save this for your next push day."
+  }
+}

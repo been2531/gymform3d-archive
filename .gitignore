@@ -35,3 +35,13 @@ output/outfit_candidates_v1.png
 # cutaway reels: renders, generated anatomy images, QA packages (never committed)
 output/cutaway/
 cutaway/models/
+
+# autoreel pipeline (daily_run.py / publish_run.py): state, logs, test + validation renders.
+# NOTE: output/autoreel/<date>/*.mp4 + *_cover.jpg are NOT ignored on purpose: ig_publish.py hosts them via git push.
+output/autoreel/state.json
+output/autoreel/logs/
+output/autoreel/_*/
+output/autoreel/.*.lock
+output/autoreel/*/_tts_cache/
+output/autoreel/*/*_qa.json
+output/pilots/

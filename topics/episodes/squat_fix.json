@@ -1,0 +1,130 @@
+{
+  "id": "squat_fix",
+  "exercise": "squat",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 2.0,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {
+      "depth": 1.0,
+      "lean": 0,
+      "head": 0
+    },
+    "lean": {
+      "depth": 0.8,
+      "lean": 38,
+      "head": 18,
+      "heel": 38,
+      "knee_fwd": 14,
+      "highlight": [
+        [
+          "hip",
+          "shoulder"
+        ],
+        [
+          "ankle",
+          "ball"
+        ],
+        [
+          "knee",
+          "ankle"
+        ]
+      ]
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Your squat is probably wrong."
+      },
+      {
+        "t": 2.45,
+        "text": "Knees or back hurting?"
+      },
+      {
+        "t": 4.65,
+        "text": "Heels up, chest falling. Fix it."
+      },
+      {
+        "t": 7.35,
+        "text": "Sit back. Hips below your knees."
+      },
+      {
+        "t": 9.35,
+        "text": "Chest up, every rep."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "lean",
+        "title": "YOUR SQUAT IS WRONG",
+        "cue": {
+          "text": "HEELS UP",
+          "kind": "bad"
+        },
+        "counter": true,
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "KNEE PAIN?",
+        "face": "shocked",
+        "bubble": "?",
+        "pain": "knee"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "lean",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "focus": "hip",
+        "dx": 60,
+        "zoom": 1.15,
+        "guide": {
+          "type": "depth"
+        },
+        "face": "happy",
+        "title": "HIPS BELOW KNEES",
+        "cue": {
+          "text": "HEELS DOWN",
+          "kind": "good"
+        },
+        "counter": true
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "SIT BACK & DOWN",
+        "sub": "EVERY REP",
+        "face": "proud"
+      }
+    ]
+  },
+  "caption": {
+    "title": "Heels up and chest down is not a squat.",
+    "question": "Do your heels lift at the bottom?",
+    "save": "Save this for your next leg day."
+  }
+}

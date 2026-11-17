@@ -1,0 +1,117 @@
+{
+  "id": "pushup_depth",
+  "exercise": "pushup",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 1.7,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {
+      "depth": 1.0
+    },
+    "half": {
+      "depth": 0.42,
+      "highlight": [
+        [
+          "shoulder",
+          "elbow"
+        ],
+        [
+          "elbow",
+          "wrist"
+        ]
+      ]
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Half reps don't count."
+      },
+      {
+        "t": 2.45,
+        "text": "Chest not growing?"
+      },
+      {
+        "t": 4.65,
+        "text": "Stopping halfway skips the hardest part."
+      },
+      {
+        "t": 7.35,
+        "text": "Chest almost to the floor."
+      },
+      {
+        "t": 9.35,
+        "text": "Fewer reps, full range."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "half",
+        "title": "HALF REPS DON'T COUNT",
+        "cue": {
+          "text": "HALF REP",
+          "kind": "bad"
+        },
+        "counter": true,
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "NO CHEST GAINS?",
+        "face": "shocked",
+        "bubble": "?",
+        "pain": "shoulder"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "half",
+          "label": "HALF"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "face": "happy",
+        "counter": true,
+        "title": "CHEST TO FLOOR",
+        "focus": "shoulder",
+        "dx": 40,
+        "zoom": 1.3,
+        "cue": {
+          "text": "FULL DEPTH",
+          "kind": "good"
+        }
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "FEWER REPS",
+        "sub": "FULL RANGE",
+        "face": "proud"
+      }
+    ]
+  },
+  "caption": {
+    "title": "Ten half push-ups are not ten push-ups.",
+    "question": "How many full-range push-ups can you do?",
+    "save": "Save this for your next push day."
+  }
+}

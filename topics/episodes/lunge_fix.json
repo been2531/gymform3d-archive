@@ -1,0 +1,126 @@
+{
+  "id": "lunge_fix",
+  "exercise": "lunge",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 2.2,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {
+      "depth": 1.0,
+      "lean": 0,
+      "fwd": 0.0
+    },
+    "lean": {
+      "depth": 0.9,
+      "lean": 34,
+      "fwd": 0.13,
+      "highlight": [
+        [
+          "hip",
+          "shoulder"
+        ],
+        [
+          "knee",
+          "ankle"
+        ]
+      ]
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "Your lunge might be wrecking your knee."
+      },
+      {
+        "t": 2.45,
+        "text": "Front knee hurting?"
+      },
+      {
+        "t": 4.65,
+        "text": "Leaning forward shoves the knee out."
+      },
+      {
+        "t": 7.35,
+        "text": "Stay tall and drop straight down."
+      },
+      {
+        "t": 9.35,
+        "text": "Straight down, every rep."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "lean",
+        "title": "FIX YOUR LUNGE",
+        "cue": {
+          "text": "CHEST FALLS",
+          "kind": "bad"
+        },
+        "counter": true,
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "KNEE PAIN?",
+        "face": "shocked",
+        "bubble": "?",
+        "pain": "knee"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "lean",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "face": "happy",
+        "counter": true,
+        "title": "STAY TALL",
+        "focus": "knee",
+        "dx": -40,
+        "zoom": 1.1,
+        "guide": {
+          "type": "vertical",
+          "a": "ankle",
+          "len": 380
+        },
+        "cue": {
+          "text": "SHIN STACKED",
+          "kind": "good"
+        }
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "STRAIGHT DOWN",
+        "sub": "EVERY REP",
+        "face": "proud"
+      }
+    ]
+  },
+  "caption": {
+    "title": "A good lunge goes straight down, not forward.",
+    "question": "Does your front knee hurt when you lunge?",
+    "save": "Save this for your next leg day."
+  }
+}

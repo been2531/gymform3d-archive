@@ -46,12 +46,19 @@ def wrap(font, text, max_w):
 
 
 def block(cv, log, role, text, font_name, cap_px, cx, top, color, bg, max_w=980, scale=1.0, alpha=1.0,
-          outline=None, align="center", line_gap=0.35):
-    """Draw centred text whose CAP HEIGHT is cap_px (before pop scale). Returns bottom y."""
+          outline=None, align="center", line_gap=0.35, max_lines=None, fallback_font=None):
+    """Draw centred text whose CAP HEIGHT is cap_px (before pop scale). Returns bottom y.
+    max_lines: if the wrap needs more lines, retry with fallback_font (narrower) at the same cap height."""
     size = cap_px / cap_ratio(font_name)
     font = skia.Font(typeface(font_name), size)
     font.setEdging(skia.Font.Edging.kAntiAlias)
     lines = wrap(font, text, max_w)
+    if max_lines and len(lines) > max_lines and fallback_font:
+        f2 = skia.Font(typeface(fallback_font), cap_px / cap_ratio(fallback_font)); f2.setEdging(skia.Font.Edging.kAntiAlias)
+        l2 = wrap(f2, text, max_w)
+        if len(l2) < len(lines):
+            font, lines, font_name = f2, l2, fallback_font
+    widest = max(font.measureText(ln) for ln in lines)
     paint = skia.Paint(AntiAlias=True, Color=color); paint.setAlphaf(alpha)
     y = top
     cv.save()
@@ -71,6 +78,7 @@ def block(cv, log, role, text, font_name, cap_px, cx, top, color, bg, max_w=980,
     cv.restore()
     bottom = y - cap_px * line_gap
     if log is not None and alpha > 0.5 and scale >= 0.98:
-        log.append({"role": role, "text": text, "cap": cap_px,
+        log.append({"role": role, "text": text, "cap": cap_px, "lines": len(lines),
+                    "left": cx - widest / 2 if align == "center" else cx, "right": cx + widest / 2 if align == "center" else cx + widest,
                     "top": top, "bottom": bottom, "contrast": contrast(color, outline[0] if outline else bg)})
     return bottom

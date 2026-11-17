@@ -1,0 +1,122 @@
+{
+  "id": "hinge_fix",
+  "exercise": "hinge",
+  "fps": 30,
+  "duration": 11.0,
+  "rep_period": 2.4,
+  "voice": "am_michael",
+  "speed": 1.12,
+  "forms": {
+    "good": {
+      "lean": 78,
+      "knee": 0
+    },
+    "squat": {
+      "lean": 36,
+      "knee": 72,
+      "highlight": [
+        [
+          "hip",
+          "knee"
+        ],
+        [
+          "knee",
+          "ankle"
+        ]
+      ]
+    }
+  },
+  "B2": {
+    "narration": [
+      {
+        "t": 0.15,
+        "text": "This is not a hinge."
+      },
+      {
+        "t": 2.45,
+        "text": "Can't feel your hamstrings?"
+      },
+      {
+        "t": 4.65,
+        "text": "Bending the knees turns it into a squat."
+      },
+      {
+        "t": 7.35,
+        "text": "Push your hips back, flat back."
+      },
+      {
+        "t": 9.35,
+        "text": "Hips back, soft knees."
+      }
+    ],
+    "scenes": [
+      {
+        "t0": 0.0,
+        "t1": 2.3,
+        "type": "reps",
+        "form": "squat",
+        "title": "NOT A HINGE",
+        "cue": {
+          "text": "KNEES DIVE",
+          "kind": "bad"
+        },
+        "counter": true,
+        "face": "strain"
+      },
+      {
+        "t0": 2.3,
+        "t1": 4.5,
+        "type": "think",
+        "title": "NO STRETCH?",
+        "face": "shocked",
+        "bubble": "?",
+        "pain": "hamstring"
+      },
+      {
+        "t0": 4.5,
+        "t1": 7.2,
+        "type": "split",
+        "top": {
+          "form": "squat",
+          "label": "WRONG"
+        },
+        "bottom": {
+          "form": "good",
+          "label": "RIGHT"
+        }
+      },
+      {
+        "t0": 7.2,
+        "t1": 9.3,
+        "type": "closeup",
+        "form": "good",
+        "face": "happy",
+        "counter": true,
+        "title": "HIPS BACK",
+        "focus": "hip",
+        "dx": 80,
+        "zoom": 1.05,
+        "guide": {
+          "type": "torso"
+        },
+        "cue": {
+          "text": "FLAT BACK",
+          "kind": "good"
+        }
+      },
+      {
+        "t0": 9.3,
+        "t1": 11.0,
+        "type": "conclusion",
+        "title": "PUSH HIPS BACK",
+        "sub": "SOFT KNEES",
+        "face": "proud"
+      }
+    ]
+  },
+  "caption": {
+    "title": "If your knees do the work, it is not a hinge.",
+    "question": "Where do you feel your deadlifts most?",
+    "save": "Save this for your next pull day."
+  }
+}

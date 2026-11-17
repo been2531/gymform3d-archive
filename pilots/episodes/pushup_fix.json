@@ -15,7 +15,17 @@
     "sag": {
       "sag": 24,
       "head": 30,
-      "depth": 0.8
+      "depth": 0.8,
+      "highlight": [
+        [
+          "knee",
+          "hip"
+        ],
+        [
+          "hip",
+          "shoulder"
+        ]
+      ]
     },
     "half": {
       "sag": 0,
@@ -209,7 +219,11 @@
         "type": "reps",
         "form": "sag",
         "title": "99% DO THIS WRONG",
-        "stamp": "bad",
+        "cue": {
+          "text": "HIPS SAG",
+          "kind": "bad"
+        },
+        "counter": true,
         "face": "strain"
       },
       {
@@ -218,7 +232,8 @@
         "type": "think",
         "title": "BACK PAIN?",
         "face": "shocked",
-        "bubble": "?"
+        "bubble": "?",
+        "pain": "lower_back"
       },
       {
         "t0": 4.5,
@@ -239,12 +254,20 @@
         "type": "closeup",
         "form": "good",
         "focus": "hip",
-        "guide": "line",
+        "dx": 130,
+        "guide": {
+          "type": "line",
+          "a": "ankle",
+          "b": "shoulder"
+        },
         "arrow": "hip",
         "face": "happy",
         "title": "SQUEEZE GLUTES",
-        "note": "ONE LINE",
-        "dx": 130
+        "cue": {
+          "text": "ONE LINE",
+          "kind": "good"
+        },
+        "counter": true
       },
       {
         "t0": 9.3,
@@ -255,5 +278,10 @@
         "face": "proud"
       }
     ]
+  },
+  "caption": {
+    "title": "Your push-up is lying to your lower back.",
+    "question": "Do your hips sag when you get tired?",
+    "save": "Save this for your next push-up set."
   }
 }

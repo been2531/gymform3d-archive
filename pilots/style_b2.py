@@ -4,7 +4,8 @@ new episode is a JSON file (plus one pose function per new exercise)."""
 from __future__ import annotations
 import math
 import skia
-from .rig import Body, pushup_pose, squat_pose, hand_x_for, rep_phase, add, d, two_bone
+from .rig import (Body, pushup_pose, squat_pose, plank_pose, lunge_pose, bridge_pose, hinge_pose,
+                  hand_x_for, rep_phase, add, d, two_bone)
 from . import text as T
 from .style_b import Pen, ease, back_out, BG, INK, RED, GREEN
 
@@ -23,11 +24,24 @@ class Poser:
             self.hand_x = hand_x_for(body, FLOOR, 130.0)
 
     def __call__(self, ph, form):
+        b = self.body
         if self.ex == "pushup":
-            return pushup_pose(self.body, ph, form, FLOOR, 130.0, self.hand_x)
+            return pushup_pose(b, ph, form, FLOOR, 130.0, self.hand_x)
         if self.ex == "squat":
-            return squat_pose(self.body, ph, form, FLOOR, 520.0)
+            return squat_pose(b, ph, form, FLOOR, 520.0)
+        if self.ex == "plank":
+            return plank_pose(b, ph, form, FLOOR, 130.0)
+        if self.ex == "lunge":
+            return lunge_pose(b, ph, form, FLOOR, 520.0)
+        if self.ex == "bridge":
+            return bridge_pose(b, ph, form, FLOOR, 200.0)
+        if self.ex == "hinge":
+            return hinge_pose(b, ph, form, FLOOR, 520.0)
         raise ValueError(f"no pose function for exercise {self.ex!r}")
+
+
+EXERCISES = ("pushup", "squat", "plank", "lunge", "bridge", "hinge")
+PAIN_SPOTS = ("lower_back", "knee", "shoulder", "wrist", "hamstring", "neck", "hip")
 
 
 class StyleB2:
@@ -50,11 +64,45 @@ class StyleB2:
         for f in forms:
             for k in range(13):
                 J = self.poser(k / 12, self.ep["forms"][f])
-                for key in ("ball", "ankle", "knee", "hip", "shoulder", "elbow", "wrist", "fingers"):
-                    xs.append(J[key][0]); ys.append(J[key][1])
+                for key in ("ball", "ankle", "knee", "hip", "shoulder", "elbow", "wrist", "fingers", "knee2", "ankle2", "ball2"):
+                    if key in J:
+                        xs.append(J[key][0]); ys.append(J[key][1])
                 c = self.head_c(J); xs += [c[0] - self.R, c[0] + self.R]; ys += [c[1] - self.R, c[1] + self.R]
         ys.append(FLOOR + 30)
         return min(xs) - 40, min(ys) - 20, max(xs) + 40, max(ys)
+
+    def keep_box(self, form_key):
+        """World bbox over the whole rep of everything a closeup must never crop
+        (head + body joints; feet may crop)."""
+        k = ("keep", form_key)
+        if k not in self._fit_cache:
+            xs, ys = [], []
+            for i in range(13):
+                J = self.poser(i / 12, self.ep["forms"][form_key])
+                keys = ("knee", "hip", "shoulder", "neck", "elbow", "wrist", "knee2")
+                if self.ep.get("exercise") in ("squat", "hinge", "lunge"):  # standing: keep the planted foot + floor
+                    keys += ("ankle", "ball")
+                for key in keys:
+                    if key in J:
+                        xs.append(J[key][0]); ys.append(J[key][1])
+                c = self.head_c(J); xs += [c[0] - self.R * 1.15, c[0] + self.R * 1.15]; ys += [c[1] - self.R * 1.15, c[1] + self.R * 1.15]
+            y1 = max(ys) + (30 if self.ep.get("exercise") in ("squat", "hinge", "lunge") else 0)
+            self._fit_cache[k] = (min(xs), min(ys), max(xs), y1)
+        return self._fit_cache[k]
+
+    @staticmethod
+    def clamp_view(z, f, a, kb, area):
+        """Shrink zoom / shift focus so world box kb lands inside screen area."""
+        ax0, ay0, ax1, ay1 = area
+        z = min(z, (ax1 - ax0) / max(kb[2] - kb[0], 1), (ay1 - ay0) / max(kb[3] - kb[1], 1))
+        fx, fy = f
+        sx0 = a[0] + (kb[0] - fx) * z; sx1 = a[0] + (kb[2] - fx) * z
+        if sx0 < ax0: fx -= (ax0 - sx0) / z
+        elif sx1 > ax1: fx += (sx1 - ax1) / z
+        sy0 = a[1] + (kb[1] - fy) * z; sy1 = a[1] + (kb[3] - fy) * z
+        if sy0 < ay0: fy -= (ay0 - sy0) / z
+        elif sy1 > ay1: fy += (sy1 - ay1) / z
+        return z, (fx, fy)
 
     def fit(self, key, box, rect):
         """Zoom/focus so world box fits screen rect (x0,y0,x1,y1), bottom-aligned."""
@@ -66,9 +114,25 @@ class StyleB2:
         self._fit_cache[key] = (z, focus, anchor)
         return self._fit_cache[key]
 
-    def world(self, cv, z, focus, anchor, fn):
-        cv.save(); cv.translate(*anchor); cv.scale(z, z); cv.translate(-focus[0], -focus[1])
+    def world(self, cv, z, focus, anchor, fn, clip=None):
+        cv.save()
+        if clip:
+            cv.clipRect(skia.Rect.MakeLTRB(*clip))
+        cv.translate(*anchor); cv.scale(z, z); cv.translate(-focus[0], -focus[1])
+        self._xf = (z, focus, anchor, clip)
         fn(cv); cv.restore()
+
+    def log_fig(self, meta, pts):
+        """Screen-space bbox of a figure (joints + head), clipped, for the text-overlap gate."""
+        if meta is None:
+            return
+        z, f, a, clip = self._xf
+        sp = [(a[0] + (p[0] - f[0]) * z, a[1] + (p[1] - f[1]) * z) for p in pts]
+        x0, y0 = min(p[0] for p in sp), min(p[1] for p in sp); x1, y1 = max(p[0] for p in sp), max(p[1] for p in sp)
+        if clip:
+            x0, y0, x1, y1 = max(x0, clip[0]), max(y0, clip[1]), min(x1, clip[2]), min(y1, clip[3])
+        if x1 > x0 and y1 > y0:
+            meta.setdefault("figs", []).append((x0, y0, x1, y1))
 
     # ---------------- face ----------------
     def face(self, cv, c, r, mood, t, look=(0.0, 0.0), z=1.0):
@@ -147,16 +211,28 @@ class StyleB2:
         self.face(cv, c, self.R, mood, t, look)
 
     # ---------------- figures ----------------
-    def stick_side(self, cv, pen, J, mood, t, seed=0):
+    def stick_side(self, cv, pen, J, mood, t, seed=0, hl=(), meta=None):
         far = Pen(t, pen.w, 0xFF8A93A0, pen.amp)
         off = (9, -6)
         F = {k: (v[0] + off[0], v[1] + off[1]) if isinstance(v, tuple) else v for k, v in J.items()}
-        cv.drawPath(far.poly([F["hip"], F["knee"], F["ankle"], F["ball"]], seed + 1), far.paint())
+        glow = 0.30 + 0.15 * math.sin(t * 2 * math.pi * 2.0)
+        for a_, b_ in hl:  # red highlight under the faulty segments
+            if a_ in J and b_ in J:
+                gp = Pen(t, pen.w * 3.4, RED, 0).paint(alpha=glow)
+                cv.drawLine(*J[a_], *J[b_], gp)
+        if "knee2" in J:
+            cv.drawPath(far.poly([J["hip"], J["knee2"], J["ankle2"], J["ball2"]], seed + 1), far.paint())
+        else:
+            cv.drawPath(far.poly([F["hip"], F["knee"], F["ankle"], F["ball"]], seed + 1), far.paint())
         cv.drawPath(far.poly([F["shoulder"], F["elbow"], F["wrist"], F["fingers"]], seed + 2), far.paint())
         cv.drawPath(pen.poly([J["hip"], J["knee"], J["ankle"], J["ball"]], seed + 3), pen.paint())
         cv.drawPath(pen.poly([J["hip"], J["shoulder"], J["neck"]], seed + 4), pen.paint())
         cv.drawPath(pen.poly([J["shoulder"], J["elbow"], J["wrist"], J["fingers"]], seed + 5), pen.paint())
-        self.head(cv, pen, self.head_c(J), mood, t, seed + 6, look=(1.0, 0.3))
+        hc = self.head_c(J)
+        self.head(cv, pen, hc, mood, t, seed + 6, look=(1.0, 0.3))
+        pts = [v for k, v in J.items() if not k.startswith("_") and isinstance(v, tuple)]
+        pts += [(hc[0] - self.R, hc[1] - self.R), (hc[0] + self.R, hc[1] + self.R)]
+        self.log_fig(meta, pts)
 
     def front_pose(self, base, t, kind):
         """Front view, FK/IK with rig lengths; returns joints + draw list."""
@@ -214,6 +290,10 @@ class StyleB2:
             e, w = P["arms"][1]
             cv.drawPath(pen.poly([sh, e, w], seed + 5), pen.paint())
             cv.drawCircle(w[0], w[1], pen.w * 1.3, pen.paint(fill=True, color=PAPER)); cv.drawCircle(w[0], w[1], pen.w * 1.3, pen.paint())
+        hc = P["head_c"]
+        pts = [hip, sh, neck, (hc[0] - self.R, hc[1] - self.R), (hc[0] + self.R, hc[1] + self.R)]
+        pts += [p for leg in P["legs"] for p in leg] + [p for arm in P["arms"] for p in arm]
+        self.log_fig(meta, pts)
         if meta is not None:
             for (k, a, b), (e, w) in zip(P["legs"], P["arms"]):
                 meta["joints"].append({"hip": hip, "knee": k, "ankle": a, "shoulder": sh, "elbow": e, "wrist": w, "neck": neck})
@@ -265,17 +345,31 @@ class StyleB2:
             cv.drawPath(pen.poly([(-s, 0), (-s * 0.3, s * 0.7), (s, -s * 0.8)], seed), pen.paint())
         cv.restore()
 
-    def guide(self, cv, kind, J, t):
+    def guide(self, cv, spec, J, t, phase):
+        g = {"type": spec} if isinstance(spec, str) else dict(spec)
+        typ = g.get("type", "line")
+        alpha = 1.0
+        if typ == "depth":  # only meaningful at the bottom of the rep
+            alpha = min(max((phase - 0.72) / 0.18, 0.0), 1.0)
+            if alpha <= 0:
+                return
         p = skia.Paint(AntiAlias=True, Color=GREEN, Style=skia.Paint.kStroke_Style, StrokeWidth=8,
                        PathEffect=skia.DashPathEffect.Make([28, 18], -t * 140))
-        if kind == "line":
-            ax, ay = J["ankle"]; sx, sy = J["shoulder"]; dx, dy = sx - ax, sy - ay; n = math.hypot(dx, dy)
-            ox, oy = dy / n * 70, -dx / n * 70
-            cv.drawLine(ax - dx / n * 60 + ox, ay - dy / n * 60 + oy, sx + dx / n * 120 + ox, sy + dy / n * 120 + oy, p)
-        elif kind == "depth":
+        p.setAlphaf(alpha)
+        if typ == "line":
+            a, b = J[g.get("a", "ankle")], J[g.get("b", "shoulder")]
+            dx, dy = b[0] - a[0], b[1] - a[1]; n = math.hypot(dx, dy)
+            off = g.get("offset", 70)
+            ox, oy = dy / n * off, -dx / n * off
+            if oy > 0: ox, oy = -ox, -oy  # always above the body
+            cv.drawLine(a[0] - dx / n * 60 + ox, a[1] - dy / n * 60 + oy, b[0] + dx / n * 120 + ox, b[1] + dy / n * 120 + oy, p)
+        elif typ == "depth":
             y = J["knee"][1]
-            cv.drawLine(J["hip"][0] - 120, y, J["knee"][0] + 80, y, p)
-        elif kind == "torso":
+            cv.drawLine(J["hip"][0] - 140, y, J["knee"][0] + 90, y, p)
+        elif typ == "vertical":
+            a = J[g.get("a", "ankle")]
+            cv.drawLine(a[0], a[1] + 20, a[0], a[1] - g.get("len", 420), p)
+        elif typ == "torso":
             hx, hy = J["hip"]; sx, sy = J["shoulder"]; dx, dy = sx - hx, sy - hy; n = math.hypot(dx, dy)
             cv.drawLine(hx - dx / n * 30, hy - dy / n * 30, sx + dx / n * 160, sy + dy / n * 160, p)
 
@@ -297,7 +391,7 @@ class StyleB2:
         for s in self.scenes:
             if s["t0"] > 0: ev.append((s["t0"] - 0.1, "whoosh"))
             ev.append((s["t0"] + 0.05, "pop"))
-            if s.get("stamp"): ev.append((s["t0"] + 0.9, "pop"))
+            if s.get("cue"): ev.append((s["t0"] + 0.45, "pop"))
             if s["type"] in ("reps", "split", "closeup"):
                 P = self.ep["rep_period"]; t = 0.55 * P
                 while t < s["t1"]:
@@ -315,36 +409,44 @@ class StyleB2:
         typ = s["type"]; logt = meta["text"]
         title_bottom = 150
         if s.get("title"):
-            title_bottom = T.block(cv, logt, "title", s["title"], "marker", 112, 540, 150, INK, BG, max_w=1000)
+            title_bottom = T.block(cv, logt, "title", s["title"], self.B.get("title_font", "marker"), 112, 540, 150, INK, BG,
+                                   max_w=1010, max_lines=2, fallback_font="kalam")
         if typ in ("reps", "closeup"):
-            J = self.pose(t, s["form"]); meta["joints"].append(J)
+            form = self.ep["forms"][s["form"]]
+            ph = rep_phase(t, self.ep["rep_period"])
+            J = self.poser(ph, form); meta["joints"].append(J)
             box = self.bbox_side([s["form"]])
-            z, f, a = self.fit(("solo", s["form"]), box, (40, 640, 1040, 1380))
+            fig_top = max(title_bottom + 50, 470)
+            z, f, a = self.fit(("solo", s["form"], fig_top), box, (40, fig_top, 1040, 1190))
+            clip = None
             if typ == "closeup":
                 fj = J[s.get("focus", "hip")]
-                zz = z * (1.35 + 0.1 * ease(ts / 2.0))
-                f = (fj[0] + s.get("dx", 0), fj[1] + s.get("dy", 0)); a = (540, 1080)
-                z = zz
+                z = z * (s.get("zoom", 1.35) + 0.1 * ease(ts / 2.0))
+                f = (fj[0] + s.get("dx", 0), fj[1] + s.get("dy", 0)); a = (540, (fig_top + 1210) / 2)
+                clip = (0, fig_top - 30, 1080, 1215)
+                # never crop the head/body: account for the punch zoom too
+                z, f = self.clamp_view(z * 1.08, f, a, self.keep_box(s["form"]), (40, fig_top - 10, 1040, 1205))
+                z /= 1.08
             pen = Pen(t, 13 / z * 1.15, INK, 2.0 / z * 1.1)
+            hl = [tuple(x) for x in form.get("highlight", [])]
             def draw(c):
                 self.floor(c, pen); self.mat(c, pen, box[0] + 10, box[2] - 10)
-                self.stick_side(c, pen, J, s.get("face", "strain"), t)
-                if typ == "closeup":
-                    self.guide(c, s.get("guide", "line"), J, t)
-                    if s.get("arrow"): self.arrow(c, J[s["arrow"]], t)
-            self.world(cv, z * punch, f, a, draw)
-            if s.get("stamp"):
-                self.mark(cv, s["stamp"], (540, 1500), 85, ts - 0.9, 3)
-            if s.get("note"):
-                k = (ts - 0.5) / 0.25
-                T.block(cv, logt, "label", s["note"], "marker", 76, 540, title_bottom + 40, GREEN, BG,
-                        scale=back_out(k) if k < 1 else 1.0, alpha=1.0 if ts > 0.5 else 0.0)
+                self.stick_side(c, pen, J, s.get("face", "strain"), t, hl=hl, meta=meta)
+                if typ == "closeup" and s.get("guide"):
+                    self.guide(c, s["guide"], J, t, ph)
+                if typ == "closeup" and s.get("arrow"):
+                    self.arrow(c, J[s["arrow"]], t)
+            self.world(cv, z * punch, f, a, draw, clip=clip)
+            self.cue_block(cv, logt, s, ts, t)
         elif typ in ("think", "conclusion"):
             kind = "think" if typ == "think" else "flex"
             P0 = self.front_pose((540, FLOOR), 0.0, kind)
             ys = [P0["head_c"][1] - self.R] + [w[1] for _, w in P0["arms"]]
             top = min(ys) - 30
-            z = (1560 - 600) / (FLOOR + 24 - top)  # character ~50% of frame height
+            z = (1560 - (680 if typ == "conclusion" else 600)) / (FLOOR + 24 - top)  # character ~46-50% of frame height
+            if typ == "think":  # bubble top (head - ~365px on screen) must clear the title block
+                hc0 = P0["head_c"][1]
+                z = min(z, (1560 - (title_bottom + 30 + 365 * 1.08)) / (FLOOR + 24 - hc0))
             P = self.front_pose((540, FLOOR), t, kind)
             pen = Pen(t, 13 / z * 1.15, INK, 2.0 / z * 1.1)
             def draw(c):
@@ -354,9 +456,10 @@ class StyleB2:
                     self.floor(c, pen, 250, 830)
                 self.stick_front(c, pen, P, s.get("face", "worried"), t, meta, kind)
                 if typ == "think":
-                    hip = P["hip"]; zp = Pen(t, 9, RED)
-                    c.drawPath(zp.poly([(hip[0] + 30, hip[1] - 70), (hip[0] + 70, hip[1] - 48), (hip[0] + 45, hip[1] - 26), (hip[0] + 92, hip[1] - 4)], 5), zp.paint())
+                    self.pain(c, P, s.get("pain", "lower_back"), t)
             self.world(cv, z * punch, (540, FLOOR + 24), (540, 1560), draw)
+            if typ == "conclusion" and s.get("sub"):
+                pass
             if typ == "think":
                 hc = P["head_c"]
                 # bubble in screen space, up-left of the head
@@ -371,6 +474,7 @@ class StyleB2:
                     cv.save(); bc = (hs[0] - 290, hs[1] - 240 + bob); cv.translate(*bc); cv.scale(sc, sc); cv.translate(-bc[0], -bc[1])
                     self.bubble(cv, bc, 150, 115, t, s.get("bubble", "?"))
                     cv.restore()
+                    meta.setdefault("figs", []).append((bc[0] - 155, bc[1] - 120, bc[0] + 155, bc[1] + 120))
             else:
                 for k, (x, y, sz) in enumerate(((170, 820, 34), (900, 760, 42), (130, 1250, 26), (950, 1180, 30), (985, 720, 22))):
                     self.sparkle(cv, (x, y), sz, t, k)
@@ -385,17 +489,57 @@ class StyleB2:
                 bad = sd["form"] != "good"
                 if cols:
                     x0 = 20 if k == 0 else 550
-                    z, f, a = self.fit(("splitc", k), box, (x0, 560, x0 + 510, 1560))
+                    z, f, a = self.fit(("splitc", k), box, (x0 + 10, 600, x0 + 500, 1560))
                     lab_c, lab_y, mk = x0 + 230, 330, (x0 + 255, 470)
                 else:
                     z, f, a = self.fit(("split", k), box, (50, y0 + 130, 1030, y0 + 600))
                     lab_c, lab_y, mk = 540, y0 + 20, (900, y0 + 60)
                 pen = Pen(t, 12 / z * 1.1, INK, 2.0 / z)
-                def draw(c, J=J, bad=bad, pen=pen):
+                hl = [tuple(x) for x in self.ep["forms"][sd["form"]].get("highlight", [])]
+                def draw(c, J=J, bad=bad, pen=pen, hl=hl):
                     self.floor(c, pen); self.mat(c, pen, box[0] + 10, box[2] - 10)
-                    self.stick_side(c, pen, J, "worried" if bad else "happy", t, seed=k * 20)
+                    self.stick_side(c, pen, J, "worried" if bad else "happy", t, seed=k * 20, hl=hl, meta=meta)
                 self.world(cv, z * punch, f, a, draw)
                 T.block(cv, logt, "label", sd["label"], "marker", 80, lab_c, lab_y, RED if bad else GREEN, BG, max_w=500)
                 self.mark(cv, "bad" if bad else "good", mk, 46, ts - 0.15 - k * 0.35, 9 + k)
             dv = [(540, 330), (540, 1560)] if cols else [(60, 955), (1020, 955)]
             cv.drawPath(Pen(t, 6, 0xFF7C8796).poly(dv, 55), Pen(t, 6, 0xFF7C8796).paint())
+
+    def pain(self, c, P, where, t):
+        """Red zigzag at the JSON-given pain spot (front pose)."""
+        hip, sh, neck = P["hip"], P["shoulder"], P["neck"]
+        knee = P["legs"][1][0]
+        spot = {"lower_back": (hip[0] + 30, hip[1] - 70), "hip": (hip[0] + 30, hip[1] - 20),
+                "knee": (knee[0] + 28, knee[1] - 30), "shoulder": (sh[0] + 30, sh[1] - 10),
+                "neck": (neck[0] + 26, neck[1] - 6), "hamstring": ((hip[0] + knee[0]) / 2 + 26, (hip[1] + knee[1]) / 2 - 20),
+                "wrist": (P["arms"][0][1][0] - 70, P["arms"][0][1][1] - 30)}[where]
+        zp = Pen(t, 9, RED)
+        x, y = spot
+        c.drawPath(zp.poly([(x, y), (x + 40, y + 22), (x + 15, y + 44), (x + 62, y + 66)], 5), zp.paint())
+        c.drawPath(zp.poly([(x + 70, y - 6), (x + 92, y + 8)], 7), zp.paint())
+
+    def cue_block(self, cv, logt, s, ts, t):
+        """Lower-third block under horizontal figures: big wrong/right cue + rep counter."""
+        y = 1250
+        cue = s.get("cue")
+        if cue and ts > 0.45:
+            k = (ts - 0.45) / 0.25
+            sc = back_out(k) if k < 1 else 1.0
+            col = RED if cue.get("kind") == "bad" else GREEN
+            cap = 84; iw = 70
+            while True:  # one line only: shrink (not below 70 px cap) until it fits
+                f_ = skia.Font(T.typeface("marker"), cap / T.cap_ratio("marker"))
+                tw = f_.measureText(cue["text"])
+                if tw + iw + 30 <= 1000 or cap <= 70:
+                    break
+                cap -= 2
+            x0 = 540 - (tw + iw + 30) / 2
+            cv.save(); cv.translate(540, y + cap / 2); cv.scale(sc, sc); cv.translate(-540, -(y + cap / 2))
+            self.mark(cv, cue.get("kind", "bad"), (x0 + iw / 2, y + cap / 2), 30, 1.0, 21)
+            cv.restore()
+            T.block(cv, logt, "label", cue["text"], "marker", cap, x0 + iw + 30 + tw / 2, y, col, BG, scale=sc, max_w=tw + 2)
+        if s.get("counter"):
+            P = self.ep["rep_period"]
+            n = int(math.floor((t - 0.55 * P) / P) - math.floor((s["t0"] - 0.55 * P) / P))
+            if n >= 1:
+                T.block(cv, logt, "label", f"REP {n}", "marker", 90, 540, 1410, INK, BG)
