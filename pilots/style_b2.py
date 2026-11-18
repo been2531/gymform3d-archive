@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import skia
 from .rig import (Body, pushup_pose, squat_pose, plank_pose, lunge_pose, bridge_pose, hinge_pose,
-                  hand_x_for, rep_phase, rep_concentric, REP_DONE, add, d, two_bone)
+                  hand_x_for, rep_phase, rep_concentric, REP_DONE, add, d, two_bone, fault)
 from . import text as T
 from . import claims
 from .style_b import Pen, ease, back_out, BG, INK, RED, GREEN
@@ -46,6 +46,11 @@ def scene_shown_muscles(ep, sc):
     if t == "conclusion":
         return [m for m in base if m in FRONT_DRAWN]
     return list(base)  # split (good panel)
+
+
+COMPARE_LABEL_CAP = 80     # comparison panel label (WRONG / RIGHT) cap height
+COMPARE_MARK = 46          # verdict glyph half-size
+COMPARE_MARK_GAP = 42      # clear space between the label's last pixel row and the glyph
 
 
 def scene_texts(sc):
@@ -281,7 +286,7 @@ class StyleB2:
         self.face(cv, c, self.R, mood, t, look)
 
     # ---------------- figures ----------------
-    def stick_side(self, cv, pen, J, mood, t, seed=0, hl=(), meta=None, muscles=None, pulse=0.0):
+    def stick_side(self, cv, pen, J, mood, t, seed=0, hl=(), meta=None, muscles=None, pulse=0.0, heel=0.0):
         far = Pen(t, pen.w, 0xFF8A93A0, pen.amp)
         off = (9, -6)
         F = {k: (v[0] + off[0], v[1] + off[1]) if isinstance(v, tuple) else v for k, v in J.items()}
@@ -305,6 +310,8 @@ class StyleB2:
                     meta.setdefault("hl", []).append((pen.w * 1.5 * z, ln * z))
         hc = self.head_c(J)
         self.head_profile(cv, pen, hc, J, mood, t, seed + 6, meta)
+        if heel >= 20.0:  # heel clearly off the mat: mark the gap so the lift reads at a glance
+            self.heel_gap(cv, pen, J)
         pts = [v for k, v in J.items() if not k.startswith("_") and isinstance(v, tuple)]
         pts += [(hc[0] - self.R, hc[1] - self.R), (hc[0] + self.R, hc[1] + self.R)]
         self.log_fig(meta, pts)
@@ -519,6 +526,34 @@ class StyleB2:
             for (k, a, b), (e, w) in zip(P["legs"], P["arms"]):
                 meta["joints"].append({"hip": hip, "knee": k, "ankle": a, "shoulder": sh, "elbow": e, "wrist": w, "neck": neck})
 
+    # ---------------- heel lift ----------------
+    def heel_gap(self, cv, pen, J):
+        """Mark the wedge of air under a lifted heel, and where the heel belongs.
+
+        A heel off the mat is the whole point of HEELS UP, but the whole lift is at most one
+        foot length (~4% of frame height), so a slightly steeper foot line reads as nothing on
+        a phone (v6 defect). The gap under the sole is shaded faint red and outlined, and a
+        small arrow stands on the mat behind the heel, pointing up at the lifted heel.
+        """
+        hx, hy = J["ankle"]; bx, by = J["ball"]; fy = FLOOR - 6.0
+        lift = fy - hy
+        if lift < 20:
+            return
+        w = max(pen.w * 0.55, 4.0)
+        # the air under the sole: shaded so the empty wedge reads as a shape of its own, and
+        # outlined in red so the lifted heel has a visible edge (the heel is off the mat - that
+        # IS the fault - and a slightly steeper foot line on its own reads as nothing on a phone)
+        gap = skia.Path()
+        gap.moveTo(*J["ankle"]); gap.lineTo(*J["ball"]); gap.lineTo(bx, fy); gap.lineTo(hx, fy); gap.close()
+        cv.drawPath(gap, Pen(0, 0, RED).paint(fill=True, alpha=0.34))
+        cv.drawPath(gap, Pen(0, w * 1.2, RED).paint())
+        # a small arrow standing on the mat just behind the heel, pointing up at the lifted
+        # heel: reads as 'heel is up' even where the gap itself is only a few dozen pixels
+        ax = hx - 40
+        cv.drawLine(ax, fy - 8, ax, hy + 26, Pen(0, w, RED).paint())
+        hp = skia.Path(); hp.moveTo(ax - 16, hy + 48); hp.lineTo(ax, hy + 16); hp.lineTo(ax + 16, hy + 48)
+        cv.drawPath(hp, Pen(0, w, RED).paint())
+
     # ---------------- props ----------------
     def mat(self, cv, pen, x0, x1, meta=None):
         r = skia.Rect.MakeLTRB(x0, FLOOR - 4, x1, FLOOR + 22)
@@ -569,6 +604,24 @@ class StyleB2:
         else:
             cv.drawPath(pen.poly([(-s, 0), (-s * 0.3, s * 0.7), (s, -s * 0.8)], seed), pen.paint())
         cv.restore()
+
+    def verdict(self, cv, kind, cx, label_bottom, t_since, seed):
+        """Verdict glyph placed *below* a label block, a full COMPARE_MARK_GAP clear of its
+        measured bottom: the stroke widths and the label's descenders used to leave the two
+        touching (v6: the red X sat on WRONG's baseline). Returned so callers can place
+        whatever follows under the same rhythm."""
+        cy = label_bottom + COMPARE_MARK_GAP + COMPARE_MARK
+        self.mark(cv, kind, (cx, cy), COMPARE_MARK, t_since, seed)
+        return cy + COMPARE_MARK
+
+    def compare_label(self, cv, logt, text, color, kind, cx, top, t_since, seed, alpha=1.0, max_w=500):
+        """One comparison panel's caption + verdict glyph (shared by every split reel).
+        The glyph always goes underneath, never inside the caption's own box."""
+        bottom = T.block(cv, logt, "label", text, "marker", COMPARE_LABEL_CAP, cx, top, color, BG,
+                         max_w=max_w, alpha=alpha)
+        if alpha > 0:
+            self.verdict(cv, kind, cx, bottom, t_since, seed)
+        return bottom
 
     def guide(self, cv, spec, J, t, phase):
         g = {"type": spec} if isinstance(spec, str) else dict(spec)
@@ -652,6 +705,35 @@ class StyleB2:
             out[name] = round(worst, 3)
         return out
 
+    # ---------------- top title ----------------
+    TITLE_TOP, TITLE_CAP = 150, 112
+
+    def top_title(self, cv, logt, s, J, Jp):
+        """Top title of the scene.
+
+        A title that names a posture (HIPS BELOW KNEES) is only true while the body in
+        frame shows it, so it goes off the moment the figure stands up - which left the
+        top of the close-up empty for the whole rising part of the rep (v6: 10.6 s).
+        A scene may give `title_up` for that other half of the rep; the two are drawn into
+        one fixed slot, so the figure below never shifts when the caption swaps.
+        """
+        ttl = s.get("title")
+        if not ttl:
+            return self.TITLE_TOP
+        font = self.B.get("title_font", "marker")
+        kw = dict(max_w=1010, max_lines=2, fallback_font="kalam")
+        up = s.get("title_up")
+        # reserve the tallest of the two: the swappable captions must not move the figure
+        slot = T.extent(ttl, font, self.TITLE_CAP, self.TITLE_TOP, **kw)
+        if up:
+            slot = max(slot, T.extent(up, font, self.TITLE_CAP, self.TITLE_TOP, **kw))
+        a = self.claim_alpha(ttl, J, Jp)
+        if a > 0:
+            T.block(cv, logt, "title", ttl, font, self.TITLE_CAP, 540, self.TITLE_TOP, INK, BG, alpha=a, **kw)
+        if up and a < 1.0:  # the standing / recovery half of the rep keeps a caption on top
+            T.block(cv, logt, "title", up, font, self.TITLE_CAP, 540, self.TITLE_TOP, INK, BG, alpha=1.0 - a, **kw)
+        return slot
+
     def render(self, cv, t, meta):
         if t == 0:
             meta["fault_sep"] = self.fault_separation()
@@ -673,11 +755,7 @@ class StyleB2:
         if typ in ("reps", "closeup"):
             J0 = self.poser(rep_phase(t, self.ep["rep_period"]), self.ep["forms"][s["form"]])
             Jp0 = self.poser(rep_phase(max(t - 0.12, 0.0), self.ep["rep_period"]), self.ep["forms"][s["form"]])
-        title_bottom = 150
-        if s.get("title"):
-            title_bottom = T.block(cv, logt, "title", s["title"], self.B.get("title_font", "marker"), 112, 540, 150, INK, BG,
-                                   max_w=1010, max_lines=2, fallback_font="kalam",
-                                   alpha=self.claim_alpha(s["title"], J0, Jp0))
+        title_bottom = self.top_title(cv, logt, s, J0, Jp0)
         if typ in ("reps", "closeup"):
             form = self.ep["forms"][s["form"]]
             ph = rep_phase(t, self.ep["rep_period"])
@@ -708,7 +786,8 @@ class StyleB2:
             def draw(c):
                 self.floor(c, pen, meta=meta); self.mat(c, pen, box[0] + 10, box[2] - 10, meta=meta)
                 self.stick_side(c, pen, J, s.get("face", "strain"), t, hl=hl, meta=meta,
-                                muscles=scene_shown_muscles(self.ep, s), pulse=rep_concentric(t, self.ep["rep_period"]))
+                                muscles=scene_shown_muscles(self.ep, s), pulse=rep_concentric(t, self.ep["rep_period"]),
+                                heel=form.get("heel", 0.0) * fault(ph))
                 if typ == "closeup" and s.get("guide"):
                     self.guide(c, s["guide"], J, t, ph)
                 if typ == "closeup" and s.get("arrow"):
@@ -775,28 +854,35 @@ class StyleB2:
                 z, f, _ = self.fit(("split", 0), box, (50, 430, 1030, 900))
             for k, side in enumerate(("top", "bottom")):
                 sd = s[side]; J = self.pose(t, sd["form"], offset=off); meta["joints"].append(J)
+                ph_s = rep_phase(t, self.ep["rep_period"], off)
                 y0 = 300 if k == 0 else 975
                 bad = sd["form"] != "good"
                 if cols:
                     x0 = 20 if k == 0 else 550
                     a = (x0 + 255, 1560)
-                    lab_c, lab_y, mk = x0 + 230, 330, (x0 + 255, 470)
+                    lab_c, lab_y = x0 + 230, 330
                 else:
                     a = (540, y0 + 600)
-                    lab_c, lab_y, mk = 540, y0 + 20, (900, y0 + 60)
+                    lab_c, lab_y = 540, y0 + 20
                 pen = Pen(t, 12 / z * 1.1, INK, 2.0 / z)
                 hl = [tuple(x) for x in self.ep["forms"][sd["form"]].get("highlight", [])]
                 def draw(c, J=J, bad=bad, pen=pen, hl=hl):
                     self.floor(c, pen); self.mat(c, pen, box[0] + 10, box[2] - 10)
                     self.stick_side(c, pen, J, "worried" if bad else "happy", t, seed=k * 20, hl=hl, meta=meta,
                                     muscles=None if bad else scene_shown_muscles(self.ep, s),
-                                    pulse=rep_concentric(t, self.ep["rep_period"], off))
+                                    pulse=rep_concentric(t, self.ep["rep_period"], off),
+                                    heel=self.ep["forms"][sd["form"]].get("heel", 0.0) * fault(ph_s))
                 self.world(cv, z * punch, f, a, draw)
                 la = self.claim_alpha(sd["label"], J, self.pose(max(t - 0.12, 0.0), sd["form"], offset=off))
                 if la > 0:
-                    T.block(cv, logt, "label", sd["label"], "marker", 80, lab_c, lab_y, RED if bad else GREEN, BG, max_w=500,
-                            alpha=la)
-                    self.mark(cv, "bad" if bad else "good", mk, 46, ts - 0.15 - k * 0.35, 9 + k)
+                    if cols:  # stacked: caption, a full gap, then the verdict glyph under it
+                        self.compare_label(cv, logt, sd["label"], RED if bad else GREEN, "bad" if bad else "good",
+                                           lab_c, lab_y, ts - 0.15 - k * 0.35, 9 + k, alpha=la)
+                    else:  # side by side: the glyph sits clear to the right of the caption box
+                        T.block(cv, logt, "label", sd["label"], "marker", COMPARE_LABEL_CAP, lab_c, lab_y,
+                                RED if bad else GREEN, BG, max_w=500, alpha=la)
+                        self.mark(cv, "bad" if bad else "good", (lab_c + 360, lab_y + COMPARE_LABEL_CAP * 0.6),
+                                  COMPARE_MARK, ts - 0.15 - k * 0.35, 9 + k)
             dv = [(540, 330), (540, 1560)] if cols else [(60, 955), (1020, 955)]
             cv.drawPath(Pen(t, 6, 0xFF7C8796).poly(dv, 55), Pen(t, 6, 0xFF7C8796).paint())
 
