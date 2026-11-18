@@ -21,7 +21,7 @@
       "shin": 62,
       "thigh": 170,
       "lean": 14,
-      "heel": 22,
+      "heel": 45,
       "head": 18,
       "highlight": [
         [
@@ -112,6 +112,7 @@
         },
         "face": "happy",
         "title": "HIPS BELOW KNEES",
+        "title_up": "STAND TALL",
         "cue": {
           "text": "HEELS DOWN",
           "kind": "good"

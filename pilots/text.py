@@ -56,19 +56,33 @@ def wrap(font, text, max_w):
     return lines
 
 
-def block(cv, log, role, text, font_name, cap_px, cx, top, color, bg, max_w=980, scale=1.0, alpha=1.0,
-          outline=None, align="center", line_gap=0.35, max_lines=None, fallback_font=None):
-    """Draw centred text whose CAP HEIGHT is cap_px (before pop scale). Returns bottom y.
-    max_lines: if the wrap needs more lines, retry with fallback_font (narrower) at the same cap height."""
-    size = cap_px / cap_ratio(font_name)
-    font = skia.Font(typeface(font_name), size)
+def layout(text, font_name, cap_px, max_w=980, max_lines=None, fallback_font=None):
+    """(font, lines) a block would use. max_lines: if the wrap needs more lines, retry with
+    fallback_font (narrower) at the same cap height."""
+    font = skia.Font(typeface(font_name), cap_px / cap_ratio(font_name))
     font.setEdging(skia.Font.Edging.kAntiAlias)
     lines = wrap(font, text, max_w)
     if max_lines and len(lines) > max_lines and fallback_font:
         f2 = skia.Font(typeface(fallback_font), cap_px / cap_ratio(fallback_font)); f2.setEdging(skia.Font.Edging.kAntiAlias)
         l2 = wrap(f2, text, max_w)
         if len(l2) < len(lines):
-            font, lines, font_name = f2, l2, fallback_font
+            font, lines = f2, l2
+    return font, lines
+
+
+def extent(text, font_name, cap_px, top, max_w=980, max_lines=None, fallback_font=None, line_gap=0.35):
+    """Bottom y a block would reach, measured without drawing: lets a layout reserve a slot
+    large enough for the tallest of the texts that can occupy it, so a caption swap inside a
+    scene never moves what sits under it (the figure keeps its position)."""
+    _, lines = layout(text, font_name, cap_px, max_w, max_lines, fallback_font)
+    return top + len(lines) * cap_px * (1.0 + line_gap + 0.15) - cap_px * line_gap
+
+
+def block(cv, log, role, text, font_name, cap_px, cx, top, color, bg, max_w=980, scale=1.0, alpha=1.0,
+          outline=None, align="center", line_gap=0.35, max_lines=None, fallback_font=None):
+    """Draw centred text whose CAP HEIGHT is cap_px (before pop scale). Returns bottom y.
+    max_lines: if the wrap needs more lines, retry with fallback_font (narrower) at the same cap height."""
+    font, lines = layout(text, font_name, cap_px, max_w, max_lines, fallback_font)
     widest = max(font.measureText(ln) for ln in lines)
     paint = skia.Paint(AntiAlias=True, Color=color); paint.setAlphaf(alpha)
     y = top
