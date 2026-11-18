@@ -35,12 +35,17 @@ def ang(a, b):
 @dataclass
 class Body:
     H: float = 800.0  # standing height in px (world units)
+    # Foot length (ankle -> ball, i.e. the sole) as a fraction of standing height.
+    # 0.105 was a stub that made a lifted heel read as nothing on a phone; 0.152 is the
+    # anthropometric norm (~15% of stature) and is what makes the 45-degree heel lift in
+    # the squat read as air under the sole at phone size (style B2 renders at 0.152).
+    foot: float = 0.105
 
     def __post_init__(self):
         H = self.H
         self.L = {
             "upper_arm": 0.180 * H, "forearm": 0.150 * H, "hand": 0.085 * H,
-            "thigh": 0.245 * H, "shin": 0.246 * H, "foot": 0.105 * H,
+            "thigh": 0.245 * H, "shin": 0.246 * H, "foot": self.foot * H,
             "torso": 0.290 * H, "neck": 0.055 * H, "head": 0.075 * H,
         }
 
@@ -76,6 +81,24 @@ def two_bone(S, W, l1, l2, prefer_left=True, pick=None):
     v = (W2[0] - E[0], W2[1] - E[1]); n = math.hypot(*v)
     W3 = (E[0] + v[0] / n * l2, E[1] + v[1] / n * l2)
     return E, W3
+
+
+TOE_DROP = 15.0     # a flat foot: the sole sits this far off the mat at the heel end
+FLAT_FOOT = 180.0 - TOE_DROP   # foot line (ball -> ankle) of a flat foot on the mat
+SOLE_Y = 0.012      # the ball rests this far (body heights) above the floor, on the mat's top
+
+
+def ankle_from_ball(body: Body, ball, heel=0.0):
+    """Ankle of a foot whose ball is planted on the mat. A lifted heel pivots on the ball,
+    so the heel rises by foot_len * sin(TOE_DROP + heel) - the reason foot length sets how big
+    a heel lift looks. Standing poses anchor on the ball this way (not on the ankle) so a
+    foot longer than the old stub cannot push the toe through the floor."""
+    return add(ball, d(FLAT_FOOT - heel), body.L["foot"])
+
+
+def ball_x_from_ankle(body: Body, ankle_x: float):
+    """Ball x of a flat-footed sole whose heel end sits at ankle_x."""
+    return ankle_x + math.cos(math.radians(TOE_DROP)) * body.L["foot"]
 
 
 def pushup_pose(body: Body, phase: float, form: dict, floor_y: float, ball_x: float, hand_x: float):
@@ -219,8 +242,8 @@ def squat_pose(body: Body, phase: float, form: dict, floor_y: float, ankle_x: fl
     shin_b = float(form.get("shin", 52.0 - form.get("knee_fwd", 0.0)))
     thigh_b = float(form.get("thigh", 196.0))
     lean = 42.0 * k + float(form.get("lean", 0.0)) * fw   # lean = extra forward torso lean
-    ball = add((ankle_x, floor_y - 0.04 * body.H), d(-22.0), L["foot"])
-    ankle = add(ball, d(158.0 - heel), L["foot"])  # heel lift pivots on the ball
+    ball = (ball_x_from_ankle(body, ankle_x), floor_y - SOLE_Y * body.H)  # sole planted on the mat
+    ankle = ankle_from_ball(body, ball, heel)  # heel lift pivots on the ball
     knee = add(ankle, d(90.0 - (38.0 * k) + (shin_b - 52.0) * fw), L["shin"])
     hip = add(knee, d(90.0 + 106.0 * k + (thigh_b - 196.0) * fw), L["thigh"])
     t_ang = 90.0 - lean
@@ -282,8 +305,8 @@ def lunge_pose(body: Body, phase: float, form: dict, floor_y: float, mid_x: floa
     back leg = knee2/ankle2/ball2. form: depth, lean, fwd (hip shift fwd, xH), heel."""
     L = body.L; Hh = body.H
     dpt = form.get("depth", 1.0) * phase
-    ankle_f = (mid_x + 0.26 * Hh, floor_y - 0.04 * Hh)
-    ball_f = add(ankle_f, d(-22.0), L["foot"])
+    ball_f = (ball_x_from_ankle(body, mid_x + 0.26 * Hh), floor_y - SOLE_Y * Hh)
+    ankle_f = ankle_from_ball(body, ball_f)
     ball_b = (mid_x - 0.36 * Hh, floor_y - 0.01 * Hh)
     ankle_b = add(ball_b, d(130.0), L["foot"])
     leg = L["thigh"] + L["shin"]
@@ -329,8 +352,8 @@ def hinge_pose(body: Body, phase: float, form: dict, floor_y: float, ankle_x: fl
     knee bend = 'squatting the hinge'), lean (max torso lean from vertical), head."""
     L = body.L
     p = phase
-    ankle = (ankle_x, floor_y - 0.04 * body.H)
-    ball = add(ankle, d(-22.0), L["foot"])
+    ball = (ball_x_from_ankle(body, ankle_x), floor_y - SOLE_Y * body.H)
+    ankle = ankle_from_ball(body, ball)
     kb = form.get("knee", 0.0)
     kf = kb * fault(p)  # a 'squatted' hinge keeps bent knees all rep
     knee = add(ankle, d(90.0 - 9.0 * p - kf * 0.45), L["shin"])

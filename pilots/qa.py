@@ -194,6 +194,7 @@ FILL_H_MIN = 0.17        # horizontal poses (push-up/plank/bridge): >= 17% of fr
 MUSCLE_MIN_PX2 = 1500    # every target muscle shape on screen, every solo frame
 FAULT_MIN = 0.06         # wrong vs good form: >= 6% of body height apart at the least visible moment
 HL_MIN_W = 18            # fault band width on screen (px)
+HEEL_GAP_MIN = 0.050     # a lifted heel: the air under the sole, as a fraction of the frame height
 
 
 def _b2_gates(gates, ep, metas, body=None):
@@ -267,6 +268,17 @@ def _b2_gates(gates, ep, metas, body=None):
     gates["think_end_variant_valid"] = (var.get("think", "scratch") in ("scratch", "shrug", "hold")
                                         and var.get("conclusion", "flex") in ("flex", "victory", "thumbs"), var)
     gates["fault_joint_delta"] = _fault_joint_delta(ep, metas, getattr(body, "H", 760.0))
+    # a heel that is off the mat has to be visibly off it on a phone, from the pose alone:
+    # at the bottom of the rep the air under the sole is at least HEEL_GAP_MIN of the frame
+    # height. The 0.105 stub peaked at 89 px; the 0.152 sole peaks at 118 px.
+    lifts = [hl for m in metas for hl in m.get("heel_lift", [])]
+    if lifts:
+        gap = max(g for g, _ in lifts); sole = max(s for _, s in lifts)
+        gates["heel_lift_legible"] = (gap >= HEEL_GAP_MIN * 1920,
+                                      f"max gap {gap:.0f}px ({gap / 1920:.1%} of frame) under a {sole:.0f}px sole "
+                                      f"over {len(lifts)} lifted frames")
+    else:
+        gates["heel_lift_legible"] = (True, "no heel lift in this episode")
 
 
 def _interior(J, a, b, c):

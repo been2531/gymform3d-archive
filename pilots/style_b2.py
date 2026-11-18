@@ -19,6 +19,11 @@ GOLD = 0xFFD79A00
 MUSCLE = 0xFFFF7A00       # target-muscle accent (orange; red stays reserved for faults)
 MUSCLE_INK = 0xFFC2410C
 HEAD_SCALE = {"bridge": 0.8}  # lying poses: smaller head so shoulders/torso read
+FOOT_LEN = 0.152      # sole (ankle -> ball) as a fraction of standing height: the anthropometric
+                      # norm, 1.45x the old 0.105 stub. It is what makes a 45-degree heel lift
+                      # read as air under the sole on a phone (v7 needed a red arrow to say it).
+FRONT_FOOT = 0.38     # front view: the foot points at the camera, so only this much sole shows
+GAP_ALPHA = 0.30      # heel-lift wedge: faint shade, no extra strokes or arrow (v8 simplicity)
 MUSCLES = ("quads", "glutes", "hamstrings", "chest", "triceps", "core", "shoulders", "calves")
 THINK_VARIANTS = ("scratch", "shrug", "hold")
 TALL = ("squat", "hinge", "lunge")
@@ -101,7 +106,7 @@ PAIN_SPOTS = ("lower_back", "knee", "shoulder", "wrist", "hamstring", "neck", "h
 class StyleB2:
     def __init__(self, ep):
         self.ep = ep; self.B = ep.get("B2") or ep["B"]; self.scenes = self.B["scenes"]
-        self.body = Body(H=760)
+        self.body = Body(H=760, foot=FOOT_LEN)
         self.R = 0.105 * self.body.H * HEAD_SCALE.get(ep.get("exercise"), 1.0)  # head radius (world)
         self.muscles = [m for m in ep.get("muscles", []) if m in MUSCLES]
         self.poser = Poser(self.body, ep)
@@ -310,8 +315,8 @@ class StyleB2:
                     meta.setdefault("hl", []).append((pen.w * 1.5 * z, ln * z))
         hc = self.head_c(J)
         self.head_profile(cv, pen, hc, J, mood, t, seed + 6, meta)
-        if heel >= 20.0:  # heel clearly off the mat: mark the gap so the lift reads at a glance
-            self.heel_gap(cv, pen, J)
+        if heel >= 20.0:  # heel clearly off the mat: shade the air under the sole
+            self.heel_gap(cv, pen, J, meta)
         pts = [v for k, v in J.items() if not k.startswith("_") and isinstance(v, tuple)]
         pts += [(hc[0] - self.R, hc[1] - self.R), (hc[0] + self.R, hc[1] + self.R)]
         self.log_fig(meta, pts)
@@ -449,7 +454,7 @@ class StyleB2:
         for s in (-1, 1):
             knee = add(hip, d(-90 + s * 11), L["thigh"])
             ankle = add(knee, d(-90 + s * 4), L["shin"])
-            legs.append((knee, ankle, add(ankle, d(90 - s * 90), L["foot"] * 0.55)))
+            legs.append((knee, ankle, add(ankle, d(90 - s * 90), L["foot"] * FRONT_FOOT)))
         sh = add(hip, d(90 + 1.5 * bob), L["torso"])
         neck = add(sh, d(90), L["neck"])
         hc = (neck[0], neck[1] - self.R * 1.0)
@@ -527,32 +532,27 @@ class StyleB2:
                 meta["joints"].append({"hip": hip, "knee": k, "ankle": a, "shoulder": sh, "elbow": e, "wrist": w, "neck": neck})
 
     # ---------------- heel lift ----------------
-    def heel_gap(self, cv, pen, J):
-        """Mark the wedge of air under a lifted heel, and where the heel belongs.
+    def heel_gap(self, cv, pen, J, meta=None):
+        """Shade the wedge of air under a lifted heel.
 
-        A heel off the mat is the whole point of HEELS UP, but the whole lift is at most one
-        foot length (~4% of frame height), so a slightly steeper foot line reads as nothing on
-        a phone (v6 defect). The gap under the sole is shaded faint red and outlined, and a
-        small arrow stands on the mat behind the heel, pointing up at the lifted heel.
+        A heel off the mat is the whole point of HEELS UP. With the sole drawn at its real
+        length (FOOT_LEN) the 45-degree lift is a wedge worth 6% of the frame height, so the
+        pose alone says it on a phone and the mark only has to name the empty space: a faint
+        shade, with the sole itself already re-inked red by the form's highlight. The small red
+        arrow that stood on the mat behind the heel (v7) is gone - next to the joint it was a
+        speck of noise, and the sole line it duplicated is already there.
         """
         hx, hy = J["ankle"]; bx, by = J["ball"]; fy = FLOOR - 6.0
         lift = fy - hy
         if lift < 20:
             return
-        w = max(pen.w * 0.55, 4.0)
-        # the air under the sole: shaded so the empty wedge reads as a shape of its own, and
-        # outlined in red so the lifted heel has a visible edge (the heel is off the mat - that
-        # IS the fault - and a slightly steeper foot line on its own reads as nothing on a phone)
         gap = skia.Path()
         gap.moveTo(*J["ankle"]); gap.lineTo(*J["ball"]); gap.lineTo(bx, fy); gap.lineTo(hx, fy); gap.close()
-        cv.drawPath(gap, Pen(0, 0, RED).paint(fill=True, alpha=0.34))
-        cv.drawPath(gap, Pen(0, w * 1.2, RED).paint())
-        # a small arrow standing on the mat just behind the heel, pointing up at the lifted
-        # heel: reads as 'heel is up' even where the gap itself is only a few dozen pixels
-        ax = hx - 40
-        cv.drawLine(ax, fy - 8, ax, hy + 26, Pen(0, w, RED).paint())
-        hp = skia.Path(); hp.moveTo(ax - 16, hy + 48); hp.lineTo(ax, hy + 16); hp.lineTo(ax + 16, hy + 48)
-        cv.drawPath(hp, Pen(0, w, RED).paint())
+        cv.drawPath(gap, Pen(0, 0, RED).paint(fill=True, alpha=GAP_ALPHA))
+        if meta is not None:  # how big the lift is *on screen*, for the heel_lift_legible gate
+            z, f, a, _ = self._xf
+            meta.setdefault("heel_lift", []).append((round((fy - hy) * z, 1),
+                                                     round(math.hypot(bx - hx, by - hy) * z, 1)))
 
     # ---------------- props ----------------
     def mat(self, cv, pen, x0, x1, meta=None):
