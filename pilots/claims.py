@@ -16,6 +16,8 @@ figure faces right), scaled by the character height H so thresholds are device-f
 from __future__ import annotations
 import math
 
+from .rig import FLAT_FOOT
+
 # phrase as it appears on screen -> claim id
 CLAIMS = {
     "HIPS BELOW KNEES": "hips_below_knees",
@@ -42,8 +44,8 @@ NEEDS = {
     "sit_back": ("hip", "ankle"),
 }
 
-HEEL_UP_MAX = 148.0     # foot (ball->ankle) steeper than this = heel off the floor
-HEEL_DOWN_MIN = 153.0   # ... flatter than this = heel planted (158 = flat foot)
+HEEL_UP_MIN = 18.0      # foot tilted at least this far above flat = heel is off the floor
+HEEL_DOWN_MAX = 6.0     # ... within this much of flat = heel is planted
 BODY_EPS = 0.01         # 1% of standing height: "level with" tolerance
 
 
@@ -54,7 +56,7 @@ def claims_in(text):
 
 
 def foot_angle(J):
-    """Degrees of the foot line from the floor, ball -> ankle (flat foot ~158)."""
+    """Degrees of the foot line from the floor, ball -> ankle (rig.FLAT_FOOT when flat)."""
     return math.degrees(math.atan2(-(J["ankle"][1] - J["ball"][1]), J["ankle"][0] - J["ball"][0]))
 
 
@@ -73,9 +75,9 @@ def measure(claim, J, H):
     if claim == "hips_below_knees":
         return J["hip"][1] >= J["knee"][1] + BODY_EPS * H
     if claim == "heels_up":
-        return foot_angle(J) <= HEEL_UP_MAX
+        return foot_angle(J) <= FLAT_FOOT - HEEL_UP_MIN
     if claim == "heels_down":
-        return foot_angle(J) >= HEEL_DOWN_MIN
+        return foot_angle(J) >= FLAT_FOOT - HEEL_DOWN_MAX
     if claim == "chest_to_floor":
         return (J["ball"][1] - J["shoulder"][1]) <= 0.22 * H
     if claim == "straight_line":
