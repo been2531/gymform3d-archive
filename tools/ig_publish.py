@@ -58,6 +58,31 @@ def api_call(method: str, path: str, **params):
         raise SystemExit(f"API {method} {path} -> HTTP {e.code}: {body[:800]}")
 
 
+def sync_and_push(repo, env=None, run=subprocess.run, branch="main"):
+    """Push local commits to origin/<branch> even if the remote advanced (e.g. a PR merged elsewhere).
+
+    fetch -> rebase local work onto origin/<branch> -> push; on rejection re-fetch, rebase and push once more.
+    Never force-pushes. A rebase conflict is aborted (working tree left as before) and raises.
+    """
+    def git(*a, check=True):
+        return run(["git", *a], cwd=repo, check=check, env=env, capture_output=True, text=True)
+
+    def rebase():
+        git("fetch", "-q", "origin", branch)
+        r = git("rebase", "--autostash", f"origin/{branch}", check=False)
+        if r.returncode != 0:
+            git("rebase", "--abort", check=False)
+            raise RuntimeError(f"rebase onto origin/{branch} failed: {(r.stderr or r.stdout or '')[:200]}")
+
+    rebase()
+    if git("push", "-q", "origin", f"HEAD:{branch}", check=False).returncode == 0:
+        return
+    rebase()
+    r = git("push", "-q", "origin", f"HEAD:{branch}", check=False)
+    if r.returncode != 0:
+        raise RuntimeError(f"git push rejected twice: {(r.stderr or '')[:200]}")
+
+
 def host_in_archive_and_get_signed_urls(mp4_path: Path, cover_path: Path | None) -> dict:
     gh_tok = get_gh_token()
     rel_mp4 = mp4_path.resolve().relative_to(REPO_DIR.resolve())
@@ -73,7 +98,7 @@ def host_in_archive_and_get_signed_urls(mp4_path: Path, cover_path: Path | None)
     diff = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=REPO_DIR, capture_output=True, text=True, env=env).stdout.strip()
     if diff:
         subprocess.run(["git", "commit", "-qm", f"Publish media: {', '.join(to_add)}"], cwd=REPO_DIR, check=True, env=env)
-    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=REPO_DIR, check=True, env=env)
+    sync_and_push(REPO_DIR, env)
 
     def fetch_signed(rel_p):
         req = urllib.request.Request(
